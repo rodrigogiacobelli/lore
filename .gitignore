@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.pytest_cache/
+dist/
+build/
+
+# Virtual environments
+.venv/
+
+# uv
+uv.lock
+
+# pytest
+.pytest_cache/
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# Project-specific
+.claude/
+.reports/
+.ideas/
+.old/
+.idea/
+AGENTS.md
+CLAUDE.md
+temp.md

@@ -1,0 +1,51 @@
+name: tdd-implementation
+description: >
+  Strict Red-Green-Refactor TDD implementation of dev-ready user stories.
+  Each step has a hard boundary: Red writes only tests, Green writes only production code,
+  Refactor improves both without adding features.
+steps:
+  - id: red
+    title: Write failing tests for every acceptance criterion
+    priority: 0
+    type: knight
+    knight: tdd-red.md
+    notes: >
+      Read the user story and its Tech Notes.
+      Write failing tests in tests/ covering every acceptance criterion.
+      Run tests after writing — every test MUST fail.
+      No production code. Import failures count as red.
+
+  - id: green
+    title: Write minimum production code to pass all tests
+    priority: 0
+    type: knight
+    needs: [red]
+    knight: tdd-green.md
+    notes: >
+      Read failing tests first — they define what the code must do.
+      Read Tech Notes for implementation guidance.
+      Write the simplest code in src/lore/ that makes each test pass.
+      Run full test suite after each change. No modifying test files.
+
+  - id: refactor
+    title: Refactor with quality checks
+    priority: 0
+    type: knight
+    needs: [green]
+    knight: tdd-refactor.md
+    notes: >
+      Review production and test code for quality.
+      Run after every change: uv run pytest, ruff check, type checking.
+      Tests must stay green. No new features or tests beyond the story.
+
+  - id: commit
+    title: Commit changes
+    priority: 0
+    type: constable
+    needs: [refactor]
+    notes: >
+      Commit the change to the codebase after refactor.
+      Should only commit the affected files.
+      Commit as "US-xxx: {user story title}"
+      
+      

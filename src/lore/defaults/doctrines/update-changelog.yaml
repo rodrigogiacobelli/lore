@@ -1,0 +1,24 @@
+id: update-changelog
+title: Update Changelog
+summary: Single-step doctrine to update the project changelog after a merge to develop
+name: update-changelog
+description: >
+  Updates the project CHANGELOG.md after a merge to develop.
+  Reads the merged commit messages and appends a new entry.
+
+steps:
+  - id: update-changelog-entry
+    title: Update changelog from commits since last entry
+    type: knight
+    knight: changelog-scribe
+    priority: 0
+    notes: >
+      Run as the changelog-scribe knight.
+      Read CHANGELOG.md to find the last recorded version and its date.
+      Query git for all commits since that date (no fixed cap).
+      Read pyproject.toml for the current version.
+      Interpret and group commits into Keep-a-Changelog subsections.
+      Create a new versioned block if the pyproject.toml version is newer than
+      the last changelog entry; otherwise add to the existing block.
+      Never copy raw commit subjects — rewrite as plain English.
+      Mark done when CHANGELOG.md is updated.

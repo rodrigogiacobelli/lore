@@ -1,0 +1,20 @@
+# Created by Lore automatically.
+*
+!.gitignore
+!codex
+!codex/**
+!artifacts
+!artifacts/**
+artifacts/default/
+!knights
+!knights/**
+knights/default/
+!doctrines
+!doctrines/**
+doctrines/default/
+!watchers
+!watchers/**
+watchers/default/
+GETTING-STARTED.md
+LORE-AGENT.md
+skills/

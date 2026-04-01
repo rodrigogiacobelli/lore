@@ -1,0 +1,16 @@
+id: change-log-updates
+title: Change Log Updates
+summary: Runs whenever an external-facing interface changes such as CLI or API surface.
+watch_target:
+  - src/lore/cli.py
+  - src/lore/db.py
+  - src/lore/artifacts.py
+  - src/lore/doctrine.py
+  - src/lore/watcher.py
+  - src/lore/knight.py
+  - src/lore/priority.py
+  - src/lore/models.py
+interval: on_merge
+action:
+  - doctrine: update-changelog
+  - bash: "echo 'done' >> .lore/audit.log"

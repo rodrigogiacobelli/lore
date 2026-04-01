@@ -1,0 +1,387 @@
+id: feature-implementation
+title: Feature Implementation
+summary: E2E spec-driven pipeline from raw user input to implementation-ready user stories with test stubs
+name: feature-implementation
+description: >
+  E2E spec-driven feature pipeline from raw user input to implementation-ready
+  user stories with test stubs. Every agent reads the PRD before working.
+  Flows strictly downstream — no back-and-forth between phases.
+
+  Phase 0 (Scout): Two Scouts run in parallel — one maps the codex from the
+  business perspective, one from the technical perspective. Both produce context
+  maps in transient/. All downstream agents receive the relevant map(s) via their
+  board before starting work.
+
+  Phase 1 (PRD): Crazy PM and PM work in parallel from raw user input and the
+  context maps. User reviews both outputs and appends unstructured feedback to
+  the PRD Draft. PM produces the clean final PRD. User signs off with
+  pre-architecture notes.
+
+  Phase 2 (Tech Spec): Crazy Architect and Architect work in parallel from the
+  PRD and context maps. User reviews both outputs and appends feedback to the
+  Tech Spec Draft. Architect produces the clean final Tech Spec incorporating
+  Crazy findings.
+
+  Phase 3 (Parallel — three tracks):
+    BA track: BA drafts individual user stories (one file each) + index,
+    then finalizes them. Every acceptance criterion is a testable E2E or unit
+    scenario with exact inputs and outputs.
+    Tech-Writer track: Tech Writer proposes codex changes then applies them.
+    Tech Lead track (needs BA + Tech-Writer complete): Tech Lead adds draft
+    test stubs to each story, then finalizes — ensuring every scenario has
+    a corresponding stub ready for the TDD cycle.
+
+  Artifact authority:
+    transient/: all phases write here — working documents for this cycle
+    codex/:     Tech-Writer owns updates (Phase 3 codex-apply step)
+
+  Each phase ends with a constable commit step that acts as a gate before the next phase begins.
+
+steps:
+  # --- Phase 0: Scout ---
+
+  - id: business-scout
+    title: Map codex from the business perspective
+    type: knight
+    priority: 0
+    knight: feature-implementation/scout.md
+    notes: |
+      Your lens is BUSINESS. The orchestrator provides the feature request in this mission description.
+      Run `lore codex search <feature-keywords>` to find potentially relevant documents.
+      Then run `lore codex map <most-relevant-id> --depth 1` to traverse the related graph.
+      For serendipitous discovery, also run `lore codex chaos <most-relevant-id> --threshold <int>` (threshold 30–100) to explore via random walk.
+      Read the documents you find.
+      Retrieve the template: `lore artifact show fi-context-map`.
+      Produce a context map from the business lens — list every codex document relevant to this feature from a product, user, and business perspective.
+      Write to .lore/codex/transient/<feature-slug>-business-map.md with proper frontmatter (type: context-map, lens: business).
+      Post a board message to the crazy-prd and prd-draft missions with the business-map codex ID.
+      Mark done.
+
+  - id: technical-scout
+    title: Map codex from the technical perspective
+    type: knight
+    priority: 0
+    knight: feature-implementation/scout.md
+    notes: |
+      Your lens is TECHNICAL. The orchestrator provides the feature request in this mission description.
+      Run `lore codex search <feature-keywords>` to find potentially relevant documents.
+      Then run `lore codex map <most-relevant-id> --depth 1` to traverse the related graph.
+      For serendipitous discovery, also run `lore codex chaos <most-relevant-id> --threshold <int>` (threshold 30–100) to explore via random walk.
+      Read the documents you find.
+      Retrieve the template: `lore artifact show fi-context-map`.
+      Produce a context map from the technical lens — list every codex document relevant to this feature from an architecture, implementation, and infrastructure perspective.
+      Write to .lore/codex/transient/<feature-slug>-technical-map.md with proper frontmatter (type: context-map, lens: technical).
+      Post a board message to the crazy-prd, prd-draft, crazy-tech-spec, and tech-spec-draft missions with the technical-map codex ID.
+      Mark done.
+
+  - id: commit-phase-0
+    title: Commit Phase 0 — context maps
+    type: constable
+    priority: 0
+    needs:
+      - business-scout
+      - technical-scout
+    notes: >
+      Commit all Phase 0 outputs.
+      Message: "Phase 0: <feature-keywords> — context maps"
+
+  # --- Phase 1: PRD ---
+
+  - id: crazy-prd
+    title: Brainstorm divergent product ideas from user input
+    type: knight
+    priority: 1
+    needs:
+      - commit-phase-0
+    knight: feature-implementation/crazy-pm.md
+    notes: >
+      The orchestrator provides the raw user input in this mission description.
+      Read your board to find the business-map and technical-map IDs: `lore show <mission-id>`.
+      Read both maps: `lore codex show <business-map-id> <technical-map-id>`.
+      Retrieve the template: `lore artifact show fi-crazy-prd`.
+      Fill every section with maximum creative range.
+      Write to .lore/codex/transient/<feature-slug>-crazy-prd.md with proper frontmatter.
+      Post a board message to the prd-review mission:
+      `lore board add <prd-review-mission-id> "Crazy PRD ready: lore codex show <id>"`.
+      Mark done.
+
+  - id: prd-draft
+    title: Produce structured PRD Draft from user input
+    type: knight
+    priority: 1
+    needs:
+      - commit-phase-0
+    knight: feature-implementation/pm.md
+    notes: >
+      The orchestrator provides the raw user input in this mission description.
+      Read your board to find the business-map and technical-map IDs: `lore show <mission-id>`.
+      Read both maps: `lore codex show <business-map-id> <technical-map-id>`.
+      Retrieve the template: `lore artifact show fi-prd-draft`.
+      User workflows must specify exact user actions and exact system responses.
+      Write to .lore/codex/transient/<feature-slug>-prd-draft.md with proper frontmatter.
+      Post a board message to the prd-review mission:
+      `lore board add <prd-review-mission-id> "PRD Draft ready: lore codex show <id>"`.
+      Mark done.
+
+  - id: prd-review
+    title: Review Crazy PRD and PRD Draft — append feedback to PRD Draft
+    type: human
+    priority: 1
+    needs:
+      - crazy-prd
+      - prd-draft
+    notes: >
+      Read both documents from your board: `lore show <mission-id>`.
+      Read both: `lore codex show <crazy-prd-id>` and `lore codex show <prd-draft-id>`.
+      Append your feedback directly to the PRD Draft file — no specific format required.
+      If ideas from the Crazy PRD are worth keeping, include them in your feedback.
+      Mark done.
+
+  - id: prd-final
+    title: Produce clean final PRD incorporating user feedback
+    type: knight
+    priority: 1
+    needs:
+      - prd-review
+    knight: feature-implementation/pm.md
+    notes: >
+      Read the annotated PRD Draft (with user feedback) from your board: `lore show <mission-id>`.
+      Read it: `lore codex show <prd-draft-id>`.
+      Retrieve the template: `lore artifact show fi-prd`.
+      Produce a clean final PRD that resolves all feedback.
+      Leave the Pre-Architecture Notes section empty — user fills it next.
+      Write to .lore/codex/transient/<feature-slug>-prd.md with proper frontmatter.
+      Post a board message to the prd-sign-off mission with the PRD ID.
+      Mark done.
+
+  - id: prd-sign-off
+    title: Review final PRD — append pre-architecture notes
+    type: human
+    priority: 1
+    needs:
+      - prd-final
+    notes: >
+      Read the final PRD from your board: `lore show <mission-id>`.
+      Read it: `lore codex show <prd-id>`.
+      Append your pre-architecture notes directly to the Pre-Architecture Notes section —
+      technical preferences, constraints, priorities, or context for the architects.
+      This section is passed to both Architects in Phase 2.
+      Mark done.
+
+  - id: commit-phase-1
+    title: Commit Phase 1 — PRD
+    type: constable
+    priority: 1
+    needs:
+      - prd-sign-off
+    notes: >
+      Commit all Phase 1 outputs.
+      Message: "Phase 1: <feature-keywords> — PRD"
+
+  # --- Phase 2: Tech Spec ---
+
+  - id: crazy-tech-spec
+    title: Brainstorm unconventional technical approaches from PRD
+    type: knight
+    priority: 2
+    needs:
+      - commit-phase-1
+    knight: feature-implementation/crazy-architect.md
+    notes: >
+      Read your board to find the PRD ID and technical-map ID: `lore show <mission-id>`.
+      Read the PRD including the Pre-Architecture Notes: `lore codex show <prd-id>`.
+      Read the technical-map: `lore codex show <technical-map-id>`. Read the docs it references.
+      Retrieve the template: `lore artifact show fi-crazy-tech-spec`.
+      Fill every section — challenge every obvious assumption.
+      Write to .lore/codex/transient/<feature-slug>-crazy-tech-spec.md with proper frontmatter.
+      Post a board message to the tech-spec-review mission:
+      `lore board add <tech-spec-review-mission-id> "Crazy Tech Spec ready: lore codex show <id>"`.
+      Mark done.
+
+  - id: tech-spec-draft
+    title: Produce structured Tech Spec Draft from PRD
+    type: knight
+    priority: 2
+    needs:
+      - commit-phase-1
+    knight: feature-implementation/architect.md
+    notes: >
+      Read your board to find the PRD ID and technical-map ID: `lore show <mission-id>`.
+      Read the PRD including Pre-Architecture Notes: `lore codex show <prd-id>`.
+      Read the technical-map: `lore codex show <technical-map-id>`. Read every doc it references.
+      Retrieve the template: `lore artifact show fi-tech-spec-draft`.
+      Define project structure to file-name level. Fill the Test Strategy section completely —
+      every PRD workflow maps to an E2E scenario.
+      Write to .lore/codex/transient/<feature-slug>-tech-spec-draft.md with proper frontmatter.
+      Post a board message to the tech-spec-review mission:
+      `lore board add <tech-spec-review-mission-id> "Tech Spec Draft ready: lore codex show <id>"`.
+      Mark done.
+
+  - id: tech-spec-review
+    title: Review Crazy Tech Spec and Tech Spec Draft — append feedback to Tech Spec Draft
+    type: human
+    priority: 2
+    needs:
+      - crazy-tech-spec
+      - tech-spec-draft
+    notes: >
+      Read both documents from your board: `lore show <mission-id>`.
+      Read both: `lore codex show <crazy-tech-spec-id>` and `lore codex show <tech-spec-draft-id>`.
+      Append your feedback directly to the Tech Spec Draft file — no specific format required.
+      If ideas from the Crazy Tech Spec are worth keeping, include them in your feedback.
+      Mark done.
+
+  - id: tech-spec-final
+    title: Produce clean final Tech Spec incorporating user feedback and Crazy findings
+    type: knight
+    priority: 2
+    needs:
+      - tech-spec-review
+    knight: feature-implementation/architect.md
+    notes: >
+      Read your board to find the Tech Spec Draft ID and Crazy Tech Spec ID: `lore show <mission-id>`.
+      Read both documents.
+      Retrieve the template: `lore artifact show fi-tech-spec`.
+      Incorporate all user feedback. Evaluate every Crazy Tech Spec idea — adopt, reject, or defer.
+      The Test Strategy must be complete: every PRD workflow has an E2E scenario.
+      Write to .lore/codex/transient/<feature-slug>-tech-spec.md with proper frontmatter.
+      Post a board message to the ba-stories-draft mission AND the codex-proposal mission
+      with the Tech Spec ID and PRD ID.
+      Mark done.
+
+  - id: commit-phase-2
+    title: Commit Phase 2 — tech spec
+    type: constable
+    priority: 2
+    needs:
+      - tech-spec-final
+    notes: >
+      Commit all Phase 2 outputs.
+      Message: "Phase 2: <feature-keywords> — tech spec"
+
+  # --- Phase 3: Parallel ---
+
+  - id: ba-stories-draft
+    title: Write User Stories Draft — individual files plus index
+    type: knight
+    priority: 3
+    needs:
+      - commit-phase-2
+    knight: feature-implementation/ba.md
+    notes: >
+      Read your board to find the PRD ID, Tech Spec ID, and business-map ID: `lore show <mission-id>`.
+      Read the PRD first: `lore codex show <prd-id>`. This is your primary source.
+      Read the business-map: `lore codex show <business-map-id>`. Read the docs it references.
+      Read the Tech Spec: `lore codex show <tech-spec-id>`.
+      Retrieve templates: `lore artifact show fi-user-story` and `lore artifact show fi-user-story-index`.
+      Write one file per story: .lore/codex/transient/<feature-slug>-us-{number}.md
+      Write the index: .lore/codex/transient/<feature-slug>-us-index.md
+      E2E scenarios must specify exact user actions and exact expected outputs.
+      Post each story ID to the ba-stories-final board as you complete them.
+      Post the index ID to the ba-stories-final board.
+      Mark done.
+
+  - id: ba-stories-final
+    title: Finalize User Stories — verify testability and coverage
+    type: knight
+    priority: 3
+    needs:
+      - ba-stories-draft
+    knight: feature-implementation/ba.md
+    notes: >
+      Read your board to find all story IDs and the index ID: `lore show <mission-id>`.
+      Read every story: `lore codex show <id1> <id2> ...`
+      For each story: verify E2E scenarios are specific enough to write tests from,
+      update Status to final, fix any vague criteria.
+      Update the index Status to final. Verify the PRD Coverage Map is complete.
+      Post a board message to the tech-notes-draft mission listing all final story IDs and the index ID.
+      Mark done.
+
+  - id: codex-proposal
+    title: Draft Codex Change Proposal from Tech Spec and PRD
+    type: knight
+    priority: 3
+    needs:
+      - commit-phase-2
+    knight: feature-implementation/tech-writer.md
+    notes: >
+      Read your board to find the PRD ID, Tech Spec ID, business-map ID, and technical-map ID:
+      `lore show <mission-id>`.
+      Read the PRD first: `lore codex show <prd-id>`.
+      Read both context maps and the docs they reference.
+      Read the Tech Spec: `lore codex show <tech-spec-id>`.
+      Retrieve the template: `lore artifact show fi-codex-change-proposal`.
+      List every document to create, update, or retire — be exhaustive.
+      Write to .lore/codex/transient/<feature-slug>-codex-proposal.md with proper frontmatter.
+      Post a board message to the codex-apply mission with the proposal ID.
+      Mark done.
+
+  - id: codex-apply
+    title: Apply approved codex changes
+    type: knight
+    priority: 3
+    needs:
+      - codex-proposal
+    knight: feature-implementation/tech-writer.md
+    notes: >
+      Read your board to find the Codex Change Proposal ID: `lore show <mission-id>`.
+      Read it: `lore codex show <proposal-id>`.
+      Apply every change listed in the proposal: create new documents, update existing ones, retire obsolete ones.
+      Use `lore artifact list` to find templates for new documents.
+      Post a board message to the tech-notes-draft mission listing all codex document IDs
+      created, updated, or retired — by codex ID only, never by file path.
+      Mark done.
+
+  - id: tech-notes-draft
+    title: Add draft tech notes and test stubs to each user story
+    type: knight
+    priority: 3
+    needs:
+      - ba-stories-final
+      - codex-apply
+    knight: feature-implementation/tech-lead.md
+    notes: >
+      Read your board to find all story IDs, PRD ID, Tech Spec ID, technical-map ID,
+      and updated codex IDs: `lore show <mission-id>`.
+      Read the PRD first: `lore codex show <prd-id>`.
+      Read the technical-map: `lore codex show <technical-map-id>`. Read the docs it references.
+      Read the Tech Spec and updated codex docs.
+      Read every user story.
+      For each story, fill the Tech Notes section:
+        - Implementation Approach with verified file paths from src/
+        - Test File Locations following Tech Spec conventions
+        - Test Stubs: one stub per acceptance criterion scenario — no exceptions.
+          Every stub must cite its source workflow codex ID in a comment.
+        - Complexity Estimate
+      Post a board message to tech-notes-final listing all story IDs.
+      Mark done.
+
+  - id: tech-notes-final
+    title: Finalize tech notes — verify all stubs, paths, and references
+    type: knight
+    priority: 3
+    needs:
+      - tech-notes-draft
+    knight: feature-implementation/tech-lead.md
+    notes: >
+      Read your board to find all story IDs: `lore show <mission-id>`.
+      Read every story with draft tech notes: `lore codex show <id1> <id2> ...`
+      For each story: verify every file path exists in src/ or matches the Tech Spec structure,
+      verify every codex reference is a valid codex ID, verify every acceptance criterion
+      scenario has a corresponding test stub, verify every stub cites a workflow
+      codex ID (run `lore codex search workflow` to confirm the cited ID exists).
+      A stub without a citation is incomplete — fix it.
+      Fix all gaps. Update stories in-place.
+      Post a board message to the quest board confirming pipeline complete,
+      listing all final story IDs and the index ID.
+      Mark done.
+
+  - id: commit-phase-3
+    title: Commit Phase 3 — stories and codex
+    type: constable
+    priority: 3
+    needs:
+      - tech-notes-final
+    notes: >
+      Commit all Phase 3 outputs.
+      Message: "Phase 3: <feature-keywords> — stories + codex"
