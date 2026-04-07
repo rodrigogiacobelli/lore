@@ -20,6 +20,7 @@ Documentation is divided into layers. Each layer has one job.
 
 | Layer | Directory | Question it answers |
 |-------|-----------|-------------------|
+| Vision | `vision/` | Product and executive documents — what the system is, why it exists, and how it fits into the broader landscape. |
 | Conceptual — Entities | `conceptual/entities/` | What is this thing and how does it behave? |
 | Conceptual — Relationships | `conceptual/relationships/` | How do two entities connect and what rules govern that connection? |
 | Conceptual — Workflows | `conceptual/workflows/` | What does the system do internally, or how does a user accomplish a goal? |
