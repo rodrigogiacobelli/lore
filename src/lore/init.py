@@ -115,19 +115,10 @@ def run_init() -> list[str]:
         )
     )
 
-    # Step 9: Seed LORE-AGENT.md
-    lore_agent_path = lore_dir / "LORE-AGENT.md"
-    lore_agent_content = resources.files("lore.defaults").joinpath("LORE-AGENT.md").read_text()
-    verb = "Updated" if lore_agent_path.exists() else "Created"
-    lore_agent_path.write_text(lore_agent_content)
-    messages.append(f"  {verb} LORE-AGENT.md")
-
-    # Step 10: Seed GETTING-STARTED.md
-    getting_started_path = lore_dir / "GETTING-STARTED.md"
-    getting_started_content = resources.files("lore.defaults").joinpath("GETTING-STARTED.md").read_text()
-    verb = "Updated" if getting_started_path.exists() else "Created"
-    getting_started_path.write_text(getting_started_content)
-    messages.append(f"  {verb} GETTING-STARTED.md")
+    # Step 9+10: Seed docs/ markdown files (LORE-AGENT.md, GETTING-STARTED.md) flat into .lore/
+    messages.extend(
+        _copy_defaults_tree("docs", lore_dir, label="docs")
+    )
 
     # Step 11: Copy default skills
     messages.extend(

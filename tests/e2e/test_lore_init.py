@@ -625,81 +625,54 @@ class TestInitGitignoreNoDuplicates:
 
 
 DEFAULTS_DIR = Path(__file__).resolve().parent.parent.parent / "src" / "lore" / "defaults"
-
-
-class TestLoreAgentMdSeeding:
-    """lore init seeds .lore/LORE-AGENT.md from src/lore/defaults/LORE-AGENT.md."""
-
-    def test_lore_agent_md_created_on_fresh_init(self, runner, project_dir):
-        """Fresh init creates .lore/LORE-AGENT.md."""
-        assert (project_dir / ".lore" / "LORE-AGENT.md").is_file()
-
-    def test_lore_agent_md_content_is_non_empty(self, runner, project_dir):
-        """Content of .lore/LORE-AGENT.md is non-empty after init."""
-        content = (project_dir / ".lore" / "LORE-AGENT.md").read_text()
-        assert content.strip()
-
-    def test_reinit_overwrites_lore_agent_md(self, runner, initialized_dir):
-        """Re-init replaces stale content in .lore/LORE-AGENT.md."""
-        lore_agent_path = initialized_dir / ".lore" / "LORE-AGENT.md"
-        lore_agent_path.write_text("# stale content\n")
-        runner.invoke(main, ["init"])
-        assert "# stale content" not in lore_agent_path.read_text()
-
-    def test_fresh_init_output_mentions_created_lore_agent_md(self, runner, tmp_path, monkeypatch):
-        """Fresh init stdout mentions LORE-AGENT.md as created."""
-        monkeypatch.chdir(tmp_path)
-        result = runner.invoke(main, ["init"])
-        assert_exit_ok(result)
-        assert "LORE-AGENT.md" in result.output
-
-    def test_reinit_output_mentions_updated_lore_agent_md(self, runner, initialized_dir):
-        """Re-init stdout mentions LORE-AGENT.md as updated."""
-        result = runner.invoke(main, ["init"])
-        assert_exit_ok(result)
-        assert "LORE-AGENT.md" in result.output
-
-    def test_agents_md_not_created_at_project_root(self, runner, project_dir):
-        """lore init no longer creates AGENTS.md at the project root."""
-        assert not (project_dir / "AGENTS.md").exists()
+DEFAULTS_DOCS_DIR = DEFAULTS_DIR / "docs"
 
 
 # ---------------------------------------------------------------------------
-# GETTING-STARTED.md seeding
+# docs/ markdown seeding (LORE-AGENT.md, GETTING-STARTED.md, etc.)
 # ---------------------------------------------------------------------------
 
 
-class TestGettingStartedMdSeeding:
-    """lore init seeds .lore/GETTING-STARTED.md from src/lore/defaults/GETTING-STARTED.md."""
+def test_agents_md_not_created_at_project_root(runner, project_dir):
+    """lore init no longer creates AGENTS.md at the project root."""
+    assert not (project_dir / "AGENTS.md").exists()
 
-    def test_getting_started_md_created_on_fresh_init(self, runner, project_dir):
-        """Fresh init creates .lore/GETTING-STARTED.md."""
-        assert (project_dir / ".lore" / "GETTING-STARTED.md").is_file()
 
-    def test_getting_started_md_content_is_non_empty(self, runner, project_dir):
-        """Content of .lore/GETTING-STARTED.md is non-empty after init."""
-        content = (project_dir / ".lore" / "GETTING-STARTED.md").read_text()
+class TestDocsMdSeeding:
+    """lore init seeds .lore/<name>.md for every file in src/lore/defaults/docs/."""
+
+    @pytest.fixture(params=list(DEFAULTS_DOCS_DIR.glob("*.md")), ids=lambda p: p.name)
+    def docs_md_file(self, request):
+        return request.param
+
+    def test_docs_md_created_on_fresh_init(self, runner, project_dir, docs_md_file):
+        """Fresh init creates .lore/<name>.md for each file in defaults/docs/."""
+        assert (project_dir / ".lore" / docs_md_file.name).is_file()
+
+    def test_docs_md_content_is_non_empty(self, runner, project_dir, docs_md_file):
+        """Content of .lore/<name>.md is non-empty after init."""
+        content = (project_dir / ".lore" / docs_md_file.name).read_text()
         assert content.strip()
 
-    def test_reinit_overwrites_getting_started_md(self, runner, initialized_dir):
-        """Re-init replaces stale content in .lore/GETTING-STARTED.md."""
-        gs_path = initialized_dir / ".lore" / "GETTING-STARTED.md"
-        gs_path.write_text("# stale getting started\n")
+    def test_reinit_overwrites_docs_md(self, runner, initialized_dir, docs_md_file):
+        """Re-init replaces stale content in .lore/<name>.md."""
+        dest = initialized_dir / ".lore" / docs_md_file.name
+        dest.write_text("# stale content\n")
         runner.invoke(main, ["init"])
-        assert "# stale getting started" not in gs_path.read_text()
+        assert "# stale content" not in dest.read_text()
 
-    def test_fresh_init_output_mentions_created_getting_started_md(self, runner, tmp_path, monkeypatch):
-        """Fresh init stdout mentions GETTING-STARTED.md as created."""
+    def test_fresh_init_output_mentions_created_docs_md(self, runner, tmp_path, monkeypatch, docs_md_file):
+        """Fresh init stdout mentions <name>.md as created."""
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(main, ["init"])
         assert_exit_ok(result)
-        assert "GETTING-STARTED.md" in result.output
+        assert docs_md_file.name in result.output
 
-    def test_reinit_output_mentions_updated_getting_started_md(self, runner, initialized_dir):
-        """Re-init stdout mentions GETTING-STARTED.md as updated."""
+    def test_reinit_output_mentions_updated_docs_md(self, runner, initialized_dir, docs_md_file):
+        """Re-init stdout mentions <name>.md as updated."""
         result = runner.invoke(main, ["init"])
         assert_exit_ok(result)
-        assert "GETTING-STARTED.md" in result.output
+        assert docs_md_file.name in result.output
 
 
 # ---------------------------------------------------------------------------

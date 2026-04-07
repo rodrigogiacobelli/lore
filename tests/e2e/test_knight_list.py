@@ -15,7 +15,7 @@ from lore.frontmatter import parse_frontmatter_doc
 import lore as _lore_pkg
 
 _DEFAULTS_KNIGHTS_DIR = Path(_lore_pkg.__file__).parent / "defaults" / "knights"
-_DEFAULT_KNIGHT_FILES = sorted(_DEFAULTS_KNIGHTS_DIR.glob("*.md"))
+_DEFAULT_KNIGHT_FILES = sorted(_DEFAULTS_KNIGHTS_DIR.rglob("*.md"))
 
 # ---------------------------------------------------------------------------
 # Basic list behaviour
