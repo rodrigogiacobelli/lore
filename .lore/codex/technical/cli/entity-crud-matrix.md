@@ -1,8 +1,8 @@
 ---
 id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
-summary: Maps every Lore entity to its available CLI CRUD and traversal operations with the exact command for each. Highlights gaps — Codex and Artifact have no CLI write path; Board has no standalone list or update; Quest/Mission have no search; lore deps is documented but unimplemented.
-related: ["tech-api-surface", "tech-cli-commands", "tech-arch-codex-map", "tech-arch-codex-chaos"]
+summary: Maps every Lore entity to its available CLI CRUD and traversal operations with the exact command for each. Highlights gaps — Codex and Artifact have no CLI write path; Board has no standalone list or update; Quest/Mission have no search; lore deps is documented but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher) support --filter GROUP... for namespace scoping.
+related: ["tech-api-surface", "tech-cli-commands", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-filter-list"]
 stability: stable
 ---
 
@@ -12,11 +12,11 @@ stability: stable
 |--------|--------|-----------|------|--------|----------|--------|--------|
 | **Quest** | `lore new quest <title>` | `lore show <id>` | `lore list [--all]` | — | — | `lore edit <id>` | `lore delete <id> [--cascade]` |
 | **Mission** | `lore new mission <title>` | `lore show <id> [--no-knight]` | `lore missions [quest_id] [--all]` | — | — | `lore edit <id>` | `lore delete <id>` |
-| **Knight** | `lore knight new <name>` | `lore knight show <name>` | `lore knight list` | — | — | `lore knight edit <name>` | `lore knight delete <name>` |
-| **Doctrine** | `lore doctrine new <name>` | `lore doctrine show <name>` | `lore doctrine list` | — | — | `lore doctrine edit <name>` | `lore doctrine delete <name>` |
-| **Watcher** | `lore watcher new <name>` | `lore watcher show <name>` | `lore watcher list` | — | — | `lore watcher edit <name>` | `lore watcher delete <name>` |
-| **Codex** | ✗ (disk only) | `lore codex show <id> [id2…]` | `lore codex list` | `lore codex search <kw>` | `lore codex map <id> [--depth n]`<br>`lore codex chaos <id> --threshold <int>` | ✗ (disk only) | ✗ (disk only) |
-| **Artifact** | ✗ (disk only) | `lore artifact show <id> [id2…]` | `lore artifact list` | — | — | ✗ (disk only) | ✗ (disk only) |
+| **Knight** | `lore knight new <name>` | `lore knight show <name>` | `lore knight list [--filter GROUP...]` | — | — | `lore knight edit <name>` | `lore knight delete <name>` |
+| **Doctrine** | `lore doctrine new <name>` | `lore doctrine show <name>` | `lore doctrine list [--filter GROUP...]` | — | — | `lore doctrine edit <name>` | `lore doctrine delete <name>` |
+| **Watcher** | `lore watcher new <name>` | `lore watcher show <name>` | `lore watcher list [--filter GROUP...]` | — | — | `lore watcher edit <name>` | `lore watcher delete <name>` |
+| **Codex** | ✗ (disk only) | `lore codex show <id> [id2…]` | `lore codex list [--filter GROUP...]` | `lore codex search <kw>` | `lore codex map <id> [--depth n]`<br>`lore codex chaos <id> --threshold <int>` | ✗ (disk only) | ✗ (disk only) |
+| **Artifact** | ✗ (disk only) | `lore artifact show <id> [id2…]` | `lore artifact list [--filter GROUP...]` | — | — | ✗ (disk only) | ✗ (disk only) |
 | **Board Message** | `lore board add <entity_id> "<msg>" [-s sender]` | (inside `lore show`) | (inside `lore show`) | — | — | ✗ (immutable) | `lore board delete <int_id>` |
 
 ## Lifecycle Operations

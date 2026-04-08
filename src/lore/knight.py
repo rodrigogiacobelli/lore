@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from lore.paths import derive_group
+from lore.paths import derive_group, group_matches_filter
 
 
 def _parse_knight_frontmatter(filepath: Path) -> dict:
@@ -30,7 +30,7 @@ def _parse_knight_frontmatter(filepath: Path) -> dict:
         return {}
 
 
-def list_knights(knights_dir: Path) -> list[dict]:
+def list_knights(knights_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
     """Return a sorted list of knight records from the given directory tree.
 
     Each record is a dict with keys ``id``, ``group``, ``title``, ``summary``,
@@ -64,6 +64,9 @@ def list_knights(knights_dir: Path) -> list[dict]:
             "name": stem,
             "filename": filepath.name,
         })
+
+    if filter_groups:
+        records = [r for r in records if group_matches_filter(r["group"], filter_groups)]
 
     return sorted(records, key=lambda r: r["id"])
 

@@ -2,7 +2,7 @@
 id: conceptual-workflows-doctrine-list
 title: lore doctrine list Behaviour
 summary: What the system does internally when `lore doctrine list` runs — recursive discovery of `.yaml` files under `.lore/doctrines/`, validation with INVALID suffix for failing doctrines, metadata fallback rules, group derivation, and table or JSON output.
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-list", "tech-cli-commands"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-list", "tech-cli-commands", "conceptual-workflows-filter-list"]
 stability: stable
 ---
 
@@ -49,7 +49,20 @@ The `summary` truncation: if `description` is used as fallback and is longer tha
 
 Identical to `lore knight list`: directory components between `.lore/doctrines/` and the file are joined with dashes.
 
-### 5. Render output
+### 5. Apply filter (when `--filter` is provided)
+
+When one or more `--filter GROUP` tokens are supplied, the parsed doctrine list is post-filtered using subtree (prefix) matching:
+
+- Doctrines whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter default` returns doctrines with group `default` as well as `default-feature`, `default-ops`, and any other subgroup starting with `default-`.
+- Doctrines with `group == ""` (root-level files, directly under `.lore/doctrines/`) are **always** included regardless of filter tokens.
+- Unrecognised tokens produce no error — they simply match nothing.
+- When `--filter` is not provided, all doctrines are returned (existing behaviour preserved).
+
+The `valid` field and `[INVALID]` suffix apply to each doctrine individually regardless of filtering. The valid/invalid counts in filtered output reflect only the filtered records.
+
+See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.
+
+### 6. Render output
 
 **Table mode (default):**
 
@@ -101,11 +114,12 @@ For human review, use the table mode (`lore doctrine list`) — the `[INVALID]` 
 
 ## Out of Scope
 
-- Filtering by validity, group, or id at the CLI level — use `jq` in the consuming process.
+- Filtering by validity, id, or fields other than group at the CLI level — use `jq` in the consuming process. Group filtering is available via `--filter`.
 - Showing doctrine step details — use `lore doctrine show <name>` for that.
 
 ## Related
 
 - conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — mirrors this behaviour for knights (no validation step)
 - conceptual-workflows-artifact-list (lore codex show conceptual-workflows-artifact-list) — stricter: skips files missing required fields
+- conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
 - tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference

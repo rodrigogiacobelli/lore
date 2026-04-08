@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from lore.paths import derive_group
+from lore.paths import derive_group, group_matches_filter
 
 
 def find_watcher(watchers_dir: Path, name: str) -> Path | None:
@@ -128,12 +128,16 @@ def delete_watcher(watchers_dir: Path, name: str) -> dict:
     return {"id": name, "deleted": True}
 
 
-def list_watchers(watchers_dir: Path) -> list[dict]:
+def list_watchers(watchers_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
     """Return a list of watcher dicts read from *.yaml files under watchers_dir.
 
-    Each dict has keys: id, group, title, summary.
+    Each dict has keys: id, group, title, summary, and optional fields
+    watch_target, interval, action when present in the YAML.
     Results are sorted ascending by id.
     Missing fields fall back to safe defaults.
+
+    If filter_groups is a non-empty list, only watchers whose group is in
+    filter_groups or whose group is root-level (empty string) are returned.
     """
     if not watchers_dir.exists():
         return []
@@ -147,12 +151,19 @@ def list_watchers(watchers_dir: Path) -> list[dict]:
 
         stem = filepath.stem
         watcher_id = data.get("id", stem)
-        watchers.append({
+        record = {
             "id": watcher_id,
             "group": derive_group(filepath, watchers_dir),
             "title": data.get("title", watcher_id),
             "summary": data.get("summary", ""),
             "filename": filepath.name,
-        })
+        }
+        for optional_field in ("watch_target", "interval", "action"):
+            if optional_field in data:
+                record[optional_field] = data[optional_field]
+        watchers.append(record)
+
+    if filter_groups:
+        watchers = [w for w in watchers if group_matches_filter(w["group"], filter_groups)]
 
     return sorted(watchers, key=lambda w: w["id"])

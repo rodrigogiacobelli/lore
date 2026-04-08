@@ -3,7 +3,7 @@ id: conceptual-workflows-codex
 title: Codex Commands — lore codex
 summary: >
   What the system does internally when lore codex list, lore codex search, lore codex show, lore codex map, and lore codex chaos run — document discovery, keyword search, multi-ID retrieval with deduplication, BFS graph traversal, probabilistic random-walk traversal, and JSON output.
-related: ["tech-arch-initialized-project-structure", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos"]
+related: ["tech-arch-initialized-project-structure", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list"]
 stability: stable
 ---
 
@@ -22,11 +22,22 @@ The codex is the agent-facing documentation store. All codex documents live unde
 
 `scan_codex` in `lore.codex` walks `.lore/codex/` recursively, parsing YAML frontmatter from every `.md` file. Documents without valid frontmatter are skipped or shown with fallback values.
 
-### 2. Render
+### 2. Apply filter (when `--filter` is provided)
+
+When one or more `--filter GROUP` tokens are supplied, the scanned document list is post-filtered using subtree (prefix) matching:
+
+- Documents whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter conceptual` returns documents with group `conceptual` as well as `conceptual-workflows`, `conceptual-reference`, and any other subgroup whose name starts with `conceptual-`.
+- Documents with `group == ""` (root-level files, directly under `.lore/codex/`) are **always** included regardless of filter tokens.
+- Unrecognised tokens produce no error — they simply match nothing.
+- When `--filter` is not provided, all documents are returned (existing behaviour preserved).
+
+See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.
+
+### 3. Render
 
 A table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY` is printed using the shared `_format_table` helper. GROUP is derived from the document's directory path under `.lore/codex/` via `derive_group`. Documents at the root of `.lore/codex/` (no subdirectory) render with an empty GROUP. If no documents are found, `No codex documents found.` is printed.
 
-### 3. JSON mode
+### 4. JSON mode
 
 ```json
 {

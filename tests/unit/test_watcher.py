@@ -784,3 +784,105 @@ class TestDeleteWatcher:
         result = list_watchers(watchers_dir)
         ids = [w["id"] for w in result]
         assert "run-tests-on-push" not in ids
+
+
+# ---------------------------------------------------------------------------
+# US-3 (filter-list-subcommands): list_watchers filter_groups parameter
+# Spec: filter-list-subcommands-us-3 (lore codex show filter-list-subcommands-us-3)
+# Workflow: conceptual-workflows-filter-list
+# ---------------------------------------------------------------------------
+
+_DEFAULT_WATCHER_YAML = """\
+id: mission-watcher
+title: Mission Watcher
+summary: Watches for mission updates.
+watch_target: missions/*
+interval: hourly
+action: notify
+"""
+
+_OPS_WATCHER_YAML = """\
+id: deploy-watcher
+title: Deploy Watcher
+summary: Watches for deploy events.
+watch_target: deploys/*
+interval: daily
+action: trigger-deploy
+"""
+
+
+def _setup_two_group_watchers(watchers_dir):
+    """Populate watchers_dir with one watcher in 'default' and one in 'ops'."""
+    default_dir = watchers_dir / "default"
+    default_dir.mkdir(parents=True)
+    (default_dir / "mission-watcher.yaml").write_text(_DEFAULT_WATCHER_YAML)
+    ops_dir = watchers_dir / "ops"
+    ops_dir.mkdir()
+    (ops_dir / "deploy-watcher.yaml").write_text(_OPS_WATCHER_YAML)
+
+
+class TestListWatchersFilterGroups:
+    """list_watchers with filter_groups parameter."""
+
+    # Unit — list_watchers filter_groups=["default"] — optional fields unaffected
+    # Exercises: conceptual-workflows-filter-list step 3 + conceptual-workflows-watcher-list
+    def test_list_watchers_filter_returns_matched_group(self, tmp_path):
+        """list_watchers with filter_groups=["default"] returns only default group watchers."""
+        watchers_dir = tmp_path / ".lore" / "watchers"
+        _setup_two_group_watchers(watchers_dir)
+
+        results = list_watchers(watchers_dir, filter_groups=["default"])
+
+        ids = [r["id"] for r in results]
+        assert "mission-watcher" in ids
+        assert "deploy-watcher" not in ids
+
+    def test_list_watchers_filter_optional_fields_unaffected(self, tmp_path):
+        """Optional fields (watch_target, interval, action) are preserved on filtered watcher records."""
+        watchers_dir = tmp_path / ".lore" / "watchers"
+        _setup_two_group_watchers(watchers_dir)
+
+        results = list_watchers(watchers_dir, filter_groups=["default"])
+
+        assert len(results) == 1
+        record = results[0]
+        assert record["id"] == "mission-watcher"
+        # Optional fields must be intact after filtering
+        assert record.get("watch_target") == "missions/*"
+        assert record.get("interval") == "hourly"
+        assert record.get("action") == "notify"
+
+
+# ---------------------------------------------------------------------------
+# US-4: list_watchers filter_groups=None — backward compatibility (no regression)
+# Spec: filter-list-subcommands-us-4 (lore codex show filter-list-subcommands-us-4)
+# Exercises: conceptual-workflows-filter-list step 3 (filter_groups=None → return all)
+# ---------------------------------------------------------------------------
+
+
+# Unit — list_watchers filter_groups=None returns all watchers (no regression)
+# Exercises: conceptual-workflows-filter-list step 3 (filter_groups=None → return all)
+def test_list_watchers_filter_none_no_regression(tmp_path):
+    """list_watchers with filter_groups=None returns all watchers across all groups — pre-filter behavior."""
+    watchers_dir = tmp_path / ".lore" / "watchers"
+    _setup_two_group_watchers(watchers_dir)
+
+    results = list_watchers(watchers_dir, filter_groups=None)
+
+    ids = [r["id"] for r in results]
+    assert "mission-watcher" in ids
+    assert "deploy-watcher" in ids
+
+
+# Unit — list_watchers called without filter_groups returns all watchers (backward compat)
+# Exercises: backward compat — old callers that never passed filter_groups still work
+def test_list_watchers_no_filter_argument_returns_all(tmp_path):
+    """list_watchers called without filter_groups (default) returns all watchers — backward compatible."""
+    watchers_dir = tmp_path / ".lore" / "watchers"
+    _setup_two_group_watchers(watchers_dir)
+
+    results = list_watchers(watchers_dir)
+
+    ids = [r["id"] for r in results]
+    assert "mission-watcher" in ids
+    assert "deploy-watcher" in ids

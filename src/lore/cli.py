@@ -915,14 +915,15 @@ def knight(ctx):
 
 @knight.command("list")
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
 @click.pass_context
-def knight_list(ctx, json_flag):
+def knight_list(ctx, json_flag, filter_groups):
     """List available knights."""
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
     knights_dir = paths.knights_dir(project_root)
 
-    records = knight_module.list_knights(knights_dir)
+    records = knight_module.list_knights(knights_dir, filter_groups=list(filter_groups) if filter_groups else None)
 
     if json_mode:
         filtered = [
@@ -1132,8 +1133,9 @@ def doctrine(ctx):
 
 @doctrine.command("list")
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
 @click.pass_context
-def doctrine_list(ctx, json_flag):
+def doctrine_list(ctx, json_flag, filter_groups):
     """List available doctrines."""
     from lore.doctrine import list_doctrines
 
@@ -1141,7 +1143,7 @@ def doctrine_list(ctx, json_flag):
     json_mode = json_flag or ctx.obj.get("json", False)
     doctrines_dir = paths.doctrines_dir(project_root)
 
-    doctrines = list_doctrines(doctrines_dir)
+    doctrines = list_doctrines(doctrines_dir, filter_groups=list(filter_groups) if filter_groups else None)
 
     if json_mode:
         data = {
@@ -2228,8 +2230,10 @@ def codex(ctx):
 
 @codex.command("list")
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
+@click.argument("extra_filters", nargs=-1)
 @click.pass_context
-def codex_list(ctx, json_flag):
+def codex_list(ctx, json_flag, filter_groups, extra_filters):
     """List all codex documents."""
     from lore.codex import scan_codex
 
@@ -2237,7 +2241,8 @@ def codex_list(ctx, json_flag):
     json_mode = json_flag or ctx.obj.get("json", False)
     codex_dir = paths.codex_dir(project_root)
 
-    documents = scan_codex(codex_dir)
+    combined_filters = list(filter_groups) + list(extra_filters)
+    documents = scan_codex(codex_dir, filter_groups=combined_filters if combined_filters else None)
 
     if json_mode:
         data = {
@@ -2450,8 +2455,9 @@ def artifact(ctx):
 
 @artifact.command("list")
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
 @click.pass_context
-def artifact_list(ctx, json_flag):
+def artifact_list(ctx, json_flag, filter_groups):
     """List all artifacts."""
     from lore.artifact import scan_artifacts
 
@@ -2459,7 +2465,7 @@ def artifact_list(ctx, json_flag):
     json_mode = json_flag or ctx.obj.get("json", False)
     artifacts_dir = paths.artifacts_dir(project_root)
 
-    artifacts = scan_artifacts(artifacts_dir)
+    artifacts = scan_artifacts(artifacts_dir, filter_groups=list(filter_groups) if filter_groups else None)
 
     if json_mode:
         data = {
@@ -2609,8 +2615,9 @@ def watcher(ctx):
 
 @watcher.command("list")
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
+@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
 @click.pass_context
-def watcher_list(ctx, json_mode):
+def watcher_list(ctx, json_mode, filter_groups):
     """List all watcher definitions."""
     from lore import watcher as watcher_module
 
@@ -2619,7 +2626,7 @@ def watcher_list(ctx, json_mode):
     json_mode = json_mode or ctx.obj.get("json", False)
     w_dir = paths.watchers_dir(project_root)
 
-    watchers = watcher_module.list_watchers(w_dir)
+    watchers = watcher_module.list_watchers(w_dir, filter_groups=list(filter_groups) if filter_groups else None)
 
     if json_mode:
         click.echo(json.dumps({"watchers": watchers}))

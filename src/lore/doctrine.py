@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from lore.paths import derive_group
+from lore.paths import derive_group, group_matches_filter
 
 
 class DoctrineError(Exception):
@@ -57,11 +57,12 @@ def _validate(data: dict, filename: str) -> None:
     """Validate doctrine data against schema rules."""
     _validate_required_fields(data)
 
-    # Name must match filename
+    # Name must match filename; accept id as fallback for name
+    doctrine_name = data.get("name") or data.get("id")
     expected_name = filename.removesuffix(".yaml")
-    if data["name"] != expected_name:
+    if doctrine_name != expected_name:
         raise DoctrineError(
-            f'Doctrine name "{data["name"]}" does not match filename "{filename}"'
+            f'Doctrine name "{doctrine_name}" does not match filename "{filename}"'
         )
 
     _validate_steps(data["steps"])
@@ -69,7 +70,10 @@ def _validate(data: dict, filename: str) -> None:
 
 def _validate_required_fields(data: dict) -> None:
     """Check that required top-level fields are present."""
-    for field in ("name", "description", "steps"):
+    # Accept id as fallback for name
+    if "name" not in data and "id" not in data:
+        raise DoctrineError("Missing required field: name")
+    for field in ("description", "steps"):
         if field not in data:
             raise DoctrineError(f"Missing required field: {field}")
 
@@ -156,7 +160,7 @@ def _normalize(data: dict) -> dict:
             }
         )
     result = {
-        "name": data["name"],
+        "name": data.get("name") or data.get("id"),
         "description": data["description"],
         "steps": steps,
     }
@@ -177,9 +181,10 @@ def validate_doctrine_content(text: str, expected_name: str) -> dict:
     _validate_required_fields(data)
 
     # Name must match command argument
-    if str(data["name"]) != expected_name:
+    doctrine_name = data.get("name") or data.get("id")
+    if str(doctrine_name) != expected_name:
         raise DoctrineError(
-            f'Doctrine name "{data["name"]}" does not match command argument "{expected_name}"'
+            f'Doctrine name "{doctrine_name}" does not match command argument "{expected_name}"'
         )
 
     # If id field is present, it must match the command argument
@@ -210,7 +215,7 @@ def _truncate_description(text: str, width: int = 80) -> str:
     return truncated + "..."
 
 
-def list_doctrines(doctrines_dir: Path) -> list[dict]:
+def list_doctrines(doctrines_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
     """List all doctrines with validation status.
 
     Returns a list of dicts with keys: id, group, title, summary, valid, name,
@@ -267,5 +272,8 @@ def list_doctrines(doctrines_dir: Path) -> list[dict]:
         entry["summary"] = summary
 
         results.append(entry)
+
+    if filter_groups:
+        results = [r for r in results if group_matches_filter(r.get("group", ""), filter_groups)]
 
     return results

@@ -2,7 +2,7 @@
 id: tech-cli-commands
 title: CLI Command Reference
 summary: Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours. Covers all commands including lore board add/delete, lore codex list/show/search/map/chaos, and lore artifact list/show (read-only). Notes the hidden status of --no-auto-close on `lore new quest` versus its visible status on `lore edit`.
-related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005", "decisions-008", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos"]
+related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005", "decisions-008", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list"]
 stability: stable
 ---
 
@@ -265,9 +265,13 @@ Soft-delete a dependency. Mirrors `lore needs` syntax. Removing a non-existent d
 
 ```
 lore doctrine list
+lore doctrine list --filter default
+lore doctrine list --filter default feature-implementation
 ```
 
 List available Doctrine templates as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/doctrines/` directory tree recursively, merging results into a single alphabetically sorted flat list. GROUP is derived from the doctrine file's path relative to `.lore/doctrines/`, with directory components joined by `-`, excluding the filename. Doctrines missing `title` fall back to `id`. Doctrines missing `summary` fall back to truncated `description` (via `textwrap.shorten`, respecting word boundaries, max ~80 visible chars). Invalid doctrines show `[INVALID]` appended to the summary. No source-directory annotation is shown. Accepts `--json` as both a local flag (`lore doctrine list --json`) and the global flag (`lore --json doctrine list`). JSON output: `{"doctrines": [{id, group, title, summary, valid}]}`.
+
+The optional `--filter GROUP...` flag limits results to doctrines in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns doctrines with group `default`, `default-feature`, `default-ops`, etc. Root-level doctrines (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore doctrine show feature-workflow
@@ -307,9 +311,13 @@ Soft-delete a doctrine file. Renames `.lore/doctrines/<name>.yaml` to `.lore/doc
 
 ```
 lore knight list
+lore knight list --filter feature-implementation
+lore knight list --filter feature-implementation default
 ```
 
 List available Knights as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/knights/` directory tree recursively (`rglob("*.md")`), returning all knights at any depth. ID, TITLE, and SUMMARY are read from YAML frontmatter (`---`-delimited block at file top). Knights without valid frontmatter fall back to: `id` = filename stem, `title` = filename stem, `summary` = empty string. GROUP is derived from the knight file's path relative to `.lore/knights/`, with directory components joined by `-`, excluding the filename. Results are sorted by `id`. No source-directory annotation is shown. Accepts `--json` as both a local flag (`lore knight list --json`) and the global flag (`lore --json knight list`). JSON output: `{"knights": [{id, group, title, summary}]}`.
+
+The optional `--filter GROUP...` flag limits results to knights in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter feature-implementation` returns knights with group `feature-implementation`, `feature-implementation-sub`, etc. Root-level knights (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore knight show developer
@@ -343,6 +351,8 @@ Soft-delete a knight file. Renames `.lore/knights/<name>.md` to `.lore/knights/<
 
 ```
 lore watcher list
+lore watcher list --filter default
+lore watcher list --filter default custom-group
 ```
 
 List available Watchers as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/watchers/` directory tree recursively (`rglob("*.yaml")`). GROUP is derived from the watcher file's path relative to `.lore/watchers/`, with directory components joined by `-`, excluding the filename. Results are sorted by `id`. Watchers with missing required fields fall back to defaults (filename stem for `id`, `id` value for `title`, empty string for `summary`). No source-directory annotation is shown.
@@ -352,6 +362,8 @@ If no watchers are found, `No watchers found.` is printed. Exit code 0 in all ca
 The `--json` flag is accepted both as a local subcommand flag (`lore watcher list --json`) and as the global flag (`lore --json watcher list`).
 
 JSON output: `{"watchers": [{"id": "...", "group": "...", "title": "...", "summary": "..."}]}`
+
+The optional `--filter GROUP...` flag limits results to watchers in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns watchers with group `default`, `default-ci`, `default-ops`, etc. Root-level watchers (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore watcher show <name>
@@ -499,9 +511,14 @@ See tech-cli-oracle-slugification (lore codex show tech-cli-oracle-slugification
 
 ```
 lore codex list
+lore codex list --filter conceptual
+lore codex list --filter conceptual decisions
+lore codex list --filter conceptual --filter decisions
 ```
 
 Return a table of contents: every document's ID, group, title, and summary. No body content. Human-readable output is a table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY` rendered via the shared `_format_table` helper. GROUP is derived from the document's directory path under `.lore/codex/` using `derive_group`; documents at the root of `.lore/codex/` render with an empty GROUP. If `.lore/codex/` does not exist or contains no documents, output: `No codex documents found.` Exit code 0 in all cases. Does not list `TRANSIENT.md` marker files. Supports a local `--json` flag (placed at end: `lore codex list --json`).
+
+The optional `--filter GROUP...` flag limits results to documents in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter conceptual` returns documents with group `conceptual`, `conceptual-workflows`, `conceptual-reference`, etc. Root-level documents (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore codex show <id> [id ...]
@@ -584,9 +601,13 @@ All five codex commands support `--json`.
 
 ```
 lore artifact list
+lore artifact list --filter default-codex
+lore artifact list --filter default-codex default-transient
 ```
 
 Return a table of available artifact templates: every artifact's ID, group, title, and summary. No body content. Human-readable output is a table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY`. GROUP is derived from the artifact file's path relative to `.lore/artifacts/`, with directory components joined by `-`, excluding the filename. If `.lore/artifacts/` does not exist or contains no indexed artifacts: `No artifacts found.` Exit code 0 in all cases.
+
+The optional `--filter GROUP...` flag limits results to artifacts in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns artifacts with group `default`, `default-codex`, `default-transient`, etc. Root-level artifacts (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore artifact show <id> [id ...]

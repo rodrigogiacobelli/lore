@@ -7,6 +7,8 @@ from pathlib import Path
 import yaml
 
 from lore import frontmatter
+from lore import paths as _paths
+
 
 def _parse_doc_robust(
     filepath: Path,
@@ -54,12 +56,16 @@ def _parse_doc_robust(
     return result
 
 
-def scan_codex(codex_dir: Path) -> list[dict]:
+def scan_codex(codex_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
     """Walk codex_dir recursively, parse frontmatter, return document records.
 
-    Returns a list of dicts with keys: id, title, summary, group, path.
+    Returns a list of dicts with keys: id, title, summary, path.
     Files without valid frontmatter or missing required fields are skipped.
     Results are sorted alphabetically by id.
+
+    If filter_groups is a non-empty list, only documents whose group is in
+    filter_groups or whose group is root-level (empty string) are returned.
+    If filter_groups is None or an empty list, all documents are returned.
     """
     if not codex_dir.exists():
         return []
@@ -69,6 +75,12 @@ def scan_codex(codex_dir: Path) -> list[dict]:
         record = frontmatter.parse_frontmatter_doc(filepath, required_fields=("id", "title", "summary"))
         if record is not None:
             results.append(record)
+
+    if filter_groups:
+        results = [
+            d for d in results
+            if _paths.group_matches_filter(_paths.derive_group(d["path"], codex_dir), filter_groups)
+        ]
 
     return sorted(results, key=lambda d: d["id"])
 

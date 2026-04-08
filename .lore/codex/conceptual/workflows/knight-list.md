@@ -2,7 +2,7 @@
 id: conceptual-workflows-knight-list
 title: lore knight list Behaviour
 summary: What the system does internally when `lore knight list` runs — recursive discovery of `.md` files under `.lore/knights/`, frontmatter parsing with graceful fallbacks for missing fields, group derivation from subdirectory path, sorted output as a table or JSON.
-related: ["conceptual-entities-knight", "tech-arch-knight-module", "tech-cli-commands"]
+related: ["conceptual-entities-knight", "tech-arch-knight-module", "tech-cli-commands", "conceptual-workflows-filter-list"]
 stability: stable
 ---
 
@@ -49,11 +49,24 @@ Examples:
 - `.lore/knights/default/tech-lead.md` → group: `default`
 - `.lore/knights/feature-implementation/architect.md` → group: `feature-implementation`
 
-### 5. Sort results
+### 5. Apply filter (when `--filter` is provided)
+
+When one or more `--filter GROUP` tokens are supplied, the collected knight list is post-filtered using subtree (prefix) matching:
+
+- Knights whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter feature-implementation` returns knights with group `feature-implementation` as well as `feature-implementation-sub`, and any other subgroup starting with `feature-implementation-`.
+- Knights with `group == ""` (root-level files, directly under `.lore/knights/`) are **always** included regardless of filter tokens.
+- Unrecognised tokens produce no error — they simply match nothing.
+- When `--filter` is not provided, all knights are returned (existing behaviour preserved).
+
+Fallback values (`id` = stem, `summary` = "") apply to the full list before filtering; filtering does not affect how individual knight metadata is resolved.
+
+See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.
+
+### 6. Sort results
 
 All collected records are sorted alphabetically by the `id` field (ascending, case-sensitive).
 
-### 6. Render output
+### 7. Render output
 
 **Table mode (default):**
 
@@ -98,11 +111,12 @@ $ lore knight list --json | jq -r '.knights[].id'
 
 ## Out of Scope
 
-- Filtering by group or id at the CLI level — use `jq` in the consuming process.
+- Filtering by fields other than group (id, title, etc.) — only group filtering via `--filter` is supported. Use `jq` for further client-side filtering.
 - Showing knight file contents in bulk — there is no "show all" command; call `lore knight show` per knight.
 
 ## Related
 
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — mirrors this behaviour for doctrines
 - conceptual-workflows-artifact-list (lore codex show conceptual-workflows-artifact-list) — stricter: skips files missing required fields
+- conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
 - tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference

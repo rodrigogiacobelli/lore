@@ -2,7 +2,7 @@
 id: conceptual-workflows-artifact-list
 title: lore artifact list Behaviour
 summary: What the system does internally when `lore artifact list` runs — recursive discovery of `.md` files under `.lore/artifacts/`, strict frontmatter validation (files missing required fields are silently skipped), group derivation, and table or JSON output.
-related: ["conceptual-entities-artifact", "tech-cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list"]
+related: ["conceptual-entities-artifact", "tech-cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list"]
 stability: stable
 ---
 
@@ -45,11 +45,24 @@ Examples:
 - `.lore/artifacts/default/codex/overview.md` → group: `default-codex`
 - `.lore/artifacts/feature-implementation/fi-user-story.md` → group: `feature-implementation`
 
-### 5. Sort results
+### 5. Apply filter (when `--filter` is provided)
+
+When one or more `--filter GROUP` tokens are supplied, the validated artifact list is post-filtered using subtree (prefix) matching:
+
+- Artifacts whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter default` returns artifacts with group `default` as well as `default-codex`, `default-transient`, and any other subgroup starting with `default-`.
+- Artifacts with `group == ""` (root-level files, directly under `.lore/artifacts/`) are **always** included regardless of filter tokens.
+- Unrecognised tokens produce no error — they simply match nothing.
+- When `--filter` is not provided, all validated artifacts are returned (existing behaviour preserved).
+
+The `valid` count and skipped-file behaviour are unaffected by the filter — validation runs on all discovered files before the filter is applied.
+
+See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.
+
+### 6. Sort results
 
 All included records are sorted alphabetically by `id` (ascending, case-sensitive).
 
-### 6. Render output
+### 7. Render output
 
 **Table mode (default):**
 
@@ -82,11 +95,12 @@ Note: `lore artifact list` accepts `--json` as a **local** flag in addition to t
 
 ## Out of Scope
 
-- Filtering by group — no filter flags exist.
+- Filtering by fields other than group (title, tags, etc.) — only group filtering via `--filter` is supported.
 - Showing artifact content — use `lore artifact show <id>` for that.
 
 ## Related
 
 - conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — lenient fallback behaviour for knights
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — doctrine listing with validation marking
+- conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
 - tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference

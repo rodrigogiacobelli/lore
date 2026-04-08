@@ -54,3 +54,27 @@ def derive_group(filepath: Path, base_dir: Path) -> str:
     relative = filepath.relative_to(base_dir)
     parts = relative.parts[:-1]
     return "-".join(parts)
+
+
+def group_matches_filter(group: str, filter_groups: list[str]) -> bool:
+    """Return True if ``group`` should be included for the given filter tokens.
+
+    A group is included when:
+    - It is the root group (empty string), or
+    - It equals one of the filter tokens exactly, or
+    - It starts with a filter token followed by ``'-'`` (subtree semantics).
+
+    Examples::
+
+        group_matches_filter("", ["conceptual"])           # True  (root)
+        group_matches_filter("conceptual", ["conceptual"]) # True  (exact)
+        group_matches_filter("conceptual-workflows", ["conceptual"])  # True  (subtree)
+        group_matches_filter("technical", ["conceptual"])  # False (unrelated)
+        group_matches_filter("technical", ["tech"])        # False (no bare-prefix match)
+    """
+    if group == "":
+        return True
+    for token in filter_groups:
+        if group == token or group.startswith(token + "-"):
+            return True
+    return False

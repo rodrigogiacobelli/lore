@@ -5,6 +5,7 @@ summary: What the system does internally when `lore watcher list` and `lore watc
 related:
   - conceptual-entities-watcher
   - conceptual-workflows-knight-list
+  - conceptual-workflows-filter-list
   - tech-cli-commands
 ---
 
@@ -51,11 +52,24 @@ Examples:
 - `.lore/watchers/run-tests-on-push.yaml` → group: `""` (empty)
 - `.lore/watchers/default/change-log-updates.yaml` → group: `default`
 
-### 5. Sort results
+### 5. Apply filter (when `--filter` is provided)
+
+When one or more `--filter GROUP` tokens are supplied, the parsed watcher list is post-filtered using subtree (prefix) matching:
+
+- Watchers whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter default` returns watchers with group `default` as well as `default-ci`, `default-ops`, and any other subgroup starting with `default-`.
+- Watchers with `group == ""` (root-level files, directly under `.lore/watchers/`) are **always** included regardless of filter tokens.
+- Unrecognised tokens produce no error — they simply match nothing.
+- When `--filter` is not provided, all watchers are returned (existing behaviour preserved).
+
+Optional fields (`watch_target`, `interval`, `action`) are unaffected by filtering — the same fallback rules apply to all returned watchers.
+
+See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.
+
+### 6. Sort results
 
 All collected records are sorted alphabetically by the `id` field (ascending, case-sensitive).
 
-### 6. Render output
+### 7. Render output
 
 **Table mode (default):**
 
@@ -125,4 +139,5 @@ JSON mode error (stderr): `{"error": "Watcher \"nonexistent\" not found in .lore
 
 - conceptual-entities-watcher (lore codex show conceptual-entities-watcher) — what a Watcher is
 - conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — mirrors this behaviour for knights
+- conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
 - tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
