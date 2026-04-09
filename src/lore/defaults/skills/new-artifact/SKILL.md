@@ -14,7 +14,6 @@ Create a new Lore artifact. Artifacts are reusable, read-only template files sto
 Ask the user (or read from context):
 - What is this artifact for? (e.g. "a PR review checklist", "an incident report template")
 - Who retrieves it and when?
-- What type is it? (template, checklist, policy, reference, decision, etc.)
 
 ### 2. Check existing artifacts
 
@@ -36,8 +35,6 @@ Artifacts are markdown files with YAML frontmatter. The `id` field is the stable
 ---
 id: <slug>
 title: <Human Readable Title>
-type: <template|checklist|policy|reference|decision>
-group: <optional-group-slug>
 summary: >
   One to two sentences. What this artifact is and when to use it.
 ---
@@ -51,7 +48,6 @@ Rules:
 - `id` must be unique across all artifacts — check `lore artifact list` first
 - `id` should be a stable slug that won't need to change (e.g. `pr-review-checklist`, not `checklist-v2`)
 - Keep content focused — agents load this in full, so every line costs context
-- Use `group` to cluster related artifacts (optional but helpful for `lore artifact list`)
 
 ### 4. Write to `.lore/artifacts/`
 

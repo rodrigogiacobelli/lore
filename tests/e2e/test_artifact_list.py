@@ -1358,14 +1358,16 @@ class TestMissingMetadataFallbackKnight:
 
 
 class TestMissingMetadataFallbackDoctrine:
-    """Doctrine files missing metadata fields fall back gracefully."""
+    """Doctrine design files missing optional fields fall back gracefully."""
 
-    def test_doctrine_missing_id_field_uses_filename_stem_as_id(self, tmp_path):
+    def test_doctrine_id_comes_from_design_frontmatter(self, tmp_path):
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "my-workflow.design.md").write_text(
+            "---\nid: my-workflow\ntitle: My Workflow\nsummary: A workflow.\n---\n"
+        )
         (doctrines_dir / "my-workflow.yaml").write_text(
-            "name: my-workflow\ntitle: My Workflow\nsummary: A workflow\n"
-            "description: Does workflow things.\nsteps:\n  - id: step-1\n    title: Step One\n"
+            "id: my-workflow\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert len(records) == 1
@@ -1374,22 +1376,24 @@ class TestMissingMetadataFallbackDoctrine:
     def test_doctrine_missing_title_uses_id_as_title(self, tmp_path):
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "no-title-doc.design.md").write_text(
+            "---\nid: no-title-doc\n---\n"
+        )
         (doctrines_dir / "no-title-doc.yaml").write_text(
-            "name: no-title-doc\nid: no-title-doc\nsummary: A workflow\n"
-            "description: Short description.\nsteps:\n  - id: step-1\n    title: Step One\n"
+            "id: no-title-doc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert len(records) == 1
         assert records[0]["title"] == "no-title-doc"
 
-    def test_doctrine_missing_summary_and_description_has_empty_string_summary(
-        self, tmp_path
-    ):
+    def test_doctrine_missing_summary_has_empty_string_summary(self, tmp_path):
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "no-summary.design.md").write_text(
+            "---\nid: no-summary\ntitle: No Summary Doctrine\n---\n"
+        )
         (doctrines_dir / "no-summary.yaml").write_text(
-            "name: no-summary\nid: no-summary\ntitle: No Summary Doctrine\n"
-            "steps:\n  - id: step-1\n    title: Step One\n"
+            "id: no-summary\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert len(records) == 1
@@ -1397,63 +1401,68 @@ class TestMissingMetadataFallbackDoctrine:
         assert isinstance(records[0]["summary"], str)
 
     def test_long_description_is_used_as_summary_when_summary_missing(self, tmp_path):
+        """summary comes from design frontmatter only; YAML description is not used."""
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
-        long_desc = (
-            "This is a very long description that goes well beyond eighty characters "
-            "and should be truncated at a word boundary"
+        long_summary = (
+            "This is a very long summary that goes well beyond eighty characters "
+            "and should appear in full without truncation"
+        )
+        (doctrines_dir / "long-desc.design.md").write_text(
+            f"---\nid: long-desc\ntitle: Long Description Doctrine\nsummary: {long_summary}\n---\n"
         )
         (doctrines_dir / "long-desc.yaml").write_text(
-            f"name: long-desc\nid: long-desc\ntitle: Long Description Doctrine\n"
-            f"description: {long_desc!r}\nsteps:\n  - id: step-1\n    title: Step One\n"
+            "id: long-desc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert len(records) == 1
-        summary = records[0]["summary"]
-        assert summary.endswith("...")
+        assert records[0]["summary"] == long_summary
 
     def test_short_description_is_used_whole_without_ellipsis(self, tmp_path):
+        """summary from design frontmatter is returned as-is."""
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
-        short_desc = "Short description."
+        short_summary = "Short description."
+        (doctrines_dir / "short-desc.design.md").write_text(
+            f"---\nid: short-desc\ntitle: Short Desc\nsummary: {short_summary}\n---\n"
+        )
         (doctrines_dir / "short-desc.yaml").write_text(
-            f"name: short-desc\nid: short-desc\ntitle: Short Desc\n"
-            f"description: {short_desc!r}\nsteps:\n  - id: step-1\n    title: Step One\n"
+            "id: short-desc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert len(records) == 1
-        assert records[0]["summary"] == short_desc
+        assert records[0]["summary"] == short_summary
 
-    def test_summary_field_takes_precedence_over_description(self, tmp_path):
+    def test_summary_field_from_design_frontmatter(self, tmp_path):
+        """summary comes exclusively from design frontmatter."""
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "has-both.design.md").write_text(
+            "---\nid: has-both\ntitle: Has Both\nsummary: This is the explicit summary.\n---\n"
+        )
         (doctrines_dir / "has-both.yaml").write_text(
-            "name: has-both\nid: has-both\ntitle: Has Both\n"
-            "summary: This is the explicit summary.\n"
-            "description: This is a long description that would otherwise be used.\n"
-            "steps:\n  - id: step-1\n    title: Step One\n"
+            "id: has-both\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert len(records) == 1
         assert records[0]["summary"] == "This is the explicit summary."
 
-    def test_list_doctrines_does_not_crash_with_empty_yaml_file(self, tmp_path):
+    def test_list_doctrines_skips_yaml_only_file_gracefully(self, tmp_path):
+        """A YAML-only file (no .design.md) returns empty list without crashing."""
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
         (doctrines_dir / "empty.yaml").write_text("")
         records = list_doctrines(doctrines_dir)
-        assert len(records) == 1
-        record = records[0]
-        assert "id" in record
-        assert "group" in record
-        assert "title" in record
-        assert "summary" in record
+        assert records == []
 
     def test_list_doctrines_record_has_valid_key_and_new_fields_together(self, tmp_path):
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "my-doctrine.design.md").write_text(
+            "---\nid: my-doctrine\ntitle: My Doctrine\nsummary: X.\n---\n"
+        )
         (doctrines_dir / "my-doctrine.yaml").write_text(
-            "name: my-doctrine\ndescription: X.\nsteps:\n  - id: s\n    title: S\n"
+            "id: my-doctrine\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert "valid" in records[0]
@@ -1522,8 +1531,11 @@ class TestMissingMetadataFallbackReturnShape:
     def test_list_doctrines_group_is_empty_string_for_root_level_file(self, tmp_path):
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "root-doc.design.md").write_text(
+            "---\nid: root-doc\ntitle: Root Doc\nsummary: X.\n---\n"
+        )
         (doctrines_dir / "root-doc.yaml").write_text(
-            "name: root-doc\ndescription: X.\nsteps:\n  - id: s\n    title: S\n"
+            "id: root-doc\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert records[0]["group"] == ""
@@ -1532,8 +1544,11 @@ class TestMissingMetadataFallbackReturnShape:
         doctrines_dir = tmp_path / "doctrines"
         subdir = doctrines_dir / "workflow"
         subdir.mkdir(parents=True)
+        (subdir / "nested-doc.design.md").write_text(
+            "---\nid: nested-doc\ntitle: Nested Doc\nsummary: X.\n---\n"
+        )
         (subdir / "nested-doc.yaml").write_text(
-            "name: nested-doc\ndescription: X.\nsteps:\n  - id: s\n    title: S\n"
+            "id: nested-doc\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(doctrines_dir)
         assert records[0]["group"] == "workflow"

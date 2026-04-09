@@ -1,7 +1,7 @@
 ---
 id: tech-arch-source-layout
 title: Source Layout
-summary: The src/lore/ source tree with one-line descriptions per module, including init.py, root.py, oracle.py, doctrine.py, codex.py (including map_documents, chaos_documents, and _read_related), artifact.py, validators.py (including validate_chaos_threshold), paths.py, knight.py, frontmatter.py (including extra_fields parameter), and graph.py. Covers package entry points, defaults directory (including doctrines, knights, and artifacts/transient/), migrations directory (v1_to_v2 through v5_to_v6), py.typed PEP 561 marker, and the tests layout. Documents the lore.models public API (frozen dataclasses, from_row/from_dict pattern, __all__).
+summary: The src/lore/ source tree with one-line descriptions per module, including init.py, root.py, oracle.py, doctrine.py (two-file model: list_doctrines/show_doctrine/create_doctrine), codex.py (map_documents, chaos_documents, _read_related), artifact.py, validators.py (validate_chaos_threshold), paths.py, knight.py, frontmatter.py (extra_fields), and graph.py. Covers package entry points, defaults directory (paired .yaml + .design.md doctrines, knights, artifacts/transient/), migrations (v1-v6), py.typed, and tests layout. Documents lore.models public API (frozen dataclasses, from_row/from_dict, __all__). Notes breaking Doctrine API change: name/description removed; id/title/summary added.
 related: ["tech-overview", "standards-dry", "standards-single-responsibility"]
 stability: stable
 ---
@@ -49,9 +49,16 @@ lore/
 |          |- AGENTS.md         # Lightweight agent basics guide — directs agents to `lore --help` for the full model
 |          |- gitignore         # Default .gitignore (copied as .lore/.gitignore)
 |          |- schema.sql        # SQLite schema for init
-|          |- doctrines/        # Default doctrine — the adversarial-spec pipeline (all carry top-level id, title, summary keys)
-|          |  +-- adversarial-spec.yaml
+|          |- doctrines/        # Default doctrines — each is a paired .yaml (id + steps) and .design.md (id, title, summary + body)
 |          |  +-- update-changelog.yaml
+|          |  +-- update-changelog.design.md
+|          |  +-- feature-implementation/
+|          |     +-- feature-implementation.yaml
+|          |     +-- feature-implementation.design.md
+|          |     +-- quick-feature-implementation.yaml
+|          |     +-- quick-feature-implementation.design.md
+|          |     +-- tdd-implementation.yaml
+|          |     +-- tdd-implementation.design.md
 |          |- knights/          # Default knights — the nine adversarial-spec roles (all carry YAML frontmatter with id, title, summary)
 |          |  |- architect-analyst.md
 |          |  |- architect-critic.md
@@ -103,7 +110,7 @@ The `lore` command is registered as a `console_scripts` entry point in `pyprojec
 | `root.py` | `find_project_root()` — upward directory traversal to locate `.lore/`. Raises `ProjectNotFoundError` when none is found. See tech-arch-project-root-detection (lore codex show tech-arch-project-root-detection). |
 | `init.py` | `lore init` implementation: creates `.lore/` directory, seeds database, copies defaults (doctrines, knights, artifacts), writes `AGENTS.md`. Provides `_copy_defaults_tree(source_package, target_dir, exclude=None, label="artifacts")` — recursive tree copier with an exclude set and a `label` parameter that controls the prefix shown in status messages (e.g., `label="knights/default"` emits `Created knights/default/...`). The former `_copy_defaults` flat copier has been removed — all three seeding calls now use `_copy_defaults_tree`. |
 | `oracle.py` | `generate_reports()` — wipes and recreates `.lore/reports/` on every run, generating `summary.md` and per-quest/per-mission markdown files. |
-| `doctrine.py` | Doctrine YAML loading, normalisation pipeline (`_normalize`), validation pipeline (`_validate`, `_validate_required_fields`, `_validate_steps`, `_check_cycles`), `DoctrineError` propagation, and `validate_doctrine_content()` entry point. `list_doctrines` returns enriched dicts with `id`, `group`, `title`, `summary`, `valid` (and optionally `errors`). `_normalize` passes through `id`, `title`, `summary` if present. `validate_doctrine_content` validates that `id` matches `expected_name` when present. Dict contracts unchanged — typed `Doctrine` and `DoctrineStep` classes live in `models.py`, not here. Exports `scaffold_doctrine(name: str) -> str` — generates a placeholder YAML skeleton for `doctrine_new` when no content is supplied via stdin or `--from`. |
+| `doctrine.py` | Two-file doctrine model (`.yaml` + `.design.md`). Public API: `list_doctrines(doctrines_dir)` — scans `*.design.md` files, pairs with `.yaml` counterparts, returns only complete pairs (orphaned/unpaired files silently skipped); `show_doctrine(id, doctrines_dir)` — loads both files, validates YAML schema, normalises steps, returns `{id, title, summary, design, raw_yaml, steps}`; `create_doctrine(name, yaml_src, design_src, doctrines_dir)` — validates both source files, writes both to `doctrines_dir`. Internal pipeline: `_validate_yaml_schema(data, name)`, `_validate_design_frontmatter(meta, name)`, `_validate_steps`, `_check_cycles`, `_normalize`. Delegates frontmatter parsing to `frontmatter.parse_frontmatter_doc`. `DoctrineError` propagated to CLI. Removed: `load_doctrine`, `validate_doctrine_content`, `scaffold_doctrine`. |
 | `codex.py` | Codex document scanning (`scan_codex`), single-document retrieval by ID (`read_document`), keyword search over titles and summaries (`search_documents`), BFS graph traversal (`map_documents`), and probabilistic random-walk traversal (`chaos_documents`). `map_documents(codex_dir, start_id, depth)` performs BFS over `related` frontmatter links and returns a list of document dicts in traversal order (or `None` if the root ID is not found). `chaos_documents(codex_dir, start_id, threshold, rng=None)` performs a bidirectional-adjacency random walk and returns a non-deterministic subset of reachable documents (or `None` if the seed ID is not found). Private helper `_read_related(filepath, index)` extracts and validates `related` links from a single document's frontmatter; used by both traversal functions. No write operations. Dict contracts unchanged — typed `CodexDocument` class lives in `models.py`. Delegates frontmatter parsing to `frontmatter.parse_frontmatter_doc` (metadata-only for scan and `_read_related`) and `frontmatter.parse_frontmatter_doc_full` (includes body for show). No longer reads each file twice. |
 | `artifact.py` | Artifact file scanning (`scan_artifacts`) and retrieval by ID (`read_artifact`). No write operations. Dict contracts unchanged — typed `Artifact` class lives in `models.py`. `scan_artifacts` uses `rglob("*.md")` on the `artifacts_dir` root. Delegates frontmatter parsing to `frontmatter.parse_frontmatter_doc` (metadata-only for scan) and `frontmatter.parse_frontmatter_doc_full` (includes body for show). No longer reads each file twice. |
 | `validators.py` | Pure-utility input validators. No imports from any `lore.*` module. Called by both `db.py` (authoritative enforcement) and `cli.py` (UX error translation). Functions: `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_quest_id_loose`, `route_entity`, `validate_chaos_threshold`. |
@@ -145,7 +152,7 @@ is desired, add explicit named imports to `__init__.py` — never `from lore.mod
 | `Dependency` | DB-backed dataclass | Frozen; reflects `dependencies` schema exactly |
 | `BoardMessage` | DB-backed dataclass | Frozen; reflects read-side contract (no `deleted_at`) |
 | `DoctrineStep` | File-based dataclass | Frozen; one step in a Doctrine workflow |
-| `Doctrine` | File-based dataclass | Frozen; full doctrine with `tuple[DoctrineStep, ...]` |
+| `Doctrine` | File-based dataclass | Frozen; fields: `id`, `title`, `summary`, `steps: tuple[DoctrineStep, ...]`. `name` and `description` removed (breaking change). |
 | `Artifact` | File-based dataclass | Frozen; `content` field maps from `read_artifact()["body"]` |
 | `CodexDocument` | File-based dataclass | Frozen; four-field listing contract (no `body`) |
 | `Knight` | File-based dataclass | Frozen; `name` (stem) and `content` (markdown body) |
@@ -192,7 +199,7 @@ DB-backed types are constructed from `db.py` return values via classmethods.
 | `BoardMessage` | `from_dict(d: dict)` | `db.get_board_messages()` returns `list[dict]` |
 | `Artifact` | `from_dict(d: dict)` | `artifact.read_artifact()` — maps `body` → `content` |
 | `CodexDocument` | `from_dict(d: dict)` | `codex.scan_codex()` or `codex.read_document()` |
-| `Doctrine` | `from_dict(d: dict)` | `doctrine.load_doctrine(path)` — the `_normalize()` output |
+| `Doctrine` | `from_dict(d: dict)` | `doctrine.show_doctrine(id, doctrines_dir)` — accepts `{id, title, summary, steps}` |
 | `DoctrineStep` | `from_dict(d: dict)` | Each step dict in the normalized `steps` list |
 | `Knight` | Direct construction | No scanner function; supply `name` and `content` directly |
 | `Watcher` | `from_dict(d: dict)` | `watcher.load_watcher(path)` or `watcher.list_watchers(dir)[i]` |
@@ -204,9 +211,7 @@ SQLite returns `auto_close` as an `int` (0 or 1); the `Quest.auto_close` field i
 fields by name, never `cls(**d)`. This prevents `TypeError` from unexpected keys in the
 source dict (e.g., `body`, `path`, `valid` keys present in scan-module output).
 
-**`Doctrine.from_dict()` input:** Accepts the normalized dict from `doctrine.load_doctrine()`,
-not from `doctrine.list_doctrines()`. The list function output includes `valid`, `errors`,
-and `filename` — not valid `Doctrine.from_dict()` input.
+**`Doctrine.from_dict()` input:** Accepts the dict from `doctrine.show_doctrine(id, doctrines_dir)` — shape `{id, title, summary, steps}`. Does **not** accept `doctrine.list_doctrines()` output (which has no `steps` key). `Doctrine` fields changed: `name` and `description` removed; `id`, `title`, `summary` added. This is a **breaking API change** — Realm code using `Doctrine.from_dict()` with the old `{name, description, steps}` shape must be updated.
 
 **`CodexDocument` body:** The `body` field is excluded from `CodexDocument`. Realm that
 needs full document content calls `codex.read_document(root, doc_id)` and reads `body`

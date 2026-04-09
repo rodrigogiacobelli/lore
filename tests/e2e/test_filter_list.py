@@ -354,10 +354,17 @@ def _write_knight(project_dir, rel_path, content):
 
 
 def _write_doctrine(project_dir, rel_path, content):
-    """Write a YAML file into .lore/doctrines/."""
+    """Write a paired .yaml + .design.md into .lore/doctrines/.
+
+    rel_path must be a .yaml path; a matching .design.md is created automatically.
+    The id is derived from the YAML filename stem.
+    """
     path = project_dir / ".lore" / "doctrines" / rel_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
+    stem = path.stem
+    design_path = path.with_suffix("").with_suffix(".design.md")
+    design_path.write_text(f"---\nid: {stem}\ntitle: {stem.replace('-', ' ').title()}\nsummary: \n---\n")
     return path
 
 

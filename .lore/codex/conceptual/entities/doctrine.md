@@ -1,14 +1,13 @@
 ---
 id: conceptual-entities-doctrine
 title: Doctrine
-summary: What a Doctrine is — a reusable, passive workflow template written in YAML that describes the steps, ordering, and suggested knights for a body of work. Doctrines are read by orchestrators to guide quest and mission creation; they have no execution engine of their own.
+summary: What a Doctrine is — a reusable, passive workflow template stored as a paired .yaml and .design.md file. The .design.md is the primary entry point for discovery. Doctrines are read by orchestrators to guide quest and mission creation; they have no execution engine of their own.
 related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-knight", "tech-doctrine-internals"]
-stability: stable
 ---
 
 # Doctrine
 
-A Doctrine is a reusable workflow template written in YAML. Doctrines are **passive documents** — there is no template engine, no variable substitution, no execution. An orchestrator reads a Doctrine and uses it as a guide when manually creating the corresponding Quests (lore codex show conceptual-entities-quest) and Missions (lore codex show conceptual-entities-mission) via CLI commands.
+A Doctrine is a reusable workflow template stored as two paired files: a `.yaml` for machine-readable steps and a `.design.md` for human-readable design documentation. Doctrines are **passive documents** — there is no template engine, no variable substitution, no execution. An orchestrator reads a Doctrine and uses it as a guide when manually creating the corresponding Quests (lore codex show conceptual-entities-quest) and Missions (lore codex show conceptual-entities-mission) via CLI commands.
 
 A Doctrine describes:
 
@@ -17,7 +16,9 @@ A Doctrine describes:
 - Recommended Knights (lore codex show conceptual-entities-knight) for each step
 - Notes about how to execute each step, including references to Artifact (lore codex show conceptual-entities-artifact) IDs where a step produces a template-derived document
 
-Doctrines are stored in the project's `.lore/doctrines/` directory tree. For the technical schema (field names, types, required/optional) see tech-db-schema (lore codex show tech-db-schema). For CLI commands (`lore doctrine show`, `lore doctrine list`, etc.) see tech-cli-commands (lore codex show tech-cli-commands).
+The `.design.md` file contains rich human-readable documentation — tables, narratives, phase overviews — and serves as the primary entry point for all discovery. The `.yaml` file contains only machine-readable step data.
+
+Doctrines are stored in the project's `.lore/doctrines/` directory tree. For the technical schema (field names, types, required/optional) see tech-doctrine-internals (lore codex show tech-doctrine-internals). For CLI commands (`lore doctrine show`, `lore doctrine list`, etc.) see tech-cli-commands (lore codex show tech-cli-commands).
 
 ## Python API
 
@@ -27,16 +28,16 @@ Doctrines are stored in the project's `.lore/doctrines/` directory tree. For the
 from lore.models import Doctrine, DoctrineStep
 ```
 
-`Doctrine` fields: `name`, `description`, `steps` (a `tuple[DoctrineStep, ...]` — an ordered, immutable sequence). `DoctrineStep` fields: `id`, `title`, `priority`, `type`, `knight`, `notes`, `needs` (a `list[str]`, always present, empty list when the step has no dependencies).
+`Doctrine` fields: `id`, `title`, `summary`, `steps` (a `tuple[DoctrineStep, ...]` — an ordered, immutable sequence). `DoctrineStep` fields: `id`, `title`, `priority`, `type`, `knight`, `notes`, `needs` (a `list[str]`, always present, empty list when the step has no dependencies).
 
-**Construction source:** `Doctrine.from_dict()` accepts the dict returned by `load_doctrine(filepath)` — the normalised doctrine dict. It does **not** accept `list_doctrines()` output. `list_doctrines()` returns validation-status dicts containing `"valid"`, `"errors"`, and `"filename"` keys — passing these to `from_dict()` raises `KeyError: 'steps'`. The correct construction pattern is:
+**Construction source:** `Doctrine.from_dict()` accepts the dict returned by `show_doctrine(id, doctrines_dir)`. It does **not** accept `list_doctrines()` output. `list_doctrines()` returns listing dicts containing `"valid"` and `"filename"` keys but no `"steps"` — passing these to `from_dict()` raises `KeyError: 'steps'`. The correct construction pattern is:
 
 ```python
-from lore.doctrine import load_doctrine
+from lore.doctrine import show_doctrine
 from lore.models import Doctrine
 
-normalized = load_doctrine(path)
-doctrine_obj = Doctrine.from_dict(normalized)
+result = show_doctrine("my-workflow", doctrines_dir)
+doctrine_obj = Doctrine.from_dict(result)
 ```
 
 Doctrine and DoctrineStep objects are immutable — attempting to assign to any field raises `FrozenInstanceError`. The `steps` tuple also prevents `append` — mutation attempts raise `AttributeError`.
@@ -44,71 +45,87 @@ Doctrine and DoctrineStep objects are immutable — attempting to assign to any 
 
 ## Discovery
 
-`lore init` places bundled default doctrines inside `.lore/doctrines/default/`. User-created doctrines (added via `lore doctrine new`) land directly in `.lore/doctrines/`. Both `lore doctrine list` and `lore doctrine show` search the full `.lore/doctrines/` directory tree recursively — they discover doctrines regardless of which subdirectory the file lives in.
+`lore init` places bundled default doctrines inside `.lore/doctrines/default/`. Each default doctrine is a paired `.yaml` and `.design.md` file. User-created doctrines (added via `lore doctrine new`) land directly in `.lore/doctrines/`. Both `lore doctrine list` and `lore doctrine show` search the full `.lore/doctrines/` directory tree recursively.
 
-`lore doctrine list` returns a single flat merged list of all doctrines found anywhere in the tree. The list is sorted by full filesystem path. No subdirectory annotation or `(default)` label is shown; all doctrines appear identically regardless of origin. Doctrines that fail validation still appear in the list, marked with a warning.
+**The `.design.md` file is the discovery entry point.** `lore doctrine list` scans for `*.design.md` files and checks for a matching `.yaml` in the same directory. A `.yaml` with no `.design.md` counterpart is completely invisible — it does not appear in any listing or show operation.
 
-`lore doctrine show <name>` resolves a doctrine by its filename stem (e.g., `feature-workflow` for `feature-workflow.yaml`). The search is recursive across the full tree. A name containing a path separator does not resolve — resolution is always by stem only. If no match is found, the command exits with a "not found" error. If the file is found but fails validation, the specific error is printed and the command exits with code 1.
+`lore doctrine list` returns a single flat sorted list of all valid doctrine pairs found anywhere in the tree. Only complete pairs (both files present and parseable) are returned. Orphaned design files (missing YAML) and YAML-only files are silently skipped.
 
-Entity names are expected to be unique across the entire tree. If a user places two files with the same stem in different subdirectories, both appear in list output, and show returns the first match by filesystem sort order.
+`lore doctrine show <name>` resolves a doctrine by its filename stem (e.g., `feature-workflow` for `feature-workflow.design.md` + `feature-workflow.yaml`). The search is recursive across the full tree. If either file is missing, the command exits with a "not found" error.
+
+Entity names are expected to be unique across the entire tree.
 
 ## Validation Rules
 
-When a Doctrine is read, it is validated before use. Validation is performed by the `doctrine.py` module (see tech-doctrine-internals (lore codex show tech-doctrine-internals)). The rules:
+When a Doctrine is read, both files are validated. Validation is performed by the `doctrine.py` module (see tech-doctrine-internals (lore codex show tech-doctrine-internals)).
 
-- `name`, `description`, and `steps` are required at the top level.
+**YAML schema (`<name>.yaml`):**
+- `id` and `steps` are required at the top level.
+- `name`, `description`, `title`, and `summary` must NOT appear in the YAML — these are design file fields. Their presence is a validation error.
+- The `id` value must match the filename stem exactly.
 - `steps` must be a non-empty list.
 - Each step must have an `id` and a `title`.
 - Step `id` values must be unique within the doctrine.
 - `priority`, if present, must be an integer 0–4.
-- `type`, if present, must be a string. Any string value is accepted; there is no fixed vocabulary. A non-string value (for example a number or boolean) causes validation to fail.
-- Every entry in a step's `needs` list must reference an existing step `id` within the same doctrine.
-- `needs` references must not form a cycle (same depth-first algorithm used for mission dependencies).
-- The `name` field in the YAML must match the filename (without `.yaml` extension).
-- Unknown top-level and step-level keys are silently ignored (forward-compatible).
+- `type`, if present, must be a string.
+- Every entry in a step's `needs` list must reference an existing step `id`.
+- `needs` references must not form a cycle.
 
-If validation fails, `lore doctrine show` prints the specific error and exits with code 1. Doctrines with validation errors are still listed by `lore doctrine list` but are marked with a warning.
+**Design file schema (`<name>.design.md`):**
+- Must have YAML frontmatter.
+- `id` is required in frontmatter and must match the filename stem exactly.
+- `title` and `summary` are optional.
 
 ## Soft-Delete Semantics
 
-Doctrines are soft-deleted by renaming the YAML file with a `.deleted` suffix. Glob patterns that match `*.yaml` naturally exclude `.deleted` files, so soft-deleted doctrines are invisible to all normal operations. Creating a new doctrine with the same name as a soft-deleted one succeeds; the old `.deleted` file is left as-is.
+Soft-delete for the two-file model is Post-MVP. There is no `lore doctrine delete` CLI command. When soft-delete is implemented, both files (`.yaml` and `.design.md`) will be renamed atomically.
 
 ## Example
 
+**`my-workflow.design.md`:**
+```markdown
+---
+id: my-workflow
+title: My Workflow
+summary: Standard development workflow.
+---
+
+# My Workflow
+
+## Purpose
+
+This workflow guides a developer through the standard development lifecycle.
+
+## Phases
+
+| Phase | Steps |
+|-------|-------|
+| Design | design |
+| Implementation | implement |
+| Review | review-design |
+```
+
+**`my-workflow.yaml`:**
 ```yaml
-name: feature-workflow
-description: Standard feature development workflow
+id: my-workflow
 steps:
   - id: design
     title: Design the feature
     priority: 1
-    type: worker
+    type: knight
     knight: designer.md
     notes: Produce a design document with acceptance criteria
   - id: review-design
     title: Human review of design
     priority: 1
-    type: approval
+    type: human
     needs: [design]
-    notes: Pause for human to review and approve the design
   - id: implement
     title: Implement the feature
     priority: 1
-    type: worker
+    type: knight
     needs: [review-design]
     knight: developer.md
-    notes: Write the code following the design document
-  - id: commit
-    title: Commit and push implementation
-    priority: 2
-    needs: [implement]
-    notes: Stage changes and commit with a descriptive message
-  - id: test
-    title: Write and run tests
-    priority: 1
-    type: qa
-    needs: [commit]
-    knight: qa.md
 ```
 
 ## Related

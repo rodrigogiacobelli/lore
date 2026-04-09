@@ -1,24 +1,69 @@
 id: update-changelog
-title: Update Changelog
-summary: Single-step doctrine to update the project changelog after a merge to develop
-name: update-changelog
-description: >
-  Updates the project CHANGELOG.md after a merge to develop.
-  Reads the merged commit messages and appends a new entry.
-
 steps:
   - id: update-changelog-entry
     title: Update changelog from commits since last entry
     type: knight
     knight: changelog-scribe
     priority: 0
-    notes: >
-      Run as the changelog-scribe knight.
-      Read CHANGELOG.md to find the last recorded version and its date.
-      Query git for all commits since that date (no fixed cap).
-      Read pyproject.toml for the current version.
-      Interpret and group commits into Keep-a-Changelog subsections.
-      Create a new versioned block if the pyproject.toml version is newer than
-      the last changelog entry; otherwise add to the existing block.
-      Never copy raw commit subjects — rewrite as plain English.
-      Mark done when CHANGELOG.md is updated.
+    notes: |
+      Read `CHANGELOG.md`.
+      Find the most recent versioned block (e.g. `## [0.3.5] - 2025-11-01`) or the `## [Unreleased]` section.
+      Note the date of the last recorded versioned block — this is your git lower bound.
+
+      Run:
+        git log --oneline --since="<last-recorded-date>"
+      If no versioned block exists yet, use the full log:
+        git log --oneline
+
+      Read `pyproject.toml` and extract the `version` field under `[project]`.
+
+      Decide where to write:
+      - If pyproject.toml version differs from the last versioned block → create a new
+        `## [<version>] - <today's date>` block.
+      - If versions match → add to the existing block under the appropriate subsections.
+      - If only `## [Unreleased]` exists → write into it; do not create a versioned block yet.
+
+      Map each commit to a Keep-a-Changelog subsection:
+        feat:                     → Added
+        refactor:, perf:          → Changed
+        deprecate:                → Deprecated
+        remove: or feature removal → Removed
+        fix:                      → Fixed
+        security:                 → Security
+        BREAKING CHANGE or ! suffix → relevant section above, prefix bullet with "**Breaking:**"
+        chore:, test:, ci:, build:, docs: → Omit unless the change has a direct user-visible effect
+
+      Rewrite every included commit as plain English describing the user-visible change.
+      Do not copy raw commit subjects.
+      Merge closely related commits into a single bullet when they form one coherent change.
+      Omit merge commits and version-bump-only commits.
+
+      Insert the new block directly below `## [Unreleased]` if present,
+      otherwise at the top of the versioned list. Maintain reverse-chronological order.
+
+      Format (Keep a Changelog 1.1.0 — omit subsections with no items):
+        ## [<version>] - <YYYY-MM-DD>
+
+        ### Added
+        - <item>
+
+        ### Changed
+        - <item>
+
+        ### Deprecated
+        - <item>
+
+        ### Removed
+        - <item>
+
+        ### Fixed
+        - <item>
+
+        ### Security
+        - <item>
+
+      Sections must follow this order: Added → Changed → Deprecated → Removed → Fixed → Security.
+      Never touch changelog content above the block you are writing.
+
+      Post a board message: "Updated CHANGELOG.md — wrote [<version>] block covering N commits"
+      Mark done: `lore done <mission-id>`

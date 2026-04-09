@@ -1,53 +1,81 @@
 ---
 id: tech-doctrine-internals
 title: Doctrine Module Internals
-summary: Technical reference for src/lore/doctrine.py. Covers YAML loading, normalisation pipeline (_normalize), validation pipeline (_validate, _validate_required_fields, _validate_steps, _check_cycles), DoctrineError propagation, and the validate_doctrine_content() entry point.
+summary: Technical reference for src/lore/doctrine.py. Covers two-file doctrine model (design.md + yaml), list_doctrines() scanning .design.md files, show_doctrine() returning both raw content and normalized steps, create_doctrine() atomic two-file write, _validate_yaml_schema(), _validate_design_frontmatter(), _validate_steps(), _normalize(), _check_cycles(), and DoctrineError propagation.
 related: ["conceptual-entities-doctrine", "tech-cli-commands", "tech-arch-source-layout"]
-stability: stable
 ---
 
 # Doctrine Module Internals
 
 **Source module:** `src/lore/doctrine.py`
-**Module size:** 206 lines
 
-This module handles all doctrine loading and validation. It is invoked when a doctrine is applied to a quest (`lore doctrine apply`), listed (`lore doctrine list`), or validated during import (`lore doctrine show`).
+This module handles all doctrine discovery, loading, validation, and creation. It is invoked when a doctrine is listed (`lore doctrine list`), shown (`lore doctrine show`), or created (`lore doctrine new`).
 
 For conceptual documentation on what a doctrine is and how it is used, see conceptual-entities-doctrine (lore codex show conceptual-entities-doctrine).
 
 ## Public Interface
 
-### `load_doctrine(filepath: Path) -> dict`
+### `list_doctrines(doctrines_dir: Path, filter_groups: list[str] | None = None) -> list[dict]`
 
-Loads and validates a doctrine from a `.yaml` file on disk.
+Scans `doctrines_dir` recursively for `*.design.md` files. For each design file found, checks for a matching `<stem>.yaml` in the **same directory**. Only complete, valid pairs are returned. Orphaned design files (no YAML) and YAML-only files are silently skipped.
 
-**Call chain:** `_parse_yaml` → `_validate` → `_normalize`
+Frontmatter parsing delegates to `frontmatter.parse_frontmatter_doc(filepath, required_fields=("id",), extra_fields=("title", "summary"))`. If parsing fails or `id` is absent, the file is skipped.
 
-Returns the normalised doctrine dict on success. Raises `DoctrineError` on any failure.
+Return value per entry:
+```python
+{
+    "id": str,        # from design frontmatter
+    "group": str,     # from paths.derive_group()
+    "title": str,     # from design frontmatter; fallback to id
+    "summary": str,   # from design frontmatter; fallback to ""
+    "filename": str,  # design file name (e.g. "my-workflow.design.md")
+    "valid": True,    # always True — invalid/orphaned entries are skipped
+}
+```
 
-### `validate_doctrine_content(text: str, expected_name: str) -> dict`
+No `name`, `description`, or `errors` keys in output.
 
-Validates raw YAML text against schema rules. Used when the CLI receives doctrine content as text (e.g., from stdin or a user-supplied string) rather than from a file.
+**`list_doctrines()` output is NOT valid input for `Doctrine.from_dict()`.** The listing dict does not contain `steps`. Use `show_doctrine()` to get the full doctrine dict.
 
-**Call chain:** `_parse_yaml` → `_validate_required_fields` → name-match check → id-match check (if `id` present, must equal `expected_name`) → `_validate_steps`
+### `show_doctrine(doctrine_id: str, doctrines_dir: Path) -> dict`
 
-Returns the parsed (but **not normalised**) data dict on success. Raises `DoctrineError` on failure.
+Searches recursively for `<doctrine_id>.design.md` and `<doctrine_id>.yaml` under `doctrines_dir`.
 
-**Difference from `load_doctrine`:** `validate_doctrine_content` does not call `_normalize` and accepts `expected_name` as a command-line argument rather than deriving it from a filename.
+Error cases:
+- Design file not found → `DoctrineError(f"Doctrine '{doctrine_id}' not found: design file missing")`
+- YAML file not found → `DoctrineError(f"Doctrine '{doctrine_id}' not found: YAML file missing")`
+- Both missing → `DoctrineError(f"Doctrine '{doctrine_id}' not found")`
+- YAML parse failure → `DoctrineError(f"YAML parsing error: {details}")`
+- YAML validation failure → per schema error messages
 
-### `list_doctrines(doctrines_dir: Path) -> list[dict]`
+On success, returns:
+```python
+{
+    "id": str,          # from design frontmatter
+    "title": str,       # from design frontmatter; fallback to id
+    "summary": str,     # from design frontmatter; fallback to ""
+    "design": str,      # raw file content of .design.md (including frontmatter block)
+    "raw_yaml": str,    # raw file content of .yaml (for CLI verbatim dump; excluded from --json output)
+    "steps": list[dict] # normalized step dicts from _normalize()
+}
+```
 
-Lists doctrine `.yaml` files discoverable from `doctrines_dir`, extracting metadata from each. Returns a list of dicts with fields: `id`, `group`, `title`, `summary`, `name`, `filename`, `description`, `valid`, and (on failure) `errors`. The `id` field falls back to filename stem. `title` falls back to `id`. `summary` falls back to `description` truncated via `textwrap.shorten(desc_str, width=83, placeholder="...")`, or empty string if both are absent. GROUP is derived via `paths.derive_group(filepath, doctrines_dir)`.
+### `create_doctrine(name: str, yaml_source_path: Path, design_source_path: Path, doctrines_dir: Path) -> dict`
 
-The function uses a single `doctrines_dir.rglob("*.yaml")` call to search the full directory tree at all depths. This discovers doctrines in `doctrines/default/` (Lore-seeded), at the flat parent level (user-created), and in any user-created subdirectories at any depth. The result is wrapped in `sorted()` and iterated for parsing. The returned list is a single flat sequence with no source-directory annotation — callers cannot distinguish whether a doctrine came from the flat parent, the `default/` subdirectory, or any other subdirectory.
+Validates both source files, then writes `<name>.yaml` and `<name>.design.md` to `doctrines_dir` (flat, not subdirectory).
 
-Invalid doctrines are included in the list with `valid=False`. This allows `lore doctrine list` to surface broken doctrines rather than silently omitting them.
+Validation order (all before any write):
+1. `validate_name(name)` from `validators.py` — raises `DoctrineError` on failure
+2. Duplicate check — `doctrines_dir.rglob(f"{name}.yaml")` or `doctrines_dir.rglob(f"{name}.design.md")` — raises `DoctrineError(f"Error: doctrine '{name}' already exists.")`
+3. YAML source file exists — raises `DoctrineError(f"File not found: {yaml_source_path}")`
+4. Design source file exists — raises `DoctrineError(f"File not found: {design_source_path}")`
+5. `_validate_yaml_schema(yaml_data, name)` — validates YAML content
+6. `_validate_design_frontmatter(design_meta, name)` — validates design frontmatter
 
-**`list_doctrines()` output is NOT valid input for `Doctrine.from_dict()`.** The listing
-dict contains `id`, `group`, `title`, `summary`, `name`, `filename`, `description`, `valid`, and optionally `errors`. The
-`Doctrine` typed model requires the normalized dict from `_normalize()` (via `load_doctrine()`),
-which has `name`, `description`, and `steps`. Conflating the two shapes will cause a
-`KeyError` on `steps`. See [Typed Model: `Doctrine`](#typed-model-doctrine) below.
+Returns:
+```python
+{"name": name, "yaml_filename": f"{name}.yaml", "design_filename": f"{name}.design.md"}
+```
 
 ## Exception: `DoctrineError`
 
@@ -63,16 +91,23 @@ Parses YAML text using `yaml.safe_load`. Raises `DoctrineError` if:
 - The YAML is syntactically invalid (`yaml.YAMLError`)
 - The parsed result is not a dict (`"Doctrine must be a YAML mapping"`)
 
-### `_validate(data: dict, filename: str) -> None`
+### `_validate_yaml_schema(data: dict, name: str) -> None`
 
-Top-level validation dispatcher for file-based loading. Calls:
-1. `_validate_required_fields(data)` — checks top-level fields
-2. Name-match check — `data["name"]` must equal `filename` with the `.yaml` suffix stripped
-3. `_validate_steps(data["steps"])` — validates the steps list
+Checks the new YAML schema (`id` and `steps` only):
+1. `id` present → raises `DoctrineError("Missing required field: id")`
+2. `steps` present → raises `DoctrineError("Missing required field: steps")`
+3. `id` matches `name` → raises `DoctrineError(f'Doctrine id "{data["id"]}" does not match command argument "{name}"')`
+4. `name` key in data → raises `DoctrineError("Unexpected field in YAML: name")`
+5. `description` key in data → raises `DoctrineError("Unexpected field in YAML: description")`
+6. Calls `_validate_steps(data["steps"])`
 
-### `_validate_required_fields(data: dict) -> None`
+### `_validate_design_frontmatter(meta: dict | None, name: str) -> None`
 
-Checks that `name`, `description`, and `steps` are all present at the top level. Raises `DoctrineError(f"Missing required field: {field}")` for the first missing field found.
+`meta` is the result of frontmatter parsing or a pre-parsed dict.
+
+Checks:
+- `meta` is None or no `id` → raises `DoctrineError("Design file missing required frontmatter field: id")`
+- `meta["id"]` != `name` → raises `DoctrineError(f'Design file id "{meta["id"]}" does not match command argument "{name}"')`
 
 ### `_validate_steps(steps) -> None`
 
@@ -94,11 +129,13 @@ Validates the steps list in three passes:
 
 ### `_check_cycles(steps: list[dict]) -> None`
 
-Detects dependency cycles using iterative DFS with three-colour marking (WHITE / GRAY / BLACK). Raises `DoctrineError(f'Dependency cycle detected involving step "{node}"')` if a back-edge is found (i.e., a GRAY node is encountered during DFS traversal).
+Detects dependency cycles using iterative DFS with three-colour marking (WHITE / GRAY / BLACK). Raises `DoctrineError(f'Dependency cycle detected involving step "{node}"')` if a back-edge is found.
 
 ### `_normalize(data: dict) -> dict`
 
-Applies defaults and returns a clean normalised dict. Fields and their defaults:
+Applies defaults and returns a clean normalised dict. Called by `show_doctrine()` on the parsed YAML steps.
+
+Step-level fields and their defaults:
 
 | Field | Default if absent |
 |-------|------------------|
@@ -108,55 +145,75 @@ Applies defaults and returns a clean normalised dict. Fields and their defaults:
 | `knight` | `None` |
 | `notes` | `None` |
 
-The `name` and `description` top-level fields are passed through without modification. The optional metadata fields `id`, `title`, and `summary` are passed through if present. Only the `steps` array is normalised; all other top-level fields are preserved verbatim.
+Only the `steps` array is normalised. Top-level fields (`id`) are preserved verbatim.
 
-## Validation Order and Short-Circuit Behaviour
+## Removed Functions
 
-The validation pipeline short-circuits at the first error. If `_validate_required_fields` raises, `_validate_steps` is never called. This means a doctrine with both a missing required field and a cycle in steps will only report the missing field.
+The following functions were removed in the two-file model refactor:
 
-## YAML Schema (Normalised)
+| Removed | Replacement |
+|---------|-------------|
+| `load_doctrine(filepath)` | `show_doctrine(id, doctrines_dir)` |
+| `validate_doctrine_content(text, expected_name)` | `_validate_yaml_schema()` + `_validate_design_frontmatter()` |
+| `scaffold_doctrine(name)` | Removed entirely (scaffold path removed) |
+| `_validate(data, filename)` | `_validate_yaml_schema(data, name)` |
+| `_validate_required_fields(data)` | Inline in `_validate_yaml_schema()` |
+| `_truncate_description(text, width)` | Removed (no description field) |
+
+## YAML Schema (New)
 
 ```yaml
-id: <string>             # optional; must match filename stem if present
-title: <string>          # optional; human-readable name
-summary: <string>        # optional; one-line description for list output
-name: <string>           # required; must match filename stem
-description: <string>    # required
-steps:                   # required; non-empty list
-  - id: <string>         # required; unique within doctrine
-    title: <string>      # required
-    priority: <0-4>      # optional; default 2
-    type: <string>            # optional; default null (free-form, any string accepted)
-    needs: [<step-id>]   # optional; default []
-    knight: <string>     # optional; default null
-    notes: <string>      # optional; default null
+id: <string>          # required; must match filename stem
+steps:                # required; non-empty list
+  - id: <string>      # required; unique within doctrine
+    title: <string>   # required
+    priority: <0-4>   # optional; default 2
+    type: <string>    # optional; default null (free-form, any string accepted)
+    needs: [<step-id>] # optional; default []
+    knight: <string>  # optional; default null
+    notes: <string>   # optional; default null
+```
+
+**Rejected fields:** `name`, `description`, `title`, `summary` must NOT appear at the YAML top level. These fields belong in the `.design.md` frontmatter.
+
+## Design File Schema
+
+```markdown
+---
+id: <string>      # required; must match filename stem
+title: <string>   # optional
+summary: <string> # optional
+---
+
+<free-form markdown body>
 ```
 
 ## Typed Model: `Doctrine`
 
-The `Doctrine` and `DoctrineStep` typed dataclasses are defined in `lore/models.py`, not
-in `doctrine.py`. The scan module's dict contracts are unchanged; typed models are a
-presentation layer on top of them.
+The `Doctrine` and `DoctrineStep` typed dataclasses are defined in `lore/models.py`.
 
 ### Constructing a `Doctrine` object
 
 ```python
-from lore.doctrine import load_doctrine
+from pathlib import Path
+from lore.doctrine import show_doctrine
 from lore.models import Doctrine
 
-normalized = load_doctrine(path)          # calls _normalize(); raises DoctrineError on failure
-doctrine_obj = Doctrine.from_dict(normalized)
+doctrines_dir = Path(".lore/doctrines")
+result = show_doctrine("my-workflow", doctrines_dir)
+doctrine_obj = Doctrine.from_dict(result)
 ```
 
-`Doctrine.from_dict()` accepts the dict produced by `_normalize()`:
+`Doctrine.from_dict()` accepts the dict produced by `show_doctrine()`:
 
-| Field | Type in normalized dict | `Doctrine` field |
-|-------|------------------------|------------------|
-| `name` | `str` | `name: str` |
-| `description` | `str` | `description: str` |
+| Field | Type in dict | `Doctrine` field |
+|-------|-------------|------------------|
+| `id` | `str` | `id: str` |
+| `title` | `str` | `title: str` |
+| `summary` | `str` | `summary: str` |
 | `steps` | `list[dict]` | `steps: tuple[DoctrineStep, ...]` |
 
-Each step dict from `_normalize()` maps to a `DoctrineStep`:
+Each step dict maps to a `DoctrineStep`:
 
 | Key | Type | `DoctrineStep` field |
 |-----|------|----------------------|
@@ -168,22 +225,22 @@ Each step dict from `_normalize()` maps to a `DoctrineStep`:
 | `notes` | `str \| None` | `notes: str \| None` |
 | `needs` | `list[str]` (default `[]`) | `needs: list[str]` |
 
-`steps` is stored as `tuple[DoctrineStep, ...]` in the frozen dataclass (lists are
-mutable and incompatible with `frozen=True`). `from_dict()` converts the source list.
+`steps` is stored as `tuple[DoctrineStep, ...]` in the frozen dataclass.
 
-### `list_doctrines()` output is not `Doctrine.from_dict()` input
+### Breaking API changes
 
-| Shape | Source | Valid for `Doctrine.from_dict()` |
-|-------|--------|----------------------------------|
-| `{name, description, steps: [...]}` | `_normalize()` via `load_doctrine()` | Yes |
-| `{id, group, title, summary, name, filename, description, valid, errors?}` | `list_doctrines()` | **No** — missing `steps`; will raise `KeyError` |
-
-`list_doctrines()` exists to support the `lore doctrine list` CLI display. Its output
-includes validation metadata (`valid`, `errors`), enrichment fields (`id`, `group`, `title`, `summary`), and a `filename` field that have no
-place in a clean `Doctrine` model. Realm navigating doctrine listings should use the `DoctrineListEntry` typed model from `lore.models`.
+| Old | New | Notes |
+|-----|-----|-------|
+| `Doctrine.name: str` | removed | moved to design file |
+| `Doctrine.description: str` | removed | moved to design file |
+| `Doctrine.from_dict({name, description, steps})` | `Doctrine.from_dict({id, title, summary, steps})` | Shape change — Realm callers must update |
+| `DoctrineListEntry.name` | removed | — |
+| `DoctrineListEntry.description` | removed | — |
+| `DoctrineListEntry.errors` | removed | orphaned entries are skipped, not surfaced |
 
 ## Related
 
 - conceptual-entities-doctrine (lore codex show conceptual-entities-doctrine) — conceptual overview of doctrines
+- conceptual-workflows-doctrine-show (lore codex show conceptual-workflows-doctrine-show) — show workflow
 - tech-cli-commands (lore codex show tech-cli-commands) — `lore doctrine` CLI commands
 - tech-arch-source-layout (lore codex show tech-arch-source-layout) — `lore.models` public API reference

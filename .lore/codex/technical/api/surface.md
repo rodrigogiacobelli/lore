@@ -15,7 +15,7 @@ Import root is `lore`. Typed models live in `lore.models`. All `lore.db` functio
 | **Quest** | `lore.db.create_quest(root, title, ...)` → `str` | `lore.db.get_quest(root, id)` → `Row` | `lore.db.list_quests(root, include_closed)` → `list[Row]` | — | — | `lore.db.edit_quest(root, id, ...)` → `dict` | `lore.db.delete_quest(root, id, cascade)` → `dict` |
 | **Mission** | `lore.db.create_mission(root, title, ...)` → `str` — note: quest inference (if exactly one open quest exists, assign it) has been moved to `cli.py`; calling with `quest_id=None` creates a standalone mission with no automatic assignment | `lore.db.get_mission(root, id)` → `Row` | `lore.db.list_missions(root, quest_id, include_closed)` → `dict[quest_id, list[Row]]` | — | — | `lore.db.edit_mission(root, id, ...)` → `dict` | `lore.db.delete_mission(root, id)` → `dict` |
 | **Knight** | — | `lore.knight.find_knight(knights_dir, name)` → `Path \| None` | `lore.knight.list_knights(knights_dir)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `name`, `filename` | — | — | — | — |
-| **Doctrine** | — | `lore.doctrine.load_doctrine(filepath)` → `dict` | `lore.doctrine.list_doctrines(doctrines_dir)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `name`, `filename`, `description`, `valid`, (optionally `errors`) | — | — | — | — |
+| **Doctrine** | `lore.doctrine.create_doctrine(name, yaml_source_path, design_source_path, doctrines_dir)` → `dict` | `lore.doctrine.show_doctrine(id, doctrines_dir)` → `dict` — keys: `id`, `title`, `summary`, `design` (raw str), `raw_yaml` (raw str), `steps` (list) | `lore.doctrine.list_doctrines(doctrines_dir)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `filename`, `valid` (always True; orphaned entries skipped) | — | — | — | — |
 | **Watcher** | `lore.watcher.create_watcher(watchers_dir, name, content)` → `dict` | `lore.watcher.find_watcher(watchers_dir, name)` → `Path \| None`, then `lore.watcher.load_watcher(filepath)` → `dict` | `lore.watcher.list_watchers(watchers_dir)` → `list[dict]` | — | — | `lore.watcher.update_watcher(watchers_dir, name, content)` → `dict` | `lore.watcher.delete_watcher(watchers_dir, name)` → `dict` |
 | **Codex** | ✗ | `lore.codex.read_document(codex_dir, id)` → `dict` | `lore.codex.scan_codex(codex_dir)` → `list[dict]` | `lore.codex.search_documents(codex_dir, keyword)` → `list[dict]` | `lore.codex.map_documents(codex_dir, start_id, depth)` → `list[dict] | None`<br>`lore.codex.chaos_documents(codex_dir, start_id, threshold, rng=None)` → `list[dict] | None` | ✗ | ✗ |
 | **Artifact** | ✗ | `lore.artifact.read_artifact(artifacts_dir, id)` → `dict` | `lore.artifact.scan_artifacts(artifacts_dir)` → `list[dict]` | — | — | ✗ | ✗ |
@@ -88,8 +88,8 @@ Mission.from_row(row)
 BoardMessage.from_dict(d)          # from get_board_messages()
 Artifact.from_dict(d)              # from read_artifact() only — not scan_artifacts()
 CodexDocument.from_dict(d)         # from scan_codex() or read_document()
-Doctrine.from_dict(load_doctrine(path))
-DoctrineListEntry.from_dict(d)     # from list_doctrines() — enriched: id, group, title, summary, name, filename, description, valid, errors
+Doctrine.from_dict(show_doctrine(id, doctrines_dir))   # from show_doctrine() — keys: id, title, summary, steps
+DoctrineListEntry.from_dict(d)     # from list_doctrines() — keys: id, group, title, summary, filename, valid
 Knight(name=path.stem, content=path.read_text())   # use lore.knight.find_knight(knights_dir, name) to locate the file first
 Watcher.from_dict(load_watcher(path))   # or Watcher.from_dict(list_watchers(dir)[i])
 ```
@@ -102,7 +102,7 @@ Watcher.from_dict(load_watcher(path))   # or Watcher.from_dict(list_watchers(dir
 
 | Entity | Missing | Notes |
 |--------|---------|-------|
-| **Doctrine** | Create, Update, Delete | CLI-only write path. |
+| **Doctrine** | Update, Delete | `create_doctrine()` added this release. Update and delete remain CLI-only (Post-MVP). |
 | **Codex** | Create, Update, Delete | No write functions in any module. |
 | **Artifact** | Create, Update, Delete | Read-only by design. |
 | **Quest / Mission** | Search | No full-text search in `lore.db`. |

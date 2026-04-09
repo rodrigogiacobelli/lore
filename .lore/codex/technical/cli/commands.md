@@ -261,7 +261,7 @@ Soft-delete a dependency. Mirrors `lore needs` syntax. Removing a non-existent d
 
 `lore doctrine --help` description:
 
-> Manage doctrine templates — YAML files that describe the step sequence and suggested knights for a standard body of work (e.g. a feature or bugfix workflow). Doctrines have no execution engine; an orchestrator reads them with 'lore doctrine show <name>' and uses the steps as guidance for creating quests and missions. Doctrines are passive — they do not trigger actions.
+> Manage doctrine templates — paired .yaml and .design.md files that together describe the step sequence, suggested knights, and design rationale for a standard body of work. Doctrines have no execution engine; an orchestrator reads them with 'lore doctrine show <name>' and uses the steps as guidance for creating quests and missions. Doctrines are passive — they do not trigger actions.
 
 ```
 lore doctrine list
@@ -269,7 +269,9 @@ lore doctrine list --filter default
 lore doctrine list --filter default feature-implementation
 ```
 
-List available Doctrine templates as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/doctrines/` directory tree recursively, merging results into a single alphabetically sorted flat list. GROUP is derived from the doctrine file's path relative to `.lore/doctrines/`, with directory components joined by `-`, excluding the filename. Doctrines missing `title` fall back to `id`. Doctrines missing `summary` fall back to truncated `description` (via `textwrap.shorten`, respecting word boundaries, max ~80 visible chars). Invalid doctrines show `[INVALID]` appended to the summary. No source-directory annotation is shown. Accepts `--json` as both a local flag (`lore doctrine list --json`) and the global flag (`lore --json doctrine list`). JSON output: `{"doctrines": [{id, group, title, summary, valid}]}`.
+List available Doctrine templates as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Discovery is driven by `*.design.md` files — each design file is paired with a `<name>.yaml` in the same directory. Only complete pairs (both files present) are shown. YAML-only files and orphaned design files (no YAML counterpart) are silently skipped. Title and summary come from the design file frontmatter; `title` falls back to `id`; `summary` falls back to empty string. No `[INVALID]` suffix — invalid entries are skipped, not shown. Results are sorted alphabetically by ID. No source-directory annotation is shown.
+
+Accepts `--json` as both a local flag (`lore doctrine list --json`) and the global flag (`lore --json doctrine list`). JSON output: `{"doctrines": [{id, group, title, summary, valid}]}` — all entries have `valid: true`.
 
 The optional `--filter GROUP...` flag limits results to doctrines in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns doctrines with group `default`, `default-feature`, `default-ops`, etc. Root-level doctrines (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
@@ -277,31 +279,72 @@ The optional `--filter GROUP...` flag limits results to doctrines in the specifi
 lore doctrine show feature-workflow
 ```
 
-Print the contents of a Doctrine. Resolution is recursive: the command searches the full `.lore/doctrines/` tree using `rglob("<name>.yaml")` and returns the first match. This covers doctrines in `doctrines/default/` (Lore-seeded), doctrines at the flat parent level (user-created), and any user-created subdirectories at any depth. Per ADR-006, doctrine filenames are unique across the full tree, so there is at most one match. If no match is found, an error is raised. Validates the YAML schema.
+Print the full content of a Doctrine. Resolution is recursive: the command searches the full `.lore/doctrines/` tree for `<name>.design.md` and `<name>.yaml`. If either file is missing, an error is printed to stderr and the command exits with code 1.
+
+**Text mode (default):** Prints the raw content of the `.design.md` file verbatim (including frontmatter block), then a separator line (`---`), then the raw content of the `.yaml` file verbatim. No transformation of either file.
+
+**JSON mode (`--json`):** Returns:
+```json
+{
+  "id": "<name>",
+  "title": "<title>",
+  "summary": "<summary>",
+  "design": "<raw .design.md content including frontmatter>",
+  "steps": [{"id": "...", "title": "...", "priority": 2, "type": null, "knight": null, "notes": null, "needs": []}]
+}
+```
+`steps` is a list of normalized step objects (defaults applied). The `raw_yaml` field is present in the Python API return value but excluded from `--json` output.
+
+**Error messages:**
+
+| Situation | Message (stderr) | Exit code |
+|---|---|---|
+| Design file missing | `Doctrine '<name>' not found: design file missing` | 1 |
+| YAML file missing | `Doctrine '<name>' not found: YAML file missing` | 1 |
+| Both files missing | `Doctrine '<name>' not found` | 1 |
 
 ```
-lore doctrine new feature-workflow --from workflow.yaml
+lore doctrine new my-workflow -f my-workflow.yaml -d my-workflow.design.md
 ```
 
-Create a new doctrine file at `.lore/doctrines/<name>.yaml`. Doctrine names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Fails if a doctrine with the same name already exists with: `Error: doctrine '<name>' already exists. Use 'lore doctrine edit <name>' to modify it.` Three input paths:
+Create a new doctrine by writing both `<name>.yaml` and `<name>.design.md` to `.lore/doctrines/`. Doctrine names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Both `-f/--from` and `-d/--design` flags are required — there is no scaffold path and no stdin input path.
 
-- **No `--from` and no piped stdin (TTY):** generates a skeleton YAML at `.lore/doctrines/<name>.yaml` with `id`, `title`, `summary`, `description`, and `steps` placeholders; prints `Created doctrine <name>`; exits 0. No validation is run on the skeleton.
-- **`--from <file>` / `-f <file>`:** reads YAML from the named file, validates schema, then writes. The `name` field in the YAML must match the `<name>` argument. If `id` is present, it must also match.
-- **stdin (default when `--from` is absent):** reads all of stdin, validates schema, then writes. Same field-match rules apply.
+Fails if a doctrine with the same name already exists anywhere under `.lore/doctrines/`: `Error: doctrine '<name>' already exists.`
 
-JSON success output (all paths): `{"name": "<name>", "filename": "<name>.yaml"}`.
+Validation of both files occurs before any write. If either file fails validation, no files are written:
+- YAML must contain `id` and `steps`; must not contain `name` or `description`.
+- YAML `id` must match `<name>`.
+- Design file must have YAML frontmatter with `id` matching `<name>`.
+
+JSON success output: `{"name": "<name>", "yaml_filename": "<name>.yaml", "design_filename": "<name>.design.md"}`.
+
+**Failure modes:**
+
+| Failure point | Message | Exit code |
+|---|---|---|
+| Invalid name | `Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.` | 1 |
+| Duplicate doctrine | `Error: doctrine '<name>' already exists.` | 1 |
+| Missing `-f` | `Error: -f/--from is required` | 1 |
+| Missing `-d` | `Error: -d/--design is required` | 1 |
+| `-f` file not found | `File not found: <path>` | 1 |
+| `-d` file not found | `File not found: <path>` | 1 |
+| YAML `id` mismatch | `Doctrine id "<value>" does not match command argument "<name>"` | 1 |
+| `name` in YAML | `Unexpected field in YAML: name` | 1 |
+| `description` in YAML | `Unexpected field in YAML: description` | 1 |
+| Design frontmatter `id` mismatch | `Design file id "<value>" does not match command argument "<name>"` | 1 |
+| Missing `id` in design frontmatter | `Design file missing required frontmatter field: id` | 1 |
 
 ```
 lore doctrine edit feature-workflow --from updated-workflow.yaml
 ```
 
-Replace the contents of an existing doctrine file. Validates YAML schema before writing. Fails if the doctrine does not exist.
+Replace the contents of an existing doctrine file. Validates YAML schema before writing. Fails if the doctrine does not exist. (Post-MVP: two-file edit support.)
 
 ```
 lore doctrine delete feature-workflow
 ```
 
-Soft-delete a doctrine file. Renames `.lore/doctrines/<name>.yaml` to `.lore/doctrines/<name>.yaml.deleted`.
+Soft-delete a doctrine. (Post-MVP: two-file soft-delete. Currently only the single-file path is supported.)
 
 ## Knights
 

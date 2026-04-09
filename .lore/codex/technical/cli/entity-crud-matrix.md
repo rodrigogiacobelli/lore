@@ -13,7 +13,7 @@ stability: stable
 | **Quest** | `lore new quest <title>` | `lore show <id>` | `lore list [--all]` | — | — | `lore edit <id>` | `lore delete <id> [--cascade]` |
 | **Mission** | `lore new mission <title>` | `lore show <id> [--no-knight]` | `lore missions [quest_id] [--all]` | — | — | `lore edit <id>` | `lore delete <id>` |
 | **Knight** | `lore knight new <name>` | `lore knight show <name>` | `lore knight list [--filter GROUP...]` | — | — | `lore knight edit <name>` | `lore knight delete <name>` |
-| **Doctrine** | `lore doctrine new <name>` | `lore doctrine show <name>` | `lore doctrine list [--filter GROUP...]` | — | — | `lore doctrine edit <name>` | `lore doctrine delete <name>` |
+| **Doctrine** | `lore doctrine new <name> -f <yaml> -d <design>` | `lore doctrine show <name>` | `lore doctrine list [--filter GROUP...]` | — | — | `lore doctrine edit <name>` | `lore doctrine delete <name>` |
 | **Watcher** | `lore watcher new <name>` | `lore watcher show <name>` | `lore watcher list [--filter GROUP...]` | — | — | `lore watcher edit <name>` | `lore watcher delete <name>` |
 | **Codex** | ✗ (disk only) | `lore codex show <id> [id2…]` | `lore codex list [--filter GROUP...]` | `lore codex search <kw>` | `lore codex map <id> [--depth n]`<br>`lore codex chaos <id> --threshold <int>` | ✗ (disk only) | ✗ (disk only) |
 | **Artifact** | ✗ (disk only) | `lore artifact show <id> [id2…]` | `lore artifact list [--filter GROUP...]` | — | — | ✗ (disk only) | ✗ (disk only) |

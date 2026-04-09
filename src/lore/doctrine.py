@@ -1,11 +1,14 @@
 """Doctrine loading and validation."""
 
+import shutil
 import textwrap
 from pathlib import Path
 
 import yaml
 
+from lore.frontmatter import parse_frontmatter_doc
 from lore.paths import derive_group, group_matches_filter
+from lore.validators import validate_name
 
 
 class DoctrineError(Exception):
@@ -23,6 +26,128 @@ def scaffold_doctrine(name: str) -> str:
           - name: Example step
             description: Describe what this step does.
         """)
+
+
+def _validate_yaml_schema(data: dict, name: str) -> None:
+    """Validate the top-level YAML schema for a doctrine.
+
+    Raises DoctrineError when:
+    - Unexpected legacy fields (name, description) are present
+    - Required fields (id, steps) are missing
+    - id does not match name argument
+    - steps is empty
+    """
+    # Check for legacy rejected fields first
+    for legacy_field in ("name", "description"):
+        if legacy_field in data:
+            raise DoctrineError(f"Unexpected field in YAML: {legacy_field}")
+
+    # Required fields
+    if "id" not in data:
+        raise DoctrineError("Missing required field: id")
+    if "steps" not in data:
+        raise DoctrineError("Missing required field: steps")
+
+    # id must match name argument
+    if str(data["id"]) != name:
+        raise DoctrineError(
+            f'Doctrine id "{data["id"]}" does not match command argument "{name}"'
+        )
+
+    # steps must be non-empty
+    if not isinstance(data["steps"], list) or len(data["steps"]) == 0:
+        raise DoctrineError("Steps must be a non-empty list")
+
+
+def _validate_design_frontmatter(meta: dict | None, name: str) -> None:
+    """Validate design file frontmatter.
+
+    Raises DoctrineError when:
+    - meta is None (no frontmatter or parse failure)
+    - meta has no 'id' key
+    - meta['id'] does not match name argument
+    """
+    if meta is None or "id" not in meta:
+        raise DoctrineError("Design file missing required frontmatter field: id")
+
+    if str(meta["id"]) != name:
+        raise DoctrineError(
+            f'Design file id "{meta["id"]}" does not match command argument "{name}"'
+        )
+
+
+def create_doctrine(
+    name: str,
+    yaml_source_path: Path,
+    design_source_path: Path,
+    doctrines_dir: Path,
+) -> dict:
+    """Register both source files as a new doctrine in doctrines_dir.
+
+    Validation order:
+    1. Name format
+    2. Duplicate check (YAML stem, then design stem)
+    3. YAML source file exists
+    4. Design source file exists
+    5. YAML content validation
+    6. Design content validation
+    7. Write both files (atomic — no partial writes)
+
+    Raises DoctrineError on any validation failure.
+    """
+    # Validate name format
+    err = validate_name(name)
+    if err:
+        raise DoctrineError(err)
+
+    # Duplicate check — search recursively so subdirectory copies are also caught
+    yaml_dest = doctrines_dir / f"{name}.yaml"
+    design_dest = doctrines_dir / f"{name}.design.md"
+
+    if doctrines_dir.exists() and list(doctrines_dir.rglob(f"{name}.yaml")):
+        raise DoctrineError(f"Error: doctrine '{name}' already exists.")
+    if doctrines_dir.exists() and list(doctrines_dir.rglob(f"{name}.design.md")):
+        raise DoctrineError(f"Error: doctrine '{name}' already exists.")
+
+    # Source file existence
+    if not yaml_source_path.exists():
+        raise DoctrineError(f"File not found: {yaml_source_path}")
+    if not design_source_path.exists():
+        raise DoctrineError(f"File not found: {design_source_path}")
+
+    # YAML content validation
+    yaml_text = yaml_source_path.read_text()
+    try:
+        yaml_data = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:
+        raise DoctrineError(f"YAML parsing error: {e}") from e
+    if not isinstance(yaml_data, dict):
+        raise DoctrineError("Doctrine must be a YAML mapping")
+    _validate_yaml_schema(yaml_data, name)
+
+    # Design content validation
+    design_text = design_source_path.read_text()
+    parts = design_text.split("---")
+    meta = None
+    if len(parts) >= 3:
+        try:
+            meta = yaml.safe_load(parts[1])
+            if not isinstance(meta, dict):
+                meta = None
+        except yaml.YAMLError:
+            meta = None
+    _validate_design_frontmatter(meta, name)
+
+    # Write both files (atomic — validate before writing)
+    doctrines_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(yaml_source_path, yaml_dest)
+    shutil.copy2(design_source_path, design_dest)
+
+    return {
+        "name": name,
+        "yaml_filename": f"{name}.yaml",
+        "design_filename": f"{name}.design.md",
+    }
 
 
 def load_doctrine(filepath: Path) -> dict:
@@ -215,62 +340,154 @@ def _truncate_description(text: str, width: int = 80) -> str:
     return truncated + "..."
 
 
+def _find_doctrine_files(doctrine_id: str, doctrines_dir: Path) -> tuple[Path | None, Path | None]:
+    """Search recursively for <id>.design.md and <id>.yaml under doctrines_dir.
+
+    Returns a tuple (design_file, yaml_file). Either or both may be None if not found.
+
+    When multiple matches exist, shallower paths (fewer directory levels from doctrines_dir)
+    are preferred so that user-managed files take priority over defaults in subdirectories.
+    The shallower of the primary YAML or primary DESIGN determines which directory is used
+    as the source of truth; the other file is expected to be co-located there.
+    """
+    if not doctrines_dir.exists():
+        return None, None
+
+    def _depth(p: Path) -> int:
+        return len(p.relative_to(doctrines_dir).parts)
+
+    def _by_depth(p: Path) -> tuple[int, str]:
+        return (_depth(p), str(p))
+
+    yaml_matches = sorted(doctrines_dir.rglob(f"{doctrine_id}.yaml"), key=_by_depth)
+    design_matches = sorted(doctrines_dir.rglob(f"{doctrine_id}.design.md"), key=_by_depth)
+
+    if not yaml_matches and not design_matches:
+        return None, None
+
+    primary_yaml = yaml_matches[0] if yaml_matches else None
+    primary_design = design_matches[0] if design_matches else None
+
+    if primary_yaml is None:
+        # Only design files found; check if a co-located YAML exists
+        co_located_yaml = primary_design.parent / f"{doctrine_id}.yaml"
+        if co_located_yaml.exists():
+            return primary_design, co_located_yaml
+        return primary_design, None
+
+    if primary_design is None:
+        # Only YAML files found; check if a co-located design exists
+        co_located_design = primary_yaml.parent / f"{doctrine_id}.design.md"
+        if co_located_design.exists():
+            return co_located_design, primary_yaml
+        return None, primary_yaml
+
+    yaml_depth = _depth(primary_yaml)
+    design_depth = _depth(primary_design)
+
+    if design_depth <= yaml_depth:
+        # Design is shallower (or equal depth) — it is the anchor; check for co-located YAML
+        co_located_yaml = primary_design.parent / f"{doctrine_id}.yaml"
+        if co_located_yaml.exists():
+            return primary_design, co_located_yaml
+        return primary_design, None
+
+    # YAML is shallower — it is the anchor; check for co-located design
+    co_located_design = primary_yaml.parent / f"{doctrine_id}.design.md"
+    if co_located_design.exists():
+        return co_located_design, primary_yaml
+    return None, primary_yaml
+
+
+def show_doctrine(doctrine_id: str, doctrines_dir: Path) -> dict:
+    """Load and return a doctrine by ID for display.
+
+    Searches recursively for <id>.design.md and <id>.yaml under doctrines_dir.
+    Returns a dict with keys: id, title, summary, design, raw_yaml, steps.
+    Raises DoctrineError with specific messages when files are missing or invalid.
+    """
+    design_file, yaml_file = _find_doctrine_files(doctrine_id, doctrines_dir)
+
+    if design_file is None and yaml_file is None:
+        raise DoctrineError(f"Doctrine '{doctrine_id}' not found")
+    if design_file is None:
+        raise DoctrineError(f"Doctrine '{doctrine_id}' not found: design file missing")
+    if yaml_file is None:
+        raise DoctrineError(f"Doctrine '{doctrine_id}' not found: YAML file missing")
+
+    design_text = design_file.read_text()
+    yaml_text = yaml_file.read_text()
+
+    data = _parse_yaml(yaml_text)
+
+    # Normalize steps with defaults (no description required unlike load_doctrine)
+    raw_steps = data.get("steps") or []
+    steps = [
+        {
+            "id": step["id"],
+            "title": step["title"],
+            "priority": step.get("priority", 2),
+            "type": step.get("type", None),
+            "needs": step.get("needs", []),
+            "knight": step.get("knight"),
+            "notes": step.get("notes"),
+        }
+        for step in raw_steps
+        if isinstance(step, dict)
+    ]
+
+    meta = parse_frontmatter_doc(design_file, required_fields=("id",), extra_fields=("title", "summary"))
+    title = (meta.get("title") if meta else None) or doctrine_id
+    summary = (meta.get("summary") if meta else None) or ""
+
+    return {
+        "id": doctrine_id,
+        "title": title,
+        "summary": summary,
+        "design": design_text,
+        "raw_yaml": yaml_text,
+        "steps": steps,
+    }
+
+
 def list_doctrines(doctrines_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
-    """List all doctrines with validation status.
+    """List all valid doctrine pairs (design + yaml).
 
-    Returns a list of dicts with keys: id, group, title, summary, valid, name,
-    filename, description, and optional errors.
+    Scans for ``*.design.md`` files; for each, checks a matching ``*.yaml``
+    exists in the same directory. Parses frontmatter from the design file.
+    Silently skips orphaned design files, YAML-only files, and design files
+    with missing or invalid ``id`` frontmatter.
 
-    Fallback behaviour when metadata is missing:
-    - ``id``: filename stem
-    - ``title``: id value
-    - ``summary``: explicit summary field; if absent, description truncated to
-      ~80 chars; if neither present, empty string
-    - ``group``: derived from subdirectory path
+    Returns a list of dicts with keys: id, group, title, summary, valid, filename.
     """
     if not doctrines_dir.exists():
         return []
 
     results = []
-    for filepath in sorted(doctrines_dir.rglob("*.yaml")):
-        stem = filepath.stem
-        entry = {"name": stem, "filename": filepath.name}
-        # Always read raw YAML for enriched metadata fields
-        try:
-            raw_text = filepath.read_text()
-            raw = yaml.safe_load(raw_text)
-            if not isinstance(raw, dict):
-                raw = {}
-        except Exception:
-            raw = {}
-        try:
-            doctrine = load_doctrine(filepath)
-            entry["description"] = doctrine["description"]
-            entry["valid"] = True
-        except DoctrineError as e:
-            entry["description"] = raw.get("description", "") or ""
-            entry["valid"] = False
-            entry["errors"] = [str(e)]
-        except Exception:
-            entry["description"] = ""
-            entry["valid"] = False
-            entry["errors"] = ["Failed to parse YAML"]
+    for design_file in sorted(doctrines_dir.rglob("*.design.md")):
+        # Check matching .yaml exists in the same directory
+        stem = design_file.name.removesuffix(".design.md")
+        yaml_file = design_file.parent / (stem + ".yaml")
+        if not yaml_file.exists():
+            continue
 
-        # Enriched fields
-        doctrine_id = str(raw["id"]) if "id" in raw and raw["id"] is not None else stem
-        title = str(raw["title"]) if "title" in raw and raw["title"] is not None else doctrine_id
-        if "summary" in raw and raw["summary"] is not None:
-            summary = str(raw["summary"])
-        elif entry.get("description"):
-            summary = _truncate_description(str(entry["description"]))
-        else:
-            summary = ""
+        # Parse design frontmatter; id is required
+        meta = parse_frontmatter_doc(design_file, required_fields=("id",), extra_fields=("title", "summary"))
+        if meta is None:
+            continue
 
-        entry["id"] = doctrine_id
-        entry["group"] = derive_group(filepath, doctrines_dir)
-        entry["title"] = title
-        entry["summary"] = summary
+        doctrine_id = meta["id"]
+        title = meta.get("title") or doctrine_id
+        summary = meta.get("summary") or ""
 
+        entry = {
+            "id": doctrine_id,
+            "group": derive_group(design_file, doctrines_dir),
+            "title": title,
+            "summary": summary,
+            "valid": True,
+            "filename": design_file.name,
+        }
         results.append(entry)
 
     if filter_groups:

@@ -1,19 +1,36 @@
-name: tdd-implementation
-description: >
-  Strict Red-Green-Refactor TDD implementation of dev-ready user stories.
-  Each step has a hard boundary: Red writes only tests, Green writes only production code,
-  Refactor improves both without adding features.
+id: tdd-implementation
 steps:
   - id: red
     title: Write failing tests for every acceptance criterion
     priority: 0
     type: knight
     knight: tdd-red.md
-    notes: >
-      Read the user story and its Tech Notes.
-      Write failing tests in tests/ covering every acceptance criterion.
-      Run tests after writing — every test MUST fail.
-      No production code. Import failures count as red.
+    notes: |
+      Your mission description contains the user story codex ID.
+      Read the user story in full: `lore codex show <story-id>`
+      Pay close attention to the Acceptance Criteria section — it is your complete test specification.
+
+      Read existing tests in `tests/` to understand conventions, fixtures, and naming patterns.
+      Read source code in `src/lore/` for import paths.
+      If the Tech Notes reference a concept or behavior that needs clarification,
+      consult the relevant codex document: `lore codex show <id>`
+
+      For each acceptance criterion scenario in the story:
+      - Write one or more test functions in `tests/` following existing naming conventions
+      - E2E scenarios map to integration tests; unit test scenarios map to unit tests
+      - Test names must describe expected behavior (e.g., `test_edit_quest_updates_title`)
+      - Reference exact inputs and outputs from the acceptance criteria — do not generalize
+      - Mock external dependencies; never rely on real I/O unless it is SQLite in-memory
+      - One concept per test function
+
+      Run after writing every test file: `uv run pytest <test-file>`
+      Every test MUST fail before you mark done.
+      If a test passes immediately, it is not testing new behavior — remove or fix it.
+      Import failures count as red.
+
+      No production code — not even stubs or empty functions.
+
+      Mark done: `lore done <mission-id>`
 
   - id: green
     title: Write minimum production code to pass all tests
@@ -21,11 +38,30 @@ steps:
     type: knight
     needs: [red]
     knight: tdd-green.md
-    notes: >
-      Read failing tests first — they define what the code must do.
-      Read Tech Notes for implementation guidance.
-      Write the simplest code in src/lore/ that makes each test pass.
-      Run full test suite after each change. No modifying test files.
+    notes: |
+      Your mission description contains the user story codex ID.
+      Read the user story and its Tech Notes: `lore codex show <story-id>`
+      The Tech Notes section contains Implementation Approach and Test File Locations —
+      use these to know which files to modify and how to approach the implementation.
+
+      Read all failing tests first — they define exactly what the code must do.
+      Read source code in `src/lore/` for context and conventions.
+
+      Write the simplest code in `src/lore/` that makes each failing test pass:
+      - Modify only the files identified in Tech Notes unless a test requires otherwise
+      - Follow existing code conventions in `src/lore/`
+      - Prefer inline solutions over abstractions
+      - If a test expects a specific error message, match it exactly
+      - No error handling beyond what tests require
+      - No features or code paths not covered by a test
+
+      Run the full test suite after each change: `uv run pytest`
+      Do not mark done until all tests pass.
+
+      Do not modify test files — tests are the specification.
+      Do not refactor or clean up — that is the next step.
+
+      Mark done: `lore done <mission-id>`
 
   - id: refactor
     title: Refactor with quality checks
@@ -33,19 +69,41 @@ steps:
     type: knight
     needs: [green]
     knight: tdd-refactor.md
-    notes: >
-      Review production and test code for quality.
-      Run after every change: uv run pytest, ruff check, type checking.
-      Tests must stay green. No new features or tests beyond the story.
+    notes: |
+      Your mission description contains the user story codex ID.
+      Read the user story to understand the scope of what was implemented: `lore codex show <story-id>`
+
+      Review production code in `src/lore/` and test code in `tests/` for:
+
+      Production code:
+      - Naming: is it clear and consistent with the existing codebase?
+      - Duplication: extract helpers only for genuine duplication across 3+ instances
+      - Single responsibility: each function does one thing
+      - Dead code: remove anything introduced during green that is not needed
+
+      Test code:
+      - Test names describe expected behavior
+      - Assertions are clear and specific
+      - Remove unnecessary mocks
+
+      Run quality checks in order after every change:
+        uv run pytest                          (all tests must stay green)
+        uv run ruff check src/ tests/          (no lint violations)
+        type checking if configured
+
+      If refactoring breaks a test — revert the refactor immediately.
+      No new features or tests beyond what the story requires.
+      No over-engineering: three similar lines are better than a premature abstraction.
+
+      Mark done: `lore done <mission-id>`
 
   - id: commit
     title: Commit changes
     priority: 0
     type: constable
     needs: [refactor]
-    notes: >
-      Commit the change to the codebase after refactor.
-      Should only commit the affected files.
-      Commit as "US-xxx: {user story title}"
-      
-      
+    notes: |
+      Commit the changes to the codebase after refactor.
+      Stage only the files affected by this user story — do not include unrelated changes.
+      Commit message format: "US-xxx: {user story title}"
+      where xxx is the story number and the title comes from the story's frontmatter.

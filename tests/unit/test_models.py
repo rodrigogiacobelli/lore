@@ -1,6 +1,9 @@
 """Tests for lore.models — QuestStatus, MissionStatus, DependencyType alias,
 Quest, Mission, Dependency, BoardMessage, Artifact, CodexDocument, Doctrine,
-DoctrineStep, Knight, DoctrineListEntry model types."""
+DoctrineStep, Knight, DoctrineListEntry model types.
+
+Spec: doctrine-design-file-us-009 (lore codex show doctrine-design-file-us-009)
+"""
 
 import dataclasses
 import sqlite3
@@ -873,8 +876,9 @@ class TestDoctrineFields:
     def _make_doctrine(self):
         from lore.models import Doctrine
         data = {
-            "name": "bugfix",
-            "description": "Bug fix workflow",
+            "id": "bugfix",
+            "title": "Bug Fix Workflow",
+            "summary": "Bug fix workflow",
             "steps": [
                 {"id": "intake", "title": "Intake", "priority": 0},
                 {"id": "fix", "title": "Fix bug", "priority": 1, "type": "knight"},
@@ -882,11 +886,11 @@ class TestDoctrineFields:
         }
         return Doctrine.from_dict(data)
 
-    def test_name_field(self):
-        assert self._make_doctrine().name == "bugfix"
+    def test_id_field(self):
+        assert self._make_doctrine().id == "bugfix"
 
-    def test_description_field(self):
-        assert self._make_doctrine().description == "Bug fix workflow"
+    def test_summary_field(self):
+        assert self._make_doctrine().summary == "Bug fix workflow"
 
     def test_steps_is_tuple(self):
         import lore.models as m
@@ -901,8 +905,8 @@ class TestDoctrineListDictRaisesKeyError:
     def test_list_doctrines_dict_raises(self):
         from lore.models import Doctrine
         # list_doctrines() output — no 'steps' key
-        data = {"name": "bugfix", "filename": "bugfix.yaml",
-                "description": "Bug fix", "valid": True}
+        data = {"id": "bugfix", "filename": "bugfix.yaml",
+                "title": "Bug Fix", "valid": True}
         with pytest.raises(KeyError):
             Doctrine.from_dict(data)
 
@@ -910,13 +914,13 @@ class TestDoctrineImmutability:
     def test_doctrine_frozen(self):
         import dataclasses
         from lore.models import Doctrine
-        d = Doctrine.from_dict({"name": "x", "description": "y", "steps": []})
+        d = Doctrine.from_dict({"id": "x", "title": "X", "summary": "y", "steps": []})
         with pytest.raises(dataclasses.FrozenInstanceError):
-            d.name = "changed"  # type: ignore[misc]
+            d.id = "changed"  # type: ignore[misc]
 
     def test_steps_tuple_no_append(self):
         from lore.models import Doctrine
-        d = Doctrine.from_dict({"name": "x", "description": "y", "steps": []})
+        d = Doctrine.from_dict({"id": "x", "title": "X", "summary": "y", "steps": []})
         with pytest.raises(AttributeError):
             d.steps.append("anything")  # type: ignore[attr-defined]
 
@@ -979,51 +983,60 @@ class TestDoctrineListEntryValidEntry:
     def _valid(self):
         from lore.models import DoctrineListEntry
         return DoctrineListEntry.from_dict({
-            "name": "bugfix", "filename": "bugfix.yaml",
-            "description": "Bug fix workflow", "valid": True
+            "id": "bugfix",
+            "group": "",
+            "title": "Bugfix",
+            "summary": "Bug fix workflow",
+            "valid": True,
+            "filename": "bugfix.design.md",
         })
 
-    def test_name(self):
-        assert self._valid().name == "bugfix"
+    def test_id(self):
+        assert self._valid().id == "bugfix"
 
     def test_filename(self):
-        assert self._valid().filename == "bugfix.yaml"
+        assert self._valid().filename == "bugfix.design.md"
 
-    def test_description(self):
-        assert self._valid().description == "Bug fix workflow"
+    def test_title(self):
+        assert self._valid().title == "Bugfix"
+
+    def test_summary(self):
+        assert self._valid().summary == "Bug fix workflow"
 
     def test_valid_true(self):
         assert self._valid().valid is True
 
-    def test_errors_empty_tuple(self):
+    def test_no_legacy_keys(self):
         entry = self._valid()
-        assert entry.errors == ()
-        assert type(entry.errors) is tuple
-        assert bool(entry.errors) is False
+        assert not hasattr(entry, "name")
+        assert not hasattr(entry, "description")
+        assert not hasattr(entry, "errors")
 
 class TestDoctrineListEntryInvalidEntry:
-    def _invalid(self):
+    def test_all_entries_valid_true(self):
+        """list_doctrines() only returns valid entries; invalid ones are silently skipped."""
         from lore.models import DoctrineListEntry
-        return DoctrineListEntry.from_dict({
-            "name": "bad", "filename": "bad.yaml", "description": "",
-            "valid": False, "errors": ["Missing required field: steps"]
+        entry = DoctrineListEntry.from_dict({
+            "id": "good",
+            "group": "",
+            "title": "Good",
+            "summary": "",
+            "valid": True,
+            "filename": "good.design.md",
         })
-
-    def test_valid_false(self):
-        assert self._invalid().valid is False
-
-    def test_errors_tuple(self):
-        entry = self._invalid()
-        assert entry.errors == ("Missing required field: steps",)
-        assert type(entry.errors) is tuple
-        assert isinstance(entry.errors, tuple)
+        assert entry.valid is True
 
 class TestDoctrineListEntryImmutability:
     def test_frozen(self):
         import dataclasses
         from lore.models import DoctrineListEntry
         entry = DoctrineListEntry.from_dict({
-            "name": "x", "filename": "x.yaml", "description": "", "valid": True
+            "id": "x",
+            "group": "",
+            "title": "X",
+            "summary": "",
+            "valid": True,
+            "filename": "x.design.md",
         })
         with pytest.raises(dataclasses.FrozenInstanceError):
             entry.valid = False  # type: ignore[misc]
@@ -1034,22 +1047,24 @@ class TestDoctrineListEntryAllExport:
         assert "DoctrineListEntry" in m.__all__
 
 class TestDoctrineListEntryIntegration:
-    def test_real_list_doctrines(self, tmp_path, monkeypatch):
+    def test_real_list_doctrines(self, tmp_path):
         """Integration: list_doctrines output can be wrapped in DoctrineListEntry."""
         from lore.models import DoctrineListEntry
         from lore.doctrine import list_doctrines
-        # Create a minimal doctrine file
         doctrines_dir = tmp_path / "doctrines"
         doctrines_dir.mkdir()
+        (doctrines_dir / "test.design.md").write_text(
+            "---\nid: test\ntitle: Test Doctrine\nsummary: A test.\n---\n"
+        )
         (doctrines_dir / "test.yaml").write_text(
-            "name: test\ndescription: Test doctrine\nsteps:\n  - id: s1\n    title: Step 1\n"
+            "id: test\nsteps:\n  - id: s1\n    title: Step 1\n    type: knight\n    knight: k\n"
         )
         entries = list_doctrines(doctrines_dir)
         assert len(entries) == 1
         wrapped = [DoctrineListEntry.from_dict(e) for e in entries]
-        assert wrapped[0].name == "test"
+        assert wrapped[0].id == "test"
+        assert wrapped[0].title == "Test Doctrine"
         assert wrapped[0].valid is True
-        assert wrapped[0].errors == ()
 
 
 # ── py.typed ──────────────────────────────────────────────────────────────────
@@ -1288,3 +1303,185 @@ class TestWatcherFromDictOptionalNone:
         assert watcher.watch_target is None
         assert watcher.interval is None
         assert watcher.action is None
+
+
+# ---------------------------------------------------------------------------
+# US-009: Doctrine dataclass field shape
+# Spec: doctrine-design-file-us-009
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineDataclassFields:
+    """Doctrine dataclass has the new field shape: id, title, summary, steps."""
+
+    def test_doctrine_has_no_name_field(self):
+        # Spec: US-009 Unit — name field removed from Doctrine
+        import dataclasses
+        from lore.models import Doctrine
+
+        field_names = {f.name for f in dataclasses.fields(Doctrine)}
+        assert "name" not in field_names
+
+    def test_doctrine_has_no_description_field(self):
+        # Spec: US-009 Unit — description field removed from Doctrine
+        import dataclasses
+        from lore.models import Doctrine
+
+        field_names = {f.name for f in dataclasses.fields(Doctrine)}
+        assert "description" not in field_names
+
+    def test_doctrine_has_title_field(self):
+        # Spec: US-009 Unit — title field added to Doctrine
+        import dataclasses
+        from lore.models import Doctrine
+
+        field_names = {f.name for f in dataclasses.fields(Doctrine)}
+        assert "title" in field_names
+
+    def test_doctrine_has_summary_field(self):
+        # Spec: US-009 Unit — summary field added to Doctrine
+        import dataclasses
+        from lore.models import Doctrine
+
+        field_names = {f.name for f in dataclasses.fields(Doctrine)}
+        assert "summary" in field_names
+
+    def test_doctrine_has_id_field(self):
+        # Spec: US-009 Unit — id field present in Doctrine
+        import dataclasses
+        from lore.models import Doctrine
+
+        field_names = {f.name for f in dataclasses.fields(Doctrine)}
+        assert "id" in field_names
+
+    def test_doctrine_from_dict_steps_is_tuple_of_doctrine_step(self):
+        # Spec: US-009 Unit — steps is a tuple of DoctrineStep instances
+        from lore.models import Doctrine, DoctrineStep
+
+        d = {
+            "id": "my-doc",
+            "title": "My Doc",
+            "summary": "A summary.",
+            "steps": [
+                {
+                    "id": "step-one",
+                    "title": "Step One",
+                    "type": "knight",
+                    "knight": "scout",
+                    "priority": 2,
+                    "notes": None,
+                    "needs": [],
+                }
+            ],
+        }
+        doctrine = Doctrine.from_dict(d)
+        assert isinstance(doctrine.steps, tuple)
+        assert all(isinstance(s, DoctrineStep) for s in doctrine.steps)
+
+    def test_doctrine_from_dict_title_falls_back_to_id(self):
+        # Spec: US-009 Unit — title falls back to id value when title key absent
+        from lore.models import Doctrine
+
+        d = {
+            "id": "fallback-id",
+            "steps": [
+                {
+                    "id": "s1",
+                    "title": "S1",
+                    "type": "knight",
+                    "knight": "k",
+                    "priority": 2,
+                    "notes": None,
+                    "needs": [],
+                }
+            ],
+        }
+        doctrine = Doctrine.from_dict(d)
+        assert doctrine.title == "fallback-id"
+
+    def test_doctrine_from_dict_summary_falls_back_to_empty_string(self):
+        # Spec: US-009 Unit — summary falls back to "" when summary key absent
+        from lore.models import Doctrine
+
+        d = {
+            "id": "my-doc",
+            "steps": [
+                {
+                    "id": "s1",
+                    "title": "S1",
+                    "type": "knight",
+                    "knight": "k",
+                    "priority": 2,
+                    "notes": None,
+                    "needs": [],
+                }
+            ],
+        }
+        doctrine = Doctrine.from_dict(d)
+        assert doctrine.summary == ""
+
+
+# ---------------------------------------------------------------------------
+# US-009: DoctrineListEntry dataclass field shape
+# Spec: doctrine-design-file-us-009
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListEntryDataclassFields:
+    """DoctrineListEntry dataclass has the new field shape: id, group, title, summary, filename, valid."""
+
+    def test_doctrine_list_entry_has_no_name_field(self):
+        # Spec: US-009 Unit — name field removed from DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "name" not in field_names
+
+    def test_doctrine_list_entry_has_no_description_field(self):
+        # Spec: US-009 Unit — description field removed from DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "description" not in field_names
+
+    def test_doctrine_list_entry_has_no_errors_field(self):
+        # Spec: US-009 Unit — errors field removed from DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "errors" not in field_names
+
+    def test_doctrine_list_entry_has_title_field(self):
+        # Spec: US-009 Unit — title field present in DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "title" in field_names
+
+    def test_doctrine_list_entry_has_summary_field(self):
+        # Spec: US-009 Unit — summary field present in DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "summary" in field_names
+
+    def test_doctrine_list_entry_has_filename_field(self):
+        # Spec: US-009 Unit — filename field present in DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "filename" in field_names
+
+    def test_doctrine_list_entry_has_valid_field(self):
+        # Spec: US-009 Unit — valid field present in DoctrineListEntry
+        import dataclasses
+        from lore.models import DoctrineListEntry
+
+        field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
+        assert "valid" in field_names

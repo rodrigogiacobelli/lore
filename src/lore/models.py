@@ -224,15 +224,17 @@ class Doctrine:
     Passing list_doctrines() output raises KeyError('steps').
     """
 
-    name: str
-    description: str
+    id: str
+    title: str
+    summary: str
     steps: tuple[DoctrineStep, ...]
 
     @classmethod
     def from_dict(cls, d: dict) -> "Doctrine":
         return cls(
-            name=d["name"],
-            description=d["description"],
+            id=d["id"],
+            title=d.get("title", d["id"]),
+            summary=d.get("summary", ""),
             steps=tuple(DoctrineStep.from_dict(s) for s in d["steps"]),
         )
 
@@ -284,24 +286,25 @@ class DoctrineListEntry:
     This is NOT a full Doctrine. To get full doctrine data, call
     load_doctrine(filepath) and use Doctrine.from_dict().
 
-    errors is always a tuple — empty when valid=True, never None.
-    The 'errors' key is absent from valid entries in list_doctrines() output;
-    from_dict() defaults it to an empty tuple via d.get('errors', []).
+    All entries from list_doctrines() have valid=True.
+    filename points to the .design.md file, not the .yaml file.
     """
-    name: str
-    filename: str
-    description: str
+    id: str
+    group: str
+    title: str
+    summary: str
     valid: bool
-    errors: tuple[str, ...]
+    filename: str
 
     @classmethod
     def from_dict(cls, d: dict) -> "DoctrineListEntry":
         return cls(
-            name=d["name"],
-            filename=d["filename"],
-            description=d["description"],
+            id=d["id"],
+            group=d["group"],
+            title=d["title"],
+            summary=d["summary"],
             valid=d["valid"],
-            errors=tuple(d.get("errors", [])),
+            filename=d["filename"],
         )
 
 

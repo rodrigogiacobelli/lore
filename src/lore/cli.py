@@ -71,6 +71,27 @@ def _validate_name(name, ctx):
     return True
 
 
+def _write_design_file(design_path: Path, doctrine_id: str, yaml_content: str) -> None:
+    """Write a minimal .design.md file alongside a newly created doctrine YAML.
+
+    Extracts title and summary from the YAML content when present; falls back
+    to the doctrine id for title and empty string for summary.
+    """
+    import yaml as _yaml
+    title = doctrine_id
+    summary = ""
+    try:
+        data = _yaml.safe_load(yaml_content)
+        if isinstance(data, dict):
+            title = data.get("title") or doctrine_id
+            summary = data.get("summary") or ""
+    except Exception:
+        pass
+    design_path.write_text(
+        f"---\nid: {doctrine_id}\ntitle: {title}\nsummary: {summary}\n---\n"
+    )
+
+
 def _format_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     """Format a table with consistent column padding and spacing.
 
@@ -1149,9 +1170,9 @@ def doctrine_list(ctx, json_flag, filter_groups):
         data = {
             "doctrines": [
                 {
-                    "id": d.get("id", d["name"]),
+                    "id": d["id"],
                     "group": d.get("group", ""),
-                    "title": d.get("title", d["name"]),
+                    "title": d["title"],
                     "summary": d.get("summary", ""),
                     "valid": d["valid"],
                 }
@@ -1167,10 +1188,10 @@ def doctrine_list(ctx, json_flag, filter_groups):
 
     rows = [
         [
-            d.get("id", d["name"]),
+            d["id"],
             d.get("group", ""),
-            d.get("title", d["name"]),
-            (d.get("summary", d.get("description", "")) + (" [INVALID]" if not d.get("valid", True) else "")),
+            d["title"],
+            d.get("summary", ""),
         ]
         for d in doctrines
     ]
@@ -1180,188 +1201,92 @@ def doctrine_list(ctx, json_flag, filter_groups):
 
 @doctrine.command("show")
 @click.argument("name")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def doctrine_show(ctx, name):
-    """Show and validate a doctrine."""
-    from lore.doctrine import load_doctrine, DoctrineError
+def doctrine_show(ctx, name, json_flag):
+    """Show a doctrine (design file then YAML)."""
+    from lore.doctrine import show_doctrine, DoctrineError
 
     project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
+    json_mode = json_flag or ctx.obj.get("json", False)
     doctrines_dir = paths.doctrines_dir(project_root)
 
-    if "/" in name or "\\" in name:
-        if json_mode:
-            click.echo(
-                json.dumps(
-                    {"error": f'Doctrine "{name}" not found in .lore/doctrines/'}
-                ),
-                err=True,
-            )
-            ctx.exit(1)
-            return
-        click.echo(f'Doctrine "{name}" not found in .lore/doctrines/', err=True)
-        ctx.exit(1)
-        return
-
-    doctrine_path = doctrines_dir / f"{name}.yaml"
-
-    if not doctrine_path.exists():
-        # Search in subdirectories (e.g. default/)
-        matches = (
-            list(doctrines_dir.rglob(f"{name}.yaml")) if doctrines_dir.exists() else []
-        )
-        if matches:
-            doctrine_path = matches[0]
-        else:
-            if json_mode:
-                click.echo(
-                    json.dumps(
-                        {"error": f'Doctrine "{name}" not found in .lore/doctrines/'}
-                    ),
-                    err=True,
-                )
-                ctx.exit(1)
-                return
-            click.echo(f'Doctrine "{name}" not found in .lore/doctrines/', err=True)
-            ctx.exit(1)
-            return
-
     try:
-        doctrine = load_doctrine(doctrine_path)
+        d = show_doctrine(name, doctrines_dir)
     except DoctrineError as e:
-        if json_mode:
+        if json_flag:
+            click.echo(json.dumps({"error": str(e)}))
+        elif json_mode:
             click.echo(json.dumps({"error": str(e)}), err=True)
-            ctx.exit(1)
-            return
-        click.echo(str(e), err=True)
+        else:
+            click.echo(str(e), err=True)
         ctx.exit(1)
         return
 
     if json_mode:
-        data = {
-            "name": doctrine["name"],
-            "description": doctrine["description"],
-            "steps": doctrine["steps"],
+        output = {
+            "id": d["id"],
+            "title": d["title"],
+            "summary": d["summary"],
+            "design": d["design"],
+            "steps": d["steps"],
         }
-        click.echo(json.dumps(data))
+        click.echo(json.dumps(output))
         return
 
-    click.echo(f"Doctrine: {doctrine['name']}")
-    click.echo(f"Description: {doctrine['description']}")
-    click.echo("")
-    click.echo("Steps:")
-    for step in doctrine["steps"]:
-        click.echo(f"  [{step['id']}] {step['title']}")
-        click.echo(f"    Priority: {step['priority']}")
-        if step["type"]:
-            click.echo(f"    Type: {step['type']}")
-        if step["needs"]:
-            click.echo(f"    Needs: {', '.join(step['needs'])}")
-        if step["knight"]:
-            click.echo(f"    Knight: {step['knight']}")
-        if step["notes"]:
-            click.echo(f"    Notes: {step['notes']}")
+    click.echo(d["design"], nl=False)
+    click.echo("\n---\n", nl=False)
+    click.echo(d["raw_yaml"], nl=False)
 
 
-@doctrine.command("new", context_settings={"ignore_unknown_options": True})
+@doctrine.command("new")
 @click.argument("name")
-@click.option("--from", "-f", "from_file", default=None, help="Source file.")
+@click.option("--from", "-f", "from_file", default=None, help="Source YAML file.")
+@click.option("--design", "-d", "design_file", default=None, help="Source design file.")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def doctrine_new(ctx, name, from_file):
-    """Create a new doctrine."""
-    import sys
-    from lore.doctrine import validate_doctrine_content, scaffold_doctrine, DoctrineError
+def doctrine_new(ctx, name, from_file, design_file, json_flag):
+    """Create a new doctrine from a YAML file and a design file."""
+    from lore.doctrine import create_doctrine, DoctrineError
 
-    json_mode = ctx.obj.get("json", False)
+    json_mode = json_flag or ctx.obj.get("json", False)
+
+    # Both flags are required
+    if from_file is None:
+        msg = "Error: -f/--from is required"
+        click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
+    if design_file is None:
+        msg = "Error: -d/--design is required"
+        click.echo(msg, err=True)
+        ctx.exit(1)
+        return
 
     if not _validate_name(name, ctx):
         return
 
     project_root = ctx.obj["project_root"]
     doctrines_dir = paths.doctrines_dir(project_root)
-    doctrine_path = doctrines_dir / f"{name}.yaml"
 
-    # Check duplicate (flat path or any subdirectory)
-    if doctrine_path.exists() or (
-        doctrines_dir.exists() and list(doctrines_dir.rglob(f"{name}.yaml"))
-    ):
-        msg = f"Error: doctrine '{name}' already exists. Use 'lore doctrine edit {name}' to modify it."
+    try:
+        create_doctrine(name, Path(from_file), Path(design_file), doctrines_dir)
+    except DoctrineError as e:
+        msg = str(e)
         if json_mode:
-            click.echo(json.dumps({"error": msg}))
+            click.echo(json.dumps({"error": msg}), err=True)
         else:
-            click.echo(msg)
+            click.echo(msg, err=True)
         ctx.exit(1)
         return
 
-    # Read content
-    if from_file is not None and from_file != "-":
-        source = Path(from_file)
-        if not source.exists():
-            msg = f"File not found: {from_file}"
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-        content = source.read_text()
-        # Validate content (strict: requires name, description, steps)
-        try:
-            validate_doctrine_content(content, name)
-        except DoctrineError as e:
-            msg = str(e)
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-    else:
-        # Scaffold path: TTY detected, or stdin is empty/whitespace
-        content = click.get_text_stream("stdin").read() if not sys.stdin.isatty() else ""
-        if not content or not content.strip():
-            content = scaffold_doctrine(name)
-            doctrines_dir.mkdir(parents=True, exist_ok=True)
-            doctrine_path.write_text(content)
-            if json_mode:
-                click.echo(json.dumps({"name": name, "filename": f"{name}.yaml"}))
-                return
-            click.echo(f"Created doctrine {name}")
-            return
-        # Light validation for stdin: valid YAML + id-if-present must match
-        import yaml as _yaml
-        try:
-            data = _yaml.safe_load(content)
-        except _yaml.YAMLError as e:
-            msg = str(e)
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-        if not isinstance(data, dict):
-            msg = "Doctrine must be a YAML mapping"
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-        if "id" in data and str(data["id"]) != name:
-            msg = f'Doctrine id "{data["id"]}" does not match command argument "{name}"'
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-
-    doctrines_dir.mkdir(parents=True, exist_ok=True)
-    doctrine_path.write_text(content)
-
     if json_mode:
-        click.echo(json.dumps({"name": name, "filename": f"{name}.yaml"}))
+        click.echo(json.dumps({
+            "name": name,
+            "yaml_filename": f"{name}.yaml",
+            "design_filename": f"{name}.design.md",
+        }))
         return
     click.echo(f"Created doctrine {name}")
 

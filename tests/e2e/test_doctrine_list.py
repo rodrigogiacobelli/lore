@@ -1,49 +1,405 @@
 """E2E tests for the doctrine list command.
 
-Spec: conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list)
+Spec: doctrine-design-file-us-001 (lore codex show doctrine-design-file-us-001)
+Spec: doctrine-design-file-us-002 (lore codex show doctrine-design-file-us-002)
+Workflow: conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list)
 """
 
 import json
 import shutil
 from pathlib import Path
 
-import pytest
-
-from lore.cli import main, _format_table
-import lore as _lore_pkg
-
-_DEFAULTS_DOCTRINES_DIR = Path(_lore_pkg.__file__).parent / "defaults" / "doctrines"
-_DEFAULT_DOCTRINE_FILES = sorted(_DEFAULTS_DOCTRINES_DIR.rglob("*.yaml"))
-
-
-def _write_doctrine(project_dir, filename, content):
-    """Helper to write a doctrine YAML file into .lore/doctrines/."""
-    doctrine_path = project_dir / ".lore" / "doctrines" / filename
-    doctrine_path.parent.mkdir(parents=True, exist_ok=True)
-    doctrine_path.write_text(content)
-    return doctrine_path
+from lore.cli import main
 
 
 # ---------------------------------------------------------------------------
-# Basic list behaviour
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-class TestDoctrineListBasic:
-    """lore doctrine list exits 0 and shows default doctrines."""
+def _write_pair(project_dir, stem, yaml_content, design_content):
+    """Write a paired .design.md + .yaml at the given stem path."""
+    base = project_dir / ".lore" / "doctrines" / stem
+    base.parent.mkdir(parents=True, exist_ok=True)
+    Path(str(base) + ".design.md").write_text(design_content)
+    Path(str(base) + ".yaml").write_text(yaml_content)
 
-    def test_list_exits_zero(self, runner, project_dir):
+
+def _write_design(project_dir, stem, design_content):
+    """Write an orphaned .design.md (no matching .yaml)."""
+    base = project_dir / ".lore" / "doctrines" / stem
+    base.parent.mkdir(parents=True, exist_ok=True)
+    Path(str(base) + ".design.md").write_text(design_content)
+
+
+def _write_yaml(project_dir, stem, yaml_content):
+    """Write a YAML-only doctrine (no matching .design.md)."""
+    base = project_dir / ".lore" / "doctrines" / stem
+    base.parent.mkdir(parents=True, exist_ok=True)
+    Path(str(base) + ".yaml").write_text(yaml_content)
+
+
+def _empty_doctrines_dir(project_dir):
+    """Remove all files from .lore/doctrines/ leaving the dir intact."""
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    shutil.rmtree(doctrines_dir)
+    doctrines_dir.mkdir(parents=True)
+    return doctrines_dir
+
+
+# ---------------------------------------------------------------------------
+# Scenario 1: Table displays all valid pairs
+# conceptual-workflows-doctrine-list step 2-4: scan .design.md, check .yaml, render table
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListValidPairs:
+    """Table shows one row per valid .design.md + .yaml pair."""
+
+    def test_table_shows_valid_pairs(self, runner, project_dir):
+        """E2E Scenario 1: rows appear for every valid pair."""
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline\n---\n",
+        )
+        _write_pair(
+            project_dir,
+            "update-changelog",
+            yaml_content="id: update-changelog\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: update-changelog\ntitle: Update Changelog\nsummary: Single-step doctrine\n---\n",
+        )
         result = runner.invoke(main, ["doctrine", "list"])
         assert result.exit_code == 0
+        assert "feature-implementation" in result.output
+        assert "Feature Implementation" in result.output
+        assert "update-changelog" in result.output
 
-    def test_list_shows_a_default_doctrine(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        data = json.loads(result.output)
-        assert len(data["doctrines"]) >= 1
+    def test_table_shows_id_column(self, runner, project_dir):
+        """ID column contains doctrine id from design frontmatter.
 
-    def test_no_subdir_annotation_in_output(self, runner, project_dir):
+        Valid pairs must NOT show [INVALID] in the new behavior.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline\n---\n",
+        )
         result = runner.invoke(main, ["doctrine", "list"])
-        assert "default/" not in result.output
+        assert result.exit_code == 0
+        assert "feature-implementation" in result.output
+        # New behavior: valid pairs never show [INVALID]
+        assert "[INVALID]" not in result.output
+
+    def test_table_shows_group_column_from_subdir(self, runner, project_dir):
+        """GROUP column contains directory path segment for subdirectory doctrines.
+
+        Valid pairs must NOT show [INVALID] in the new behavior.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "feature-implementation" in result.output
+        # New behavior: valid pairs never show [INVALID]
+        assert "[INVALID]" not in result.output
+
+    def test_table_shows_empty_group_for_root_doctrine(self, runner, project_dir):
+        """Root-level doctrines have empty GROUP column.
+
+        Valid pairs must NOT show [INVALID] in the new behavior.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "update-changelog",
+            yaml_content="id: update-changelog\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: update-changelog\ntitle: Update Changelog\nsummary: Single-step doctrine\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "update-changelog" in result.output
+        # New behavior: valid pairs never show [INVALID]
+        assert "[INVALID]" not in result.output
+
+    def test_table_shows_title_from_design_frontmatter(self, runner, project_dir):
+        """TITLE column contains title from design file frontmatter, not YAML."""
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "Feature Implementation" in result.output
+
+    def test_table_shows_summary_from_design_frontmatter(self, runner, project_dir):
+        """SUMMARY column contains summary from design file frontmatter."""
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "E2E spec-driven pipeline" in result.output
+
+    def test_table_exit_code_is_zero(self, runner, project_dir):
+        """doctrine list exits 0 when valid pairs exist.
+
+        Also verifies that valid pairs are NOT shown with [INVALID] marker.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        # New behavior: valid pairs never show [INVALID]
+        assert "[INVALID]" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Scenario 2: Orphaned design file is not shown
+# conceptual-workflows-doctrine-list step 5: .design.md without .yaml is skipped
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListOrphanedDesign:
+    """Orphaned .design.md files (no matching .yaml) are silently excluded."""
+
+    def test_orphaned_design_not_shown(self, runner, project_dir):
+        """E2E Scenario 2: orphaned design file excluded from table.
+
+        The scan is now driven by .design.md files. An orphaned .design.md
+        (no matching .yaml) must not appear in the output.
+        A valid pair is written alongside to confirm the scan is active and
+        that valid entries DO appear — only the orphan is excluded.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_design(
+            project_dir,
+            "orphan",
+            "---\nid: orphan\ntitle: Orphan\n---\n",
+        )
+        _write_pair(
+            project_dir,
+            "valid-doc",
+            yaml_content="id: valid-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: valid-doc\ntitle: Valid Doc\nsummary: A valid doctrine.\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "orphan" not in result.output
+        # Valid pair DOES appear; orphan does NOT
+        assert "valid-doc" in result.output
+        # New behavior: no [INVALID] markers at all
+        assert "[INVALID]" not in result.output
+
+    def test_orphaned_design_no_exception(self, runner, project_dir):
+        """Orphaned design file does not cause an exception or non-zero exit.
+
+        The new code must explicitly check for the matching .yaml partner.
+        Add a valid pair alongside to verify mixed results work correctly.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_design(
+            project_dir,
+            "orphan",
+            "---\nid: orphan\ntitle: Orphan\n---\n",
+        )
+        _write_pair(
+            project_dir,
+            "valid-one",
+            yaml_content="id: valid-one\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: valid-one\ntitle: Valid One\nsummary: A valid doctrine\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        # The valid pair appears; the orphan does not
+        assert "valid-one" in result.output
+        assert "orphan" not in result.output
+        # New behavior: no [INVALID] markers
+        assert "[INVALID]" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Scenario 3: YAML-only file is not shown
+# conceptual-workflows-doctrine-list step 6: .yaml without .design.md is invisible
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListYamlOnly:
+    """YAML-only doctrine files (no matching .design.md) are silently excluded."""
+
+    def test_yaml_only_not_shown(self, runner, project_dir):
+        """E2E Scenario 3: YAML-only file excluded from table."""
+        _empty_doctrines_dir(project_dir)
+        _write_yaml(
+            project_dir,
+            "legacy",
+            "id: legacy\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "legacy" not in result.output
+
+    def test_yaml_only_no_exception(self, runner, project_dir):
+        """YAML-only file does not cause an exception or non-zero exit.
+
+        In the new behavior, YAML-only files are completely invisible — no [INVALID].
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_yaml(
+            project_dir,
+            "legacy",
+            "id: legacy\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        # New behavior: YAML-only files don't appear at all — no [INVALID] either
+        assert "[INVALID]" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Scenario 4: Design frontmatter missing optional fields uses fallbacks
+# conceptual-workflows-doctrine-list step 4: FR-11 title/summary fallbacks
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListFallbacks:
+    """Fallback behavior when design frontmatter has no title or summary."""
+
+    def test_fallbacks_for_missing_title_summary(self, runner, project_dir):
+        """E2E Scenario 4: minimal design frontmatter shows id as title — no [INVALID].
+
+        The new code must show a valid row (not [INVALID]) for a minimal design file.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "minimal",
+            yaml_content="id: minimal\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: minimal\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "minimal" in result.output
+        # New behavior: valid pairs (even with minimal frontmatter) never show [INVALID]
+        assert "[INVALID]" not in result.output
+
+    def test_fallback_title_is_id(self, runner, project_dir):
+        """When design frontmatter has no title, TITLE column shows id — no [INVALID]."""
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "minimal",
+            yaml_content="id: minimal\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: minimal\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        # When title is missing, fallback to id — "minimal" should appear in the TITLE position
+        assert "minimal" in result.output
+        # New behavior: valid pairs never show [INVALID]
+        assert "[INVALID]" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Scenario 5: Empty doctrines directory
+# conceptual-workflows-doctrine-list step 2: scan returns nothing
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListEmpty:
+    """Empty doctrines directory shows empty table, exits 0."""
+
+    def test_empty_dir_exits_zero(self, runner, project_dir):
+        """E2E Scenario 5: empty directory exits 0.
+
+        New scan (from .design.md) over empty dir must also exit 0.
+        """
+        _empty_doctrines_dir(project_dir)
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "[INVALID]" not in result.output
+
+    def test_empty_dir_shows_no_invalid_markers(self, runner, project_dir):
+        """Empty directory has no [INVALID] markers.
+
+        The new code never adds [INVALID] markers since invalid/orphaned files
+        are silently excluded. This is true even for empty directories.
+        """
+        _empty_doctrines_dir(project_dir)
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "[INVALID]" not in result.output
+
+
+# ---------------------------------------------------------------------------
+# Scenario 6: After lore init, default doctrines appear
+# conceptual-workflows-lore-init: seeds defaults/doctrines/ paired files
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListAfterInit:
+    """After lore init, default paired doctrines appear in the table."""
+
+    def test_after_init_shows_feature_implementation(self, runner, tmp_path, monkeypatch):
+        """E2E Scenario 6: feature-implementation appears after lore init without [INVALID]."""
+        monkeypatch.chdir(tmp_path)
+        runner.invoke(main, ["init"])
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "feature-implementation" in result.output
+        # New behavior: default doctrines are valid pairs — no [INVALID] marker
+        assert "[INVALID]" not in result.output
+
+    def test_after_init_shows_update_changelog(self, runner, tmp_path, monkeypatch):
+        """E2E Scenario 6: update-changelog appears after lore init without [INVALID]."""
+        monkeypatch.chdir(tmp_path)
+        runner.invoke(main, ["init"])
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "update-changelog" in result.output
+        # New behavior: default doctrines are valid pairs — no [INVALID] marker
+        assert "[INVALID]" not in result.output
+
+    def test_after_init_shows_quick_feature_implementation(self, runner, tmp_path, monkeypatch):
+        """E2E Scenario 6: quick-feature-implementation appears after lore init without [INVALID]."""
+        monkeypatch.chdir(tmp_path)
+        runner.invoke(main, ["init"])
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "quick-feature-implementation" in result.output
+        # New behavior: default doctrines are valid pairs — no [INVALID] marker
+        assert "[INVALID]" not in result.output
+
+    def test_after_init_shows_tdd_implementation(self, runner, tmp_path, monkeypatch):
+        """E2E Scenario 6: tdd-implementation appears after lore init without [INVALID]."""
+        monkeypatch.chdir(tmp_path)
+        runner.invoke(main, ["init"])
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "tdd-implementation" in result.output
+        # New behavior: default doctrines are valid pairs — no [INVALID] marker
+        assert "[INVALID]" not in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -52,23 +408,36 @@ class TestDoctrineListBasic:
 
 
 class TestDoctrineListTableHeader:
-    """lore doctrine list outputs a table with ID, GROUP, TITLE, SUMMARY columns."""
+    """Table header has ID, GROUP, TITLE, SUMMARY columns.
+
+    After lore init, default doctrines must appear WITHOUT [INVALID] markers.
+    The new code shows only valid pairs (design+yaml), so defaults with paired
+    files will show clean rows.
+    """
 
     def test_header_contains_id(self, runner, project_dir):
         result = runner.invoke(main, ["doctrine", "list"])
         assert "ID" in result.output
+        # New behavior: default paired doctrines show without [INVALID]
+        assert "[INVALID]" not in result.output
 
     def test_header_contains_group(self, runner, project_dir):
         result = runner.invoke(main, ["doctrine", "list"])
         assert "GROUP" in result.output
+        # New behavior: default paired doctrines show without [INVALID]
+        assert "[INVALID]" not in result.output
 
     def test_header_contains_title(self, runner, project_dir):
         result = runner.invoke(main, ["doctrine", "list"])
         assert "TITLE" in result.output
+        # New behavior: default paired doctrines show without [INVALID]
+        assert "[INVALID]" not in result.output
 
     def test_header_contains_summary(self, runner, project_dir):
         result = runner.invoke(main, ["doctrine", "list"])
         assert "SUMMARY" in result.output
+        # New behavior: default paired doctrines show without [INVALID]
+        assert "[INVALID]" not in result.output
 
     def test_header_columns_in_correct_order(self, runner, project_dir):
         result = runner.invoke(main, ["doctrine", "list"])
@@ -79,293 +448,276 @@ class TestDoctrineListTableHeader:
         title_pos = header.index("TITLE")
         summary_pos = header.index("SUMMARY")
         assert id_pos < group_pos < title_pos < summary_pos
+        # New behavior: default paired doctrines show without [INVALID]
+        assert "[INVALID]" not in result.output
 
 
 # ---------------------------------------------------------------------------
-# Invalid doctrine marking
+# No [INVALID] markers in output
+# The new behavior silently excludes invalid/orphaned files — no [INVALID] rows
 # ---------------------------------------------------------------------------
 
 
-class TestDoctrineListInvalidMarking:
-    """Invalid doctrines appear in list marked with [INVALID]."""
+class TestDoctrineListNoInvalidMarkers:
+    """No [INVALID] markers appear in output — invalid files are silently excluded."""
 
-    def test_invalid_doctrine_marked_in_list(self, runner, project_dir):
-        _write_doctrine(project_dir, "broken.yaml", "name: broken\n")
+    def test_no_invalid_marker_for_yaml_only(self, runner, project_dir):
+        """YAML-only files produce no [INVALID] marker — they are simply excluded."""
+        _empty_doctrines_dir(project_dir)
+        _write_yaml(
+            project_dir,
+            "legacy",
+            "id: legacy\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+        )
         result = runner.invoke(main, ["doctrine", "list"])
         assert result.exit_code == 0
-        assert "broken" in result.output
-        assert "[INVALID]" in result.output
+        assert "[INVALID]" not in result.output
+
+    def test_no_invalid_marker_for_orphaned_design(self, runner, project_dir):
+        """Orphaned design files produce no [INVALID] marker.
+
+        The new scan finds .design.md files and checks for matching .yaml.
+        An orphaned .design.md is silently excluded — no [INVALID] row appears.
+        A valid pair alongside the orphan should appear cleanly.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_design(
+            project_dir,
+            "orphan",
+            "---\nid: orphan\ntitle: Orphan\n---\n",
+        )
+        _write_pair(
+            project_dir,
+            "clean-doc",
+            yaml_content="id: clean-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: clean-doc\ntitle: Clean Doc\nsummary: A clean doctrine.\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list"])
+        assert result.exit_code == 0
+        assert "[INVALID]" not in result.output
+        # Valid pair appears; orphan does not
+        assert "clean-doc" in result.output
+        assert "orphan" not in result.output
 
     def test_valid_doctrines_not_marked_invalid(self, runner, project_dir):
+        """Valid doctrine pairs never show [INVALID] marker."""
         result = runner.invoke(main, ["doctrine", "list"])
         assert "[INVALID]" not in result.output
 
-    def test_invalid_marker_uses_single_space(self, runner, project_dir):
-        doctrines_dir = project_dir / ".lore" / "doctrines"
-        shutil.rmtree(doctrines_dir)
-        doctrines_dir.mkdir()
-        (doctrines_dir / "bad-doc.yaml").write_text(
-            "name: bad-doc\ndescription: broken summary\n"
+
+# ---------------------------------------------------------------------------
+# US-002: JSON mode scenarios
+# conceptual-workflows-doctrine-list step 3-4 + conceptual-workflows-json-output
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListJson:
+    """doctrine list --json returns structured JSON with 5-field entries."""
+
+    def test_doctrine_list_json_returns_valid_shape(self, runner, project_dir):
+        """E2E Scenario 1: JSON output contains correct 5-field shape for valid pair.
+
+        conceptual-workflows-doctrine-list step 3-4 + conceptual-workflows-json-output
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline...\n---\n",
         )
-        result = runner.invoke(main, ["doctrine", "list"])
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
         assert result.exit_code == 0
-        expected_lines = _format_table(
-            ["ID", "GROUP", "TITLE", "SUMMARY"],
-            [["bad-doc", "", "bad-doc", "broken summary [INVALID]"]],
-        )
-        expected_output = "\n".join(expected_lines) + "\n"
-        assert result.output == expected_output
-
-
-# ---------------------------------------------------------------------------
-# Empty doctrine directory
-# ---------------------------------------------------------------------------
-
-
-class TestDoctrineListEmpty:
-    """When no doctrines exist, "No doctrines found." is shown."""
-
-    def test_empty_dir_exits_zero(self, runner, project_dir):
-        doctrines_dir = project_dir / ".lore" / "doctrines"
-        shutil.rmtree(doctrines_dir)
-        doctrines_dir.mkdir()
-        result = runner.invoke(main, ["doctrine", "list"])
-        assert result.exit_code == 0
-
-    def test_empty_dir_shows_no_doctrines_found(self, runner, project_dir):
-        doctrines_dir = project_dir / ".lore" / "doctrines"
-        shutil.rmtree(doctrines_dir)
-        doctrines_dir.mkdir()
-        result = runner.invoke(main, ["doctrine", "list"])
-        assert "No doctrines found." in result.output
-
-
-# ---------------------------------------------------------------------------
-# Nested doctrines discovery
-# ---------------------------------------------------------------------------
-
-
-class TestDoctrineListNested:
-    """Doctrines in subdirectories appear in list output."""
-
-    def test_default_subdir_doctrines_appear(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
         data = json.loads(result.output)
-        assert len(data["doctrines"]) >= 1
+        assert "doctrines" in data
+        entry = next(d for d in data["doctrines"] if d["id"] == "feature-implementation")
+        assert entry == {
+            "id": "feature-implementation",
+            "group": "feature-implementation",
+            "title": "Feature Implementation",
+            "summary": "E2E spec-driven pipeline...",
+            "valid": True,
+        }
 
-    def test_flat_level_doctrine_appears(self, runner, project_dir):
-        _write_doctrine(
+    def test_doctrine_list_json_empty(self, runner, project_dir):
+        """E2E Scenario 2: JSON output is empty doctrines array when directory is empty.
+
+        conceptual-workflows-doctrine-list step 2: empty scan returns empty array
+        """
+        _empty_doctrines_dir(project_dir)
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        assert json.loads(result.output) == {"doctrines": []}
+
+    def test_doctrine_list_json_orphaned_design_not_included(self, runner, project_dir):
+        """E2E Scenario 3: Orphaned design file is not included in JSON output.
+
+        conceptual-workflows-doctrine-list step 5: orphaned → skipped
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_design(project_dir, "orphan", "---\nid: orphan\ntitle: Orphan\n---\n")
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert not any(d["id"] == "orphan" for d in data["doctrines"])
+
+    def test_doctrine_list_json_entry_has_exactly_five_fields(self, runner, project_dir):
+        """E2E Scenario 4: JSON entry has exactly five keys: id, group, title, summary, valid.
+
+        conceptual-workflows-json-output: no extra keys in output
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
             project_dir,
-            "my-workflow.yaml",
-            "name: my-workflow\ndescription: My custom workflow\nsteps:\n  - id: work\n    title: Do work\n",
+            "my-workflow",
+            yaml_content="id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n",
         )
-        result = runner.invoke(main, ["doctrine", "list"])
-        assert "my-workflow" in result.output
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        entry = data["doctrines"][0]
+        assert set(entry.keys()) == {"id", "group", "title", "summary", "valid"}
 
-    def test_deeply_nested_doctrine_appears(self, runner, project_dir):
-        _write_doctrine(
+    def test_doctrine_list_json_no_filename_key(self, runner, project_dir):
+        """JSON output does not include 'filename' key from Python API.
+
+        CLI strips internal fields before serialising.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
             project_dir,
-            "team/sprints/retro.yaml",
-            "name: retro\ndescription: Retrospective workflow\nsteps:\n  - id: discuss\n    title: Discuss\n",
+            "my-workflow",
+            yaml_content="id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n",
         )
-        result = runner.invoke(main, ["doctrine", "list"])
-        assert "retro" in result.output
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        entry = data["doctrines"][0]
+        assert "filename" not in entry
 
+    def test_doctrine_list_json_no_errors_key(self, runner, project_dir):
+        """JSON output does not include 'errors' key from Python API.
 
-# ---------------------------------------------------------------------------
-# JSON output schema
-# ---------------------------------------------------------------------------
+        CLI strips internal fields before serialising.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "my-workflow",
+            yaml_content="id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        entry = data["doctrines"][0]
+        assert "errors" not in entry
 
+    def test_doctrine_list_json_no_name_key(self, runner, project_dir):
+        """JSON output does not include legacy 'name' key.
 
-class TestDoctrineListJsonSchema:
-    """JSON output envelope and field contracts."""
+        New schema uses 'id' instead of 'name'.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "my-workflow",
+            yaml_content="id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        entry = data["doctrines"][0]
+        assert "name" not in entry
 
-    def test_json_has_doctrines_key(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
+    def test_doctrine_list_json_no_description_key(self, runner, project_dir):
+        """JSON output does not include legacy 'description' key.
+
+        New schema uses 'summary' from design frontmatter.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "my-workflow",
+            yaml_content="id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        entry = data["doctrines"][0]
+        assert "description" not in entry
+
+    def test_doctrine_list_json_valid_always_true(self, runner, project_dir):
+        """JSON 'valid' field is True for all entries (only valid pairs are returned).
+
+        Since orphaned files are skipped, every entry in JSON output is valid.
+        """
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "my-workflow",
+            yaml_content="id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        for entry in data["doctrines"]:
+            assert entry["valid"] is True
+
+    def test_doctrine_list_json_exit_code_zero(self, runner, project_dir):
+        """doctrine list --json exits with code 0."""
+        _empty_doctrines_dir(project_dir)
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0
+
+    def test_doctrine_list_json_top_level_key_is_doctrines(self, runner, project_dir):
+        """JSON output top-level key is 'doctrines'."""
+        _empty_doctrines_dir(project_dir)
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "doctrines" in data
         assert isinstance(data["doctrines"], list)
 
-    def test_json_records_have_group_key(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        parsed = json.loads(result.output)
-        missing = [r for r in parsed["doctrines"] if "group" not in r]
-        assert missing == []
-
-    def test_json_records_have_only_five_fields(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        data = json.loads(result.output)
-        for doctrine in data["doctrines"]:
-            extra = set(doctrine.keys()) - {"id", "group", "title", "summary", "valid"}
-            assert not extra
-
-    def test_json_no_name_key(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        parsed = json.loads(result.output)
-        records_with_name = [r for r in parsed["doctrines"] if "name" in r]
-        assert records_with_name == []
-
-    def test_json_no_description_key(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        parsed = json.loads(result.output)
-        records_with_description = [r for r in parsed["doctrines"] if "description" in r]
-        assert records_with_description == []
-
-    def test_json_no_errors_key(self, runner, project_dir):
-        _write_doctrine(project_dir, "broken.yaml", "name: broken\n")
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        parsed = json.loads(result.output)
-        records_with_errors = [r for r in parsed["doctrines"] if "errors" in r]
-        assert records_with_errors == []
-
-    def test_json_invalid_doctrine_valid_false(self, runner, project_dir):
-        _write_doctrine(project_dir, "broken.yaml", "name: broken\n")
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        parsed = json.loads(result.output)
-        broken = [r for r in parsed["doctrines"] if r["id"] == "broken"]
-        assert len(broken) == 1
-        assert broken[0]["valid"] is False
-
-    def test_json_count_matches_table_rows(self, runner, project_dir):
-        table_result = runner.invoke(main, ["doctrine", "list"])
-        json_result = runner.invoke(main, ["--json", "doctrine", "list"])
-        assert json_result.exit_code == 0
-        parsed = json.loads(json_result.output)
-        table_lines = [line for line in table_result.output.strip().split("\n") if line.strip()]
-        doctrine_table_rows = len(table_lines) - 1
-        assert len(parsed["doctrines"]) == doctrine_table_rows
-
-
-# ---------------------------------------------------------------------------
-# Default doctrines have descriptive metadata
-# ---------------------------------------------------------------------------
-
-
-class TestDefaultDoctrineMetadata:
-    """After lore init, default doctrines have id, title, and summary metadata."""
-
-    def test_default_doctrines_visible_in_json(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "doctrine", "list"])
-        data = json.loads(result.output)
-        assert len(data["doctrines"]) >= 1
-
-
-# ---------------------------------------------------------------------------
-# Local --json flag (US-3)
-# ---------------------------------------------------------------------------
-
-
-class TestLocalJsonFlag:
-    """lore doctrine list --json local flag produces identical JSON to global --json flag.
-
-    Ref: conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list)
-    """
-
-    def test_local_json_flag_exits_zero(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 1 and step 2
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-
-    def test_local_json_flag_returns_doctrines_key(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 2 (top-level key is "doctrines")
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert "doctrines" in data
-        assert isinstance(data["doctrines"], list)
-
-    def test_local_json_flag_records_have_exactly_five_fields(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 5 (JSON mode: id, group, title, summary, valid)
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert len(data["doctrines"]) > 0
-        for doctrine in data["doctrines"]:
-            assert set(doctrine.keys()) == {"id", "group", "title", "summary", "valid"}
-
-    def test_local_json_flag_valid_doctrine_has_valid_true(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 2 (valid boolean field)
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert any(d["valid"] is True for d in data["doctrines"])
-
-    def test_local_json_flag_invalid_doctrine_has_valid_false(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 2 (invalid doctrine → valid: false)
-        # Ref: conceptual-workflows-doctrine-list step 3 (Pass B — validation failure)
-        _write_doctrine(project_dir, "broken-local.yaml", "name: broken-local\n")
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        broken = [d for d in data["doctrines"] if d["id"] == "broken-local"]
-        assert len(broken) == 1
-        assert broken[0]["valid"] is False
-
-    def test_local_json_flag_invalid_doctrine_summary_has_no_invalid_suffix(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 2 (field note: [INVALID] not in JSON summary)
-        # Ref: conceptual-workflows-doctrine-list step 5 (JSON mode: no [INVALID] suffix)
-        _write_doctrine(project_dir, "broken-suffix.yaml", "name: broken-suffix\n")
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        broken = [d for d in data["doctrines"] if d["id"] == "broken-suffix"]
-        assert len(broken) == 1
-        assert "[INVALID]" not in broken[0]["summary"]
-
-    def test_local_json_flag_identical_to_global_flag(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 1 (decision point: flag position)
-        # Both lore doctrine list --json and lore --json doctrine list must produce identical output
-        local_result = runner.invoke(main, ["doctrine", "list", "--json"])
-        global_result = runner.invoke(main, ["--json", "doctrine", "list"])
-        assert local_result.exit_code == 0
-        assert global_result.exit_code == 0
-        assert json.loads(local_result.output) == json.loads(global_result.output)
-
-    def test_local_json_flag_empty_doctrines_returns_empty_array(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 3 (empty result → {"doctrines": []})
-        # Ref: conceptual-workflows-doctrine-list step 1 (non-existent dir → empty result)
-        doctrines_dir = project_dir / ".lore" / "doctrines"
-        shutil.rmtree(doctrines_dir)
-        doctrines_dir.mkdir()
-        result = runner.invoke(main, ["doctrine", "list", "--json"])
-        assert result.exit_code == 0
-        data = json.loads(result.output)
-        assert data == {"doctrines": []}
-
-    def test_local_json_flag_declared_at_subcommand_level(self, runner, project_dir):
-        # Ref: conceptual-workflows-json-output — local flag position (not only global lore --json)
-        # Invokes `lore doctrine list --help` and asserts "--json" appears in the subcommand help text
-        result = runner.invoke(main, ["doctrine", "list", "--help"])
-        assert result.exit_code == 0
-        assert "--json" in result.output
-
-    def test_local_json_flag_group_empty_for_root_doctrine(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 2 (group derivation: flat root → group = "")
-        # Doctrine file is at .lore/doctrines/<name>.yaml (not in a subdirectory)
-        _write_doctrine(
+    def test_doctrine_list_json_multiple_entries(self, runner, project_dir):
+        """JSON output contains one entry per valid pair when multiple pairs exist."""
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
             project_dir,
-            "root-level-doctrine.yaml",
-            "name: root-level-doctrine\ndescription: Root doctrine.\nsteps:\n  - id: step1\n    title: Step One\n",
+            "feature-implementation/feature-implementation",
+            yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: E2E spec-driven pipeline...\n---\n",
+        )
+        _write_pair(
+            project_dir,
+            "update-changelog",
+            yaml_content="id: update-changelog\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: update-changelog\ntitle: Update Changelog\nsummary: Single-step doctrine\n---\n",
         )
         result = runner.invoke(main, ["doctrine", "list", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        root_doctrines = [d for d in data["doctrines"] if d["id"] == "root-level-doctrine"]
-        assert len(root_doctrines) == 1
-        assert root_doctrines[0]["group"] == ""
+        assert len(data["doctrines"]) == 2
+        ids = {d["id"] for d in data["doctrines"]}
+        assert "feature-implementation" in ids
+        assert "update-changelog" in ids
 
-    def test_local_json_flag_group_is_subdirectory_name(self, runner, project_dir):
-        # Ref: conceptual-workflows-doctrine-list step 2 (group derivation: subdirectory name → group)
-        # Doctrine file is at .lore/doctrines/default/<name>.yaml; JSON record "group" must equal "default"
-        _write_doctrine(
+    def test_doctrine_list_json_group_empty_for_root_doctrine(self, runner, project_dir):
+        """Root-level doctrine has 'group': '' in JSON output."""
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
             project_dir,
-            "default/subdir-doctrine.yaml",
-            "name: subdir-doctrine\ndescription: Subdirectory doctrine.\nsteps:\n  - id: step1\n    title: Step One\n",
+            "update-changelog",
+            yaml_content="id: update-changelog\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: update-changelog\ntitle: Update Changelog\nsummary: Single-step doctrine\n---\n",
         )
         result = runner.invoke(main, ["doctrine", "list", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
-        subdir_doctrines = [d for d in data["doctrines"] if d["id"] == "subdir-doctrine"]
-        assert len(subdir_doctrines) == 1
-        assert subdir_doctrines[0]["group"] == "default"
+        entry = next(d for d in data["doctrines"] if d["id"] == "update-changelog")
+        assert entry["group"] == ""
