@@ -8,6 +8,21 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-09
+
+### Added
+
+- All list commands (`lore artifact list`, `lore codex list`, `lore doctrine list`, `lore knight list`, `lore watcher list`) now accept an optional path argument to filter results to a specific group or subfolder.
+- `lore doctrine show` accepts `--json` for machine-readable output.
+- New doctrines are now created with a companion `.design.md` file that records the doctrine's id, title, and summary alongside the YAML definition.
+
+### Changed
+
+- **Breaking:** `Doctrine` model fields renamed — `name` → `id`, `description` split into `title` and `summary`. Code importing `Doctrine.name` or `Doctrine.description` must update field references.
+- **Breaking:** `DoctrineListEntry` model updated to match — `name` → `id`, `description` replaced by `title` and `summary`; `errors` field removed; `filename` now points to the `.design.md` file instead of the YAML file.
+- Built-in knight personas reorganized into per-workflow subdirectories (e.g. `knights/feature-implementation/`); existing custom knights are unaffected.
+- Default doctrines (`feature-implementation`, `quick-feature-implementation`, `tdd-implementation`, `update-changelog`) updated to use the new doctrine schema with explicit `id`, `title`, and `summary` fields.
+
 ## [0.1.0] — 2026-03-31
 
 First release. Lore is the task engine and project memory system at the base of the
