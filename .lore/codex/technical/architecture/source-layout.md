@@ -1,8 +1,9 @@
 ---
 id: tech-arch-source-layout
 title: Source Layout
-summary: The src/lore/ source tree with one-line descriptions per module, including init.py, root.py, oracle.py, doctrine.py (two-file model: list_doctrines/show_doctrine/create_doctrine), codex.py (map_documents, chaos_documents, _read_related), artifact.py, validators.py (validate_chaos_threshold), paths.py, knight.py, frontmatter.py (extra_fields), and graph.py. Covers package entry points, defaults directory (paired .yaml + .design.md doctrines, knights, artifacts/transient/), migrations (v1-v6), py.typed, and tests layout. Documents lore.models public API (frozen dataclasses, from_row/from_dict, __all__). Notes breaking Doctrine API change: name/description removed; id/title/summary added.
-related: ["tech-overview", "standards-dry", "standards-single-responsibility"]
+summary: >
+  The src/lore/ source tree with one-line descriptions per module, including init.py, root.py, oracle.py, doctrine.py (two-file model: list_doctrines/show_doctrine/create_doctrine), codex.py (map_documents, chaos_documents, _read_related), artifact.py, validators.py (validate_chaos_threshold), paths.py, knight.py, frontmatter.py (extra_fields), and graph.py. Covers package entry points, defaults directory (paired .yaml + .design.md doctrines, knights, artifacts/transient/), migrations (v1-v6), py.typed, and tests layout. Documents lore.models public API (frozen dataclasses, from_row/from_dict, __all__). Notes breaking Doctrine API change: name/description removed; id/title/summary added.
+related: ["tech-overview", "standards-dry", "standards-single-responsibility", "standards-dependency-inversion", "tech-arch-project-root-detection", "conceptual-workflows-oracle"]
 stability: stable
 ---
 

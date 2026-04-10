@@ -8,20 +8,49 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-04-09
+## [0.2.0] - 2026-04-10
 
 ### Added
 
-- All list commands (`lore artifact list`, `lore codex list`, `lore doctrine list`, `lore knight list`, `lore watcher list`) now accept an optional path argument to filter results to a specific group or subfolder.
+- **`lore health`** — full codebase health audit command. Scans all five file-based entity
+  types: codex documents (broken related links, missing `id` field, island nodes), artifacts
+  (missing required frontmatter), doctrines (orphaned files, broken knight/artifact refs in
+  steps), knights (active missions referencing absent knight files), and watchers (invalid
+  YAML, broken doctrine refs).
+- **`lore health --scope <type> [<type> ...]`** — limit the audit to one or more entity
+  categories (e.g. `lore health --scope codex watchers`). Valid scopes: `codex`,
+  `artifacts`, `doctrines`, `knights`, `watchers`.
+- **`lore health --json`** — machine-readable JSON output of all issues found.
+- **`lore health` exit codes** — `0` if clean or warnings only; `1` if any errors are
+  present.
+- Health report written as a markdown file to `codex/transient/` on every run, so the
+  audit history is accessible through the codex.
+- **`health_check()` Python API** — call `from lore.models import health_check` to run
+  the audit programmatically; returns a `HealthReport` with structured `HealthIssue`
+  entries. Both `HealthReport` and `HealthIssue` are now part of `lore.models.__all__`.
+- **`lore <entity> list --filter <subtree>`** — filter listing output by folder subtree
+  for artifacts, codex documents, doctrines, knights, and watchers.
+- All list commands now accept an optional path argument to scope results to a specific
+  group or subfolder.
 - `lore doctrine show` accepts `--json` for machine-readable output.
-- New doctrines are now created with a companion `.design.md` file that records the doctrine's id, title, and summary alongside the YAML definition.
+- New doctrines are created with a companion `.design.md` file recording the doctrine's
+  `id`, `title`, and `summary` alongside the YAML definition.
+- **Doctrine redesign** — doctrines now cleanly separate knight personas from task
+  definitions; updated default doctrine templates, knight files, and `lore doctrine show`
+  output to reflect the new structure.
 
 ### Changed
 
-- **Breaking:** `Doctrine` model fields renamed — `name` → `id`, `description` split into `title` and `summary`. Code importing `Doctrine.name` or `Doctrine.description` must update field references.
-- **Breaking:** `DoctrineListEntry` model updated to match — `name` → `id`, `description` replaced by `title` and `summary`; `errors` field removed; `filename` now points to the `.design.md` file instead of the YAML file.
-- Built-in knight personas reorganized into per-workflow subdirectories (e.g. `knights/feature-implementation/`); existing custom knights are unaffected.
-- Default doctrines (`feature-implementation`, `quick-feature-implementation`, `tdd-implementation`, `update-changelog`) updated to use the new doctrine schema with explicit `id`, `title`, and `summary` fields.
+- **Breaking:** `Doctrine` model fields renamed — `name` → `id`, `description` split into
+  `title` and `summary`. Code importing `Doctrine.name` or `Doctrine.description` must
+  update field references.
+- **Breaking:** `DoctrineListEntry` model updated to match — `name` → `id`, `description`
+  replaced by `title` and `summary`; `errors` field removed; `filename` now points to the
+  `.design.md` file instead of the YAML file.
+- Built-in knight personas reorganized into per-workflow subdirectories (e.g.
+  `knights/feature-implementation/`); existing custom knights are unaffected.
+- Default doctrines updated to use the new schema with explicit `id`, `title`, and
+  `summary` fields.
 
 ## [0.1.0] — 2026-03-31
 

@@ -2,7 +2,7 @@
 id: tech-api-surface
 title: Python API Entity CRUD Matrix
 summary: Maps every Lore entity to its available Python API operations (lore.db, lore.codex, lore.artifact, lore.doctrine). Shows the function call for each CRUD and traversal operation and highlights gaps. Companion to tech-cli-entity-crud-matrix.
-related: ["decisions-010", "decisions-011", "tech-cli-entity-crud-matrix", "tech-db-schema", "tech-arch-codex-map", "tech-arch-codex-chaos"]
+related: ["decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "tech-cli-entity-crud-matrix", "tech-db-schema", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-health", "standards-facade", "standards-public-api-stability", "conceptual-workflows-python-api"]
 stability: stable
 ---
 
@@ -97,6 +97,40 @@ Watcher.from_dict(load_watcher(path))   # or Watcher.from_dict(list_watchers(dir
 **Knight hydration:** Use `lore.knight.find_knight(knights_dir, name)` to locate the file. Do not glob `.lore/knights/**/*.md` directly. `find_knight` returns `Path | None` (not found) and raises `ValueError` on path-traversal attempts (names containing `/` or `\\`).
 
 **Watcher hydration:** Use `lore.watcher.find_watcher(watchers_dir, name)` to locate the file. `find_watcher` returns `Path | None` (not found) and raises `ValueError` on path-traversal attempts.
+
+## Diagnostic Operations
+
+```python
+from lore.models import health_check, HealthReport, HealthIssue
+from pathlib import Path
+
+report: HealthReport = health_check(project_root=Path("."), scope=None)
+report: HealthReport = health_check(project_root=Path("."), scope=["codex"])
+report: HealthReport = health_check(project_root=Path("."), scope=["doctrines", "watchers"])
+```
+
+`health_check(project_root, scope=None)` audits all five file-based entity types (or a subset when `scope` is provided) and returns a `HealthReport`. Never prints to stdout or stderr.
+
+### `HealthReport` fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `errors` | `tuple[HealthIssue, ...]` | All error-severity issues |
+| `warnings` | `tuple[HealthIssue, ...]` | All warning-severity issues |
+| `has_errors` | `bool` (property) | `True` if `errors` is non-empty |
+| `issues` | `tuple[HealthIssue, ...]` (property) | All issues — errors then warnings |
+
+### `HealthIssue` fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `severity` | `str` | `"error"` or `"warning"` |
+| `entity_type` | `str` | `"codex"`, `"artifacts"`, `"doctrines"`, `"knights"`, or `"watchers"` |
+| `id` | `str` | Entity ID, or filepath string when ID is unknown |
+| `check` | `str` | Check name: `"broken_related_link"`, `"missing_frontmatter"`, `"island_node"`, `"orphaned_file"`, `"broken_knight_ref"`, `"broken_artifact_ref"`, `"missing_file"`, `"broken_doctrine_ref"`, `"invalid_yaml"`, `"scan_failed"` |
+| `detail` | `str` | Human-readable explanation |
+
+Both `HealthIssue` and `HealthReport` are frozen dataclasses in `lore.models.__all__`. `HealthIssue.from_dict(d)` is provided for round-tripping JSON output.
 
 ## Gaps
 

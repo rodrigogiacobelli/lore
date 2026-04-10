@@ -5,7 +5,7 @@ summary: >
   What Camelot is, why it exists, and how its three projects — Lore, Realm, and Citadel — fit
   together to form a complete AI-driven development platform. Covers the dependency direction,
   Lore's role as the authoritative state engine, and the future capabilities planned for the system.
-related: ["tech-api-surface", "decisions-010", "decisions-011", "tech-overview"]
+related: ["tech-api-surface", "decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "tech-overview", "conceptual-workflows-typical-workflow"]
 stability: stable
 ---
 

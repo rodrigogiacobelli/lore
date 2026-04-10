@@ -46,6 +46,15 @@ def db_conn(project_dir: Path) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_db(project_dir: Path) -> None:
+    """Ensure the project database is initialized with the schema."""
+    from lore.db import init_database
+
+    lore_dir = project_dir / ".lore"
+    lore_dir.mkdir(parents=True, exist_ok=True)
+    init_database(lore_dir / "lore.db")
+
+
 def insert_quest(
     project_dir: Path,
     quest_id: str,
@@ -58,6 +67,7 @@ def insert_quest(
     closed_at: str | None = None,
 ) -> None:
     """Insert a quest row directly into the database."""
+    _ensure_db(project_dir)
     conn = sqlite3.connect(str(project_dir / ".lore" / "lore.db"))
     try:
         conn.execute(

@@ -1,8 +1,8 @@
 ---
-id: "006"
+id: decisions-006-no-seed-content-tests
 title: "Do not test seed default file content"
 summary: "ADR recording the decision that tests must never assert on the specific content of seed default files (defaults/ directory). Only structure and existence are valid test targets."
-related: ["technical-test-guidelines", "001"]
+related: ["technical-test-guidelines", "decisions-001-dumb-infrastructure"]
 stability: stable
 ---
 

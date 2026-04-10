@@ -5,6 +5,8 @@ import enum
 import sqlite3
 from typing import Literal
 
+from lore.health import HealthIssue, HealthReport, health_check
+
 try:
     from enum import StrEnum
 except ImportError:
@@ -323,4 +325,7 @@ __all__ = [
     "Knight",
     "DoctrineListEntry",
     "Watcher",
+    "HealthIssue",
+    "HealthReport",
+    "health_check",
 ]

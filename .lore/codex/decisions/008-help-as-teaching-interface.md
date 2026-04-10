@@ -7,7 +7,7 @@ summary: >
   is scoped to top-level and command-group levels only. JSON --help is deferred
   (implementation cost exceeds benefit). AGENTS.md is reduced to ~40-50 lines.
   board command enrichment deferred until spec-mission-board ships.
-related: ["decisions-001"]
+related: ["decisions-001-dumb-infrastructure"]
 stability: stable
 ---
 

@@ -2,7 +2,7 @@
 id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
 summary: Maps every Lore entity to its available CLI CRUD and traversal operations with the exact command for each. Highlights gaps — Codex and Artifact have no CLI write path; Board has no standalone list or update; Quest/Mission have no search; lore deps is documented but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher) support --filter GROUP... for namespace scoping.
-related: ["tech-api-surface", "tech-cli-commands", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-filter-list"]
+related: ["tech-api-surface", "tech-cli-commands", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health"]
 stability: stable
 ---
 
@@ -39,6 +39,12 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 | Remove dependency | `lore unneed <id>:<dep_id> [more pairs…]` |
 | Show dependencies | embedded in `lore show <mission_id>` |
 | Standalone `lore deps` | ✗ not implemented — dependency info embedded in `lore show` |
+
+## Diagnostic Operations
+
+| Command | Description |
+|---------|-------------|
+| `lore health [--scope TYPE [TYPE ...]] [--json]` | Audit all five file-based entity types (or a subset via `--scope`) and report errors/warnings. Exits `1` on any error, `0` on clean or warnings-only. Writes a markdown report to `.lore/codex/transient/` on every run. |
 
 ## Gaps
 

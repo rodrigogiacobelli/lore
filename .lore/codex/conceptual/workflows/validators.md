@@ -3,7 +3,7 @@ id: conceptual-workflows-validators
 title: Input Validation
 summary: >
   What the system does internally when input validation runs — priority range checks, entity-ID format checks, message emptiness checks, and the wiring of lore.validators into the CLI and DB layers.
-related: ["tech-arch-validators", "decisions-011", "standards-dry", "standards-single-responsibility"]
+related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "standards-dry", "standards-single-responsibility"]
 stability: stable
 ---
 

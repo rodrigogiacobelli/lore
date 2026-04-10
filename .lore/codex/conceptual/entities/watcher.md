@@ -10,6 +10,7 @@ related:
   - conceptual-workflows-lore-init
   - tech-arch-initialized-project-structure
   - tech-arch-source-layout
+  - conceptual-relationships-watcher--doctrine
 ---
 
 # Watcher

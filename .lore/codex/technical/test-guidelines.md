@@ -5,7 +5,7 @@ summary: >
   Defines the two-tier test model (unit vs E2E), naming conventions, codex
   anchoring rules for E2E tests, prohibited patterns, and how to add new tests.
   This is the source of truth for all test authorship in this project.
-related: ["tech-arch-source-layout", "tech-overview"]
+related: ["tech-arch-source-layout", "tech-overview", "decisions-006-no-seed-content-tests"]
 stability: stable
 ---
 

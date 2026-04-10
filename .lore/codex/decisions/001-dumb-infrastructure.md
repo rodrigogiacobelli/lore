@@ -1,8 +1,8 @@
 ---
-id: "001"
+id: decisions-001-dumb-infrastructure
 title: "Dumb infrastructure design principles"
 summary: "ADR recording the core design principles of Lore: dumb infrastructure, short commands, single-file no-server, and minimise tool calls. The context-aware principle is noted as an unimplemented intention deferred to US-30."
-related: ["decisions-004", "decisions-008"]
+related: ["decisions-004-mission-type-dumb-storage", "decisions-008-help-as-teaching-interface"]
 stability: stable
 ---
 

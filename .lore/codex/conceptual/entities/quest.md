@@ -2,7 +2,7 @@
 id: conceptual-entities-quest
 title: Quest
 summary: What a Quest is — a live grouping of Missions representing a body of work (a feature, bug fix, refactor, or spike). Covers status derivation, the auto_close toggle, and edge cases for empty quests, reopening, and soft-delete.
-related: ["conceptual-entities-mission", "conceptual-entities-doctrine", "tech-db-schema"]
+related: ["conceptual-entities-mission", "conceptual-entities-doctrine", "tech-db-schema", "conceptual-relationships-quest--mission"]
 stability: stable
 ---
 

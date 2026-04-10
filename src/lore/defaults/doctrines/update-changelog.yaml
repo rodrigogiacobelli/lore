@@ -17,10 +17,22 @@ steps:
 
       Read `pyproject.toml` and extract the `version` field under `[project]`.
 
+      Run:
+        git tag
+      Collect all version tags (e.g. `v0.1.0`, `v0.2.0`). These are the only versions that
+      were actually shipped to users. Intermediate version bumps that were never tagged are
+      not real releases and must NOT get their own changelog block.
+
       Decide where to write:
-      - If pyproject.toml version differs from the last versioned block → create a new
+      - If pyproject.toml version matches the last versioned block → add to the existing block.
+      - If pyproject.toml version differs AND has a corresponding git tag → create a new
         `## [<version>] - <today's date>` block.
-      - If versions match → add to the existing block under the appropriate subsections.
+      - If pyproject.toml version differs but has NO git tag yet → create a new
+        `## [<version>] - <today's date>` block (this is the unreleased work being documented
+        ahead of the tag).
+      - Never create a block for any intermediate version that appears between the last
+        changelog entry and pyproject.toml but has no git tag. Fold those commits into the
+        current version block instead.
       - If only `## [Unreleased]` exists → write into it; do not create a versioned block yet.
 
       Map each commit to a Keep-a-Changelog subsection:

@@ -2,7 +2,7 @@
 id: tech-overview
 title: Technical Overview
 summary: Technology choices (Python, Click, SQLite WAL, PyYAML, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE), and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry between `lore new quest` and `lore edit`.
-related: ["tech-db-schema", "tech-arch-source-layout"]
+related: ["tech-db-schema", "tech-arch-source-layout", "vision-camelot-system"]
 stability: stable
 ---
 

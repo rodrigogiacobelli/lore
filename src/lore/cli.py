@@ -2716,3 +2716,51 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(json.dumps(result))
     else:
         click.echo(f"Deleted watcher {name}")
+
+
+@main.command("health")
+@click.option(
+    "--scope",
+    "scope",
+    multiple=True,
+    type=click.Choice(["codex", "artifacts", "doctrines", "knights", "watchers"]),
+    help="Limit audit to specific entity types (space-separated, e.g. --scope codex knights).",
+)
+@click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def health_cmd(ctx, scope, json_mode):
+    """Audit all five file-based entity types and report issues."""
+    import datetime
+
+    from lore.health import health_check, _write_report
+
+    project_root = ctx.obj["project_root"]
+    json_mode = json_mode or ctx.obj.get("json", False)
+
+    active_scope = list(scope) if scope else None
+
+    report = health_check(project_root, scope=active_scope)
+
+    # Write report file
+    now = datetime.datetime.now(datetime.timezone.utc)
+    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S")
+    codex_dir = paths.codex_dir(project_root)
+    _write_report(report, codex_dir, timestamp)
+
+    if json_mode:
+        import dataclasses
+
+        issues_data = [dataclasses.asdict(i) for i in report.issues]
+        click.echo(json.dumps({"has_errors": report.has_errors, "issues": issues_data}))
+        if report.has_errors:
+            ctx.exit(1)
+        return
+
+    if not report.issues:
+        click.echo("Health check passed. No issues found.")
+    else:
+        for issue in report.issues:
+            click.echo(f"{issue.severity.upper()}  {issue.entity_type}  {issue.id}  {issue.check}: {issue.detail}")
+
+    if report.has_errors:
+        ctx.exit(1)

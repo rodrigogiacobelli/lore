@@ -2,7 +2,7 @@
 id: ops-git-workflow
 title: Git Workflow
 summary: Branching model, commit conventions (US-N ticket format and conventional prefixes), feature development workflow, release process, and hotfix procedure for the Lore repository.
-related: ["ops-installation", "decisions-010"]
+related: ["ops-installation", "decisions-010-public-api-stability"]
 stability: stable
 ---
 

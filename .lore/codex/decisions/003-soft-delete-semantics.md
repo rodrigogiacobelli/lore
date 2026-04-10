@@ -1,8 +1,8 @@
 ---
-id: "003"
+id: decisions-003-soft-delete-semantics
 title: "Soft-delete semantics and FK omission on the dependencies table"
 summary: "ADR explaining why soft-delete was chosen over hard-delete for all Lore entities, and why foreign key constraints were deliberately omitted from the dependencies table."
-related: ["decisions-009", "tech-db-schema"]
+related: ["decisions-009-mission-self-containment", "tech-db-schema"]
 stability: stable
 ---
 

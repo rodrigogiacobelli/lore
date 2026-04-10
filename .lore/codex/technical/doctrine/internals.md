@@ -2,7 +2,7 @@
 id: tech-doctrine-internals
 title: Doctrine Module Internals
 summary: Technical reference for src/lore/doctrine.py. Covers two-file doctrine model (design.md + yaml), list_doctrines() scanning .design.md files, show_doctrine() returning both raw content and normalized steps, create_doctrine() atomic two-file write, _validate_yaml_schema(), _validate_design_frontmatter(), _validate_steps(), _normalize(), _check_cycles(), and DoctrineError propagation.
-related: ["conceptual-entities-doctrine", "tech-cli-commands", "tech-arch-source-layout"]
+related: ["conceptual-entities-doctrine", "tech-cli-commands", "tech-arch-source-layout", "decisions-006-id-references"]
 ---
 
 # Doctrine Module Internals
