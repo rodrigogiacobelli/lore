@@ -8,7 +8,7 @@ import yaml
 
 from lore.frontmatter import parse_frontmatter_doc
 from lore.paths import derive_group, group_matches_filter
-from lore.validators import validate_name
+from lore.validators import validate_group, validate_name
 
 
 class DoctrineError(Exception):
@@ -76,77 +76,99 @@ def _validate_design_frontmatter(meta: dict | None, name: str) -> None:
         )
 
 
-def create_doctrine(
-    name: str,
-    yaml_source_path: Path,
-    design_source_path: Path,
-    doctrines_dir: Path,
-) -> dict:
-    """Register both source files as a new doctrine in doctrines_dir.
+def _check_duplicate_in_subtree(name: str, doctrines_dir: Path) -> None:
+    """Raise DoctrineError if a doctrine with the given name exists anywhere under doctrines_dir."""
+    if not doctrines_dir.exists():
+        return
+    for suffix in (".yaml", ".design.md"):
+        existing = next(iter(doctrines_dir.rglob(f"{name}{suffix}")), None)
+        if existing is not None:
+            raise DoctrineError(
+                f"Error: doctrine '{name}' already exists at {existing}"
+            )
 
-    Validation order:
-    1. Name format
-    2. Duplicate check (YAML stem, then design stem)
-    3. YAML source file exists
-    4. Design source file exists
-    5. YAML content validation
-    6. Design content validation
-    7. Write both files (atomic — no partial writes)
 
-    Raises DoctrineError on any validation failure.
-    """
-    # Validate name format
-    err = validate_name(name)
-    if err:
-        raise DoctrineError(err)
+def _parse_design_frontmatter(design_text: str) -> dict | None:
+    """Extract the YAML frontmatter block from a design file, or None if absent/invalid."""
+    parts = design_text.split("---")
+    if len(parts) < 3:
+        return None
+    try:
+        meta = yaml.safe_load(parts[1])
+    except yaml.YAMLError:
+        return None
+    return meta if isinstance(meta, dict) else None
 
-    # Duplicate check — search recursively so subdirectory copies are also caught
-    yaml_dest = doctrines_dir / f"{name}.yaml"
-    design_dest = doctrines_dir / f"{name}.design.md"
 
-    if doctrines_dir.exists() and list(doctrines_dir.rglob(f"{name}.yaml")):
-        raise DoctrineError(f"Error: doctrine '{name}' already exists.")
-    if doctrines_dir.exists() and list(doctrines_dir.rglob(f"{name}.design.md")):
-        raise DoctrineError(f"Error: doctrine '{name}' already exists.")
-
-    # Source file existence
+def _validate_source_files(
+    name: str, yaml_source_path: Path, design_source_path: Path
+) -> None:
+    """Validate both source files exist and contain well-formed, name-matching content."""
     if not yaml_source_path.exists():
         raise DoctrineError(f"File not found: {yaml_source_path}")
     if not design_source_path.exists():
         raise DoctrineError(f"File not found: {design_source_path}")
 
-    # YAML content validation
-    yaml_text = yaml_source_path.read_text()
     try:
-        yaml_data = yaml.safe_load(yaml_text)
+        yaml_data = yaml.safe_load(yaml_source_path.read_text())
     except yaml.YAMLError as e:
         raise DoctrineError(f"YAML parsing error: {e}") from e
     if not isinstance(yaml_data, dict):
         raise DoctrineError("Doctrine must be a YAML mapping")
     _validate_yaml_schema(yaml_data, name)
 
-    # Design content validation
-    design_text = design_source_path.read_text()
-    parts = design_text.split("---")
-    meta = None
-    if len(parts) >= 3:
-        try:
-            meta = yaml.safe_load(parts[1])
-            if not isinstance(meta, dict):
-                meta = None
-        except yaml.YAMLError:
-            meta = None
+    meta = _parse_design_frontmatter(design_source_path.read_text())
     _validate_design_frontmatter(meta, name)
 
-    # Write both files (atomic — validate before writing)
-    doctrines_dir.mkdir(parents=True, exist_ok=True)
+
+def create_doctrine(
+    name: str,
+    yaml_source_path: Path,
+    design_source_path: Path,
+    doctrines_dir: Path,
+    *,
+    group: str | None = None,
+) -> dict:
+    """Register both source files as a new doctrine in doctrines_dir.
+
+    Validation order:
+    1. Name format
+    2. Group format
+    3. Duplicate check (recursive subtree)
+    4. Source files exist and contain valid content
+    5. Write both files (atomic — no partial writes)
+
+    When ``group`` is provided, files are placed in ``doctrines_dir / group``
+    with intermediate directories created as needed. When ``group`` is None,
+    files land directly in ``doctrines_dir``.
+
+    Raises DoctrineError on any validation failure.
+    """
+    name_err = validate_name(name)
+    if name_err:
+        raise DoctrineError(name_err)
+
+    group_err = validate_group(group)
+    if group_err:
+        raise DoctrineError(group_err)
+
+    _check_duplicate_in_subtree(name, doctrines_dir)
+    _validate_source_files(name, yaml_source_path, design_source_path)
+
+    target_dir = doctrines_dir if group is None else doctrines_dir / group
+    yaml_dest = target_dir / f"{name}.yaml"
+    design_dest = target_dir / f"{name}.design.md"
+
+    target_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(yaml_source_path, yaml_dest)
     shutil.copy2(design_source_path, design_dest)
 
     return {
         "name": name,
+        "group": group,
         "yaml_filename": f"{name}.yaml",
         "design_filename": f"{name}.design.md",
+        "path": str(yaml_dest),
     }
 
 

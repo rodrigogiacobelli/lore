@@ -34,11 +34,6 @@ class TestKnightListBasic:
         data = json.loads(result.output)
         assert len(data["knights"]) >= 1
 
-    def test_no_subdir_annotation_in_output(self, runner, project_dir):
-        result = runner.invoke(main, ["knight", "list"])
-        assert "default/" not in result.output
-
-
 # ---------------------------------------------------------------------------
 # Table header
 # ---------------------------------------------------------------------------
@@ -526,9 +521,8 @@ class TestLocalJsonFlag:
         record = next(k for k in data["knights"] if k["id"] == "no-summary-knight")
         assert record["summary"] == ""
 
-    def test_local_json_flag_group_empty_for_root_knight(self, runner, project_dir):
-        # Ref: conceptual-workflows-knight-list step 3 (group derivation: flat root -> group = "")
-        # Knight file is at .lore/knights/<name>.md (not in a subdirectory)
+    def test_local_json_flag_group_null_for_root_knight(self, runner, project_dir):
+        # US-007 Scenario 4/7: root-level knight emits group: null in CLI JSON envelope
         knights_dir = project_dir / ".lore" / "knights"
         shutil.rmtree(knights_dir)
         knights_dir.mkdir()
@@ -539,7 +533,7 @@ class TestLocalJsonFlag:
         assert result.exit_code == 0
         data = json.loads(result.output)
         record = next(k for k in data["knights"] if k["id"] == "root-knight")
-        assert record["group"] == ""
+        assert record["group"] is None
 
     def test_local_json_flag_group_is_subdirectory_name(self, runner, project_dir):
         # Ref: conceptual-workflows-knight-list step 3 (group derivation: subdirectory name -> group)
@@ -563,4 +557,46 @@ class TestLocalJsonFlag:
 # knight show command
 # ---------------------------------------------------------------------------
 
+
+
+
+# ---------------------------------------------------------------------------
+# US-007 Red: list GROUP slash display + JSON audit
+# anchor: conceptual-workflows-json-output (lore codex show group-param-us-007)
+# ---------------------------------------------------------------------------
+
+
+class TestKnightListUs007SlashGroup:
+    """US-007 Scenario 4: knight list table + JSON emit slash-joined group, null for root."""
+
+    def test_knight_list_json_slash_joined_and_null_for_root(self, runner, project_dir):
+        knights_dir = project_dir / ".lore" / "knights"
+        shutil.rmtree(knights_dir)
+        knights_dir.mkdir()
+        # Nested: feature-implementation/reviewer.md (single segment group)
+        nested = knights_dir / "feature-implementation"
+        nested.mkdir()
+        (nested / "reviewer.md").write_text(
+            "---\nid: reviewer\ntitle: Reviewer\nsummary: Reviews code.\n---\n"
+        )
+        # Deeply nested: ops/ci/runner.md -> slash-joined "ops/ci"
+        deep = knights_dir / "ops" / "ci"
+        deep.mkdir(parents=True)
+        (deep / "runner.md").write_text(
+            "---\nid: runner\ntitle: Runner\nsummary: CI runner.\n---\n"
+        )
+        # Root: root.md -> null
+        (knights_dir / "root.md").write_text(
+            "---\nid: root\ntitle: Root\nsummary: Root level.\n---\n"
+        )
+        result = runner.invoke(main, ["knight", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        by_id = {k["id"]: k for k in data["knights"]}
+        assert by_id["reviewer"]["group"] == "feature-implementation"
+        assert by_id["runner"]["group"] == "ops/ci"
+        assert by_id["root"]["group"] is None
+        for k in data["knights"]:
+            assert k["group"] != "", f"group must never be empty string: {k}"
+            assert k["group"] != "ops-ci", f"group must never be hyphen-joined: {k}"
 

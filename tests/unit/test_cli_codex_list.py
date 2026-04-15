@@ -256,8 +256,8 @@ def project_dir_us2(tmp_path, monkeypatch):
         "---\nid: root-doc\ntitle: Root Document\ntype: concept\nsummary: A root-level doc.\n---\n"
     )
 
-    # Document in a subdirectory (group should be "tech-arch")
-    sub_dir = codex_dir / "tech-arch"
+    # Document in a subdirectory (group should be "tech/arch" — slash-joined after US-006/US-007)
+    sub_dir = codex_dir / "tech" / "arch"
     sub_dir.mkdir(parents=True, exist_ok=True)
     (sub_dir / "source-layout.md").write_text(
         "---\nid: source-layout\ntitle: Source Layout\ntype: architecture\nsummary: Describes source layout.\n---\n"
@@ -351,8 +351,8 @@ def test_codex_list_json_group_matches_subdirectory_name(runner, project_dir_us2
     records = parsed.get("codex", [])
     sub_records = [r for r in records if r.get("id") == "source-layout"]
     assert len(sub_records) == 1, f"Expected one record with id='source-layout', got: {sub_records}"
-    assert sub_records[0]["group"] == "tech-arch", (
-        f"Expected group='tech-arch', got: {sub_records[0].get('group')!r}"
+    assert sub_records[0]["group"] == "tech/arch", (
+        f"Expected group='tech/arch' (slash-joined, US-007), got: {sub_records[0].get('group')!r}"
     )
 
 
@@ -363,8 +363,11 @@ def test_codex_list_json_group_matches_subdirectory_name(runner, project_dir_us2
 # ---------------------------------------------------------------------------
 
 
-def test_codex_list_json_group_is_empty_string_for_root_document(runner, project_dir_us2):
-    """The record for root-doc (directly under .lore/codex/) must have group == ''."""
+def test_codex_list_json_group_is_null_for_root_document(runner, project_dir_us2):
+    """The record for root-doc (directly under .lore/codex/) must have group is None.
+
+    US-007 Scenario 2/7: JSON envelope normalises empty group to null, never "".
+    """
     import json as _json
 
     result = runner.invoke(main, ["codex", "list", "--json"])
@@ -374,8 +377,8 @@ def test_codex_list_json_group_is_empty_string_for_root_document(runner, project
     root_records = [r for r in records if r.get("id") == "root-doc"]
     assert len(root_records) == 1, f"Expected one record with id='root-doc', got: {root_records}"
     group_val = root_records[0].get("group", "__MISSING__")
-    assert group_val == "", (
-        f"Expected group='' (empty string) for root-level doc, got: {group_val!r}"
+    assert group_val is None, (
+        f"Expected group=None for root-level doc (US-007), got: {group_val!r}"
     )
 
 

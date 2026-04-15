@@ -64,7 +64,30 @@ Must explain:
 Must explain:
 - Artifacts are reusable template files stored in `.lore/artifacts/`.
 - Access is via stable ID using `lore artifact list` and `lore artifact show <id>`.
-- Artifacts are read-only via the CLI.
+- Artifacts are created via `lore artifact new <name> [--group <path>] --from <body-file>`; edits and deletes remain on-disk (no CLI write path for those).
+
+### Entity `new` subcommands — `--group` teaching contract
+
+Every enriched `--help` block for `lore doctrine new`, `lore knight new`, `lore watcher new`, and `lore artifact new` must:
+
+- Document the `--group <path>` option, explicitly noting it is a slash-delimited relative path (e.g., `seo-analysis/keyword-analysers`).
+- State that omitting `--group` places the entity at the entity root.
+- State that intermediate directories are auto-created.
+- State that duplicate detection is subtree-wide: a name collision anywhere under the entity root blocks the create regardless of group.
+- Include at least one nested example matching a User Workflow from the PRD, for example:
+  - `lore doctrine new keyword-ranker --group seo-analysis/keyword-analysers -f ranker.yaml -d ranker.design.md`
+  - `lore knight new reviewer --group feature-implementation/reviewers --from reviewer.md`
+  - `lore watcher new on-prd-ready --group feature-implementation --from watcher.yaml`
+  - `lore artifact new fi-review --group codex/templates --from review.md`
+
+### Entity `list` subcommands — slash-delimited filter teaching contract
+
+Every enriched `--help` block for `lore doctrine list`, `lore knight list`, `lore watcher list`, `lore artifact list`, and `lore codex list` must:
+
+- State that `--filter GROUP...` tokens are slash-delimited and match the on-disk subdirectory layout exactly (e.g., `--filter seo-analysis/keyword-analysers`).
+- Note that the hyphen-delimited input grammar is no longer accepted — this is a breaking change in the filter grammar.
+- State that matching is segment-prefix on full-segment boundaries: `technical` matches `technical` and `technical/api`, but `tech` does not match `technical`.
+- State that root-level entities (empty group) are always included regardless of the supplied filter tokens.
 
 ### `lore codex --help`
 

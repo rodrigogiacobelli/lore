@@ -966,3 +966,100 @@ class TestWatcherShowNotFoundAfterDelete:
         )
         output = (show_result.output or "") + (show_result.stderr if hasattr(show_result, "stderr") else "")
         assert 'Watcher "run-tests-on-push" not found' in output
+
+
+# ---------------------------------------------------------------------------
+# US-003: watcher new --group
+# anchor: conceptual-workflows-watcher-crud
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherNewGroup:
+    """E2E: lore watcher new --group creates nested watchers."""
+
+    def test_watcher_new_nested_target_exists(self, runner, project_dir):
+        # Scenario 1 — target dir pre-exists, mkdir idempotent
+        (project_dir / ".lore" / "watchers" / "feature-implementation").mkdir(parents=True)
+        (project_dir / "watcher.yaml").write_text("id: on-prd-ready\ntitle: T\n")
+        result = runner.invoke(
+            main,
+            [
+                "watcher", "new", "on-prd-ready",
+                "--group", "feature-implementation",
+                "-f", "watcher.yaml",
+            ],
+        )
+        assert result.exit_code == 0
+        assert result.output.strip() == "Created watcher on-prd-ready (group: feature-implementation)"
+        assert (project_dir / ".lore" / "watchers" / "feature-implementation" / "on-prd-ready.yaml").exists()
+
+    def test_watcher_new_nested_success_message_includes_group(self, runner, project_dir):
+        # Scenario 1 — success line contains group annotation
+        (project_dir / "watcher.yaml").write_text("id: on-prd-ready\ntitle: T\n")
+        result = runner.invoke(
+            main,
+            [
+                "watcher", "new", "on-prd-ready",
+                "--group", "feature-implementation",
+                "-f", "watcher.yaml",
+            ],
+        )
+        assert "Created watcher on-prd-ready (group: feature-implementation)" in result.output
+
+    def test_watcher_new_nested_json_envelope(self, runner, project_dir):
+        # Scenario 2 — JSON envelope carries group + path
+        (project_dir / "watcher.yaml").write_text("id: on-prd-ready\ntitle: T\n")
+        result = runner.invoke(
+            main,
+            [
+                "watcher", "new", "on-prd-ready",
+                "--group", "feature-implementation",
+                "-f", "watcher.yaml",
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["group"] == "feature-implementation"
+        assert data["path"] == ".lore/watchers/feature-implementation/on-prd-ready.yaml"
+
+    def test_watcher_new_deep_path_auto_mkdir(self, runner, project_dir):
+        # Scenario 3 — intermediate dirs auto-created for team-a/triggers
+        (project_dir / "w.yaml").write_text("id: nightly\ntitle: T\n")
+        result = runner.invoke(
+            main,
+            [
+                "watcher", "new", "nightly",
+                "--group", "team-a/triggers",
+                "-f", "w.yaml",
+            ],
+        )
+        assert result.exit_code == 0
+        assert (project_dir / ".lore" / "watchers" / "team-a" / "triggers" / "nightly.yaml").exists()
+
+    def test_watcher_new_root_unchanged(self, runner, project_dir):
+        # Scenario 4 — omitting --group still writes flat at root
+        (project_dir / "w.yaml").write_text("id: root-watcher\ntitle: T\n")
+        result = runner.invoke(
+            main, ["watcher", "new", "root-watcher", "-f", "w.yaml"]
+        )
+        assert result.exit_code == 0
+        assert (project_dir / ".lore" / "watchers" / "root-watcher.yaml").exists()
+
+    def test_watcher_new_duplicate_subtree_rejected(self, runner, project_dir):
+        # Scenario 5 — duplicate anywhere in subtree, exit 1 + error stderr, no file in new group
+        (project_dir / ".lore" / "watchers" / "team-b").mkdir(parents=True)
+        (project_dir / ".lore" / "watchers" / "team-b" / "nightly.yaml").write_text("id: nightly\n")
+        (project_dir / "w.yaml").write_text("id: nightly\ntitle: T\n")
+        result = runner.invoke(
+            main,
+            [
+                "watcher", "new", "nightly",
+                "--group", "team-a",
+                "-f", "w.yaml",
+            ],
+        )
+        assert result.exit_code == 1
+        combined = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
+        assert "already exists" in combined
+        assert not (project_dir / ".lore" / "watchers" / "team-a" / "nightly.yaml").exists()

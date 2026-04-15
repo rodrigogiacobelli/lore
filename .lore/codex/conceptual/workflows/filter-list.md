@@ -1,7 +1,7 @@
 ---
 id: conceptual-workflows-filter-list
 title: "lore * list --filter Behaviour"
-summary: "What the system does when --filter GROUP... is passed to the list subcommand of codex, artifact, knight, doctrine, or watcher commands — subtree token-to-group matching (exact or prefix), root-level file inclusion, Python API parity, and unchanged unfiltered behaviour."
+summary: "What the system does when --filter GROUP... is passed to the list subcommand of codex, artifact, knight, doctrine, or watcher commands — slash-delimited token-to-group segment-prefix matching, root-level file inclusion, Python API parity, and unchanged unfiltered behaviour."
 related:
   - conceptual-workflows-artifact-list
   - conceptual-workflows-knight-list
@@ -20,7 +20,8 @@ The `--filter GROUP...` flag is available on the `list` subcommand of all five e
 ## Preconditions
 
 - The Lore project has been initialised (`.lore/` directory exists).
-- The caller knows the group token(s) to filter on. Group tokens correspond to subdirectory names joined with hyphens (e.g., `technical-api` maps to `technical/api/`). A token also matches all deeper subgroups — `technical` matches `technical-api`, `technical-reference`, etc.
+- The caller knows the group token(s) to filter on. Group tokens are slash-delimited paths that match the on-disk subdirectory layout exactly (e.g., `technical/api` maps to `technical/api/`). A token also matches all deeper subgroups — `technical` matches `technical/api`, `technical/reference`, etc., but only on full-segment boundaries.
+- **Breaking change:** the hyphen-delimited input grammar (`default-codex`, `technical-api`) is no longer accepted. Users must pass slash-delimited tokens (`default/codex`, `technical/api`). This keeps what the user types in `--filter` identical to what they see in `list` output and what they passed to `--group` on create.
 
 ## Steps (applied identically across all five list commands)
 
@@ -28,21 +29,22 @@ The `--filter GROUP...` flag is available on the `list` subcommand of all five e
 
 The command performs its normal recursive discovery (e.g., `rglob("*.md")` for knights, `rglob("*.yaml")` for doctrines and watchers). No change to discovery or validation logic — the full entity list is assembled exactly as without `--filter`.
 
-### 2. Derive groups (unchanged)
+### 2. Derive groups
 
-Each entity's `group` is derived from its subdirectory path using `derive_group` in `paths.py`. Directory components between the base directory and the file are joined with hyphens. Files directly in the base directory have `group == ""` (empty string).
+Each entity's `group` is derived from its subdirectory path using `derive_group` in `paths.py`. Directory components between the base directory and the file are joined with `/`. Files directly in the base directory have `group == ""` (empty string).
 
 ### 3. Apply filter (post-discovery)
 
-When `--filter` is provided with one or more tokens, the assembled list is filtered using subtree (prefix) matching:
+When `--filter` is provided with one or more tokens, the assembled list is filtered using segment-prefix matching via `paths.group_matches_filter`:
 
 **Key rules:**
-- A record is included if its `group` exactly equals any supplied token **or** starts with `token + "-"` (subtree match).
+- Each supplied token is stripped of any leading/trailing `/` and split on `/` to produce a segment list. The entity's `group` is split on `/` the same way.
+- A record is included when the token's segment list is a proper prefix of the entity's segment list — i.e. `group_segs[:len(tok_segs)] == tok_segs`. This means `technical/api` matches both `technical/api` exactly and any deeper group like `technical/api/v2`. `technical` matches `technical`, `technical/api`, `technical/reference`, and so on.
 - Records where `group == ""` (root-level files) are **always** included regardless of filter tokens.
-- If a token matches no entity group, no entities from that token are returned — no error is raised.
 - Multiple tokens use OR logic: an entity matching any token is included.
 - An empty list `[]` for `filter_groups` is treated identically to `None` — no filtering.
-- The hyphen boundary is critical: token `technical` matches `technical-api` but does not match a hypothetical group `technicalstuff`.
+- Matching is on full-segment boundaries, so a token like `tech` does NOT match a group `technical/api` — only exact segment equality counts.
+- Leading or trailing `/` in a token is silently accepted (`default/codex/` behaves the same as `default/codex`). An empty token (`""`) errors on the existing empty-filter path — no change.
 
 ### 4. Render output (unchanged)
 
@@ -52,16 +54,16 @@ For `doctrine list` and `artifact list`, the valid/invalid counts and `[INVALID]
 
 ## Token Format
 
-A group token is a string where hyphens represent path separators. A token matches the named group **and all of its subgroups** (subtree semantics):
+A group token is a slash-delimited path that mirrors the on-disk subdirectory layout exactly. A token matches the named group **and all of its subgroups** (segment-prefix semantics):
 
 | Token | Matches groups | Matches files in |
 |-------|---------------|-----------------|
-| `conceptual` | `conceptual`, `conceptual-workflows`, `conceptual-reference`, … | `.lore/codex/conceptual/` and all subdirectories |
-| `technical-api` | `technical-api`, `technical-api-v2`, … | `.lore/codex/technical/api/` and all subdirectories |
-| `default-codex` | `default-codex`, `default-codex-sub`, … | `.lore/artifacts/default/codex/` and all subdirectories |
-| `feature-implementation` | `feature-implementation`, `feature-implementation-sub`, … | `.lore/knights/feature-implementation/` and all subdirectories |
+| `conceptual` | `conceptual`, `conceptual/workflows`, `conceptual/reference`, … | `.lore/codex/conceptual/` and all subdirectories |
+| `technical/api` | `technical/api`, `technical/api/v2`, … | `.lore/codex/technical/api/` and all subdirectories |
+| `default/codex` | `default/codex`, `default/codex/templates`, … | `.lore/artifacts/default/codex/` and all subdirectories |
+| `feature-implementation` | `feature-implementation`, `feature-implementation/reviewers`, … | `.lore/knights/feature-implementation/` and all subdirectories |
 
-Matching is case-sensitive: `Conceptual` does not match `conceptual`. The hyphen boundary prevents accidental partial matches: `technical` does not match a group named `technicalstuff`.
+Matching is case-sensitive: `Conceptual` does not match `conceptual`. The full-segment-boundary rule prevents accidental partial matches: `tech` does NOT match a group named `technical/api`, and `default/code` does NOT match `default/codex`.
 
 ## Root-Level File Inclusion
 
@@ -78,9 +80,9 @@ When `--filter` is **not** provided, all entities are returned — identical to 
 ```
 lore codex list --filter conceptual
 lore codex list --filter conceptual --json
-lore artifact list --filter default-codex
+lore artifact list --filter default/codex
 lore knight list --filter feature-implementation
-lore doctrine list --filter default
+lore doctrine list --filter seo-analysis/keyword-analysers
 lore watcher list --filter default
 ```
 
@@ -88,7 +90,7 @@ Multiple tokens are supplied by repeating the flag or as separate arguments:
 
 ```
 lore codex list --filter conceptual --filter decisions
-lore codex list --filter conceptual technical-api
+lore codex list --filter conceptual technical/api
 ```
 
 ## Python API Parity
@@ -103,19 +105,19 @@ list_doctrines(doctrines_dir, filter_groups=None)
 list_watchers(watchers_dir, filter_groups=None)
 ```
 
-`filter_groups=None` (or omitted) returns all entities — existing callers are unaffected. `filter_groups=["conceptual"]` returns all entities whose group is `conceptual` or starts with `conceptual-` (e.g., `conceptual-workflows`, `conceptual-reference`), plus root-level entities.
+`filter_groups=None` (or omitted) returns all entities — existing callers are unaffected. `filter_groups=["conceptual"]` returns all entities whose group is `conceptual` or starts with the segment `conceptual` (e.g., `conceptual/workflows`, `conceptual/reference`), plus root-level entities.
 
 ## Example Output
 
 **Filtered, table mode (`lore codex list --filter conceptual`):**
 
-Returns documents in group `conceptual` (files in `.lore/codex/conceptual/`) **and** all subgroups (e.g., `conceptual-workflows`, `conceptual-reference`) plus root-level files:
+Returns documents in group `conceptual` (files in `.lore/codex/conceptual/`) **and** all subgroups (e.g., `conceptual/workflows`, `conceptual/reference`) plus root-level files:
 
 ```
   ID                                    GROUP                    TITLE                              SUMMARY
   CODEX.md                                                       Codex Index                        Master index of all codex documents
   conceptual-entities-task              conceptual               Task Entity                        Describes the Task entity model
-  conceptual-workflows-filter-list      conceptual-workflows     lore * list --filter Behaviour     What the system does when --filter is passed
+  conceptual-workflows-filter-list      conceptual/workflows     lore * list --filter Behaviour     What the system does when --filter is passed
 ```
 
 **Filtered, JSON mode (`lore codex list --filter conceptual --json`):**
@@ -123,9 +125,9 @@ Returns documents in group `conceptual` (files in `.lore/codex/conceptual/`) **a
 ```json
 {
   "codex": [
-    {"id": "CODEX.md", "group": "", "title": "Codex Index", "summary": "Master index of all codex documents"},
+    {"id": "CODEX.md", "group": null, "title": "Codex Index", "summary": "Master index of all codex documents"},
     {"id": "conceptual-entities-task", "group": "conceptual", "title": "Task Entity", "summary": "Describes the Task entity model"},
-    {"id": "conceptual-workflows-filter-list", "group": "conceptual-workflows", "title": "lore * list --filter Behaviour", "summary": "What the system does when --filter is passed"}
+    {"id": "conceptual-workflows-filter-list", "group": "conceptual/workflows", "title": "lore * list --filter Behaviour", "summary": "What the system does when --filter is passed"}
   ]
 }
 ```

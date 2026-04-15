@@ -4,7 +4,11 @@ Spec: conceptual-workflows-watcher-list (lore codex show conceptual-workflows-wa
 User story: watchers-us-1 (lore codex show watchers-us-1)
 """
 
-from lore.watcher import list_watchers
+import inspect
+
+import pytest
+
+from lore.watcher import create_watcher, list_watchers
 
 
 # ---------------------------------------------------------------------------
@@ -512,7 +516,8 @@ class TestCreateWatcher:
         watchers_dir = tmp_path / ".lore" / "watchers"
         watchers_dir.mkdir(parents=True)
         result = create_watcher(watchers_dir, "run-tests-on-push", VALID_WATCHER_YAML)
-        assert result == {"id": "run-tests-on-push", "filename": "run-tests-on-push.yaml"}
+        assert result["id"] == "run-tests-on-push"
+        assert result["filename"] == "run-tests-on-push.yaml"
 
     def test_create_watcher_duplicate_detected_via_rglob_in_subdir(self, tmp_path):
         # Unit: rglob detects duplicate even when existing file is in a subdirectory
@@ -886,3 +891,153 @@ def test_list_watchers_no_filter_argument_returns_all(tmp_path):
     ids = [r["id"] for r in results]
     assert "mission-watcher" in ids
     assert "deploy-watcher" in ids
+
+
+# ---------------------------------------------------------------------------
+# US-003: create_watcher --group Python API
+# anchor: conceptual-workflows-watcher-crud
+# ---------------------------------------------------------------------------
+
+
+class TestCreateWatcherGroup:
+    """Unit tests for group=None kwarg on lore.watcher.create_watcher."""
+
+    def test_signature_group_is_keyword_only_default_none(self):
+        # AC: function accepts (watchers_dir, name, content, *, group=None)
+        sig = inspect.signature(create_watcher)
+        assert "group" in sig.parameters
+        assert sig.parameters["group"].kind is inspect.Parameter.KEYWORD_ONLY
+        assert sig.parameters["group"].default is None
+
+    def test_create_watcher_group_none_explicit_flat(self, tmp_path):
+        # AC unit: explicit group=None also writes flat
+        create_watcher(tmp_path, "w", "id: w\n", group=None)
+        assert (tmp_path / "w.yaml").exists()
+
+    def test_create_watcher_group_single_segment(self, tmp_path):
+        # AC unit: group="a" writes to a/w.yaml
+        create_watcher(tmp_path, "w", "id: w\n", group="a")
+        assert (tmp_path / "a" / "w.yaml").exists()
+
+    def test_create_watcher_group_nested(self, tmp_path):
+        # AC unit: nested write to a/b
+        create_watcher(tmp_path, "w", "id: w\n", group="a/b")
+        assert (tmp_path / "a" / "b" / "w.yaml").exists()
+
+    def test_create_watcher_mkdir_idempotent(self, tmp_path):
+        # AC unit: pre-existing dir does not error
+        (tmp_path / "a" / "b").mkdir(parents=True)
+        create_watcher(tmp_path, "w", "id: w\n", group="a/b")
+        assert (tmp_path / "a" / "b" / "w.yaml").exists()
+
+    def test_create_watcher_duplicate_subtree_raises(self, tmp_path):
+        # AC unit: rglob duplicate regardless of group
+        (tmp_path / "x").mkdir()
+        (tmp_path / "x" / "w.yaml").write_text("id: w\n")
+        with pytest.raises(ValueError, match="already exists"):
+            create_watcher(tmp_path, "w", "id: w\n", group="y")
+
+    def test_create_watcher_duplicate_subtree_does_not_create_file(self, tmp_path):
+        # AC unit: no file written under new group when duplicate detected
+        (tmp_path / "x").mkdir()
+        (tmp_path / "x" / "w.yaml").write_text("id: w\n")
+        with pytest.raises(ValueError):
+            create_watcher(tmp_path, "w", "id: w\n", group="y")
+        assert not (tmp_path / "y" / "w.yaml").exists()
+
+    def test_create_watcher_return_dict_keys(self, tmp_path):
+        # AC unit: return dict carries group and path
+        result = create_watcher(tmp_path, "w", "id: w\n", group="a")
+        assert "group" in result
+        assert "path" in result
+
+    def test_create_watcher_return_dict_values(self, tmp_path):
+        # AC unit: returned values reflect inputs
+        result = create_watcher(tmp_path, "w", "id: w\n", group="a")
+        assert result["group"] == "a"
+        assert result["path"].endswith("a/w.yaml")
+
+    def test_create_watcher_return_dict_group_none_at_root(self, tmp_path):
+        # AC unit: group key is None when created at root
+        result = create_watcher(tmp_path, "w", "id: w\n")
+        assert result["group"] is None
+
+    def test_create_watcher_yaml_validation_still_runs(self, tmp_path):
+        # AC unit: malformed YAML still rejected when group provided
+        with pytest.raises(ValueError, match="Invalid YAML"):
+            create_watcher(tmp_path, "w", "[unclosed", group="a")
+
+    def test_create_watcher_invalid_group_raises_before_write(self, tmp_path):
+        # AC unit: validate_group rejects, raises ValueError, no file written
+        with pytest.raises(ValueError):
+            create_watcher(tmp_path, "w", "id: w\n", group="..")
+        assert not any(tmp_path.rglob("*.yaml"))
+
+
+# ---------------------------------------------------------------------------
+# US-003: CLI watcher_new thin-wrapper smoke test
+# anchor: decisions-011-api-parity-with-cli
+# ---------------------------------------------------------------------------
+
+
+class TestCliWatcherNewGroupDelegates:
+    """CLI handler must delegate to create_watcher with the parsed --group value."""
+
+    def test_cli_delegates_group_kwarg_to_create_watcher(
+        self, monkeypatch, runner, project_dir
+    ):
+        # AC: thin-wrapper smoke — handler calls create_watcher with group kwarg
+        from lore.cli import main as cli_main
+        import lore.watcher as watcher_module
+
+        captured = {}
+
+        def fake_create_watcher(watchers_dir, name, content, *, group=None):
+            captured["watchers_dir"] = watchers_dir
+            captured["name"] = name
+            captured["content"] = content
+            captured["group"] = group
+            return {
+                "id": name,
+                "filename": f"{name}.yaml",
+                "group": group,
+                "path": str(watchers_dir / (group or "") / f"{name}.yaml"),
+            }
+
+        monkeypatch.setattr(watcher_module, "create_watcher", fake_create_watcher)
+
+        (project_dir / "w.yaml").write_text("id: w\n")
+        result = runner.invoke(
+            cli_main,
+            ["watcher", "new", "w", "--group", "a/b", "-f", "w.yaml"],
+        )
+        assert result.exit_code == 0
+        assert captured["group"] == "a/b"
+        assert captured["name"] == "w"
+
+    def test_cli_delegates_with_group_none_when_flag_omitted(
+        self, monkeypatch, runner, project_dir
+    ):
+        # AC: omitting --group passes group=None
+        from lore.cli import main as cli_main
+        import lore.watcher as watcher_module
+
+        captured = {}
+
+        def fake_create_watcher(watchers_dir, name, content, *, group=None):
+            captured["group"] = group
+            return {
+                "id": name,
+                "filename": f"{name}.yaml",
+                "group": group,
+                "path": str(watchers_dir / f"{name}.yaml"),
+            }
+
+        monkeypatch.setattr(watcher_module, "create_watcher", fake_create_watcher)
+
+        (project_dir / "w.yaml").write_text("id: w\n")
+        result = runner.invoke(
+            cli_main, ["watcher", "new", "w", "-f", "w.yaml"]
+        )
+        assert result.exit_code == 0
+        assert captured["group"] is None

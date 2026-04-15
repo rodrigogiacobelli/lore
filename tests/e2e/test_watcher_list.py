@@ -819,3 +819,46 @@ class TestWatcherShowPathTraversalGuard:
             cwd=str(project_dir),
         )
         assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# US-007 Red: list GROUP slash display + JSON audit
+# anchor: conceptual-workflows-json-output (lore codex show group-param-us-007)
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherListUs007SlashGroup:
+    """US-007 Scenario 5: watcher list table + JSON emit slash-joined group, null for root."""
+
+    def test_watcher_list_json_slash_joined_nested_group(self, runner, project_dir):
+        watchers_dir = project_dir / ".lore" / "watchers"
+        shutil.rmtree(watchers_dir)
+        watchers_dir.mkdir()
+        nested = watchers_dir / "feature-implementation"
+        nested.mkdir()
+        (nested / "on-prd-ready.yaml").write_text(
+            "id: on-prd-ready\n"
+            "title: On PRD Ready\n"
+            "summary: Triggers when PRD is ready.\n"
+        )
+        # Deeper: ops/ci/on-push.yaml -> "ops/ci"
+        deep = watchers_dir / "ops" / "ci"
+        deep.mkdir(parents=True)
+        (deep / "on-push.yaml").write_text(
+            "id: on-push\ntitle: On Push\nsummary: Push trigger.\n"
+        )
+        # Root watcher -> null
+        (watchers_dir / "root-watcher.yaml").write_text(
+            "id: root-watcher\ntitle: Root\nsummary: Root level.\n"
+        )
+        result = runner.invoke(main, ["watcher", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        by_id = {w["id"]: w for w in data["watchers"]}
+        assert by_id["on-prd-ready"]["group"] == "feature-implementation"
+        assert by_id["on-push"]["group"] == "ops/ci"
+        assert by_id["root-watcher"]["group"] is None
+        for w in data["watchers"]:
+            assert w["group"] != "", f"group must never be empty string: {w}"
+            assert w["group"] != "ops-ci", f"group must never be hyphen-joined: {w}"
+

@@ -27,6 +27,21 @@ following the Single Responsibility principle (ADR-012).
 
 ## Public Interface
 
+### `create_knight(knights_dir: Path, name: str, content: str, *, group: str | None = None) -> dict`
+
+Creates a new knight file under `knights_dir`. Introduced this release — previously the create logic was inlined in `cli.py`. The CLI handler (`cli.knight_new`) is now a thin wrapper.
+
+- **Input:** `knights_dir` — the `.lore/knights/` directory; `name` — the knight filename stem; `content` — the full markdown body to write; `group` — an optional slash-delimited subdirectory path, or `None` for the knights root.
+- **Validation order (all before any write):**
+  1. `validate_name(name)` from `lore.validators` — raises `ValueError` with the name-error message on failure.
+  2. `validate_group(group)` from `lore.validators` — raises `ValueError` with `Error: invalid group '<value>': <reason>` on failure. `None` is accepted.
+  3. Duplicate check — `knights_dir.rglob(f"{name}.md")`. A knight named `<name>` anywhere under `knights_dir` blocks the create regardless of the supplied group. Raises `ValueError("Knight \"<name>\" already exists.")`.
+- **Directory creation:** after validation, the target directory is computed as `knights_dir if group is None else knights_dir / Path(group)` and created with `mkdir(parents=True, exist_ok=True)`. Idempotent — pre-existing group directories never fail.
+- **Write:** `content` is written to `target_dir / f"{name}.md"`.
+- **Return:** `{"name": name, "group": group, "filename": f"{name}.md", "path": str(target_dir / f"{name}.md")}`. `group` is the slash-joined string or `None`.
+
+This helper is the single authoritative knight write path. Both `cli.knight_new` and any Python API caller go through it — ADR-011 parity.
+
 ### `list_knights(knights_dir: Path) -> list[dict]`
 
 Returns a sorted list of knight records from the given directory tree.
@@ -35,7 +50,7 @@ Returns a sorted list of knight records from the given directory tree.
   `paths.knights_dir(root)`).
 - **Output:** `list[{"id": str, "group": str, "title": str, "summary": str, "name": str, "filename": str}]` sorted by `id`.
 - **Frontmatter parsing:** Uses `frontmatter.parse_frontmatter_doc(filepath, required_fields=("id", "title", "summary"))`. If frontmatter is absent or incomplete, falls back to: `id` = filename stem, `title` = filename stem, `summary` = `""`.
-- **GROUP derivation:** Uses `paths.derive_group(filepath, knights_dir)` to compute the GROUP from intermediate directory components joined with `-`.
+- **GROUP derivation:** Uses `paths.derive_group(filepath, knights_dir)` to compute the GROUP from intermediate directory components joined with `/`. Root-level knights carry `""` which list renderers translate to the empty sentinel in the table and `null` in the JSON envelope.
 - **Backward compatibility:** The `name` and `filename` keys are retained so `find_knight` and other consumers continue to work.
 - **Discovery:** Uses `rglob("*.md")` on `knights_dir`, discovering all knight files
   regardless of subdirectory depth. This matches the existing CLI behaviour where
@@ -69,6 +84,7 @@ a CLI argument) is protected by this guard automatically.
 
 | Call site | Function used | Purpose |
 |---|---|---|
+| `cli.py` — `knight_new` command | `create_knight` | Create a new knight file (optionally nested via `--group`) |
 | `cli.py` — `knight_list` command | `list_knights` | Display all available knights |
 | `cli.py` — `knight_show` command | `find_knight` | Show one knight's content |
 | `cli.py` — `_show_mission` | `find_knight` | Embed knight content in mission display |

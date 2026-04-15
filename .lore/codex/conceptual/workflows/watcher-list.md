@@ -46,17 +46,19 @@ Each discovered `.yaml` file is read via `yaml.safe_load`. Required fields (`id`
 
 ### 4. Derive the group
 
-The `group` for each watcher is derived from the subdirectory path between `.lore/watchers/` and the file. Directory components are joined with dashes.
+The `group` for each watcher is derived from the subdirectory path between `.lore/watchers/` and the file. Directory components are joined with `/`.
 
 Examples:
-- `.lore/watchers/run-tests-on-push.yaml` → group: `""` (empty)
+- `.lore/watchers/run-tests-on-push.yaml` → group: `""` (empty; rendered as the sentinel in the table and `null` in JSON)
 - `.lore/watchers/default/change-log-updates.yaml` → group: `default`
+- `.lore/watchers/feature-implementation/on-prd-ready.yaml` → group: `feature-implementation`
 
 ### 5. Apply filter (when `--filter` is provided)
 
-When one or more `--filter GROUP` tokens are supplied, the parsed watcher list is post-filtered using subtree (prefix) matching:
+When one or more `--filter GROUP` tokens are supplied, the parsed watcher list is post-filtered using segment-prefix matching on the slash-delimited group form:
 
-- Watchers whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter default` returns watchers with group `default` as well as `default-ci`, `default-ops`, and any other subgroup starting with `default-`.
+- Each supplied token is split on `/`; the watcher's `group` is split on `/`. The token matches when its segments are a proper prefix of the watcher's segments. For example, `--filter feature-implementation` matches both `feature-implementation` and any nested subgroup like `feature-implementation/ci`.
+- The hyphen-delimited input grammar (`default-ci`) is no longer accepted — see conceptual-workflows-filter-list for the breaking-change specification.
 - Watchers with `group == ""` (root-level files, directly under `.lore/watchers/`) are **always** included regardless of filter tokens.
 - Unrecognised tokens produce no error — they simply match nothing.
 - When `--filter` is not provided, all watchers are returned (existing behaviour preserved).
@@ -85,8 +87,13 @@ If no watchers are found, `No watchers found.` is printed.
 **JSON mode (`--json`):**
 
 ```json
-{"watchers": [{"id": "...", "group": "...", "title": "...", "summary": "..."}]}
+{"watchers": [
+  {"id": "...", "group": "feature-implementation", "title": "...", "summary": "..."},
+  {"id": "...", "group": null, "title": "...", "summary": "..."}
+]}
 ```
+
+The `group` key is slash-joined when the watcher lives in a subdirectory and `null` when it sits at the watchers root.
 
 The `--json` flag is accepted both as a local subcommand flag (`lore watcher list --json`) and as the global flag (`lore --json watcher list`). Exit code 0 in all cases.
 
@@ -118,6 +125,8 @@ action: update-changelog
 ```json
 {"id": "change-log-updates", "group": "default", "title": "Update Changelog", "summary": "Watches for merges to main and triggers the update-changelog doctrine", "watch_target": "main", "interval": "on_merge", "action": "update-changelog", "filename": "change-log-updates.yaml"}
 ```
+
+The `group` key is slash-joined for watchers in a subdirectory and `null` for root-level watchers.
 
 ### 4. Not found
 

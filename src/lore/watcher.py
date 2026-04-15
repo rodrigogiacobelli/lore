@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from lore.paths import derive_group, group_matches_filter
+from lore.validators import validate_group
 
 
 def find_watcher(watchers_dir: Path, name: str) -> Path | None:
@@ -50,17 +51,24 @@ def load_watcher(filepath: Path, watchers_dir: Path | None = None) -> dict:
     }
 
 
-def create_watcher(watchers_dir: Path, name: str, content: str) -> dict:
-    """Create a new watcher YAML file at watchers_dir/{name}.yaml.
+def create_watcher(
+    watchers_dir: Path,
+    name: str,
+    content: str,
+    *,
+    group: str | None = None,
+) -> dict:
+    """Create a new watcher YAML file under watchers_dir, optionally nested in group.
 
-    Validates name (path traversal), checks for duplicates via rglob,
-    validates non-empty content and valid YAML, then writes the file.
-    Returns {"id": name, "filename": f"{name}.yaml"} on success.
-
-    Raises ValueError for invalid name, duplicate, empty content, or invalid YAML.
+    Returns dict with keys: id, filename, group, path.
+    Raises ValueError for invalid name/group, duplicate, empty content, or invalid YAML.
     """
     if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", name):
         raise ValueError(f"Invalid watcher name: {name!r}. Must match ^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+    group_err = validate_group(group)
+    if group_err:
+        raise ValueError(group_err)
 
     if not content or not content.strip():
         raise ValueError("Content must not be empty.")
@@ -70,15 +78,19 @@ def create_watcher(watchers_dir: Path, name: str, content: str) -> dict:
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML content: {exc}") from exc
 
-    if watchers_dir.exists():
-        for existing in watchers_dir.rglob("*.yaml"):
-            if existing.stem == name:
-                raise ValueError(f'Watcher "{name}" already exists.')
+    if find_watcher(watchers_dir, name) is not None:
+        raise ValueError(f'Watcher "{name}" already exists.')
 
-    watchers_dir.mkdir(parents=True, exist_ok=True)
-    filepath = watchers_dir / f"{name}.yaml"
+    target_dir = watchers_dir if group is None else watchers_dir / group
+    target_dir.mkdir(parents=True, exist_ok=True)
+    filepath = target_dir / f"{name}.yaml"
     filepath.write_text(content)
-    return {"id": name, "filename": f"{name}.yaml"}
+    return {
+        "id": name,
+        "filename": f"{name}.yaml",
+        "group": group,
+        "path": str(filepath),
+    }
 
 
 def update_watcher(watchers_dir: Path, name: str, content: str) -> dict:

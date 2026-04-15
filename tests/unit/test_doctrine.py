@@ -1350,11 +1350,9 @@ def test_create_doctrine_returns_correct_dict(tmp_path):
 
     result = create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
 
-    assert result == {
-        "name": "my-workflow",
-        "yaml_filename": "my-workflow.yaml",
-        "design_filename": "my-workflow.design.md",
-    }
+    assert result["name"] == "my-workflow"
+    assert result["yaml_filename"] == "my-workflow.yaml"
+    assert result["design_filename"] == "my-workflow.design.md"
 
 
 # ---------------------------------------------------------------------------
@@ -1562,4 +1560,138 @@ def test_create_doctrine_yaml_with_description_raises(tmp_path):
         create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
 
     assert "Unexpected field in YAML: description" in str(exc_info.value)
+
+
+# ===========================================================================
+# US-001 Unit tests — create_doctrine(group=...) nested placement
+# Spec: group-param-us-001 (lore codex show group-param-us-001)
+# Workflow: conceptual-workflows-doctrine-new
+# ===========================================================================
+
+
+_VALID_YAML_D = (
+    "id: d\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
+)
+_VALID_DESIGN_D = "---\nid: d\ntitle: D\nsummary: A doctrine.\n---\n"
+
+
+def _write_d_sources(tmp_path):
+    yaml_src = tmp_path / "d.yaml"
+    yaml_src.write_text(_VALID_YAML_D)
+    design_src = tmp_path / "d.design.md"
+    design_src.write_text(_VALID_DESIGN_D)
+    return yaml_src, design_src
+
+
+class TestCreateDoctrineGroup:
+    """Unit tests for the --group kwarg on create_doctrine.
+
+    Spec: group-param-us-001
+    """
+
+    def test_group_none_writes_flat(self, tmp_path):
+        """group=None writes to doctrines_dir / '<name>.yaml' (flat)."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        create_doctrine("d", yaml_src, design_src, doctrines_dir, group=None)
+
+        assert (doctrines_dir / "d.yaml").exists()
+        assert (doctrines_dir / "d.design.md").exists()
+
+    def test_group_single_segment_writes_nested(self, tmp_path):
+        """group='seo' writes to doctrines_dir / 'seo' / '<name>.yaml'."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        create_doctrine("d", yaml_src, design_src, doctrines_dir, group="seo")
+
+        assert (doctrines_dir / "seo" / "d.yaml").exists()
+        assert (doctrines_dir / "seo" / "d.design.md").exists()
+
+    def test_group_nested_writes_nested(self, tmp_path):
+        """group='a/b/c' writes to doctrines_dir / 'a' / 'b' / 'c' / '<name>.yaml'."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        result = create_doctrine(
+            "d", yaml_src, design_src, doctrines_dir, group="a/b/c"
+        )
+
+        assert (doctrines_dir / "a" / "b" / "c" / "d.yaml").exists()
+        assert (doctrines_dir / "a" / "b" / "c" / "d.design.md").exists()
+        assert result["group"] == "a/b/c"
+        assert result["path"] == str(doctrines_dir / "a" / "b" / "c" / "d.yaml")
+
+    def test_mkdir_idempotent_when_dir_exists(self, tmp_path):
+        """Pre-existing nested dir does not cause an error (mkdir parents=True exist_ok=True)."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        (doctrines_dir / "a" / "b").mkdir(parents=True)
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        create_doctrine("d", yaml_src, design_src, doctrines_dir, group="a/b")
+
+        assert (doctrines_dir / "a" / "b" / "d.yaml").exists()
+
+    def test_duplicate_in_subtree_raises_regardless_of_group(self, tmp_path):
+        """Existing doctrine anywhere under doctrines_dir fires duplicate check, ignoring supplied group."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        (doctrines_dir / "x").mkdir()
+        (doctrines_dir / "x" / "d.yaml").write_text(
+            "id: d\nsteps:\n  - id: s\n    title: t\n    type: knight\n    knight: k\n"
+        )
+        (doctrines_dir / "x" / "d.design.md").write_text(
+            "---\nid: d\ntitle: D\nsummary: S.\n---\n"
+        )
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        with pytest.raises(DoctrineError, match="already exists"):
+            create_doctrine(
+                "d", yaml_src, design_src, doctrines_dir, group="y"
+            )
+
+        assert not (doctrines_dir / "y").exists()
+
+    def test_invalid_group_raises_before_write(self, tmp_path):
+        """validate_group failure raises DoctrineError before any filesystem write occurs."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        with pytest.raises(DoctrineError, match="invalid group"):
+            create_doctrine(
+                "d", yaml_src, design_src, doctrines_dir, group="../etc"
+            )
+
+        assert not (doctrines_dir / "d.yaml").exists()
+        assert not (doctrines_dir / "d.design.md").exists()
+
+    def test_return_dict_contains_group_and_path(self, tmp_path):
+        """Return dict contains 'group' equal to supplied value and 'path' equal to written yaml path."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        result = create_doctrine(
+            "d", yaml_src, design_src, doctrines_dir, group="a/b"
+        )
+
+        assert result["group"] == "a/b"
+        assert result["path"] == str(doctrines_dir / "a" / "b" / "d.yaml")
+
+    def test_return_dict_group_none_for_flat_write(self, tmp_path):
+        """Return dict carries group=None and path to flat yaml when no group supplied."""
+        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir.mkdir()
+        yaml_src, design_src = _write_d_sources(tmp_path)
+
+        result = create_doctrine("d", yaml_src, design_src, doctrines_dir)
+
+        assert result["group"] is None
+        assert result["path"] == str(doctrines_dir / "d.yaml")
 

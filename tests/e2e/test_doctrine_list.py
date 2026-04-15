@@ -707,8 +707,8 @@ class TestDoctrineListJson:
         assert "feature-implementation" in ids
         assert "update-changelog" in ids
 
-    def test_doctrine_list_json_group_empty_for_root_doctrine(self, runner, project_dir):
-        """Root-level doctrine has 'group': '' in JSON output."""
+    def test_doctrine_list_json_group_null_for_root_doctrine(self, runner, project_dir):
+        """US-007 Scenario 3/7: root-level doctrine emits 'group': null in CLI JSON envelope."""
         _empty_doctrines_dir(project_dir)
         _write_pair(
             project_dir,
@@ -720,4 +720,57 @@ class TestDoctrineListJson:
         assert result.exit_code == 0
         data = json.loads(result.output)
         entry = next(d for d in data["doctrines"] if d["id"] == "update-changelog")
-        assert entry["group"] == ""
+        assert entry["group"] is None
+
+
+# ---------------------------------------------------------------------------
+# US-007 Red: list GROUP slash display + JSON audit
+# anchor: conceptual-workflows-json-output (lore codex show group-param-us-007)
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineListUs007SlashGroup:
+    """US-007 Scenario 3: doctrine list table + JSON emit slash-joined group."""
+
+    def test_doctrine_list_json_slash_joined_nested_group(self, runner, project_dir):
+        # Nested doctrine at .lore/doctrines/seo-analysis/keyword-analysers/ranker.{yaml,design.md}
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "seo-analysis/keyword-analysers/ranker",
+            yaml_content="id: ranker\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: ranker\ntitle: Ranker\nsummary: Ranks keywords\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        entry = next(d for d in data["doctrines"] if d["id"] == "ranker")
+        assert entry["group"] == "seo-analysis/keyword-analysers"
+        assert entry["group"] != "seo-analysis-keyword-analysers"
+
+    def test_doctrine_list_json_never_emits_empty_string_group(
+        self, runner, project_dir
+    ):
+        # Scenario 7: no group value is "" — root-level emits null
+        _empty_doctrines_dir(project_dir)
+        _write_pair(
+            project_dir,
+            "root-doctrine",
+            yaml_content="id: root-doctrine\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: root-doctrine\ntitle: Root\nsummary: S\n---\n",
+        )
+        _write_pair(
+            project_dir,
+            "nested/area/child",
+            yaml_content="id: child\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+            design_content="---\nid: child\ntitle: Child\nsummary: S\n---\n",
+        )
+        result = runner.invoke(main, ["doctrine", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        for entry in data["doctrines"]:
+            assert entry["group"] != "", f"group must never be empty string: {entry}"
+            if entry["id"] == "root-doctrine":
+                assert entry["group"] is None
+            if entry["id"] == "child":
+                assert entry["group"] == "nested/area"

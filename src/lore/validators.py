@@ -98,6 +98,37 @@ def validate_name(name: str) -> str | None:
     return None
 
 
+def validate_group(group: str | None) -> str | None:
+    """Return an error string if *group* is not a safe group path, else None.
+
+    Rules: None → None; empty → error; backslash → error; leading `/` → error;
+    trailing `/` → error; each segment must be non-empty, not `..`, and match
+    ``_NAME_RE``.
+    """
+    if group is None:
+        return None
+
+    def err(reason: str) -> str:
+        return f"invalid group '{group}': {reason}"
+
+    if group == "":
+        return err("empty group not allowed")
+    if "\\" in group:
+        return err("backslash not allowed")
+    if group.startswith("/"):
+        return err("absolute paths not allowed (leading '/')")
+    if group.endswith("/"):
+        return err("trailing slash not allowed")
+    for seg in group.split("/"):
+        if seg == "":
+            return err("empty segment not allowed")
+        if seg == "..":
+            return err("path traversal ('..') not allowed")
+        if not _NAME_RE.match(seg):
+            return err(f"bad segment characters in '{seg}'")
+    return None
+
+
 def validate_quest_id_loose(quest_id: str) -> str | None:
     """Return an error string if *quest_id* does not match the loose quest ID pattern.
 

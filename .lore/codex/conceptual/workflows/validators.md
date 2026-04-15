@@ -50,7 +50,33 @@ Returns `"Message cannot be empty."` if the message is empty or pure whitespace.
 
 ### `validate_name(name)`
 
-Pattern: `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Used for knight and doctrine names. Returns `"Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores."` on failure.
+Pattern: `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Used for doctrine, knight, watcher, and artifact names. Returns `"Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores."` on failure.
+
+### `validate_group(group)`
+
+Signature: `validate_group(group: str | None) -> str | None`. Used on every entity `new` path (`doctrine new`, `knight new`, `watcher new`, `artifact new`) to validate the optional `--group <path>` parameter. Lives in `lore/validators.py` with zero `lore.*` imports per the dependency-inversion standard.
+
+Accepts:
+- `None` — no group supplied; the entity lands at the entity root.
+- Slash-delimited relative path (e.g., `"seo-analysis/keyword-analysers"`) where each segment independently matches `_NAME_RE` (the same pattern as `validate_name`).
+
+Rejects, each with a specific error message:
+- Empty string `""` → `Error: invalid group '': must not be empty (use None for root)`
+- Any `..` segment → `Error: invalid group '<value>': path traversal ('..') not allowed`
+- Backslash anywhere → `Error: invalid group '<value>': backslash not allowed`
+- Absolute-path prefix (`/x`) → `Error: invalid group '<value>': absolute paths not allowed`
+- Trailing `/` (or leading `/` caught above) → `Error: invalid group '<value>': leading/trailing '/' not allowed`
+- Empty segment (`a//b`) → `Error: invalid group '<value>': empty segment not allowed`
+- Segment failing `_NAME_RE` → `Error: invalid group '<value>': segment '<seg>' must start with alphanumeric and contain only letters, digits, hyphens, underscores`
+
+Used by: `lore.doctrine.create_doctrine`, `lore.knight.create_knight`, `lore.watcher.create_watcher`, `lore.artifact.create_artifact`. The CLI handlers are thin wrappers — group validation happens inside the core helpers, not in `cli.py`.
+
+### `paths.derive_group` and `paths.group_matches_filter`
+
+The shared helpers in `paths.py` are the single source of canonical group form:
+
+- `derive_group(filepath, base_dir) -> str` returns `"/"`-joined segments (e.g., `"a/b/c"`), empty string for files at the entity root. This is the canonical in-memory group form consumed by every list renderer and JSON envelope.
+- `group_matches_filter(group, filter_groups) -> bool` performs segment-prefix matching: both the group and each filter token are split on `/`, and a token matches when its segment list is a proper prefix of the group's segment list. Root-level records (`group == ""`) always match regardless of filter tokens.
 
 ## Wiring into CLI
 
@@ -75,7 +101,8 @@ The CLI helper `_validate_mission_id(entity_id, ctx)` wraps `validate_mission_id
 | Invalid mission ID format | Error string returned; exit 1 | 1 |
 | Invalid entity ID format | Error string returned; exit 1 | 1 |
 | Empty board message | Error string returned from db layer; exit 1 | 1 |
-| Invalid knight/doctrine name | Error string returned; exit 1 | 1 |
+| Invalid knight/doctrine/watcher/artifact name | Error string returned; exit 1 | 1 |
+| Invalid group on any `new` command | `Error: invalid group '<value>': <reason>`; exit 1 | 1 |
 
 ## Out of Scope
 

@@ -9,13 +9,14 @@ stability: stable
 
 # Knight CRUD Operations
 
-Knights are markdown files stored in `.lore/knights/`. They encode the "how" of a mission — the style, constraints, and authority a worker agent should apply. `lore knight new <name>`, `lore knight edit <name>`, and `lore knight delete <name>` manage them.
+Knights are markdown files stored in `.lore/knights/` (optionally nested in subdirectory groups). They encode the "how" of a mission — the style, constraints, and authority a worker agent should apply. `lore knight new <name> [--group <path>]`, `lore knight edit <name>`, and `lore knight delete <name>` manage them. Creation goes through `lore.knight.create_knight` — the same core helper the Python API exposes — so `--group` and the Python `group=` kwarg are strictly identical in behaviour.
 
 ## Preconditions
 
 - The Lore project has been initialised.
 - Knight `name` must match the pattern `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (starts with alphanumeric, then letters, digits, hyphens, or underscores).
 - Content is provided via `--from <file>` or stdin.
+- The `--group <path>` value (when provided) is a slash-delimited relative path. Each segment must independently satisfy the name rule. Rejected patterns: `..`, backslash, absolute path, leading/trailing `/`, empty segment, bad-char segment.
 
 ## Name Validation
 
@@ -27,28 +28,36 @@ The same rule applies to knight and doctrine names. `validate_name` in `lore.val
 
 Invalid names produce an error before any file system access.
 
-## Steps — Create (`lore knight new <name>`)
+## Steps — Create (`lore knight new <name> [--group <path>]`)
+
+The CLI handler is a thin wrapper: it parses `--from`/stdin and `--group`, then calls `create_knight(knights_dir, name, content, group=group)`. All validation, duplicate detection, mkdir, and writing happens inside the core helper — the Python API is identical.
 
 ### 1. Validate name
 
-`_validate_name` in the CLI validates the name. On failure, an error is printed and the command exits with code 1.
+`validate_name` runs first. On failure, `ValueError` is raised, the CLI prints the message to stderr, and exits 1.
 
-### 2. Check for duplicates
+### 2. Validate the group (when `--group` is provided)
 
-The CLI checks whether `<name>.md` already exists at `.lore/knights/<name>.md` or anywhere in its subdirectories (via `rglob`). If found, `Knight "<name>" already exists.` is printed and the command exits.
+`validate_group` checks the group value. `None` is accepted. Any of `..`, backslash, absolute path, leading/trailing `/`, empty segment, bad-char segment → raises `ValueError` with `Error: invalid group '<value>': <reason>`. No filesystem access has happened yet.
 
-### 3. Read content
+### 3. Check for duplicates across the whole subtree
+
+`create_knight` runs `knights_dir.rglob(f"{name}.md")`. A knight named `<name>` anywhere under `.lore/knights/` — at the root or inside any group — blocks the create. If found, `Knight "<name>" already exists.` is raised and the command exits 1.
+
+### 4. Read content
 
 - `--from <file>`: the file is read from disk. If not found, `File not found: <path>` is printed.
 - No flag (stdin): content is read from stdin. If stdin is empty or whitespace, `No content provided on stdin.` is printed.
 
-### 4. Write the knight file
+### 5. Create the target directory and write the knight file
 
-The `.lore/knights/` directory is created if absent. The content is written to `.lore/knights/<name>.md`.
+Target directory is `.lore/knights/` when `group is None`, or `.lore/knights/<group>` (using `Path(group)` for filesystem joins) when supplied. `mkdir(parents=True, exist_ok=True)` creates intermediate directories idempotently. The content is written to `<target_dir>/<name>.md`.
 
-### 5. Report
+### 6. Report
 
-Text: `Created knight <name>`. JSON: `{"name": "<name>", "filename": "<name>.md"}`.
+Text (root group): `Created knight <name>`.
+Text (nested): `Created knight <name> (group: <group>)`.
+JSON: `{"name": "<name>", "group": "<group>|null", "filename": "<name>.md", "path": ".lore/knights/[<group>/]<name>.md"}`. The `group` key is slash-joined when nested, `null` at the root.
 
 ## Steps — Edit (`lore knight edit <name>`)
 
@@ -87,12 +96,13 @@ Text: `Deleted knight <name>`. JSON: `{"name": "<name>", "deleted": true}`.
 | Failure point | Behaviour | Exit code |
 |---|---|---|
 | Invalid name (create/edit/delete) | Error to stderr | 1 |
-| Duplicate name (create) | Error message; not written | 1 |
+| Invalid group (create) | `Error: invalid group '<value>': <reason>` to stderr | 1 |
+| Duplicate name (create, anywhere in subtree) | Error message; not written | 1 |
 | Source file not found (--from) | Error to stderr | 1 |
 | Empty stdin content | Error to stderr | 1 |
 | Knight not found (edit/delete) | Error to stderr | 1 |
 
 ## Out of Scope
 
-- Subdirectory organisation of knight files — all knights live flat in `.lore/knights/`.
+- Moving an existing knight between groups (`edit --group`, `mv`). Knights stay where they were created; `lore knight edit` preserves the file's location.
 - Restoring a deleted knight via the CLI — rename `<name>.md.deleted` back manually.

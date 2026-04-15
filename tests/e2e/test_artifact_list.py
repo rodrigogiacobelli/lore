@@ -863,7 +863,7 @@ class TestArtifactListGroupValuesInTableMatchDerivation:
         assert "GROUP" in header
         assert "codex" in result.output
 
-    def test_two_level_nested_artifact_group_in_table_uses_dash_separator(
+    def test_two_level_nested_artifact_group_in_table_uses_slash_separator(
         self, runner, project_dir
     ):
         artifacts_dir = project_dir / ".lore" / "artifacts"
@@ -878,7 +878,7 @@ class TestArtifactListGroupValuesInTableMatchDerivation:
         non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
         header = non_empty_lines[0]
         assert "GROUP" in header
-        assert "codex-specs" in result.output
+        assert "codex/specs" in result.output
 
     def test_group_column_in_table_shows_correct_value_for_nested_artifact(
         self, runner, project_dir
@@ -1067,9 +1067,10 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
         actual_keys = list(record.keys())
         assert actual_keys == SPEC_KEY_ORDER
 
-    def test_root_artifact_has_empty_group_in_spec_position(
+    def test_root_artifact_has_null_group_in_spec_position(
         self, runner, bare_project_dir
     ):
+        # US-007 Scenario 2/7: root-level artifact emits group: null, never ""
         artifacts_dir = bare_project_dir / ".lore" / "artifacts"
         _write_artifact(bare_project_dir, "root.md", ARTIFACT_ROOT)
 
@@ -1077,7 +1078,7 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
         assert result.exit_code == 0, result.output
         parsed = json.loads(result.output)
         record = next(r for r in parsed["artifacts"] if r["id"] == "root-artifact")
-        assert record["group"] == ""
+        assert record["group"] is None
         keys = list(record.keys())
         assert keys == SPEC_KEY_ORDER
 
@@ -1095,9 +1096,10 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
         keys = list(record.keys())
         assert keys == SPEC_KEY_ORDER
 
-    def test_deep_nested_artifact_has_dash_group_in_spec_position(
+    def test_deep_nested_artifact_has_slash_group_in_spec_position(
         self, runner, bare_project_dir
     ):
+        # US-007 Scenario 2/7: deep-nested group is slash-joined, never hyphen-joined
         artifacts_dir = bare_project_dir / ".lore" / "artifacts"
         _write_artifact(bare_project_dir, "alpha/beta/deep.md", ARTIFACT_IN_DEEP_SUBDIR)
 
@@ -1105,7 +1107,7 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
         assert result.exit_code == 0, result.output
         parsed = json.loads(result.output)
         record = next(r for r in parsed["artifacts"] if r["id"] == "deep-artifact")
-        assert record["group"] == "alpha-beta"
+        assert record["group"] == "alpha/beta"
         keys = list(record.keys())
         assert keys == SPEC_KEY_ORDER
 
@@ -1618,3 +1620,39 @@ class TestParseFrontmatterDocRequiredFieldsParameter:
         )
         assert result is not None
         assert set(result.keys()) == {"id", "title", "summary", "path"}
+
+
+# ---------------------------------------------------------------------------
+# US-007 Red: list GROUP slash display + JSON audit
+# anchor: conceptual-workflows-json-output (lore codex show group-param-us-007)
+# ---------------------------------------------------------------------------
+
+
+class TestArtifactListUs007SlashGroup:
+    """US-007: artifact list table + JSON expose slash-joined groups, null for root."""
+
+    def test_artifact_list_json_slash_joined_and_null_for_root(
+        self, runner, bare_project_dir
+    ):
+        # Scenario 2 — JSON envelope: nested slash-joined, root null, never ""
+        _write_artifact(
+            bare_project_dir,
+            "default/codex/overview.md",
+            "---\nid: overview\ntitle: Overview\nsummary: S\n---\n",
+        )
+        _write_artifact(
+            bare_project_dir,
+            "transient-note.md",
+            "---\nid: transient-note\ntitle: Note\nsummary: S\n---\n",
+        )
+        result = runner.invoke(main, ["artifact", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        by_id = {a["id"]: a for a in data["artifacts"]}
+        assert by_id["overview"]["group"] == "default/codex"
+        assert by_id["transient-note"]["group"] is None
+        for a in data["artifacts"]:
+            assert a["group"] != "", f"group must never be empty string: {a}"
+            assert a["group"] != "default-codex", (
+                f"group must never be hyphen-joined: {a}"
+            )

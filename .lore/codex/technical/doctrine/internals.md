@@ -21,11 +21,13 @@ Scans `doctrines_dir` recursively for `*.design.md` files. For each design file 
 
 Frontmatter parsing delegates to `frontmatter.parse_frontmatter_doc(filepath, required_fields=("id",), extra_fields=("title", "summary"))`. If parsing fails or `id` is absent, the file is skipped.
 
+`filter_groups`, when supplied, applies slash-delimited segment-prefix matching via `paths.group_matches_filter`. Tokens are split on `/` and compared segment-by-segment against each record's on-disk group. Root-level doctrines (empty group) are always included. The hyphen-delimited input form is no longer accepted.
+
 Return value per entry:
 ```python
 {
     "id": str,        # from design frontmatter
-    "group": str,     # from paths.derive_group()
+    "group": str,     # from paths.derive_group() — slash-joined, "" for root
     "title": str,     # from design frontmatter; fallback to id
     "summary": str,   # from design frontmatter; fallback to ""
     "filename": str,  # design file name (e.g. "my-workflow.design.md")
@@ -60,21 +62,30 @@ On success, returns:
 }
 ```
 
-### `create_doctrine(name: str, yaml_source_path: Path, design_source_path: Path, doctrines_dir: Path) -> dict`
+### `create_doctrine(name: str, yaml_source_path: Path, design_source_path: Path, doctrines_dir: Path, *, group: str | None = None) -> dict`
 
-Validates both source files, then writes `<name>.yaml` and `<name>.design.md` to `doctrines_dir` (flat, not subdirectory).
+Validates both source files and the group, then writes `<name>.yaml` and `<name>.design.md` into `doctrines_dir` (root) or `doctrines_dir / Path(group)` (nested).
 
 Validation order (all before any write):
-1. `validate_name(name)` from `validators.py` — raises `DoctrineError` on failure
-2. Duplicate check — `doctrines_dir.rglob(f"{name}.yaml")` or `doctrines_dir.rglob(f"{name}.design.md")` — raises `DoctrineError(f"Error: doctrine '{name}' already exists.")`
-3. YAML source file exists — raises `DoctrineError(f"File not found: {yaml_source_path}")`
-4. Design source file exists — raises `DoctrineError(f"File not found: {design_source_path}")`
-5. `_validate_yaml_schema(yaml_data, name)` — validates YAML content
-6. `_validate_design_frontmatter(design_meta, name)` — validates design frontmatter
+1. `validate_name(name)` from `validators.py` — raises `DoctrineError` on failure.
+2. `validate_group(group)` from `validators.py` — raises `DoctrineError` on failure with `Error: invalid group '<value>': <reason>`. `None` is accepted and means the doctrines root.
+3. Duplicate check — `doctrines_dir.rglob(f"{name}.yaml")` or `doctrines_dir.rglob(f"{name}.design.md")` — raises `DoctrineError(f"Error: doctrine '{name}' already exists at <existing path>")`. Subtree-wide regardless of group.
+4. YAML source file exists — raises `DoctrineError(f"File not found: {yaml_source_path}")`.
+5. Design source file exists — raises `DoctrineError(f"File not found: {design_source_path}")`.
+6. `_validate_yaml_schema(yaml_data, name)` — validates YAML content.
+7. `_validate_design_frontmatter(design_meta, name)` — validates design frontmatter.
+
+After validation, the target directory is computed as `doctrines_dir if group is None else doctrines_dir / Path(group)` and created with `mkdir(parents=True, exist_ok=True)`. The two files are then written into that directory.
 
 Returns:
 ```python
-{"name": name, "yaml_filename": f"{name}.yaml", "design_filename": f"{name}.design.md"}
+{
+    "name": name,
+    "group": group,  # str | None; slash-joined when supplied, None at root
+    "yaml_filename": f"{name}.yaml",
+    "design_filename": f"{name}.design.md",
+    "path": str(target_dir / f"{name}.yaml"),
+}
 ```
 
 ## Exception: `DoctrineError`

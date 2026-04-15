@@ -1166,17 +1166,17 @@ class TestScanCodexFilter:
         assert "conceptual-entities-task" not in ids
         assert "CODEX.md" in ids
 
-    # Unit — filter_groups=["conceptual", "technical-api"] returns union + root
+    # Unit — filter_groups=["conceptual", "technical/api"] returns union + root
     # Exercises: conceptual-workflows-filter-list step 3 (OR logic)
     def test_scan_codex_multiple_filter_groups_returns_union(self, bare_lore_dir):
-        """scan_codex with filter_groups=["conceptual", "technical-api"] returns union plus root-level docs."""
+        """scan_codex with filter_groups=["conceptual", "technical/api"] returns union plus root-level docs."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
         _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
         _write_filter_doc(codex_dir, "technical/api/tech-api-spec.md", "tech-api-spec")
         _write_filter_doc(codex_dir, "technical/tech-overview.md", "tech-overview")
 
-        result = scan_codex(codex_dir, filter_groups=["conceptual", "technical-api"])
+        result = scan_codex(codex_dir, filter_groups=["conceptual", "technical/api"])
 
         ids = {d["id"] for d in result}
         assert "CODEX.md" in ids
@@ -1184,16 +1184,16 @@ class TestScanCodexFilter:
         assert "tech-api-spec" in ids
         assert "tech-overview" not in ids
 
-    # Unit — filter_groups=["technical-api"] excludes technical group files
+    # Unit — filter_groups=["technical/api"] excludes technical group files
     # Exercises: conceptual-workflows-filter-list step 3 (exact match excludes parent dir)
     def test_scan_codex_technical_api_excludes_technical_root(self, bare_lore_dir):
-        """scan_codex with filter_groups=["technical-api"] excludes files in technical/ (group "technical")."""
+        """scan_codex with filter_groups=["technical/api"] excludes files in technical/ (group "technical")."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
         _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
         _write_filter_doc(codex_dir, "technical/api/tech-api-spec.md", "tech-api-spec")
         _write_filter_doc(codex_dir, "technical/tech-overview.md", "tech-overview")
 
-        result = scan_codex(codex_dir, filter_groups=["technical-api"])
+        result = scan_codex(codex_dir, filter_groups=["technical/api"])
 
         ids = {d["id"] for d in result}
         assert "CODEX.md" in ids

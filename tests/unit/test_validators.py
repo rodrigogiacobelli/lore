@@ -9,11 +9,14 @@ Covers all five functions defined in lore.validators:
   - route_entity(eid)            → tuple[str, str]
 """
 
+from pathlib import Path
+
 import pytest
 
 from lore.validators import (
     route_entity,
     validate_entity_id,
+    validate_group,
     validate_message,
     validate_mission_id,
     validate_priority,
@@ -374,3 +377,92 @@ class TestRouteEntity:
         assert isinstance(result, tuple)
         assert len(result) == 2
         assert all(isinstance(v, str) for v in result)
+
+
+# ---------------------------------------------------------------------------
+# US-005: validate_group
+# ---------------------------------------------------------------------------
+
+
+class TestValidateGroup:
+    """validate_group(group) → error string or None."""
+
+    def test_none_returns_none(self):
+        assert validate_group(None) is None
+
+    def test_valid_single_segment(self):
+        assert validate_group("a") is None
+
+    def test_valid_nested(self):
+        assert validate_group("a/b/c") is None
+
+    def test_valid_hyphen_underscore(self):
+        assert validate_group("a-b/c_d") is None
+
+    def test_empty_string_error(self):
+        err = validate_group("")
+        assert err is not None
+        assert "empty" in err
+
+    def test_dotdot_root_error(self):
+        err = validate_group("..")
+        assert err is not None
+        assert "path traversal" in err
+
+    def test_dotdot_prefix_error(self):
+        err = validate_group("../x")
+        assert err is not None
+        assert "path traversal" in err
+
+    def test_dotdot_suffix_error(self):
+        err = validate_group("x/..")
+        assert err is not None
+        assert "path traversal" in err
+
+    def test_backslash_error_leading(self):
+        err = validate_group("\\x")
+        assert err is not None
+        assert "backslash" in err
+
+    def test_backslash_error_middle(self):
+        err = validate_group("a\\b")
+        assert err is not None
+        assert "backslash" in err
+
+    def test_leading_slash_error(self):
+        err = validate_group("/x")
+        assert err is not None
+        assert ("absolute" in err or "leading" in err)
+
+    def test_trailing_slash_error(self):
+        err = validate_group("x/")
+        assert err is not None
+        assert "trailing" in err
+
+    def test_empty_segment_error(self):
+        err = validate_group("a//b")
+        assert err is not None
+        assert "empty segment" in err
+
+    def test_bad_chars_in_segment_error(self):
+        err = validate_group("a/!/b")
+        assert err is not None
+        assert ("segment" in err or "characters" in err)
+
+    def test_leading_hyphen_in_segment_error(self):
+        # _NAME_RE requires alphanumeric start
+        assert validate_group("-a") is not None
+
+
+def test_validators_has_no_lore_imports():
+    """Enforces standards-dependency-inversion: validators.py must not import lore.*."""
+    import ast
+
+    src = (Path(__file__).parents[2] / "src/lore/validators.py").read_text()
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            assert node.module is None or not node.module.startswith("lore")
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                assert not alias.name.startswith("lore")

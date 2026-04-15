@@ -159,8 +159,8 @@ def test_filter_codex_single_group_json_entry_has_required_fields(project_dir, r
         assert "summary" in entry
 
 
-def test_filter_codex_single_group_json_root_doc_has_empty_group(project_dir, runner):
-    """Root-level document in JSON output has empty string as group."""
+def test_filter_codex_single_group_json_root_doc_has_null_group(project_dir, runner):
+    """Root-level document in JSON output has null as group (US-007)."""
     _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
@@ -169,7 +169,7 @@ def test_filter_codex_single_group_json_root_doc_has_empty_group(project_dir, ru
     data = json.loads(result.output)
     root_entries = [e for e in data["codex"] if e["id"] == "CODEX.md"]
     assert len(root_entries) == 1
-    assert root_entries[0]["group"] == ""
+    assert root_entries[0]["group"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ def test_filter_codex_two_groups_space_separated(project_dir, runner):
     _write_codex_doc(project_dir, "technical/tech-overview.md", TECHNICAL_OVERVIEW_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
 
-    result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "technical-api"])
+    result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "technical/api"])
 
     assert result.exit_code == 0
     assert "CODEX.md" in result.output
@@ -257,7 +257,7 @@ def test_filter_codex_two_groups_space_separated_exactly_three_rows(project_dir,
     _write_codex_doc(project_dir, "technical/tech-overview.md", TECHNICAL_OVERVIEW_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
 
-    result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "technical-api"])
+    result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "technical/api"])
 
     assert result.exit_code == 0
     lines = result.output.splitlines()
@@ -283,10 +283,10 @@ def test_filter_codex_repeated_flag_same_as_space_separated(project_dir, runner)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
 
     result_space = runner.invoke(
-        main, ["codex", "list", "--filter", "conceptual", "technical-api"]
+        main, ["codex", "list", "--filter", "conceptual", "technical/api"]
     )
     result_repeated = runner.invoke(
-        main, ["codex", "list", "--filter", "conceptual", "--filter", "technical-api"]
+        main, ["codex", "list", "--filter", "conceptual", "--filter", "technical/api"]
     )
 
     # Both forms must succeed
@@ -484,13 +484,13 @@ action: trigger-deploy
 
 
 def test_filter_artifact_list_single_group(project_dir, runner):
-    """lore artifact list --filter default-codex returns default-codex artifacts plus root-level only."""
+    """lore artifact list --filter default/codex returns default/codex artifacts plus root-level only."""
     _write_artifact(project_dir, "root-artifact.md", ROOT_ARTIFACT)
     _write_artifact(project_dir, "default/some-artifact.md", DEFAULT_ARTIFACT)
     _write_artifact(project_dir, "default/codex/fi-user-story.md", CODEX_ARTIFACT)
     _write_artifact(project_dir, "default/transient/scratch.md", TRANSIENT_ARTIFACT)
 
-    result = runner.invoke(main, ["artifact", "list", "--filter", "default-codex"])
+    result = runner.invoke(main, ["artifact", "list", "--filter", "default/codex"])
 
     assert result.exit_code == 0
     assert "root-artifact" in result.output
@@ -507,7 +507,7 @@ def test_filter_artifact_list_single_group_valid_count_reflects_filtered_set(pro
     _write_artifact(project_dir, "default/transient/scratch.md", TRANSIENT_ARTIFACT)
 
     result_all = runner.invoke(main, ["artifact", "list"])
-    result_filtered = runner.invoke(main, ["artifact", "list", "--filter", "default-codex"])
+    result_filtered = runner.invoke(main, ["artifact", "list", "--filter", "default/codex"])
 
     assert result_all.exit_code == 0
     assert result_filtered.exit_code == 0
@@ -846,3 +846,276 @@ TDD Red body.
         "Knight with group 'feature-implementation-tdd' must be returned by "
         "--filter feature-implementation under subtree semantics. RED."
     )
+
+
+# ---------------------------------------------------------------------------
+# US-008 — Slash-delimited filter grammar (segment-prefix semantics)
+# Spec: group-param-us-008 (lore codex show group-param-us-008)
+# Anchor: conceptual-workflows-filter-list
+# These tests are RED against the current hyphen/exact-match implementation.
+# ---------------------------------------------------------------------------
+
+import pytest  # noqa: E402
+
+
+RANKER_DOCTRINE_YAML = """\
+id: ranker
+title: Ranker
+description: Ranker doctrine.
+steps:
+  - id: step-1
+    title: Rank
+    agent: ba
+    missions: []
+"""
+
+FOO_DOCTRINE_YAML = """\
+id: foo
+title: Foo
+description: Foo doctrine.
+steps:
+  - id: step-1
+    title: Foo
+    agent: ba
+    missions: []
+"""
+
+X_DOCTRINE_YAML = """\
+id: x
+title: X
+description: X doctrine.
+steps:
+  - id: step-1
+    title: X
+    agent: ba
+    missions: []
+"""
+
+FLAT_DOCTRINE_YAML = """\
+id: flat
+title: Flat
+description: Flat doctrine at root.
+steps:
+  - id: step-1
+    title: Flat
+    agent: ba
+    missions: []
+"""
+
+
+def test_us008_doctrine_filter_slash_delimited_exact(project_dir, runner):
+    """Scenario 1 — slash token matches only the nested doctrine."""
+    _write_doctrine(project_dir, "seo-analysis/keyword-analysers/ranker.yaml", RANKER_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "other/foo.yaml", FOO_DOCTRINE_YAML)
+
+    result = runner.invoke(
+        main, ["doctrine", "list", "--filter", "seo-analysis/keyword-analysers"]
+    )
+
+    assert result.exit_code == 0
+    assert "ranker" in result.output
+    assert "foo" not in result.output
+
+
+def test_us008_doctrine_filter_segment_prefix(project_dir, runner):
+    """Scenario 2 — partial-path segment prefix matches nested doctrine."""
+    _write_doctrine(project_dir, "seo-analysis/keyword-analysers/ranker.yaml", RANKER_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "other/foo.yaml", FOO_DOCTRINE_YAML)
+
+    result = runner.invoke(main, ["doctrine", "list", "--filter", "seo-analysis"])
+
+    assert result.exit_code == 0
+    assert "ranker" in result.output
+    assert "foo" not in result.output
+
+
+def test_us008_doctrine_filter_bare_substring_no_match(project_dir, runner):
+    """Scenario 3 — bare substring 'tech' must NOT match segment 'technical'."""
+    _write_doctrine(project_dir, "technical/api/x.yaml", X_DOCTRINE_YAML)
+
+    result = runner.invoke(main, ["doctrine", "list", "--filter", "tech"])
+
+    assert result.exit_code == 0
+    assert "x" not in result.output
+
+
+def test_us008_doctrine_filter_root_always_included(project_dir, runner):
+    """Scenario 4 — root-level doctrine always appears regardless of filter."""
+    _write_doctrine(project_dir, "seo-analysis/ranker.yaml", RANKER_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "flat.yaml", FLAT_DOCTRINE_YAML)
+
+    result = runner.invoke(main, ["doctrine", "list", "--filter", "seo-analysis"])
+
+    assert result.exit_code == 0
+    assert "ranker" in result.output
+    assert "flat" in result.output
+
+
+def test_us008_artifact_filter_leading_trailing_slash_stripped(project_dir, runner):
+    """Scenario 5 — leading and trailing slashes are silently stripped from the token."""
+    _write_artifact(project_dir, "default/codex/overview.md", CODEX_ARTIFACT)
+    _write_artifact(project_dir, "other/foo.md", DEFAULT_ARTIFACT)
+
+    a = runner.invoke(main, ["artifact", "list", "--filter", "/default/codex/"])
+    b = runner.invoke(main, ["artifact", "list", "--filter", "default/codex"])
+
+    assert a.exit_code == 0
+    assert b.exit_code == 0
+    assert a.output == b.output
+
+
+def test_us008_artifact_filter_empty_token_errors(project_dir, runner):
+    """Scenario 6 — empty filter token still errors (unchanged existing behaviour)."""
+    _write_artifact(project_dir, "default/codex/overview.md", CODEX_ARTIFACT)
+
+    result = runner.invoke(main, ["artifact", "list", "--filter", ""])
+
+    assert result.exit_code != 0
+
+
+def test_us008_artifact_filter_hyphen_legacy_no_longer_matches_nested(project_dir, runner):
+    """Scenario 7 — breaking change: hyphen-joined legacy token no longer matches nested group."""
+    _write_artifact(project_dir, "default/codex/overview.md", CODEX_ARTIFACT)
+
+    result = runner.invoke(main, ["artifact", "list", "--filter", "default-codex"])
+
+    assert result.exit_code == 0
+    assert "fi-user-story" not in result.output
+
+
+CODEX_NESTED_DOC = """\
+---
+id: nested-doc
+title: Nested Doc
+summary: Nested codex doc at a/b.
+---
+
+Nested body.
+"""
+
+CODEX_UNRELATED_DOC = """\
+---
+id: unrelated-doc
+title: Unrelated Doc
+summary: Unrelated codex doc at z.
+---
+
+Unrelated body.
+"""
+
+NESTED_KNIGHT = """\
+---
+id: a/b/nested-knight
+title: Nested Knight
+summary: Nested knight at a/b.
+---
+
+Nested knight body.
+"""
+
+UNRELATED_KNIGHT = """\
+---
+id: z/unrelated-knight
+title: Unrelated Knight
+summary: Unrelated knight at z.
+---
+
+Unrelated body.
+"""
+
+NESTED_DOCTRINE_YAML = """\
+id: nested-doctrine
+title: Nested Doctrine
+description: Nested doctrine at a/b.
+steps:
+  - id: step-1
+    title: Do
+    agent: ba
+    missions: []
+"""
+
+UNRELATED_DOCTRINE_YAML = """\
+id: unrelated-doctrine
+title: Unrelated Doctrine
+description: Unrelated doctrine at z.
+steps:
+  - id: step-1
+    title: Do
+    agent: ba
+    missions: []
+"""
+
+NESTED_WATCHER_YAML = """\
+id: nested-watcher
+title: Nested Watcher
+summary: Nested watcher at a/b.
+watch_target: missions/*
+interval: hourly
+action: notify
+"""
+
+UNRELATED_WATCHER_YAML = """\
+id: unrelated-watcher
+title: Unrelated Watcher
+summary: Unrelated watcher at z.
+watch_target: missions/*
+interval: hourly
+action: notify
+"""
+
+NESTED_ARTIFACT = """\
+---
+id: nested-artifact
+title: Nested Artifact
+summary: Nested artifact at a/b.
+---
+
+Nested body.
+"""
+
+UNRELATED_ARTIFACT = """\
+---
+id: unrelated-artifact
+title: Unrelated Artifact
+summary: Unrelated artifact at z.
+---
+
+Unrelated body.
+"""
+
+
+def _seed_nested_and_root(project_dir, cmd):
+    """Seed one nested entity at group 'a/b' and one unrelated entity at 'z' for a given list cmd."""
+    if cmd == "codex":
+        _write_codex_doc(project_dir, "a/b/nested-doc.md", CODEX_NESTED_DOC)
+        _write_codex_doc(project_dir, "z/unrelated-doc.md", CODEX_UNRELATED_DOC)
+        return "nested-doc", "unrelated-doc"
+    if cmd == "artifact":
+        _write_artifact(project_dir, "a/b/nested-artifact.md", NESTED_ARTIFACT)
+        _write_artifact(project_dir, "z/unrelated-artifact.md", UNRELATED_ARTIFACT)
+        return "nested-artifact", "unrelated-artifact"
+    if cmd == "knight":
+        _write_knight(project_dir, "a/b/nested-knight.md", NESTED_KNIGHT)
+        _write_knight(project_dir, "z/unrelated-knight.md", UNRELATED_KNIGHT)
+        return "nested-knight", "unrelated-knight"
+    if cmd == "doctrine":
+        _write_doctrine(project_dir, "a/b/nested-doctrine.yaml", NESTED_DOCTRINE_YAML)
+        _write_doctrine(project_dir, "z/unrelated-doctrine.yaml", UNRELATED_DOCTRINE_YAML)
+        return "nested-doctrine", "unrelated-doctrine"
+    if cmd == "watcher":
+        _write_watcher(project_dir, "a/b/nested-watcher.yaml", NESTED_WATCHER_YAML)
+        _write_watcher(project_dir, "z/unrelated-watcher.yaml", UNRELATED_WATCHER_YAML)
+        return "nested-watcher", "unrelated-watcher"
+    raise ValueError(f"Unknown cmd: {cmd}")
+
+
+@pytest.mark.parametrize("cmd", ["doctrine", "knight", "watcher", "artifact", "codex"])
+def test_us008_all_five_list_commands_accept_slash_filter(project_dir, runner, cmd):
+    """Scenario 8 — slash-delimited filter grammar is accepted by every list command."""
+    nested_id, unrelated_id = _seed_nested_and_root(project_dir, cmd)
+
+    result = runner.invoke(main, [cmd, "list", "--filter", "a/b"])
+
+    assert result.exit_code == 0
+    assert nested_id in result.output
+    assert unrelated_id not in result.output

@@ -10,13 +10,14 @@ related:
 
 # Watcher CRUD Operations
 
-Watchers are YAML files stored in `.lore/watchers/`. `lore watcher new <name>`, `lore watcher edit <name>`, and `lore watcher delete <name>` manage them.
+Watchers are YAML files stored in `.lore/watchers/` (optionally nested in subdirectory groups). `lore watcher new <name> [--group <path>]`, `lore watcher edit <name>`, and `lore watcher delete <name>` manage them. Creation goes through `lore.watcher.create_watcher` — the CLI is a thin wrapper around the Python API, and `--group` / `group=` behave identically.
 
 ## Preconditions
 
 - The Lore project has been initialised.
 - Watcher `name` must match the pattern `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (same rule as knights and doctrines, enforced by `validate_name` in `lore.validators`).
 - Content is provided via `--from <file>` or stdin.
+- The `--group <path>` value (when provided) is a slash-delimited relative path. Each segment must satisfy the name rule independently. Rejected: `..`, backslash, absolute path, leading/trailing `/`, empty segment, bad-char segment.
 
 ## Name Validation
 
@@ -32,32 +33,40 @@ Invalid names produce an error before any filesystem access.
 
 Watcher content must be valid YAML. `create_watcher` and `update_watcher` call `yaml.safe_load` on the content before writing to disk. Content that fails YAML parsing is rejected with an error before it reaches disk.
 
-## Steps — Create (`lore watcher new <name>`)
+## Steps — Create (`lore watcher new <name> [--group <path>]`)
+
+The CLI handler parses `--from`/stdin and `--group` and then calls `create_watcher(watchers_dir, name, content, group=group)`. All validation, duplicate detection, mkdir, and writing happen inside the core helper.
 
 ### 1. Validate name
 
 `validate_name` is applied. On failure, error to stderr, exit code 1.
 
-### 2. Check for duplicates
+### 2. Validate the group (when `--group` is provided)
 
-`create_watcher` checks whether `<name>.yaml` already exists anywhere in `.lore/watchers/` (via `rglob`). If found, `Watcher "<name>" already exists.` is printed and exit code 1 is returned.
+`validate_group` checks the group. `None` is accepted. Any of `..`, backslash, absolute path, leading/trailing `/`, empty segment, bad-char segment → `ValueError` with `Error: invalid group '<value>': <reason>` to stderr, exit 1.
 
-### 3. Read content
+### 3. Check for duplicates across the whole subtree
+
+`create_watcher` runs `watchers_dir.rglob(f"{name}.yaml")`. A watcher named `<name>` anywhere under `.lore/watchers/` blocks the create regardless of the supplied group.
+
+### 4. Read content
 
 - `--from <file>`: the file is read from disk. If not found, `File not found: <path>` is printed.
 - No flag (stdin): content is read from stdin. If stdin is empty or whitespace, `No content provided on stdin.` is printed.
 
-### 4. Validate YAML
+### 5. Validate YAML
 
 `yaml.safe_load` is called on the content. If parsing fails, an error is printed and exit code 1 is returned. Content is not written to disk.
 
-### 5. Write the watcher file
+### 6. Create the target directory and write the watcher file
 
-The `.lore/watchers/` directory is created if absent. The content is written to `.lore/watchers/<name>.yaml`.
+Target directory is `.lore/watchers/` when `group is None`, or `.lore/watchers/<group>` when supplied. `mkdir(parents=True, exist_ok=True)` is idempotent — pre-existing group directories never fail the create. The content is written to `<target_dir>/<name>.yaml`.
 
-### 6. Report
+### 7. Report
 
-Plain: `Created watcher <name>`. JSON: `{"id": "<name>", "filename": "<name>.yaml"}`.
+Plain (root group): `Created watcher <name>`.
+Plain (nested): `Created watcher <name> (group: <group>)`.
+JSON: `{"id": "<name>", "group": "<group>|null", "filename": "<name>.yaml", "path": ".lore/watchers/[<group>/]<name>.yaml"}`. The `group` key is slash-joined when nested, `null` at the root.
 
 ## Steps — Edit (`lore watcher edit <name>`)
 
@@ -102,7 +111,8 @@ Plain: `Deleted watcher <name>`. JSON: `{"id": "<name>", "deleted": true}`.
 | Failure point | Behaviour | Exit code |
 |---------------|-----------|-----------|
 | Invalid name (create/edit/delete) | Error to stderr | 1 |
-| Duplicate name (create) | Error message | 1 |
+| Invalid group (create) | `Error: invalid group '<value>': <reason>` to stderr | 1 |
+| Duplicate name (create, anywhere in subtree) | Error message | 1 |
 | Source file not found (--from) | Error to stderr | 1 |
 | Empty stdin content | Error to stderr | 1 |
 | Invalid YAML content (create/edit) | Error to stderr | 1 |

@@ -53,9 +53,15 @@ Each command documents its own JSON shape. Common patterns:
 | `lore board delete` | `{"id": N, "deleted_at": "..."}` |
 | `lore edit` | Full updated entity object |
 | `lore delete` | `{"id": "...", "deleted_at": "..."}` |
-| `lore artifact list` | `{"artifacts": [{id, group, title, summary}]}` |
-| `lore knight list` | `{"knights": [{id, group, title, summary}]}` |
-| `lore doctrine list` | `{"doctrines": [{id, group, title, summary, valid}]}` |
+| `lore artifact list` | `{"artifacts": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level artifacts |
+| `lore knight list` | `{"knights": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level knights |
+| `lore doctrine list` | `{"doctrines": [{id, group, title, summary, valid}]}` — `group` is slash-joined when nested, `null` for root-level doctrines |
+| `lore watcher list` | `{"watchers": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level watchers |
+| `lore codex list` | `{"codex": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level documents |
+| `lore doctrine new` | `{"name", "group", "yaml_filename", "design_filename", "path"}` — `group` slash-joined or `null` |
+| `lore knight new` | `{"name", "group", "filename", "path"}` — `group` slash-joined or `null` |
+| `lore watcher new` | `{"id", "group", "filename", "path"}` — `group` slash-joined or `null` |
+| `lore artifact new` | `{"id", "group", "filename", "path"}` — `group` slash-joined or `null` |
 
 ## Error JSON Format
 
@@ -82,6 +88,15 @@ For multi-entity commands (`claim`, `done`, `needs`, `unneed`), exit code `1` is
 ## Field Presence Contracts
 
 All fields in documented envelopes are always present, even when the value is `null`. Consumers should not treat absent fields as `null` — absence means the field was not part of the contract for that command version.
+
+### Group key canonical form
+
+For every entity with a `group` field in the JSON envelope (the five `list` commands plus the four `new` commands), the canonical form is:
+
+- `null` — entity lives directly at the entity root (`.lore/<entity>/<name>.*`).
+- slash-joined string (e.g., `"seo-analysis/keyword-analysers"`) — entity lives in a nested subdirectory under the entity root.
+
+JSON never emits an empty string `""` for `group`, and never emits the legacy hyphen-joined form (e.g., `"default-codex"`). Consumers must treat the hyphen form as invalid input.
 
 ## Commands That Do Not Support JSON
 

@@ -2,8 +2,73 @@
 
 from pathlib import Path
 
+import yaml
+
 from lore import frontmatter
 from lore.paths import derive_group, group_matches_filter
+from lore.validators import validate_group, validate_name
+
+
+_REQUIRED_ARTIFACT_FIELDS = ("id", "title", "summary")
+
+
+def create_artifact(
+    artifacts_dir: Path,
+    name: str,
+    content: str,
+    *,
+    group: str | None = None,
+) -> dict:
+    """Create a new artifact markdown file under ``artifacts_dir``.
+
+    Validation order:
+    1. Name format (``validate_name``)
+    2. Group format (``validate_group``)
+    3. Frontmatter required fields (``id``, ``title``, ``summary``)
+    4. Subtree-wide duplicate via ``rglob``
+    5. Create target dir (auto-mkdir parents) and write file
+
+    Returns a dict with keys: ``id``, ``group``, ``filename``, ``path``.
+    Raises ``ValueError`` on any validation failure.
+    """
+    name_err = validate_name(name)
+    if name_err:
+        raise ValueError(name_err)
+
+    group_err = validate_group(group)
+    if group_err:
+        raise ValueError(group_err)
+
+    # Strict frontmatter validation
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError(
+            "Artifact content missing frontmatter block (id, title, summary required)"
+        )
+    try:
+        meta = yaml.safe_load(parts[1])
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid frontmatter YAML: {e}") from e
+    if not isinstance(meta, dict):
+        raise ValueError("Frontmatter must be a YAML mapping")
+    for field in _REQUIRED_ARTIFACT_FIELDS:
+        if field not in meta or meta[field] is None:
+            raise ValueError(f"Missing required frontmatter field: {field}")
+
+    if next(iter(artifacts_dir.rglob(f"{name}.md")), None) is not None:
+        raise ValueError(f"artifact '{name}' already exists")
+
+    target_dir = artifacts_dir if group is None else artifacts_dir / Path(group)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / f"{name}.md"
+    target_path.write_text(content)
+
+    return {
+        "id": name,
+        "group": group,
+        "filename": f"{name}.md",
+        "path": str(target_path),
+    }
 
 
 def scan_artifacts(artifacts_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:

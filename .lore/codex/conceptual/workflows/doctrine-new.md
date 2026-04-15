@@ -7,13 +7,14 @@ related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", 
 
 # `lore doctrine new` Behaviour
 
-`lore doctrine new <name> -f <yaml-file> -d <design-file>` creates a new doctrine by writing both a `.yaml` steps file and a `.design.md` documentation file to `.lore/doctrines/`. The command is **not idempotent** — if a doctrine with the same name already exists anywhere in the tree, it aborts with an error. Both `-f` and `-d` flags are required. There is no scaffold path.
+`lore doctrine new <name> -f <yaml-file> -d <design-file> [--group <path>]` creates a new doctrine by writing both a `.yaml` steps file and a `.design.md` documentation file under `.lore/doctrines/`. The optional `--group <path>` places the pair in a nested subdirectory (auto-created); without it the pair lands at the doctrines root. The command is **not idempotent** — if a doctrine with the same name already exists anywhere in the subtree, it aborts with an error. Both `-f` and `-d` flags are required. There is no scaffold path.
 
 ## Preconditions
 
 - The Lore project has been initialised (`.lore/` directory and `lore.db` exist).
 - The name argument is a valid identifier: starts with an alphanumeric character and contains only letters, digits, hyphens, and underscores.
-- No existing doctrine with the given name exists anywhere under `.lore/doctrines/`.
+- The `--group <path>` value (when provided) is a slash-delimited relative path where each segment independently satisfies the same character rule as a name. It must not contain `..`, backslashes, an absolute path prefix, a leading or trailing `/`, or any empty segment.
+- No existing doctrine with the given name exists anywhere under `.lore/doctrines/` — duplicate detection is subtree-wide regardless of `--group`.
 - Both source files (`-f` and `-d`) exist on disk.
 - The YAML source file has `id` and `steps` fields; `id` must match `<name>`. It must not contain `name` or `description` fields.
 - The design file has YAML frontmatter with an `id` field that matches `<name>`.
@@ -30,7 +31,16 @@ Invalid name: must start with alphanumeric and contain only letters, digits, hyp
 
 No file is written. Exit code 1.
 
-### 2. Check for duplicates
+### 2. Validate the group (when `--group` is provided)
+
+`validate_group` in `lore.validators` checks `--group`:
+
+- `None` (flag omitted) → accepted; the doctrine lands at the doctrines root.
+- Empty string, `..`, backslash, absolute path (`/x`), leading/trailing `/`, empty segment (`a//b`), or any segment failing `validate_name` → aborts with `Error: invalid group '<value>': <reason>` on stderr, exit code 1.
+
+Validation runs before any filesystem access. No file is written.
+
+### 3. Check for duplicates
 
 A recursive search (`rglob`) checks for `<name>.yaml` or `<name>.design.md` anywhere under `.lore/doctrines/`. If either is found, the command aborts with:
 
@@ -38,9 +48,9 @@ A recursive search (`rglob`) checks for `<name>.yaml` or `<name>.design.md` anyw
 Error: doctrine '<name>' already exists.
 ```
 
-Exit code 1.
+Exit code 1. Duplicate detection is subtree-wide — a doctrine named `ranker` under any group will block a new `ranker` in a different group.
 
-### 3. Read both source files
+### 4. Read both source files
 
 - `-f <yaml-file>`: the YAML source file is read from disk. If the file does not exist, the command aborts with `File not found: <path>`. Exit code 1.
 - `-d <design-file>`: the design source file is read from disk. If the file does not exist, the command aborts with `File not found: <path>`. Exit code 1.
@@ -49,7 +59,7 @@ If either flag is omitted entirely:
 - Missing `-f`: `Error: -f/--from is required`. Exit code 1.
 - Missing `-d`: `Error: -d/--design is required`. Exit code 1.
 
-### 4. Validate both files
+### 5. Validate both files
 
 All validation happens before any write. If either file fails validation, no files are written.
 
@@ -67,22 +77,28 @@ All validation happens before any write. If either file fails validation, no fil
 2. `id` must be present in frontmatter.
 3. `id` must match the `<name>` argument.
 
-### 5. Write both files atomically
+### 6. Create the target directory and write both files atomically
 
-If all checks pass, both files are written to `.lore/doctrines/`:
+Target directory is `.lore/doctrines/` when `--group` is omitted, or `.lore/doctrines/<group>` (using `Path(group)` for filesystem joins) when supplied. The directory is created with `mkdir(parents=True, exist_ok=True)` — idempotent; re-using an existing group never fails on the directory itself.
+
+Both files are then written to that directory:
 - `<name>.yaml` — copy of the YAML source content
 - `<name>.design.md` — copy of the design source content
 
-The `.lore/doctrines/` directory is created if it does not exist.
-
 Both files are written before the command considers itself done. Either both files are written, or neither is.
 
-### 6. Print confirmation
+### 7. Print confirmation
 
 On success:
 
 ```
 Created doctrine <name>
+```
+
+Or, when `--group` was supplied:
+
+```
+Created doctrine <name> (group: <group>)
 ```
 
 Exit code 0.
@@ -92,7 +108,8 @@ Exit code 0.
 | Failure point | Message | Exit code |
 |---|---|---|
 | Invalid name | `Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.` | 1 |
-| Duplicate doctrine | `Error: doctrine '<name>' already exists.` | 1 |
+| Invalid group | `Error: invalid group '<value>': <reason>` | 1 |
+| Duplicate doctrine (anywhere in subtree) | `Error: doctrine '<name>' already exists at <existing path>` | 1 |
 | Missing `-f` flag | `Error: -f/--from is required` | 1 |
 | Missing `-d` flag | `Error: -d/--design is required` | 1 |
 | `-f` file not found | `File not found: <path>` | 1 |
@@ -114,8 +131,10 @@ Exit code 0.
 When the global `--json` flag is set, success output is:
 
 ```json
-{"name": "<name>", "yaml_filename": "<name>.yaml", "design_filename": "<name>.design.md"}
+{"name": "<name>", "group": "<group>|null", "yaml_filename": "<name>.yaml", "design_filename": "<name>.design.md", "path": ".lore/doctrines/[<group>/]<name>.yaml"}
 ```
+
+The `group` key is a slash-joined string (e.g. `"seo-analysis/keyword-analysers"`) when `--group` was supplied, and `null` when the doctrine lands at the doctrines root.
 
 Errors are returned as `{"error": "<message>"}` to stderr with exit code 1.
 
@@ -138,6 +157,17 @@ Both files must be prepared before running `lore doctrine new`. Write them to a 
 ```
 $ lore doctrine new my-workflow -f /tmp/my-workflow.yaml -d /tmp/my-workflow.design.md
 ```
+
+To create a nested doctrine (for example grouping all SEO analysers together):
+
+```
+$ lore doctrine new keyword-ranker \
+    --group seo-analysis/keyword-analysers \
+    -f /tmp/ranker.yaml \
+    -d /tmp/ranker.design.md
+```
+
+The target directory `.lore/doctrines/seo-analysis/keyword-analysers/` is auto-created. The resulting doctrine is listed with `group: seo-analysis/keyword-analysers` and filters with `--filter seo-analysis/keyword-analysers`.
 
 The YAML must have `id` and `steps` only at the top level. The design file must have YAML frontmatter with at least `id`. Both `id` values must match the `<name>` argument and the target filename stem.
 

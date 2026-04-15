@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 
 from lore.paths import derive_group, group_matches_filter
+from lore.validators import validate_group, validate_name
 
 
 def _parse_knight_frontmatter(filepath: Path) -> dict:
@@ -98,3 +99,49 @@ def find_knight(knights_dir: Path, name: str) -> Path | None:
         return matches[0]
 
     return None
+
+
+def create_knight(
+    knights_dir: Path,
+    name: str,
+    content: str,
+    *,
+    group: str | None = None,
+) -> dict:
+    """Create a new knight persona file under ``knights_dir``.
+
+    Validation order:
+    1. Name format (``validate_name``)
+    2. Group format (``validate_group``)
+    3. Subtree-wide duplicate via ``rglob``
+    4. Create target dir and write file
+
+    When ``group`` is None, file is written at ``knights_dir/{name}.md``.
+    When provided, file is written at ``knights_dir/{group}/{name}.md`` with
+    intermediate directories auto-created.
+
+    Returns a dict with keys: ``name``, ``group``, ``filename``, ``path``.
+    Raises ``ValueError`` on any validation failure.
+    """
+    name_err = validate_name(name)
+    if name_err:
+        raise ValueError(name_err)
+
+    group_err = validate_group(group)
+    if group_err:
+        raise ValueError(group_err)
+
+    if next(iter(knights_dir.rglob(f"{name}.md")), None) is not None:
+        raise ValueError(f'Knight "{name}" already exists.')
+
+    target_dir = knights_dir if group is None else knights_dir / Path(group)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / f"{name}.md"
+    target_path.write_text(content)
+
+    return {
+        "name": name,
+        "group": group,
+        "filename": f"{name}.md",
+        "path": str(target_path),
+    }

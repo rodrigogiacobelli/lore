@@ -52,13 +52,14 @@ Note: `valid` is always `True` in the listing because invalid entries are skippe
 
 ### 5. Derive the group
 
-Identical to `lore knight list`: directory components between `.lore/doctrines/` and the file, joined with dashes. The filename itself is excluded. Example: a doctrine at `.lore/doctrines/feature-implementation/my-doctrine.design.md` has group `feature-implementation`.
+Identical to `lore knight list`: directory components between `.lore/doctrines/` and the file, joined with `/`. The filename itself is excluded. Example: a doctrine at `.lore/doctrines/feature-implementation/my-doctrine.design.md` has group `feature-implementation`; one at `.lore/doctrines/seo-analysis/keyword-analysers/ranker.design.md` has group `seo-analysis/keyword-analysers`. Root-level doctrines have `group == ""` (rendered as the existing empty sentinel in the table and `null` in JSON).
 
 ### 6. Apply filter (when `--filter` is provided)
 
-When one or more `--filter GROUP` tokens are supplied, the parsed doctrine list is post-filtered using subtree (prefix) matching:
+When one or more `--filter GROUP` tokens are supplied, the parsed doctrine list is post-filtered using segment-prefix matching on the slash-delimited group form:
 
-- Doctrines whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter default` returns doctrines with group `default` as well as `default-feature`, `default-ops`, and any other subgroup starting with `default-`.
+- Each supplied token is split on `/`. A doctrine's `group` is split on `/`. The token matches when its segments are a proper prefix of the doctrine's segments. For example, `--filter seo-analysis` matches `seo-analysis` and `seo-analysis/keyword-analysers`; `--filter seo-analysis/keyword-analysers` matches the nested form exactly.
+- The hyphen-delimited input grammar (`default-feature`) is no longer accepted — this is a breaking change. See conceptual-workflows-filter-list for the full specification.
 - Doctrines with `group == ""` (root-level files, directly under `.lore/doctrines/`) are **always** included regardless of filter tokens.
 - Unrecognised tokens produce no error — they simply match nothing.
 - When `--filter` is not provided, all doctrines are returned.
@@ -87,12 +88,13 @@ The `--json` flag is accepted both as a local subcommand flag (`lore doctrine li
 {
   "doctrines": [
     {"id": "feature-implementation", "group": "feature-implementation", "title": "Feature Implementation", "summary": "E2E spec-driven pipeline...", "valid": true},
-    {"id": "update-changelog", "group": "", "title": "Update Changelog", "summary": "Single-step doctrine...", "valid": true}
+    {"id": "keyword-ranker", "group": "seo-analysis/keyword-analysers", "title": "Keyword Ranker", "summary": "...", "valid": true},
+    {"id": "update-changelog", "group": null, "title": "Update Changelog", "summary": "Single-step doctrine...", "valid": true}
   ]
 }
 ```
 
-All entries have `"valid": true` — invalid entries are skipped, not surfaced. The `filename` key is not included in the JSON output. Exit code 0 in all cases.
+The `group` key is slash-joined when the doctrine lives in a subdirectory and `null` when it sits at the doctrines root. All entries have `"valid": true` — invalid entries are skipped, not surfaced. The `filename` key is not included in the JSON output. Exit code 0 in all cases.
 
 ## Failure Modes
 

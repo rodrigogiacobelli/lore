@@ -1,15 +1,17 @@
 """Tests for lore.paths.derive_group — GROUP is derived consistently across
 all entity types.
 
-Acceptance criteria:
+Acceptance criteria (US-006):
 - The GROUP value for any entity is derived from its folder path relative
-  to its base directory, using dashes as separators, excluding the filename
+  to its base directory, using slashes as separators, excluding the filename
 - Given files at identical relative paths under the artifacts, knights,
   and doctrines directories, the GROUP values produced are identical
 - Entities stored directly in their base directory (no subfolder) show
   an empty group
+- Hyphens within segment names are preserved; the segment separator is `/`
 """
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -17,8 +19,8 @@ import pytest
 from lore.paths import derive_group
 
 
-class TestDeriveGroupGroupFromFolderPathWithDashSeparators:
-    """GROUP is derived from folder path relative to base dir, dashes as separators."""
+class TestDeriveGroupGroupFromFolderPathWithSlashSeparators:
+    """GROUP is derived from folder path relative to base dir, slashes as separators."""
 
     def test_single_subdirectory_produces_subdirectory_name_as_group(self):
         """A file one level deep returns its parent directory name."""
@@ -26,23 +28,23 @@ class TestDeriveGroupGroupFromFolderPathWithDashSeparators:
         base_dir = Path("/base")
         assert derive_group(filepath, base_dir) == "sub1"
 
-    def test_two_subdirectory_levels_joined_with_dash(self):
-        """A file two levels deep returns both directory names joined with a dash."""
+    def test_two_subdirectory_levels_joined_with_slash(self):
+        """A file two levels deep returns both directory names joined with a slash."""
         filepath = Path("/base/sub1/sub2/file.md")
         base_dir = Path("/base")
-        assert derive_group(filepath, base_dir) == "sub1-sub2"
+        assert derive_group(filepath, base_dir) == "sub1/sub2"
 
-    def test_three_subdirectory_levels_joined_with_dashes(self):
-        """A file three levels deep returns all three directory names joined with dashes."""
+    def test_three_subdirectory_levels_joined_with_slashes(self):
+        """A file three levels deep returns all three directory names joined with slashes."""
         filepath = Path("/base/a/b/c/file.md")
         base_dir = Path("/base")
-        assert derive_group(filepath, base_dir) == "a-b-c"
+        assert derive_group(filepath, base_dir) == "a/b/c"
 
     def test_deeply_nested_artifact_group_format(self, tmp_path):
-        """Deep nesting produces group like 'codex-conceptual-entities'."""
+        """Deep nesting produces group like 'codex/conceptual/entities'."""
         artifacts_dir = tmp_path / ".lore" / "artifacts"
         filepath = artifacts_dir / "codex" / "conceptual" / "entities" / "task.md"
-        assert derive_group(filepath, artifacts_dir) == "codex-conceptual-entities"
+        assert derive_group(filepath, artifacts_dir) == "codex/conceptual/entities"
 
     def test_filename_is_excluded_from_group(self):
         """The filename component must not appear in the group value."""
@@ -52,15 +54,16 @@ class TestDeriveGroupGroupFromFolderPathWithDashSeparators:
         assert "my-entity" not in result
         assert result == "sub1"
 
-    def test_separator_is_dash_not_slash_or_underscore(self):
-        """Directory components must be joined with dashes, not slashes or underscores."""
+    def test_separator_is_slash_not_dash_or_underscore(self):
+        """Directory components must be joined with slashes, not dashes or underscores."""
         filepath = Path("/base/alpha/beta/file.md")
         base_dir = Path("/base")
         result = derive_group(filepath, base_dir)
-        assert "/" not in result
         assert "\\" not in result
         assert "_" not in result
-        assert result == "alpha-beta"
+        # Between segments, the separator is '/', never '-'
+        assert result == "alpha/beta"
+        assert result.split("/") == ["alpha", "beta"]
 
 
 class TestDeriveGroupIdenticalGroupsAcrossEntityTypes:
@@ -214,11 +217,11 @@ class TestDeriveGroupEdgeCasesAndErrorHandling:
         assert derive_group(filepath, knights_dir) == "default"
 
     def test_exact_spec_example_artifacts_deep_nesting(self, tmp_path):
-        """Spec example: codex/conceptual/entities/task.md => 'codex-conceptual-entities'."""
+        """Spec example: codex/conceptual/entities/task.md => 'codex/conceptual/entities'."""
         lore_dir = tmp_path / ".lore"
         artifacts_dir = lore_dir / "artifacts"
         filepath = artifacts_dir / "codex" / "conceptual" / "entities" / "task.md"
-        assert derive_group(filepath, artifacts_dir) == "codex-conceptual-entities"
+        assert derive_group(filepath, artifacts_dir) == "codex/conceptual/entities"
 
     def test_exact_spec_example_root_level_knight(self, tmp_path):
         """Spec example: .lore/knights/pm.md relative to .lore/knights/ => ''."""
@@ -226,3 +229,43 @@ class TestDeriveGroupEdgeCasesAndErrorHandling:
         knights_dir = lore_dir / "knights"
         filepath = knights_dir / "pm.md"
         assert derive_group(filepath, knights_dir) == ""
+
+
+class TestDeriveGroupSlashMigrationUS006:
+    """US-006: derive_group returns slash-joined canonical form."""
+
+    def test_derive_group_signature_unchanged(self):
+        """Signature remains derive_group(filepath, base_dir) -> str."""
+        sig = inspect.signature(derive_group)
+        assert list(sig.parameters) == ["filepath", "base_dir"]
+
+    def test_derive_group_root_returns_empty(self, tmp_path):
+        """File directly under base_dir returns empty string."""
+        (tmp_path / "x.md").touch()
+        assert derive_group(tmp_path / "x.md", tmp_path) == ""
+
+    def test_derive_group_single_subdir(self, tmp_path):
+        """One nesting level returns the single directory name."""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "a" / "x.md").touch()
+        assert derive_group(tmp_path / "a" / "x.md", tmp_path) == "a"
+
+    def test_derive_group_deeply_nested(self, tmp_path):
+        """Multi-level nesting returns slash-joined form 'a/b/c'."""
+        (tmp_path / "a" / "b" / "c").mkdir(parents=True)
+        (tmp_path / "a" / "b" / "c" / "x.md").touch()
+        assert derive_group(tmp_path / "a" / "b" / "c" / "x.md", tmp_path) == "a/b/c"
+
+    def test_derive_group_preserves_hyphens_in_segments(self, tmp_path):
+        """Hyphens inside segment names preserved; slash is the separator."""
+        (tmp_path / "a-b" / "c-d").mkdir(parents=True)
+        (tmp_path / "a-b" / "c-d" / "x.md").touch()
+        result = derive_group(tmp_path / "a-b" / "c-d" / "x.md", tmp_path)
+        assert result == "a-b/c-d"
+        assert result.split("/") == ["a-b", "c-d"]
+
+    def test_derive_group_no_windows_separators(self, tmp_path):
+        """Output never contains a backslash."""
+        (tmp_path / "a" / "b").mkdir(parents=True)
+        (tmp_path / "a" / "b" / "x.md").touch()
+        assert "\\" not in derive_group(tmp_path / "a" / "b" / "x.md", tmp_path)

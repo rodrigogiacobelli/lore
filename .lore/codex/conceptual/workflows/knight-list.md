@@ -42,18 +42,20 @@ Each discovered `.md` file is read and split on `---` delimiters. If the file co
 
 ### 4. Derive the group
 
-The `group` for each knight is derived from the subdirectory path between `.lore/knights/` and the file. Directory components are joined with dashes.
+The `group` for each knight is derived from the subdirectory path between `.lore/knights/` and the file. Directory components are joined with `/`.
 
 Examples:
-- `.lore/knights/tech-lead.md` → group: `""` (empty)
+- `.lore/knights/tech-lead.md` → group: `""` (empty; rendered as the sentinel in the table and `null` in JSON)
 - `.lore/knights/default/tech-lead.md` → group: `default`
 - `.lore/knights/feature-implementation/architect.md` → group: `feature-implementation`
+- `.lore/knights/feature-implementation/reviewers/senior.md` → group: `feature-implementation/reviewers`
 
 ### 5. Apply filter (when `--filter` is provided)
 
-When one or more `--filter GROUP` tokens are supplied, the collected knight list is post-filtered using subtree (prefix) matching:
+When one or more `--filter GROUP` tokens are supplied, the collected knight list is post-filtered using segment-prefix matching on the slash-delimited group form:
 
-- Knights whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter feature-implementation` returns knights with group `feature-implementation` as well as `feature-implementation-sub`, and any other subgroup starting with `feature-implementation-`.
+- Each supplied token is split on `/` and the knight's `group` is split on `/`. The token matches when its segments are a proper prefix of the knight's segments. For example, `--filter feature-implementation` matches both `feature-implementation` and `feature-implementation/reviewers`; `--filter feature-implementation/reviewers` matches only the nested form.
+- The hyphen-delimited input grammar (`feature-implementation-sub`) is no longer accepted — see conceptual-workflows-filter-list for the breaking-change specification.
 - Knights with `group == ""` (root-level files, directly under `.lore/knights/`) are **always** included regardless of filter tokens.
 - Unrecognised tokens produce no error — they simply match nothing.
 - When `--filter` is not provided, all knights are returned (existing behaviour preserved).
@@ -81,11 +83,13 @@ The `--json` flag is accepted both as a local subcommand flag (`lore knight list
 ```json
 {
   "knights": [
-    {"id": "...", "group": "...", "title": "...", "summary": "..."},
-    ...
+    {"id": "...", "group": "feature-implementation/reviewers", "title": "...", "summary": "..."},
+    {"id": "...", "group": null, "title": "...", "summary": "..."}
   ]
 }
 ```
+
+The `group` key is slash-joined when the knight lives in a subdirectory and `null` when it sits at the knights root.
 
 The array is in the same sorted order as the table. Exit code 0 in all cases (including empty).
 

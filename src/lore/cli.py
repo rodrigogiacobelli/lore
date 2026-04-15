@@ -11,8 +11,70 @@ from lore import __version__
 from lore import paths
 from lore import validators
 from lore import knight as knight_module
+from lore.knight import create_knight
+from lore.artifact import create_artifact
 from lore import graph
 from lore.root import find_project_root, ProjectNotFoundError
+
+
+# ---------------------------------------------------------------------------
+# US-009 --help teaching surface (ADR-008: help as teaching interface).
+# Constants + helpers keep the nine enriched new/list subcommands in sync
+# without scattering identical strings across cli.py.
+# ---------------------------------------------------------------------------
+
+# Shared `--filter` option help for every `list` subcommand that supports
+# slash-delimited group filters (doctrine, knight, watcher, artifact, codex).
+_FILTER_OPT_HELP = (
+    "Filter by slash-delimited group token (e.g. a/b/c). Can be repeated."
+)
+
+# Suffix appended to each `list` command's docstring. The `{example}` slot is
+# the only part that differs between resources.
+_LIST_HELP_SUFFIX_TEMPLATE = (
+    "\n\n    --filter accepts slash-delimited group tokens, e.g. --filter {example}."
+    "\n\n    See: lore codex show conceptual-workflows-help\n    "
+)
+
+
+def _list_doc(summary: str, example: str) -> str:
+    """Build a `list` subcommand docstring with the shared teaching suffix."""
+    return f"{summary}{_LIST_HELP_SUFFIX_TEMPLATE.format(example=example)}"
+
+
+def _group_opt_help(resource_dir: str, example: str) -> str:
+    """Build a `--group` option help string for a `new` subcommand.
+
+    resource_dir is the POSIX path under .lore/ (e.g. ``.lore/knights/``);
+    example is a concrete nested token such as ``feature-implementation/on-prd-ready``.
+    """
+    return (
+        f"Nested subdirectory under {resource_dir} "
+        f"(slash-delimited, e.g. {example})."
+    )
+
+
+# Suffix appended to each `new` command's docstring. The `{resource}` slot is
+# the only part that differs between resources.
+_NEW_HELP_SUFFIX_TEMPLATE = (
+    "\n\n    Without --group, the {resource} lands at the default root ({root}).\n"
+    "    Use --group with a slash-delimited token to nest under subdirectories.\n\n"
+    "    \\b\n"
+    "    Example:\n"
+    "      {example}\n    "
+)
+
+
+def _new_doc(summary: str, resource: str, root: str, example: str) -> str:
+    """Build a `new` subcommand docstring with the shared teaching suffix."""
+    return summary + _NEW_HELP_SUFFIX_TEMPLATE.format(
+        resource=resource, root=root, example=example
+    )
+
+
+def _group_for_json(g):
+    """Map empty-string group to None for JSON emitters (US-007)."""
+    return g or None
 
 
 def _validate_mission_id(entity_id, ctx):
@@ -934,12 +996,14 @@ def knight(ctx):
     pass
 
 
-@knight.command("list")
+@knight.command(
+    "list",
+    help=_list_doc("List available knights.", "feature-implementation/prd-handlers"),
+)
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
-@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
+@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
 @click.pass_context
 def knight_list(ctx, json_flag, filter_groups):
-    """List available knights."""
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
     knights_dir = paths.knights_dir(project_root)
@@ -948,7 +1012,7 @@ def knight_list(ctx, json_flag, filter_groups):
 
     if json_mode:
         filtered = [
-            {"id": r["id"], "group": r["group"], "title": r["title"], "summary": r["summary"]}
+            {"id": r["id"], "group": _group_for_json(r["group"]), "title": r["title"], "summary": r["summary"]}
             for r in records
         ]
         click.echo(json.dumps({"knights": filtered}))
@@ -1006,41 +1070,42 @@ def knight_show(ctx, name):
     click.echo(knight_path.read_text())
 
 
-@knight.command("new", context_settings={"ignore_unknown_options": True})
+@knight.command(
+    "new",
+    context_settings={"ignore_unknown_options": True},
+    help=_new_doc(
+        "Create a new knight.",
+        resource="knight",
+        root=".lore/knights/",
+        example="lore knight new on-prd-ready --group feature-implementation/prd-handlers -f p.md",
+    ),
+)
 @click.argument("name")
 @click.option(
     "--from", "-f", "from_file", default=None, help="Source file for knight content."
 )
+@click.option(
+    "--group",
+    default=None,
+    help=_group_opt_help(".lore/knights/", "feature-implementation/on-prd-ready"),
+)
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def knight_new(ctx, name, from_file):
-    """Create a new knight."""
+def knight_new(ctx, name, from_file, group, json_flag):
     if not _validate_name(name, ctx):
         return
     project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
+    json_mode = json_flag or ctx.obj.get("json", False)
     knights_dir = paths.knights_dir(project_root)
-    knight_path = knights_dir / f"{name}.md"
-
-    # Check for duplicate (flat path or any subdirectory)
-    if knight_path.exists() or (
-        knights_dir.exists() and list(knights_dir.rglob(f"{name}.md"))
-    ):
-        msg = f'Knight "{name}" already exists.'
-        if json_mode:
-            click.echo(json.dumps({"error": msg}))
-        else:
-            click.echo(msg)
-        ctx.exit(1)
-        return
 
     if from_file is not None and from_file != "-":
         source = Path(from_file)
         if not source.exists():
             msg = f"File not found: {from_file}"
             if json_mode:
-                click.echo(json.dumps({"error": msg}))
+                click.echo(json.dumps({"error": msg}), err=True)
             else:
-                click.echo(msg)
+                click.echo(msg, err=True)
             ctx.exit(1)
             return
         content = source.read_text()
@@ -1049,19 +1114,33 @@ def knight_new(ctx, name, from_file):
         if not content.strip():
             msg = "No content provided on stdin."
             if json_mode:
-                click.echo(json.dumps({"error": msg}))
+                click.echo(json.dumps({"error": msg}), err=True)
             else:
-                click.echo(msg)
+                click.echo(msg, err=True)
             ctx.exit(1)
             return
 
-    knights_dir.mkdir(parents=True, exist_ok=True)
-    knight_path.write_text(content)
+    try:
+        result = create_knight(knights_dir, name, content, group=group)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
 
     if json_mode:
-        click.echo(json.dumps({"name": name, "filename": f"{name}.md"}))
+        try:
+            result["path"] = str(Path(result["path"]).relative_to(project_root))
+        except ValueError:
+            pass
+        click.echo(json.dumps(result))
         return
-    click.echo(f"Created knight {name}")
+
+    suffix = f" (group: {group})" if group else ""
+    click.echo(f"Created knight {name}{suffix}")
 
 
 @knight.command("edit")
@@ -1152,12 +1231,14 @@ def doctrine(ctx):
     pass
 
 
-@doctrine.command("list")
+@doctrine.command(
+    "list",
+    help=_list_doc("List available doctrines.", "seo-analysis/keyword-analysers"),
+)
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
-@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
+@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
 @click.pass_context
 def doctrine_list(ctx, json_flag, filter_groups):
-    """List available doctrines."""
     from lore.doctrine import list_doctrines
 
     project_root = ctx.obj["project_root"]
@@ -1171,7 +1252,7 @@ def doctrine_list(ctx, json_flag, filter_groups):
             "doctrines": [
                 {
                     "id": d["id"],
-                    "group": d.get("group", ""),
+                    "group": _group_for_json(d.get("group", "")),
                     "title": d["title"],
                     "summary": d.get("summary", ""),
                     "valid": d["valid"],
@@ -1239,14 +1320,26 @@ def doctrine_show(ctx, name, json_flag):
     click.echo(d["raw_yaml"], nl=False)
 
 
-@doctrine.command("new")
+@doctrine.command(
+    "new",
+    help=_new_doc(
+        "Create a new doctrine from a YAML file and a design file.",
+        resource="doctrine",
+        root=".lore/doctrines/",
+        example="lore doctrine new keyword-ranker --group seo-analysis/keyword-analysers -f r.yaml -d r.md",
+    ),
+)
 @click.argument("name")
 @click.option("--from", "-f", "from_file", default=None, help="Source YAML file.")
 @click.option("--design", "-d", "design_file", default=None, help="Source design file.")
+@click.option(
+    "--group",
+    default=None,
+    help=_group_opt_help(".lore/doctrines/", "seo-analysis/keyword-analysers"),
+)
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def doctrine_new(ctx, name, from_file, design_file, json_flag):
-    """Create a new doctrine from a YAML file and a design file."""
+def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
     from lore.doctrine import create_doctrine, DoctrineError
 
     json_mode = json_flag or ctx.obj.get("json", False)
@@ -1271,7 +1364,9 @@ def doctrine_new(ctx, name, from_file, design_file, json_flag):
     doctrines_dir = paths.doctrines_dir(project_root)
 
     try:
-        create_doctrine(name, Path(from_file), Path(design_file), doctrines_dir)
+        result = create_doctrine(
+            name, Path(from_file), Path(design_file), doctrines_dir, group=group
+        )
     except DoctrineError as e:
         msg = str(e)
         if json_mode:
@@ -1282,13 +1377,15 @@ def doctrine_new(ctx, name, from_file, design_file, json_flag):
         return
 
     if json_mode:
-        click.echo(json.dumps({
-            "name": name,
-            "yaml_filename": f"{name}.yaml",
-            "design_filename": f"{name}.design.md",
-        }))
+        try:
+            result["path"] = str(Path(result["path"]).relative_to(project_root))
+        except ValueError:
+            pass
+        click.echo(json.dumps(result))
         return
-    click.echo(f"Created doctrine {name}")
+
+    suffix = f" (group: {group})" if group else ""
+    click.echo(f"Created doctrine {name}{suffix}")
 
 
 @doctrine.command("edit")
@@ -2153,13 +2250,15 @@ def codex(ctx):
     pass
 
 
-@codex.command("list")
+@codex.command(
+    "list",
+    help=_list_doc("List all codex documents.", "conceptual/workflows"),
+)
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
-@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
+@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
 @click.argument("extra_filters", nargs=-1)
 @click.pass_context
 def codex_list(ctx, json_flag, filter_groups, extra_filters):
-    """List all codex documents."""
     from lore.codex import scan_codex
 
     project_root = ctx.obj["project_root"]
@@ -2174,7 +2273,7 @@ def codex_list(ctx, json_flag, filter_groups, extra_filters):
             "codex": [
                 {
                     "id": d["id"],
-                    "group": paths.derive_group(d["path"], codex_dir),
+                    "group": _group_for_json(paths.derive_group(d["path"], codex_dir)),
                     "title": d["title"],
                     "summary": d["summary"],
                 }
@@ -2378,17 +2477,22 @@ def artifact(ctx):
     pass
 
 
-@artifact.command("list")
+@artifact.command(
+    "list",
+    help=_list_doc("List all artifacts.", "default/codex"),
+)
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
-@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
+@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
 @click.pass_context
 def artifact_list(ctx, json_flag, filter_groups):
-    """List all artifacts."""
     from lore.artifact import scan_artifacts
 
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
     artifacts_dir = paths.artifacts_dir(project_root)
+
+    if any(not token.strip("/") for token in filter_groups):
+        raise click.ClickException("empty filter token")
 
     artifacts = scan_artifacts(artifacts_dir, filter_groups=list(filter_groups) if filter_groups else None)
 
@@ -2397,7 +2501,7 @@ def artifact_list(ctx, json_flag, filter_groups):
             "artifacts": [
                 {
                     "id": a["id"],
-                    "group": a["group"],
+                    "group": _group_for_json(a["group"]),
                     "title": a["title"],
                     "summary": a["summary"],
                 }
@@ -2450,6 +2554,79 @@ def artifact_show(ctx, ids):
     for art in results:
         click.echo(f"=== {art['id']} ===")
         click.echo(art["body"])
+
+
+@artifact.command(
+    "new",
+    context_settings={"ignore_unknown_options": True},
+    help=_new_doc(
+        "Create a new artifact.",
+        resource="artifact",
+        root=".lore/artifacts/",
+        example="lore artifact new fi-review --group codex-templates/review-forms -f r.md",
+    ),
+)
+@click.argument("name")
+@click.option(
+    "--from", "-f", "from_file", default=None, help="Source file for artifact content."
+)
+@click.option(
+    "--group",
+    default=None,
+    help=_group_opt_help(".lore/artifacts/", "codex-templates/review-forms"),
+)
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def artifact_new(ctx, name, from_file, group, json_flag):
+    if not _validate_name(name, ctx):
+        return
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+    artifacts_dir = paths.artifacts_dir(project_root)
+
+    if from_file is not None and from_file != "-":
+        source = Path(from_file)
+        if not source.exists():
+            msg = f"File not found: {from_file}"
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+        content = source.read_text()
+    else:
+        content = click.get_text_stream("stdin").read()
+        if not content.strip():
+            msg = "No content provided on stdin."
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+
+    try:
+        result = create_artifact(artifacts_dir, name, content, group=group)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(f"Error: {msg}", err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        try:
+            result["path"] = str(Path(result["path"]).relative_to(project_root))
+        except ValueError:
+            pass
+        click.echo(json.dumps(result))
+        return
+
+    suffix = f" (group: {group})" if group else ""
+    click.echo(f"Created artifact {name}{suffix}")
 
 
 @main.group()
@@ -2538,12 +2715,14 @@ def watcher(ctx):
     pass
 
 
-@watcher.command("list")
+@watcher.command(
+    "list",
+    help=_list_doc("List all watcher definitions.", "team-a/nightly-triggers"),
+)
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
-@click.option("--filter", "filter_groups", multiple=True, help="Filter by group namespace (can be repeated).")
+@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
 @click.pass_context
 def watcher_list(ctx, json_mode, filter_groups):
-    """List all watcher definitions."""
     from lore import watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
@@ -2554,7 +2733,10 @@ def watcher_list(ctx, json_mode, filter_groups):
     watchers = watcher_module.list_watchers(w_dir, filter_groups=list(filter_groups) if filter_groups else None)
 
     if json_mode:
-        click.echo(json.dumps({"watchers": watchers}))
+        watchers_json = [
+            {**w, "group": _group_for_json(w.get("group", ""))} for w in watchers
+        ]
+        click.echo(json.dumps({"watchers": watchers_json}))
         return
 
     if not watchers:
@@ -2603,13 +2785,25 @@ def watcher_show(ctx, name, json_mode):
         click.echo(filepath.read_text(), nl=False)
 
 
-@watcher.command("new")
+@watcher.command(
+    "new",
+    help=_new_doc(
+        "Create a new watcher definition.",
+        resource="watcher",
+        root=".lore/watchers/",
+        example="lore watcher new nightly --group team-a/nightly-triggers -f w.yaml",
+    ),
+)
 @click.argument("name")
-@click.option("--from", "from_file", default=None, help="Read content from file instead of stdin.")
+@click.option("--from", "-f", "from_file", default=None, help="Read content from file instead of stdin.")
+@click.option(
+    "--group",
+    default=None,
+    help=_group_opt_help(".lore/watchers/", "team-a/nightly-triggers"),
+)
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def watcher_new(ctx, name, from_file, json_mode):
-    """Create a new watcher definition."""
+def watcher_new(ctx, name, from_file, group, json_mode):
     from lore import watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
@@ -2633,16 +2827,21 @@ def watcher_new(ctx, name, from_file, json_mode):
         return
 
     try:
-        result = watcher_module.create_watcher(w_dir, name, content)
+        result = watcher_module.create_watcher(w_dir, name, content, group=group)
     except ValueError as exc:
         click.echo(str(exc), err=True)
         ctx.exit(1)
         return
 
     if json_mode:
+        try:
+            result["path"] = str(Path(result["path"]).relative_to(project_root))
+        except (ValueError, KeyError):
+            pass
         click.echo(json.dumps(result))
     else:
-        click.echo(f"Created watcher {name}")
+        suffix = f" (group: {group})" if group else ""
+        click.echo(f"Created watcher {name}{suffix}")
 
 
 @watcher.command("edit")

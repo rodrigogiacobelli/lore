@@ -366,11 +366,10 @@ def test_doctrine_new_json_mode_success(runner, project_dir, tmp_path):
     )
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data == {
-        "name": "my-workflow",
-        "yaml_filename": "my-workflow.yaml",
-        "design_filename": "my-workflow.design.md",
-    }
+    assert data["name"] == "my-workflow"
+    assert data["yaml_filename"] == "my-workflow.yaml"
+    assert data["design_filename"] == "my-workflow.design.md"
+    assert data["group"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -397,3 +396,201 @@ def test_doctrine_new_source_yaml_not_found(runner, project_dir, tmp_path):
     )
     assert result.exit_code == 1
     assert "File not found" in (result.output + (result.stderr or ""))
+
+
+# ===========================================================================
+# US-001 E2E tests — lore doctrine new --group
+# Spec: group-param-us-001 (lore codex show group-param-us-001)
+# Workflow: conceptual-workflows-doctrine-new
+# ===========================================================================
+
+
+def _write_doctrine_sources(tmp_path, yaml_name, design_name, *, name):
+    yaml_file = tmp_path / yaml_name
+    yaml_file.write_text(
+        f"id: {name}\nsteps:\n"
+        "  - id: step-one\n    title: First step\n    type: knight\n    knight: some-knight\n"
+    )
+    design_file = tmp_path / design_name
+    design_file.write_text(
+        f"---\nid: {name}\ntitle: {name}\nsummary: Does things.\n---\n\n# {name}\n"
+    )
+    return yaml_file, design_file
+
+
+def test_doctrine_new_nested_happy_path(runner, project_dir, tmp_path):
+    """lore doctrine new --group a/b creates yaml+design under nested subdirs."""
+    yaml_file, design_file = _write_doctrine_sources(
+        tmp_path, "ranker.yaml", "ranker.design.md", name="keyword-ranker"
+    )
+    result = runner.invoke(
+        main,
+        [
+            "doctrine",
+            "new",
+            "keyword-ranker",
+            "--group",
+            "seo-analysis/keyword-analysers",
+            "-f",
+            str(yaml_file),
+            "-d",
+            str(design_file),
+        ],
+    )
+    assert result.exit_code == 0
+    assert (
+        result.output.strip()
+        == "Created doctrine keyword-ranker (group: seo-analysis/keyword-analysers)"
+    )
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    assert (
+        doctrines_dir / "seo-analysis" / "keyword-analysers" / "keyword-ranker.yaml"
+    ).exists()
+    assert (
+        doctrines_dir
+        / "seo-analysis"
+        / "keyword-analysers"
+        / "keyword-ranker.design.md"
+    ).exists()
+
+
+def test_doctrine_new_nested_json_envelope(runner, project_dir, tmp_path):
+    """lore doctrine new --group ... --json emits full dict envelope with group and path."""
+    yaml_file, design_file = _write_doctrine_sources(
+        tmp_path, "ranker.yaml", "ranker.design.md", name="keyword-ranker"
+    )
+    result = runner.invoke(
+        main,
+        [
+            "doctrine",
+            "new",
+            "keyword-ranker",
+            "--group",
+            "seo-analysis/keyword-analysers",
+            "-f",
+            str(yaml_file),
+            "-d",
+            str(design_file),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "name": "keyword-ranker",
+        "group": "seo-analysis/keyword-analysers",
+        "yaml_filename": "keyword-ranker.yaml",
+        "design_filename": "keyword-ranker.design.md",
+        "path": ".lore/doctrines/seo-analysis/keyword-analysers/keyword-ranker.yaml",
+    }
+
+
+def test_doctrine_new_single_segment_group(runner, project_dir, tmp_path):
+    """Single-segment --group writes under exactly one nested level."""
+    yaml_file, design_file = _write_doctrine_sources(
+        tmp_path, "seo.yaml", "seo.design.md", name="seo-tool"
+    )
+    result = runner.invoke(
+        main,
+        [
+            "doctrine",
+            "new",
+            "seo-tool",
+            "--group",
+            "seo-analysis",
+            "-f",
+            str(yaml_file),
+            "-d",
+            str(design_file),
+        ],
+    )
+    assert result.exit_code == 0
+    assert result.output.strip() == "Created doctrine seo-tool (group: seo-analysis)"
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    assert (doctrines_dir / "seo-analysis" / "seo-tool.yaml").exists()
+    assert (doctrines_dir / "seo-analysis" / "seo-tool.design.md").exists()
+
+
+def test_doctrine_new_mkdir_idempotent(runner, project_dir, tmp_path):
+    """Pre-existing target group dir does not cause error; files land inside it."""
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    (doctrines_dir / "existing-group").mkdir(parents=True)
+    yaml_file, design_file = _write_doctrine_sources(
+        tmp_path, "d.yaml", "d.design.md", name="new-doc"
+    )
+    result = runner.invoke(
+        main,
+        [
+            "doctrine",
+            "new",
+            "new-doc",
+            "--group",
+            "existing-group",
+            "-f",
+            str(yaml_file),
+            "-d",
+            str(design_file),
+        ],
+    )
+    assert result.exit_code == 0
+    assert (doctrines_dir / "existing-group" / "new-doc.yaml").exists()
+    assert (doctrines_dir / "existing-group" / "new-doc.design.md").exists()
+
+
+def test_doctrine_new_duplicate_in_subtree_rejected(runner, project_dir, tmp_path):
+    """Duplicate name anywhere under doctrines_dir is rejected regardless of --group."""
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    (doctrines_dir / "seo-analysis").mkdir(parents=True)
+    (doctrines_dir / "seo-analysis" / "ranker.yaml").write_text(
+        "id: ranker\nsteps:\n  - id: s\n    title: t\n    type: knight\n    knight: k\n"
+    )
+    (doctrines_dir / "seo-analysis" / "ranker.design.md").write_text(
+        "---\nid: ranker\ntitle: Ranker\nsummary: S.\n---\n"
+    )
+    yaml_file, design_file = _write_doctrine_sources(
+        tmp_path, "ranker.yaml", "ranker.design.md", name="ranker"
+    )
+    result = runner.invoke(
+        main,
+        [
+            "doctrine",
+            "new",
+            "ranker",
+            "--group",
+            "other-feature",
+            "-f",
+            str(yaml_file),
+            "-d",
+            str(design_file),
+        ],
+    )
+    assert result.exit_code == 1
+    combined = result.output + (result.stderr or "")
+    assert "already exists" in combined
+    assert not (doctrines_dir / "other-feature").exists()
+
+
+def test_doctrine_new_invalid_group_rejected(runner, project_dir, tmp_path):
+    """Invalid --group value (path traversal) is rejected via validate_group before any write."""
+    yaml_file, design_file = _write_doctrine_sources(
+        tmp_path, "d.yaml", "d.design.md", name="new-doc"
+    )
+    result = runner.invoke(
+        main,
+        [
+            "doctrine",
+            "new",
+            "new-doc",
+            "--group",
+            "../etc",
+            "-f",
+            str(yaml_file),
+            "-d",
+            str(design_file),
+        ],
+    )
+    assert result.exit_code == 1
+    combined = result.output + (result.stderr or "")
+    assert "invalid group" in combined
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    assert not (doctrines_dir / "new-doc.yaml").exists()

@@ -45,7 +45,7 @@ def derive_group(filepath: Path, base_dir: Path) -> str:
     """Derive the GROUP value for an entity from its path relative to its base directory.
 
     The GROUP is built from all directory components between base_dir and the
-    file, joined with dashes, excluding the filename itself.  A file stored
+    file, joined with slashes, excluding the filename itself.  A file stored
     directly in base_dir returns an empty string.
 
     Raises ValueError if filepath is not located under base_dir (propagated
@@ -53,7 +53,7 @@ def derive_group(filepath: Path, base_dir: Path) -> str:
     """
     relative = filepath.relative_to(base_dir)
     parts = relative.parts[:-1]
-    return "-".join(parts)
+    return "/".join(parts)
 
 
 def group_matches_filter(group: str, filter_groups: list[str]) -> bool:
@@ -61,20 +61,28 @@ def group_matches_filter(group: str, filter_groups: list[str]) -> bool:
 
     A group is included when:
     - It is the root group (empty string), or
-    - It equals one of the filter tokens exactly, or
-    - It starts with a filter token followed by ``'-'`` (subtree semantics).
+    - One of the filter tokens, split on ``'/'``, is a segment-prefix of the
+      group's own slash-delimited segments.
+
+    Leading and trailing ``'/'`` on tokens are stripped silently. Empty tokens
+    (``""`` or ``"/"``) are ignored defensively; CLI validation rejects them
+    earlier where required.
 
     Examples::
 
-        group_matches_filter("", ["conceptual"])           # True  (root)
-        group_matches_filter("conceptual", ["conceptual"]) # True  (exact)
-        group_matches_filter("conceptual-workflows", ["conceptual"])  # True  (subtree)
-        group_matches_filter("technical", ["conceptual"])  # False (unrelated)
-        group_matches_filter("technical", ["tech"])        # False (no bare-prefix match)
+        group_matches_filter("", ["a/b"])            # True  (root)
+        group_matches_filter("a/b", ["a/b"])         # True  (exact)
+        group_matches_filter("a/b/c", ["a/b"])       # True  (segment prefix)
+        group_matches_filter("technical/api", ["tech"])  # False (bare substring)
     """
     if group == "":
         return True
+    group_segs = group.split("/")
     for token in filter_groups:
-        if group == token or group.startswith(token + "-"):
+        normalized = token.strip("/")
+        if not normalized:
+            continue
+        tok_segs = normalized.split("/")
+        if group_segs[: len(tok_segs)] == tok_segs:
             return True
     return False

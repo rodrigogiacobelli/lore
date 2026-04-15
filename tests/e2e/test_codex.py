@@ -1198,3 +1198,38 @@ class TestCodexShowDuplicateIdsJsonOutput:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert len(data["documents"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# US-007 Red: list GROUP slash display + JSON audit
+# anchor: conceptual-workflows-json-output (lore codex show group-param-us-007)
+# ---------------------------------------------------------------------------
+
+
+class TestCodexListUs007SlashGroup:
+    """US-007 Scenario 6: codex list table + JSON emit slash-joined group, null for root."""
+
+    def test_codex_list_json_slash_joined_nested_group(self, runner, project_dir):
+        # Seed deeply-nested doc: .lore/codex/technical/arch/overview.md
+        _write_codex_doc(
+            project_dir,
+            "technical/arch/overview.md",
+            "---\nid: overview\ntitle: Overview\nsummary: Arch overview.\n---\n",
+        )
+        _write_codex_doc(
+            project_dir,
+            "top-level.md",
+            "---\nid: top-level\ntitle: Top\nsummary: Root doc.\n---\n",
+        )
+        result = runner.invoke(main, ["codex", "list", "--json"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        by_id = {d["id"]: d for d in data["codex"]}
+        assert by_id["overview"]["group"] == "technical/arch"
+        assert by_id["top-level"]["group"] is None
+        for d in data["codex"]:
+            assert d["group"] != "", f"group must never be empty string: {d}"
+            assert d["group"] != "technical-arch", (
+                f"group must never be hyphen-joined: {d}"
+            )
+

@@ -14,11 +14,11 @@ Import root is `lore`. Typed models live in `lore.models`. All `lore.db` functio
 |--------|--------|------|------|--------|----------|--------|--------|
 | **Quest** | `lore.db.create_quest(root, title, ...)` → `str` | `lore.db.get_quest(root, id)` → `Row` | `lore.db.list_quests(root, include_closed)` → `list[Row]` | — | — | `lore.db.edit_quest(root, id, ...)` → `dict` | `lore.db.delete_quest(root, id, cascade)` → `dict` |
 | **Mission** | `lore.db.create_mission(root, title, ...)` → `str` — note: quest inference (if exactly one open quest exists, assign it) has been moved to `cli.py`; calling with `quest_id=None` creates a standalone mission with no automatic assignment | `lore.db.get_mission(root, id)` → `Row` | `lore.db.list_missions(root, quest_id, include_closed)` → `dict[quest_id, list[Row]]` | — | — | `lore.db.edit_mission(root, id, ...)` → `dict` | `lore.db.delete_mission(root, id)` → `dict` |
-| **Knight** | — | `lore.knight.find_knight(knights_dir, name)` → `Path \| None` | `lore.knight.list_knights(knights_dir)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `name`, `filename` | — | — | — | — |
-| **Doctrine** | `lore.doctrine.create_doctrine(name, yaml_source_path, design_source_path, doctrines_dir)` → `dict` | `lore.doctrine.show_doctrine(id, doctrines_dir)` → `dict` — keys: `id`, `title`, `summary`, `design` (raw str), `raw_yaml` (raw str), `steps` (list) | `lore.doctrine.list_doctrines(doctrines_dir)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `filename`, `valid` (always True; orphaned entries skipped) | — | — | — | — |
-| **Watcher** | `lore.watcher.create_watcher(watchers_dir, name, content)` → `dict` | `lore.watcher.find_watcher(watchers_dir, name)` → `Path \| None`, then `lore.watcher.load_watcher(filepath)` → `dict` | `lore.watcher.list_watchers(watchers_dir)` → `list[dict]` | — | — | `lore.watcher.update_watcher(watchers_dir, name, content)` → `dict` | `lore.watcher.delete_watcher(watchers_dir, name)` → `dict` |
-| **Codex** | ✗ | `lore.codex.read_document(codex_dir, id)` → `dict` | `lore.codex.scan_codex(codex_dir)` → `list[dict]` | `lore.codex.search_documents(codex_dir, keyword)` → `list[dict]` | `lore.codex.map_documents(codex_dir, start_id, depth)` → `list[dict] | None`<br>`lore.codex.chaos_documents(codex_dir, start_id, threshold, rng=None)` → `list[dict] | None` | ✗ | ✗ |
-| **Artifact** | ✗ | `lore.artifact.read_artifact(artifacts_dir, id)` → `dict` | `lore.artifact.scan_artifacts(artifacts_dir)` → `list[dict]` | — | — | ✗ | ✗ |
+| **Knight** | `lore.knight.create_knight(knights_dir, name, content, *, group=None)` → `dict` | `lore.knight.find_knight(knights_dir, name)` → `Path \| None` | `lore.knight.list_knights(knights_dir, filter_groups=None)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `name`, `filename` | — | — | — | — |
+| **Doctrine** | `lore.doctrine.create_doctrine(name, yaml_source_path, design_source_path, doctrines_dir, *, group=None)` → `dict` | `lore.doctrine.show_doctrine(id, doctrines_dir)` → `dict` — keys: `id`, `title`, `summary`, `design` (raw str), `raw_yaml` (raw str), `steps` (list) | `lore.doctrine.list_doctrines(doctrines_dir, filter_groups=None)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `filename`, `valid` (always True; orphaned entries skipped) | — | — | — | — |
+| **Watcher** | `lore.watcher.create_watcher(watchers_dir, name, content, *, group=None)` → `dict` | `lore.watcher.find_watcher(watchers_dir, name)` → `Path \| None`, then `lore.watcher.load_watcher(filepath)` → `dict` | `lore.watcher.list_watchers(watchers_dir, filter_groups=None)` → `list[dict]` | — | — | `lore.watcher.update_watcher(watchers_dir, name, content)` → `dict` | `lore.watcher.delete_watcher(watchers_dir, name)` → `dict` |
+| **Codex** | ✗ | `lore.codex.read_document(codex_dir, id)` → `dict` | `lore.codex.scan_codex(codex_dir, filter_groups=None)` → `list[dict]` | `lore.codex.search_documents(codex_dir, keyword)` → `list[dict]` | `lore.codex.map_documents(codex_dir, start_id, depth)` → `list[dict] | None`<br>`lore.codex.chaos_documents(codex_dir, start_id, threshold, rng=None)` → `list[dict] | None` | ✗ | ✗ |
+| **Artifact** | `lore.artifact.create_artifact(artifacts_dir, name, content, *, group=None)` → `dict` | `lore.artifact.read_artifact(artifacts_dir, id)` → `dict` | `lore.artifact.scan_artifacts(artifacts_dir, filter_groups=None)` → `list[dict]` | — | — | ✗ | ✗ |
 | **Board Message** | `lore.db.add_board_message(root, entity_id, message, sender)` → `dict` | `lore.db.get_board_messages(root, entity_id)` → `list[dict]` | same as Read | — | — | ✗ (immutable) | `lore.db.delete_board_message(root, message_id)` → `dict` |
 
 ### `add_board_message` return shapes
@@ -98,6 +98,27 @@ Watcher.from_dict(load_watcher(path))   # or Watcher.from_dict(list_watchers(dir
 
 **Watcher hydration:** Use `lore.watcher.find_watcher(watchers_dir, name)` to locate the file. `find_watcher` returns `Path | None` (not found) and raises `ValueError` on path-traversal attempts.
 
+## `group=` kwarg on entity `create_*` helpers
+
+Every entity create helper accepts `group: str | None = None` as a keyword-only argument. The kwarg is validated internally via `lore.validators.validate_group` — CLI and Python API behaviour are strictly identical per ADR-011 (API parity with CLI).
+
+| Helper | Signature | Return dict gains |
+|--------|-----------|-------------------|
+| `lore.doctrine.create_doctrine` | `(name, yaml_source_path, design_source_path, doctrines_dir, *, group=None) -> dict` | `group` (str\|None), `path` (str) |
+| `lore.knight.create_knight` | `(knights_dir, name, content, *, group=None) -> dict` | `group` (str\|None), `path` (str) |
+| `lore.watcher.create_watcher` | `(watchers_dir, name, content, *, group=None) -> dict` | `group` (str\|None), `path` (str) |
+| `lore.artifact.create_artifact` | `(artifacts_dir, name, content, *, group=None) -> dict` | `group` (str\|None), `path` (str) |
+
+Contract:
+
+- `group=None` places the entity at the entity root (unchanged default behaviour for existing callers).
+- `group="<slash/delimited/path>"` places the entity at `base_dir / Path(group)` after `mkdir(parents=True, exist_ok=True)`.
+- Invalid group (`..`, backslash, absolute path, leading/trailing `/`, empty segment, bad-char segment) raises the entity's exception (`DoctrineError` for doctrines, `ValueError` for knight/watcher/artifact).
+- Duplicate-name detection is subtree-wide via `rglob` on the entity root, regardless of group.
+- The returned `group` value is slash-joined in memory (or `None`). JSON envelopes that wrap these dicts emit `None` as `null`.
+
+Every `list_*` / `scan_*` function gains a `filter_groups: list[str] | None = None` keyword argument in lock-step. Passing `None` (the default) returns all entities — existing callers are unaffected. Passing a list applies slash-delimited segment-prefix matching via `paths.group_matches_filter` on each record's slash-joined `group`.
+
 ## Diagnostic Operations
 
 ```python
@@ -136,9 +157,10 @@ Both `HealthIssue` and `HealthReport` are frozen dataclasses in `lore.models.__a
 
 | Entity | Missing | Notes |
 |--------|---------|-------|
-| **Doctrine** | Update, Delete | `create_doctrine()` added this release. Update and delete remain CLI-only (Post-MVP). |
-| **Codex** | Create, Update, Delete | No write functions in any module. |
-| **Artifact** | Create, Update, Delete | Read-only by design. |
+| **Doctrine** | Update, Delete | `create_doctrine()` now accepts `group=None`. Update and delete remain CLI-only (Post-MVP). |
+| **Knight** | Update, Delete | `create_knight()` introduced this release (extracted from `cli.py`; accepts `group=None`). Update and delete remain CLI-only. |
+| **Codex** | Create, Update, Delete | No write functions in any module. List display and filter grammar switch to slash-delimited form in lock-step. |
+| **Artifact** | Update, Delete | `create_artifact()` introduced this release (first artifact write path; accepts `group=None`). Update and delete remain on-disk. |
 | **Quest / Mission** | Search | No full-text search in `lore.db`. |
 | **Dependency** | `Dependency.from_row()` | Model exists but no `lore.db` function returns a full dep row yet. Use `get_mission_depends_on_details()` / `get_mission_blocks_details()` instead. |
 

@@ -1046,11 +1046,9 @@ class TestPythonApiCreateDoctrine:
 
         result = create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
 
-        assert result == {
-            "name": "my-workflow",
-            "yaml_filename": "my-workflow.yaml",
-            "design_filename": "my-workflow.design.md",
-        }
+        assert result["name"] == "my-workflow"
+        assert result["yaml_filename"] == "my-workflow.yaml"
+        assert result["design_filename"] == "my-workflow.design.md"
         assert (doctrines_dir / "my-workflow.yaml").exists()
         assert (doctrines_dir / "my-workflow.design.md").exists()
         assert (doctrines_dir / "my-workflow.yaml").read_text() == yaml_src.read_text()

@@ -1,7 +1,7 @@
 ---
 id: tech-cli-commands
 title: CLI Command Reference
-summary: Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours. Covers all commands including lore health (diagnostic audit), lore board add/delete, lore codex list/show/search/map/chaos, and lore artifact list/show (read-only). Notes the hidden status of --no-auto-close on `lore new quest` versus its visible status on `lore edit`.
+summary: Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours. Covers all commands including lore health (diagnostic audit), lore board add/delete, lore codex list/show/search/map/chaos, lore artifact new (first CLI write path for artifacts), lore artifact list/show, and the --group option on all four entity new subcommands. Notes the hidden status of --no-auto-close on `lore new quest` versus its visible status on `lore edit`.
 related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005-auto-close-toggle", "decisions-008-help-as-teaching-interface", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health", "decisions-006-id-references", "conceptual-workflows-help", "conceptual-workflows-stats"]
 stability: stable
 ---
@@ -266,14 +266,17 @@ Soft-delete a dependency. Mirrors `lore needs` syntax. Removing a non-existent d
 ```
 lore doctrine list
 lore doctrine list --filter default
+lore doctrine list --filter seo-analysis/keyword-analysers
 lore doctrine list --filter default feature-implementation
 ```
 
 List available Doctrine templates as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Discovery is driven by `*.design.md` files — each design file is paired with a `<name>.yaml` in the same directory. Only complete pairs (both files present) are shown. YAML-only files and orphaned design files (no YAML counterpart) are silently skipped. Title and summary come from the design file frontmatter; `title` falls back to `id`; `summary` falls back to empty string. No `[INVALID]` suffix — invalid entries are skipped, not shown. Results are sorted alphabetically by ID. No source-directory annotation is shown.
 
-Accepts `--json` as both a local flag (`lore doctrine list --json`) and the global flag (`lore --json doctrine list`). JSON output: `{"doctrines": [{id, group, title, summary, valid}]}` — all entries have `valid: true`.
+The GROUP column renders the slash-joined form (e.g. `seo-analysis/keyword-analysers`). Root-level doctrines render the existing empty-group sentinel.
 
-The optional `--filter GROUP...` flag limits results to doctrines in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns doctrines with group `default`, `default-feature`, `default-ops`, etc. Root-level doctrines (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
+Accepts `--json` as both a local flag (`lore doctrine list --json`) and the global flag (`lore --json doctrine list`). JSON output: `{"doctrines": [{id, group, title, summary, valid}]}` — `group` is slash-joined when nested and `null` for root-level doctrines; all entries have `valid: true`.
+
+The optional `--filter GROUP...` flag limits results to doctrines in the specified group(s) using slash-delimited segment-prefix matching: tokens are split on `/` and match when their segments are a proper prefix of a doctrine's segments. For example, `--filter default` returns doctrines with group `default`, `default/feature`, etc. **Breaking change:** the hyphen-delimited input grammar is no longer accepted — pass slash-delimited tokens. Root-level doctrines (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore doctrine show feature-workflow
@@ -305,25 +308,29 @@ Print the full content of a Doctrine. Resolution is recursive: the command searc
 
 ```
 lore doctrine new my-workflow -f my-workflow.yaml -d my-workflow.design.md
+lore doctrine new keyword-ranker --group seo-analysis/keyword-analysers -f ranker.yaml -d ranker.design.md
 ```
 
-Create a new doctrine by writing both `<name>.yaml` and `<name>.design.md` to `.lore/doctrines/`. Doctrine names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Both `-f/--from` and `-d/--design` flags are required — there is no scaffold path and no stdin input path.
+Create a new doctrine by writing both `<name>.yaml` and `<name>.design.md` under `.lore/doctrines/`. Doctrine names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Both `-f/--from` and `-d/--design` flags are required — there is no scaffold path and no stdin input path.
 
-Fails if a doctrine with the same name already exists anywhere under `.lore/doctrines/`: `Error: doctrine '<name>' already exists.`
+The optional `--group <path>` option places the pair in a nested subdirectory (`.lore/doctrines/<group>/`); intermediate directories are auto-created via `mkdir(parents=True, exist_ok=True)`. `<path>` is slash-delimited; each segment must satisfy `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Rejected: `..`, backslash, absolute path, leading/trailing `/`, empty segment. Omitting `--group` places the doctrine at the doctrines root. The CLI delegates to `lore.doctrine.create_doctrine(..., group=<path>|None)`; validation, mkdir, and writing happen inside the core helper.
+
+Fails if a doctrine with the same name already exists anywhere under `.lore/doctrines/`: `Error: doctrine '<name>' already exists at <existing path>`. Duplicate detection is subtree-wide regardless of `--group`.
 
 Validation of both files occurs before any write. If either file fails validation, no files are written:
 - YAML must contain `id` and `steps`; must not contain `name` or `description`.
 - YAML `id` must match `<name>`.
 - Design file must have YAML frontmatter with `id` matching `<name>`.
 
-JSON success output: `{"name": "<name>", "yaml_filename": "<name>.yaml", "design_filename": "<name>.design.md"}`.
+JSON success output: `{"name": "<name>", "group": "<group>|null", "yaml_filename": "<name>.yaml", "design_filename": "<name>.design.md", "path": ".lore/doctrines/[<group>/]<name>.yaml"}`. `group` is slash-joined when `--group` was supplied, `null` otherwise.
 
 **Failure modes:**
 
 | Failure point | Message | Exit code |
 |---|---|---|
 | Invalid name | `Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.` | 1 |
-| Duplicate doctrine | `Error: doctrine '<name>' already exists.` | 1 |
+| Invalid group | `Error: invalid group '<value>': <reason>` | 1 |
+| Duplicate doctrine (anywhere in subtree) | `Error: doctrine '<name>' already exists at <existing path>` | 1 |
 | Missing `-f` | `Error: -f/--from is required` | 1 |
 | Missing `-d` | `Error: -d/--design is required` | 1 |
 | `-f` file not found | `File not found: <path>` | 1 |
@@ -355,12 +362,13 @@ Soft-delete a doctrine. (Post-MVP: two-file soft-delete. Currently only the sing
 ```
 lore knight list
 lore knight list --filter feature-implementation
+lore knight list --filter feature-implementation/reviewers
 lore knight list --filter feature-implementation default
 ```
 
-List available Knights as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/knights/` directory tree recursively (`rglob("*.md")`), returning all knights at any depth. ID, TITLE, and SUMMARY are read from YAML frontmatter (`---`-delimited block at file top). Knights without valid frontmatter fall back to: `id` = filename stem, `title` = filename stem, `summary` = empty string. GROUP is derived from the knight file's path relative to `.lore/knights/`, with directory components joined by `-`, excluding the filename. Results are sorted by `id`. No source-directory annotation is shown. Accepts `--json` as both a local flag (`lore knight list --json`) and the global flag (`lore --json knight list`). JSON output: `{"knights": [{id, group, title, summary}]}`.
+List available Knights as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/knights/` directory tree recursively (`rglob("*.md")`), returning all knights at any depth. ID, TITLE, and SUMMARY are read from YAML frontmatter (`---`-delimited block at file top). Knights without valid frontmatter fall back to: `id` = filename stem, `title` = filename stem, `summary` = empty string. GROUP is derived from the knight file's path relative to `.lore/knights/`, with directory components joined by `/`, excluding the filename. Results are sorted by `id`. No source-directory annotation is shown. Accepts `--json` as both a local flag (`lore knight list --json`) and the global flag (`lore --json knight list`). JSON output: `{"knights": [{id, group, title, summary}]}` — `group` is slash-joined when nested and `null` for root-level knights.
 
-The optional `--filter GROUP...` flag limits results to knights in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter feature-implementation` returns knights with group `feature-implementation`, `feature-implementation-sub`, etc. Root-level knights (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
+The optional `--filter GROUP...` flag limits results to knights in the specified group(s) using slash-delimited segment-prefix matching. For example, `--filter feature-implementation` returns knights with group `feature-implementation`, `feature-implementation/reviewers`, etc. **Breaking change:** the hyphen-delimited input grammar is no longer accepted. Root-level knights (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore knight show developer
@@ -370,9 +378,22 @@ Print the contents of a Knight file. Resolution is recursive: the command search
 
 ```
 lore knight new reviewer --from instructions.md
+lore knight new senior-reviewer --group feature-implementation/reviewers --from senior.md
 ```
 
-Create a new knight file at `.lore/knights/<name>.md`. Reads content from `--from` / `-f` if provided, otherwise from stdin. Fails if the knight already exists. Knight names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`.
+Create a new knight file under `.lore/knights/`. Reads content from `--from` / `-f` if provided, otherwise from stdin. Fails if a knight with the same name already exists anywhere under `.lore/knights/` (subtree-wide via `rglob`). Knight names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`.
+
+The optional `--group <path>` option places the knight in a nested subdirectory (`.lore/knights/<group>/`); intermediate directories are auto-created. `<path>` is slash-delimited and validated per-segment (same rules as the name). Omitting `--group` places the knight directly at `.lore/knights/<name>.md`. The CLI handler delegates to `lore.knight.create_knight(knights_dir, name, content, group=<path>|None)`; validation, duplicate detection, mkdir, and writing happen inside the core helper.
+
+JSON success output: `{"name": "<name>", "group": "<group>|null", "filename": "<name>.md", "path": ".lore/knights/[<group>/]<name>.md"}`. `group` is slash-joined when `--group` was supplied, `null` otherwise.
+
+| Error | Exit code | Message |
+|-------|-----------|---------|
+| Invalid name | 1 | `Invalid name: ...` |
+| Invalid group | 1 | `Error: invalid group '<value>': <reason>` |
+| Duplicate knight (anywhere in subtree) | 1 | `Knight "<name>" already exists.` |
+| Source file not found (`--from`) | 1 | `File not found: <path>` |
+| Empty stdin content | 1 | `No content provided on stdin.` |
 
 ```
 lore knight edit developer --from updated-instructions.md
@@ -395,18 +416,19 @@ Soft-delete a knight file. Renames `.lore/knights/<name>.md` to `.lore/knights/<
 ```
 lore watcher list
 lore watcher list --filter default
+lore watcher list --filter feature-implementation
 lore watcher list --filter default custom-group
 ```
 
-List available Watchers as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/watchers/` directory tree recursively (`rglob("*.yaml")`). GROUP is derived from the watcher file's path relative to `.lore/watchers/`, with directory components joined by `-`, excluding the filename. Results are sorted by `id`. Watchers with missing required fields fall back to defaults (filename stem for `id`, `id` value for `title`, empty string for `summary`). No source-directory annotation is shown.
+List available Watchers as an aligned table with columns: ID, GROUP, TITLE, SUMMARY. Searches the full `.lore/watchers/` directory tree recursively (`rglob("*.yaml")`). GROUP is derived from the watcher file's path relative to `.lore/watchers/`, with directory components joined by `/`, excluding the filename. Results are sorted by `id`. Watchers with missing required fields fall back to defaults (filename stem for `id`, `id` value for `title`, empty string for `summary`). No source-directory annotation is shown.
 
 If no watchers are found, `No watchers found.` is printed. Exit code 0 in all cases.
 
 The `--json` flag is accepted both as a local subcommand flag (`lore watcher list --json`) and as the global flag (`lore --json watcher list`).
 
-JSON output: `{"watchers": [{"id": "...", "group": "...", "title": "...", "summary": "..."}]}`
+JSON output: `{"watchers": [{"id": "...", "group": "...|null", "title": "...", "summary": "..."}]}` — `group` is slash-joined when nested and `null` for root-level watchers.
 
-The optional `--filter GROUP...` flag limits results to watchers in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns watchers with group `default`, `default-ci`, `default-ops`, etc. Root-level watchers (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
+The optional `--filter GROUP...` flag limits results to watchers in the specified group(s) using slash-delimited segment-prefix matching. For example, `--filter feature-implementation` returns watchers with group `feature-implementation`, `feature-implementation/ci`, etc. **Breaking change:** the hyphen-delimited input grammar is no longer accepted. Root-level watchers (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore watcher show <name>
@@ -430,29 +452,33 @@ JSON (stderr): `{"error": "Watcher \"<name>\" not found in .lore/watchers/"}`
 Exit code: 1
 
 ```
-lore watcher new <name> [--from <file>]
+lore watcher new <name> [--group <path>] [--from <file>]
+lore watcher new on-prd-ready --group feature-implementation --from watcher.yaml
 ```
 
-Create a new watcher file at `.lore/watchers/<name>.yaml`. Watcher names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Fails if a watcher with the same name already exists (anywhere in `.lore/watchers/` via `rglob`).
+Create a new watcher file under `.lore/watchers/`. Watcher names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Fails if a watcher with the same name already exists (anywhere in `.lore/watchers/` via subtree `rglob`) regardless of the supplied group.
 
 | Flag | Short | Description |
 |------|-------|-------------|
+| `--group <path>` | | Optional slash-delimited subdirectory path. Auto-creates intermediate directories. Each segment must satisfy the name rule. Omit to place the watcher at the watchers root. |
 | `--from <file>` | `-f <file>` | Read content from the named file (must exist on disk) |
 | (no flag) | | Read content from stdin |
 
-Content is validated as YAML (`yaml.safe_load`) before writing to disk. Invalid YAML is rejected with an error before any write occurs.
+The CLI delegates to `lore.watcher.create_watcher(watchers_dir, name, content, group=<path>|None)`. Content is validated as YAML (`yaml.safe_load`) before writing to disk. Invalid YAML is rejected with an error before any write occurs.
 
 **Success messages:**
 
-Plain: `Created watcher <name>`.
-JSON: `{"id": "<name>", "filename": "<name>.yaml"}`
+Plain (root): `Created watcher <name>`.
+Plain (nested): `Created watcher <name> (group: <group>)`.
+JSON: `{"id": "<name>", "group": "<group>|null", "filename": "<name>.yaml", "path": ".lore/watchers/[<group>/]<name>.yaml"}`
 
 **Error behaviours:**
 
 | Error | Exit code | Message |
 |-------|-----------|---------|
 | Invalid name | 1 | Error to stderr |
-| Duplicate watcher | 1 | `Watcher "<name>" already exists.` |
+| Invalid group | 1 | `Error: invalid group '<value>': <reason>` |
+| Duplicate watcher (anywhere in subtree) | 1 | `Watcher "<name>" already exists.` |
 | Source file not found (`--from`) | 1 | `File not found: <path>` |
 | Empty stdin content | 1 | `No content provided on stdin.` |
 | Invalid YAML content | 1 | Error to stderr |
@@ -602,13 +628,16 @@ Health check passed. No issues found.
 ```
 lore codex list
 lore codex list --filter conceptual
+lore codex list --filter conceptual/workflows
 lore codex list --filter conceptual decisions
 lore codex list --filter conceptual --filter decisions
 ```
 
-Return a table of contents: every document's ID, group, title, and summary. No body content. Human-readable output is a table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY` rendered via the shared `_format_table` helper. GROUP is derived from the document's directory path under `.lore/codex/` using `derive_group`; documents at the root of `.lore/codex/` render with an empty GROUP. If `.lore/codex/` does not exist or contains no documents, output: `No codex documents found.` Exit code 0 in all cases. Does not list `TRANSIENT.md` marker files. Supports a local `--json` flag (placed at end: `lore codex list --json`).
+Return a table of contents: every document's ID, group, title, and summary. No body content. Human-readable output is a table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY` rendered via the shared `_format_table` helper. GROUP is derived from the document's directory path under `.lore/codex/` using `derive_group` and is rendered with `/` as the path separator (e.g. `conceptual/workflows`, `technical/cli`). Documents at the root of `.lore/codex/` render with an empty GROUP. If `.lore/codex/` does not exist or contains no documents, output: `No codex documents found.` Exit code 0 in all cases. Does not list `TRANSIENT.md` marker files. Supports a local `--json` flag (placed at end: `lore codex list --json`). JSON output emits `group` as a slash-joined string when nested and `null` for root-level documents.
 
-The optional `--filter GROUP...` flag limits results to documents in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter conceptual` returns documents with group `conceptual`, `conceptual-workflows`, `conceptual-reference`, etc. Root-level documents (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
+**Codex is list-display only.** Codex has no CLI write path (no `codex new`); only the list/filter display form is updated in lock-step with the other four entity lists.
+
+The optional `--filter GROUP...` flag limits results to documents in the specified group(s) using slash-delimited segment-prefix matching. For example, `--filter conceptual` returns documents with group `conceptual`, `conceptual/workflows`, `conceptual/reference`, etc. **Breaking change:** the hyphen-delimited input grammar is no longer accepted. Root-level documents (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
 lore codex show <id> [id ...]
@@ -691,13 +720,40 @@ All five codex commands support `--json`.
 
 ```
 lore artifact list
-lore artifact list --filter default-codex
-lore artifact list --filter default-codex default-transient
+lore artifact list --filter default/codex
+lore artifact list --filter default/codex default/transient
+lore artifact list --filter codex/templates
 ```
 
-Return a table of available artifact templates: every artifact's ID, group, title, and summary. No body content. Human-readable output is a table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY`. GROUP is derived from the artifact file's path relative to `.lore/artifacts/`, with directory components joined by `-`, excluding the filename. If `.lore/artifacts/` does not exist or contains no indexed artifacts: `No artifacts found.` Exit code 0 in all cases.
+Return a table of available artifact templates: every artifact's ID, group, title, and summary. No body content. Human-readable output is a table with columns `ID`, `GROUP`, `TITLE`, `SUMMARY`. GROUP is derived from the artifact file's path relative to `.lore/artifacts/`, with directory components joined by `/`, excluding the filename. If `.lore/artifacts/` does not exist or contains no indexed artifacts: `No artifacts found.` Exit code 0 in all cases.
 
-The optional `--filter GROUP...` flag limits results to artifacts in the specified group(s) using subtree matching: a token matches its exact group and all subgroups whose name starts with `token-`. For example, `--filter default` returns artifacts with group `default`, `default-codex`, `default-transient`, etc. Root-level artifacts (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
+The optional `--filter GROUP...` flag limits results to artifacts in the specified group(s) using slash-delimited segment-prefix matching. For example, `--filter default` returns artifacts with group `default`, `default/codex`, `default/transient`, etc.; `--filter codex/templates` returns only the `codex/templates` subtree. **Breaking change:** the hyphen-delimited input grammar is no longer accepted. Root-level artifacts (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
+
+```
+lore artifact new <name> [--group <path>] --from <body-file>
+lore artifact new fi-review --group codex/templates --from review.md
+```
+
+Create a new artifact template under `.lore/artifacts/`. This is the first CLI write path for artifacts (previously read-only via CLI). Artifact names must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. `--from <body-file>` is required — the body must contain a YAML frontmatter block with the required fields `id`, `title`, `summary` (the same strict rule enforced by `scan_artifacts`).
+
+The optional `--group <path>` option places the artifact in a nested subdirectory (`.lore/artifacts/<group>/`); intermediate directories are auto-created. `<path>` is slash-delimited and validated per-segment. Omitting `--group` places the artifact at the artifacts root. The CLI delegates to `lore.artifact.create_artifact(artifacts_dir, name, content, group=<path>|None)`. Duplicate detection is subtree-wide via `rglob` — a name collision anywhere under `.lore/artifacts/` blocks the create regardless of group.
+
+**Success messages:**
+
+Plain (root): `Created artifact <name>`.
+Plain (nested): `Created artifact <name> (group: <group>)`.
+JSON: `{"id": "<name>", "group": "<group>|null", "filename": "<name>.md", "path": ".lore/artifacts/[<group>/]<name>.md"}`
+
+| Error | Exit code | Message |
+|-------|-----------|---------|
+| Invalid name | 1 | `Invalid name: ...` |
+| Invalid group | 1 | `Error: invalid group '<value>': <reason>` |
+| Duplicate artifact (anywhere in subtree) | 1 | `Error: artifact '<name>' already exists at <existing path>` |
+| Missing `--from` | 2 | Click usage error |
+| `--from` file not found | 1 | `File not found: <path>` |
+| Missing required frontmatter field in body | 1 | Frontmatter validation error |
+
+See conceptual-workflows-artifact-new (lore codex show conceptual-workflows-artifact-new) for the full behaviour specification.
 
 ```
 lore artifact show <id> [id ...]
@@ -705,7 +761,7 @@ lore artifact show <id> [id ...]
 
 Return the full content of one or more artifacts by stable ID, concatenated in a single response. Accepts one or more IDs as positional arguments. For each ID, returns the full artifact body (frontmatter stripped). Human output: each artifact's body preceded by a separator line (`=== <id> ===`), in the order IDs were given. Fail-fast on the first missing ID: no partial results are emitted; error goes to stderr, exit code 1.
 
-Artifact files are managed directly on disk — there are no CLI commands to create or delete artifacts.
+Artifact update and delete remain on-disk operations — there are no CLI commands for them. Only `lore artifact new` is available for creation.
 
 Both artifact commands support `--json`.
 
@@ -813,7 +869,11 @@ If ID generation fails after exhausting 4, 5, and 6 character hash lengths: `ID 
 
 ### Invalid Knight/Doctrine Name
 
-Names not matching `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` fail with: `Invalid name: must be alphanumeric, hyphens, underscores only.` (exit code 1). Applies to `lore knight new` and `lore doctrine new`.
+Names not matching `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` fail with: `Invalid name: must be alphanumeric, hyphens, underscores only.` (exit code 1). Applies to `lore knight new`, `lore doctrine new`, `lore watcher new`, and `lore artifact new`.
+
+### Invalid Group
+
+The `--group <path>` option on `lore doctrine new`, `lore knight new`, `lore watcher new`, and `lore artifact new` is validated via `validate_group` in `lore.validators`. Values containing `..`, backslashes, absolute paths, leading/trailing `/`, empty segments, or any segment failing the name rule fail with `Error: invalid group '<value>': <reason>` (exit code 1) before any filesystem access.
 
 ### File Not Found for --from
 
@@ -1121,11 +1181,13 @@ Same schema as `lore missions --json`, filtered to missions belonging to the spe
 ```json
 {
   "doctrines": [
-    {"id": "feature-workflow", "group": "", "title": "Feature Workflow", "summary": "Standard design-implement-test workflow for new features", "valid": true},
-    {"id": "broken-doctrine", "group": "", "title": "broken-doctrine", "summary": "", "valid": false, "errors": ["Step \"test\" references unknown dependency \"tset\""]}
+    {"id": "feature-workflow", "group": null, "title": "Feature Workflow", "summary": "Standard design-implement-test workflow for new features", "valid": true},
+    {"id": "keyword-ranker", "group": "seo-analysis/keyword-analysers", "title": "Keyword Ranker", "summary": "...", "valid": true}
   ]
 }
 ```
+
+`group` is slash-joined when the doctrine lives in a subdirectory and `null` at the doctrines root.
 
 The `errors` field is present only for invalid doctrines (`valid: false`). Valid doctrines omit `errors` entirely. This matches the `list_doctrines()` return shape where `errors` is conditionally added on failure.
 
@@ -1146,10 +1208,13 @@ The `errors` field is present only for invalid doctrines (`valid: false`). Valid
 ```json
 {
   "knights": [
-    {"id": "developer", "group": "default", "title": "Developer", "summary": "Implements features following design documents and coding standards"}
+    {"id": "developer", "group": "default", "title": "Developer", "summary": "Implements features following design documents and coding standards"},
+    {"id": "senior-reviewer", "group": "feature-implementation/reviewers", "title": "Senior Reviewer", "summary": "..."}
   ]
 }
 ```
+
+`group` is slash-joined when the knight lives in a subdirectory and `null` at the knights root.
 
 ### `lore knight show --json`
 
@@ -1188,8 +1253,10 @@ With `--cascade`:
 ### `lore knight new --json` / `lore knight edit --json`
 
 ```json
-{"name": "developer", "filename": "developer.md"}
+{"name": "developer", "group": null, "filename": "developer.md", "path": ".lore/knights/developer.md"}
 ```
+
+On create with `--group <path>`, `group` is slash-joined and `path` reflects the nested location. `lore knight edit` does not move the file; its JSON shape preserves the existing `group` and `path`.
 
 ### `lore knight delete --json`
 
@@ -1200,8 +1267,10 @@ With `--cascade`:
 ### `lore doctrine new --json` / `lore doctrine edit --json`
 
 ```json
-{"name": "feature-workflow", "filename": "feature-workflow.yaml"}
+{"name": "feature-workflow", "group": null, "yaml_filename": "feature-workflow.yaml", "design_filename": "feature-workflow.design.md", "path": ".lore/doctrines/feature-workflow.yaml"}
 ```
+
+On create with `--group <path>`, `group` is slash-joined and `path` reflects the nested location. `lore doctrine edit` does not move the pair.
 
 ### `lore doctrine delete --json`
 
@@ -1231,12 +1300,18 @@ With `--cascade`:
       "group": "technical/cli",
       "title": "CLI Command Reference",
       "summary": "Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours."
+    },
+    {
+      "id": "CODEX",
+      "group": null,
+      "title": "Codex Index",
+      "summary": "Master index"
     }
   ]
 }
 ```
 
-Empty state: `{"codex": []}` (exit code 0).
+`group` is slash-joined when the document lives in a subdirectory and `null` at the codex root. Empty state: `{"codex": []}` (exit code 0).
 
 ### `lore codex show <id> [id ...] --json`
 
@@ -1275,12 +1350,46 @@ Fail-fast semantics: on the first missing ID, no partial results are emitted to 
       "group": "transient",
       "title": "Business Specification Template",
       "summary": "Blank scaffold for writing a new business specification."
+    },
+    {
+      "id": "fi-review",
+      "group": "codex/templates",
+      "title": "Feature review artifact",
+      "summary": "Review template"
+    },
+    {
+      "id": "overview",
+      "group": "default/codex",
+      "title": "Codex overview",
+      "summary": "Master index"
+    },
+    {
+      "id": "transient-note",
+      "group": null,
+      "title": "Transient note",
+      "summary": "One-off"
     }
   ]
 }
 ```
 
-Empty state: `{"artifacts": []}` (exit code 0).
+`group` is slash-joined when the artifact lives in a subdirectory and `null` at the artifacts root. Empty state: `{"artifacts": []}` (exit code 0).
+
+### `lore artifact new --json`
+
+```json
+{"id": "fi-review", "group": "codex/templates", "filename": "fi-review.md", "path": ".lore/artifacts/codex/templates/fi-review.md"}
+```
+
+`group` is slash-joined when `--group` was supplied, `null` otherwise. `path` always reflects the resolved on-disk location.
+
+### `lore watcher new --json`
+
+```json
+{"id": "on-prd-ready", "group": "feature-implementation", "filename": "on-prd-ready.yaml", "path": ".lore/watchers/feature-implementation/on-prd-ready.yaml"}
+```
+
+`group` is slash-joined when `--group` was supplied, `null` otherwise.
 
 ### `lore artifact show <id> [id ...] --json`
 

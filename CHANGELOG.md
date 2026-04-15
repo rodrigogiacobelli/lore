@@ -8,6 +8,21 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-15
+
+### Added
+
+- **`lore artifact new`** — scaffold a new artifact file under `.lore/artifacts/` from the CLI.
+- **`--group` flag on `lore knight new`, `lore watcher new`, and `lore doctrine new`** — create the entity directly inside a nested group/subfolder at creation time.
+- Enriched `--help` output on all `new` and `list` subcommands, documenting the group/filter grammar and showing usage examples.
+- `create_knight()` extracted as a reusable Python API entry point alongside the CLI command.
+
+### Changed
+
+- **Breaking:** `--filter` now uses slash-delimited path grammar (e.g. `--filter foo/bar`) across all list commands. Previous comma or dot-separated forms are no longer accepted.
+- Group handling unified on slash-delimited paths throughout `paths.derive_group` and related helpers; list output displays groups using the slash form, and `--json` output reflects the same shape.
+- New `validate_group` validator enforces the slash grammar at entity creation time, rejecting invalid group strings before they hit disk.
+
 ## [0.2.0] - 2026-04-10
 
 ### Added
