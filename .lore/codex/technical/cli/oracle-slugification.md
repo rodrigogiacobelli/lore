@@ -1,9 +1,12 @@
 ---
 id: tech-cli-oracle-slugification
 title: Oracle Slugification Algorithm
-summary: Two-stage slugification used by lore oracle to derive filesystem-safe filenames from entity IDs and titles. Covers slugify() (40-char slug portion) and make_entity_slug() (40-char combined {id}-{slug} result).
-related: ["tech-oracle-internals", "tech-cli-commands"]
-stability: stable
+summary: Two-stage slugification used by lore oracle to derive filesystem-safe filenames
+  from entity IDs and titles. Covers slugify() (40-char slug portion) and make_entity_slug()
+  (40-char combined {id}-{slug} result).
+related:
+- tech-oracle-internals
+- tech-cli-commands
 ---
 
 # Oracle Slugification Algorithm

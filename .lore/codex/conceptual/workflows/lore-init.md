@@ -2,13 +2,14 @@
 id: conceptual-workflows-lore-init
 title: lore init Behaviour
 summary: What the system does internally when `lore init` runs — the ordered sequence of steps from directory creation through database setup, default file seeding (doctrines, knights, artifacts), and AGENTS.md management. Covers idempotency guarantees and the AGENTS.md marker mechanism.
-related: ["tech-arch-initialized-project-structure", "tech-arch-agents-md"]
-stability: stable
+related: ["tech-arch-initialized-project-structure", "tech-arch-agents-md", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore init` Behaviour
 
 `lore init` is **idempotent**. Running it multiple times does not corrupt or overwrite existing data. Each run follows the same ordered sequence of steps.
+
+Every seed file shipped by `lore init` (default doctrines, knights, watchers, artifacts, and codex docs) must pass `lore health --scope schemas` on a freshly-initialised project — this is a hard acceptance criterion. Any default file that fails its JSON Schema is a P0 install-time regression, since the very first health check after install would emit schema errors on seed content.
 
 For what `lore init` creates on disk (the `.lore/` directory layout and file purposes), see tech-arch-initialized-project-structure (lore codex show tech-arch-initialized-project-structure).
 

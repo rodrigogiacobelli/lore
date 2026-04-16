@@ -1,12 +1,14 @@
 ---
 id: tech-arch-graph
 title: Graph Module Internals
-summary: >
-  Technical reference for src/lore/graph.py. Documents topological_sort_missions —
-  the Kahn's algorithm implementation used by _show_quest to sort missions in
-  dependency order for display.
-related: ["tech-arch-source-layout", "conceptual-workflows-show"]
-stability: stable
+summary: 'Technical reference for src/lore/graph.py. Documents topological_sort_missions
+  — the Kahn''s algorithm implementation used by _show_quest to sort missions in dependency
+  order for display.
+
+  '
+related:
+- tech-arch-source-layout
+- conceptual-workflows-show
 ---
 
 # Graph Module Internals

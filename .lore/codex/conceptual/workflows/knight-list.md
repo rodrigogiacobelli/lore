@@ -2,13 +2,12 @@
 id: conceptual-workflows-knight-list
 title: lore knight list Behaviour
 summary: What the system does internally when `lore knight list` runs — recursive discovery of `.md` files under `.lore/knights/`, frontmatter parsing with graceful fallbacks for missing fields, group derivation from subdirectory path, sorted output as a table or JSON.
-related: ["conceptual-entities-knight", "tech-arch-knight-module", "tech-cli-commands", "conceptual-workflows-filter-list"]
-stability: stable
+related: ["conceptual-entities-knight", "tech-arch-knight-module", "tech-cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore knight list` Behaviour
 
-`lore knight list` discovers and displays all knight markdown files found recursively under `.lore/knights/`. It never fails due to a single malformed file — files that cannot be parsed fall back to defaults rather than being skipped or causing an error.
+`lore knight list` discovers and displays all knight markdown files found recursively under `.lore/knights/`. It never fails due to a single malformed file — files that cannot be parsed fall back to defaults rather than being skipped or causing an error. The tolerant fallback is a display convenience; the authoritative shape contract is enforced separately by `lore health --scope schemas` against `lore://schemas/knight-frontmatter` (`additionalProperties: false`, required `id`/`title`/`summary`). Knight files that list tolerates are still surfaced as schema errors if they carry unknown fields or miss a required one.
 
 ## Preconditions
 

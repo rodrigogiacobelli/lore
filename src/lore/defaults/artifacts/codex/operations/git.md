@@ -1,10 +1,7 @@
 ---
 id: example-ops-git
 title: Git Workflow
-related: []
-stability: stable
-summary: >
-  Branching model, commit conventions, PR process, review process, merge strategy,
+summary: Branching model, commit conventions, PR process, review process, merge strategy,
   and release process for this project. AI agents must follow these conventions on
   every commit and every PR.
 ---

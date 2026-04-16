@@ -384,11 +384,11 @@ class TestNoOSSpecificDependencies:
                     deps.append(dep)
 
         # Allowed dependencies (cross-platform)
-        allowed_prefixes = ["click", "pyyaml"]
+        allowed_prefixes = ["click", "pyyaml", "jsonschema"]
         for dep in deps:
             dep_lower = dep.lower()
             assert any(dep_lower.startswith(prefix) for prefix in allowed_prefixes), (
-                f"Unexpected dependency: {dep!r}. Only Click and PyYAML are allowed."
+                f"Unexpected dependency: {dep!r}. Only Click, PyYAML, and jsonschema are allowed."
             )
 
     def test_no_platform_specific_markers(self):

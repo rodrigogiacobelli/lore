@@ -1,15 +1,13 @@
 ---
 id: conceptual-relationships-doctrine--knight
-title: "Doctrine to Knight"
+title: Doctrine to Knight
 related:
-  - conceptual-entities-doctrine
-  - conceptual-entities-knight
-  - tech-doctrine-internals
-stability: stable
-summary: >
-  A Doctrine step may name a Knight by filename stem. There is no FK. The
-  reference is resolved at orchestration time when the orchestrator assigns the
-  Knight to the created Mission. No validation is performed at doctrine load time.
+- conceptual-entities-doctrine
+- conceptual-entities-knight
+- tech-doctrine-internals
+summary: A Doctrine step may name a Knight by filename stem. There is no FK. The reference
+  is resolved at orchestration time when the orchestrator assigns the Knight to the
+  created Mission. No validation is performed at doctrine load time.
 ---
 
 # Doctrine to Knight

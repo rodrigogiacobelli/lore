@@ -1,21 +1,21 @@
 ---
 id: conceptual-workflows-codex-chaos
-title: "`lore codex chaos` Behaviour"
-summary: >
-  Random-walk traversal of the codex graph starting from a seed document.
-  Follows randomly sampled neighbours via the related frontmatter field and
-  terminates when the ratio of discovered documents to the reachable subgraph
-  exceeds --threshold / 100, or when no unvisited reachable neighbours remain.
-  Output format is identical to lore codex map (ID, TITLE, SUMMARY table).
-stability: stable
+title: '`lore codex chaos` Behaviour'
+summary: 'Random-walk traversal of the codex graph starting from a seed document.
+  Follows randomly sampled neighbours via the related frontmatter field and terminates
+  when the ratio of discovered documents to the reachable subgraph exceeds --threshold
+  / 100, or when no unvisited reachable neighbours remain. Output format is identical
+  to lore codex map (ID, TITLE, SUMMARY table).
+
+  '
 related:
-  - conceptual-workflows-codex
-  - conceptual-workflows-codex-map
-  - conceptual-workflows-json-output
-  - conceptual-workflows-error-handling
-  - tech-cli-commands
-  - tech-api-surface
-  - tech-arch-codex-chaos
+- conceptual-workflows-codex
+- conceptual-workflows-codex-map
+- conceptual-workflows-json-output
+- conceptual-workflows-error-handling
+- tech-cli-commands
+- tech-api-surface
+- tech-arch-codex-chaos
 ---
 
 # `lore codex chaos` Behaviour

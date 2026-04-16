@@ -1,11 +1,8 @@
 ---
 id: example-ops-deployment-production
 title: Production Deployment
-related: []
-stability: stable
-summary: >
-  How to publish a production release: prerequisites, deployment process, verification,
-  rollback procedure, and day-2 operations (backup, monitoring).
+summary: 'How to publish a production release: prerequisites, deployment process,
+  verification, rollback procedure, and day-2 operations (backup, monitoring).'
 ---
 
 # Production Deployment

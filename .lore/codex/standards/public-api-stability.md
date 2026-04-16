@@ -1,13 +1,14 @@
 ---
 id: standards-public-api-stability
 title: Public API Stability
-stability: stable
-summary: >
-  Everything in lore.models.__all__ is the public API of lore-agent-task-manager.
-  Semver policy for pre-1.0: adding names or fields → minor bump; removals,
-  renames, or type changes → major bump or explicit breaking-change notice in
-  CHANGELOG.md.
-related: ["tech-api-surface", "decisions-011-api-parity-with-cli"]
+summary: 'Everything in lore.models.__all__ is the public API of lore-agent-task-manager.
+  Semver policy for pre-1.0: adding names or fields → minor bump; removals, renames,
+  or type changes → major bump or explicit breaking-change notice in CHANGELOG.md.
+
+  '
+related:
+- tech-api-surface
+- decisions-011-api-parity-with-cli
 ---
 
 # Public API Stability

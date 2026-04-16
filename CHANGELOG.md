@@ -8,20 +8,32 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-04-15
-
 ### Added
 
 - **`lore artifact new`** — scaffold a new artifact file under `.lore/artifacts/` from the CLI.
 - **`--group` flag on `lore knight new`, `lore watcher new`, and `lore doctrine new`** — create the entity directly inside a nested group/subfolder at creation time.
 - Enriched `--help` output on all `new` and `list` subcommands, documenting the group/filter grammar and showing usage examples.
 - `create_knight()` extracted as a reusable Python API entry point alongside the CLI command.
+- **Schema validation across every entity** — codex, artifacts, doctrines, knights, and watchers are now validated against bundled YAML schemas on every `lore health` run. Invalid frontmatter, missing required fields, and bad field types are reported as structured errors.
+- **`lore health --scope schemas`** — restrict an audit run to schema validation only, skipping graph and reference checks.
+- Schema errors are rendered in both human-readable text and `--json` output, with the exact entity id, file path, field path, and rule that failed.
+- Unparseable YAML and entity files missing frontmatter now surface as loud schema errors instead of being silently skipped.
+- The transient health report written to `codex/transient/` gained a dedicated **Schema validation** section listing every schema issue found in the run.
+- **`lore.schemas.load_schema()`** — bundled YAML schemas are now packaged as resources and loadable from the public Python API.
+- **Python API parity** — schema validation is exposed through `lore.models`, so Realm and other importers can validate entities programmatically without going through the CLI.
+- `parse_frontmatter_raw()` helper preserves every key on disk during parsing, enabling round-trip-safe validation against the schemas.
 
 ### Changed
 
 - **Breaking:** `--filter` now uses slash-delimited path grammar (e.g. `--filter foo/bar`) across all list commands. Previous comma or dot-separated forms are no longer accepted.
 - Group handling unified on slash-delimited paths throughout `paths.derive_group` and related helpers; list output displays groups using the slash form, and `--json` output reflects the same shape.
 - New `validate_group` validator enforces the slash grammar at entity creation time, rejecting invalid group strings before they hit disk.
+- Create-time validators for every entity now delegate to `lore.schemas`, so the same schema contract governs both file-on-disk audits and in-memory creation paths.
+- `lore init` now produces a project that passes `lore health` schema validation out of the box; bundled default doctrines, knights, watchers, and artifacts were updated to satisfy the schemas.
+
+### Fixed
+
+- Restored the `_validator_for` cache in `_check_schemas` via a dependency-injection seam, eliminating repeated schema compilation on large `lore health` runs.
 
 ## [0.2.0] - 2026-04-10
 

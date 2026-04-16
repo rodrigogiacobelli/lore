@@ -1,15 +1,17 @@
 ---
 id: decisions-007-artifact-communication-protocol
-title: Artifact instances are the official communication protocol between pipeline steps
-summary: >
-  ADR recording the decision that official communication between steps in a
-  multi-step pipeline (human or AI) happens through artifact instances, not
-  through prose in mission descriptions or side channels. Each step declares
-  an input artifact and produces an output artifact. This makes handoffs
-  auditable and forces every step to produce something concrete before the
-  next step can start.
-related: ["decisions-009-mission-self-containment", "tech-db-schema"]
-stability: stable
+title: Artifact instances are the official communication protocol between pipeline
+  steps
+summary: 'ADR recording the decision that official communication between steps in
+  a multi-step pipeline (human or AI) happens through artifact instances, not through
+  prose in mission descriptions or side channels. Each step declares an input artifact
+  and produces an output artifact. This makes handoffs auditable and forces every
+  step to produce something concrete before the next step can start.
+
+  '
+related:
+- decisions-009-mission-self-containment
+- tech-db-schema
 ---
 
 # ADR-007: Artifact instances are the official communication protocol between pipeline steps

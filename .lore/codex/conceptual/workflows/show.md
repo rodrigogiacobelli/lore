@@ -1,10 +1,14 @@
 ---
 id: conceptual-workflows-show
 title: Show Command — lore show
-summary: >
-  What the system does internally when lore show <id> runs — quest inline mission list (topological sort), mission detail view, ID routing, quest inference for mission IDs, and not-found error paths.
-related: ["tech-arch-graph", "conceptual-workflows-board"]
-stability: stable
+summary: 'What the system does internally when lore show <id> runs — quest inline
+  mission list (topological sort), mission detail view, ID routing, quest inference
+  for mission IDs, and not-found error paths.
+
+  '
+related:
+- tech-arch-graph
+- conceptual-workflows-board
 ---
 
 # Show Command — `lore show`

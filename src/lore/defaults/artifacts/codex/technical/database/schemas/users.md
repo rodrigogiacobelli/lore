@@ -1,10 +1,7 @@
 ---
 id: example-tech-schema-{entity-name-2}
-title: "Schema — {entity name 2}"
-related: []
-stability: stable
-summary: >
-  Database schema for the {entity-2} table. Natural key, optional display field,
+title: Schema — {entity name 2}
+summary: Database schema for the {entity-2} table. Natural key, optional display field,
   soft-delete pattern.
 ---
 

@@ -1,9 +1,13 @@
 ---
 id: decisions-005-auto-close-toggle
-title: "auto_close toggle on quests"
-summary: "ADR recording the decision to add a per-quest auto_close toggle, defaulting to disabled for new quests. Covers the schema design, migration default split, and the mechanism for manually closing quests."
-related: ["tech-db-schema", "tech-cli-commands", "conceptual-entities-quest"]
-stability: stable
+title: auto_close toggle on quests
+summary: ADR recording the decision to add a per-quest auto_close toggle, defaulting
+  to disabled for new quests. Covers the schema design, migration default split, and
+  the mechanism for manually closing quests.
+related:
+- tech-db-schema
+- tech-cli-commands
+- conceptual-entities-quest
 ---
 
 # ADR 005 — auto_close Toggle on Quests

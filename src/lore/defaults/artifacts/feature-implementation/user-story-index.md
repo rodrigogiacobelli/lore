@@ -1,12 +1,10 @@
 ---
 id: fi-user-story-index
 title: User Story Index
-group: feature-implementation
-summary: >
-  Index file for all user stories in a feature-implementation cycle. Produced
-  by the BA alongside the individual story files. Lists all stories grouped by
-  epic, tracks status, and maps PRD requirements to story IDs. Updated in both
-  the draft and final phases.
+summary: Index file for all user stories in a feature-implementation cycle. Produced
+  by the BA alongside the individual story files. Lists all stories grouped by epic,
+  tracks status, and maps PRD requirements to story IDs. Updated in both the draft
+  and final phases.
 ---
 
 # {Feature Name} — User Story Index

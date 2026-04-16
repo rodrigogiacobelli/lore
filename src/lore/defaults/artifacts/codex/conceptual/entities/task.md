@@ -1,10 +1,7 @@
 ---
 id: example-entity-{entity-name}
-title: "{Entity Name}"
-related: []
-stability: stable
-summary: >
-  _One to three sentences. What this entity is and what it does in the system.
+title: '{Entity Name}'
+summary: _One to three sentences. What this entity is and what it does in the system.
   Mention its key attributes and lifecycle if it has one._
 ---
 

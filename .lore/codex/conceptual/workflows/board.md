@@ -1,10 +1,15 @@
 ---
 id: conceptual-workflows-board
 title: Board Messages
-summary: >
-  What the system does internally when posting, viewing, and deleting board messages on missions and quests, including sender validation and error paths.
-related: ["conceptual-workflows-show", "conceptual-workflows-mission-crud", "tech-cli-commands", "decisions-009-mission-self-containment"]
-stability: stable
+summary: 'What the system does internally when posting, viewing, and deleting board
+  messages on missions and quests, including sender validation and error paths.
+
+  '
+related:
+- conceptual-workflows-show
+- conceptual-workflows-mission-crud
+- tech-cli-commands
+- decisions-009-mission-self-containment
 ---
 
 # Board Messages

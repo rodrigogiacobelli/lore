@@ -1,0 +1,68 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/doctrine-yaml"
+title: Doctrine YAML
+type: object
+additionalProperties: false
+required: [id, steps]
+properties:
+  id:
+    type: string
+    minLength: 1
+    description: Doctrine id. Must match the filename stem.
+  title:
+    type: string
+    minLength: 1
+    description: Human-readable doctrine title.
+  summary:
+    type: string
+    description: One-line doctrine summary.
+  steps:
+    type: array
+    items:
+      $ref: "#/$defs/step"
+$defs:
+  step:
+    type: object
+    additionalProperties: false
+    required: [id, title, type]
+    properties:
+      id:
+        type: string
+        minLength: 1
+        description: Step id, unique within the doctrine.
+      title:
+        type: string
+        minLength: 1
+      type:
+        type: string
+        enum: [knight, constable, human]
+      priority:
+        type: integer
+        minimum: 0
+      knight:
+        type: string
+        minLength: 1
+        description: >
+          Knight reference. Required when type=knight; forbidden otherwise.
+          May be a bare knight id (e.g. `changelog-scribe`) or a relative
+          path inside the knights tree (e.g. `feature-implementation/pm.md`).
+      needs:
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+          minLength: 1
+        description: List of step ids this step depends on.
+      notes:
+        type: string
+        description: Free-form instructions passed to the worker.
+    allOf:
+      - if:
+          properties:
+            type:
+              const: knight
+        then:
+          required: [knight]
+        else:
+          not:
+            required: [knight]

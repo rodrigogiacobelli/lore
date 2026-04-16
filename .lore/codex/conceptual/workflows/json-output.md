@@ -1,10 +1,13 @@
 ---
 id: conceptual-workflows-json-output
 title: JSON Output Mode
-summary: >
-  What the system does when the --json flag is applied to any command — envelope structure, field contracts, error JSON format, and global vs local flag position.
-related: ["conceptual-workflows-error-handling", "tech-cli-commands"]
-stability: stable
+summary: 'What the system does when the --json flag is applied to any command — envelope
+  structure, field contracts, error JSON format, and global vs local flag position.
+
+  '
+related:
+- conceptual-workflows-error-handling
+- tech-cli-commands
 ---
 
 # JSON Output Mode

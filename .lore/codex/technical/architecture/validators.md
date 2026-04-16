@@ -1,12 +1,16 @@
 ---
 id: tech-arch-validators
 title: Validators Module Internals
-summary: >
-  Technical reference for src/lore/validators.py. Covers all exported functions,
-  the regex patterns used, the two-layer validation model (db.py enforces;
-  cli.py translates), and the restricted use of validate_quest_id_loose.
-related: ["conceptual-workflows-validators", "tech-arch-source-layout", "decisions-011-api-parity-with-cli", "standards-dry"]
-stability: stable
+summary: 'Technical reference for src/lore/validators.py. Covers all exported functions,
+  the regex patterns used, the two-layer validation model (db.py enforces; cli.py
+  translates), and the restricted use of validate_quest_id_loose.
+
+  '
+related:
+- conceptual-workflows-validators
+- tech-arch-source-layout
+- decisions-011-api-parity-with-cli
+- standards-dry
 ---
 
 # Validators Module Internals

@@ -6,6 +6,12 @@ import sqlite3
 from typing import Literal
 
 from lore.health import HealthIssue, HealthReport, health_check
+from lore.schemas import (
+    SchemaIssue,
+    load_schema,
+    validate_entity,
+    validate_entity_file,
+)
 
 try:
     from enum import StrEnum
@@ -328,4 +334,8 @@ __all__ = [
     "HealthIssue",
     "HealthReport",
     "health_check",
+    "SchemaIssue",
+    "load_schema",
+    "validate_entity",
+    "validate_entity_file",
 ]

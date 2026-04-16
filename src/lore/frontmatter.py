@@ -94,3 +94,44 @@ def parse_frontmatter_doc_full(
         if field in frontmatter:
             result[field] = frontmatter[field]
     return result
+
+
+def parse_frontmatter_raw(filepath: str | Path) -> tuple[dict | None, str | None]:
+    """Read full frontmatter mapping preserving every key on disk.
+
+    Unlike :func:`parse_frontmatter_doc`, this helper drops no keys and
+    distinguishes four outcomes so schema validation can enforce
+    ``additionalProperties: false`` and the FR-10/FR-11 error rules:
+
+    - ``(dict, None)`` — success; mapping contains every key on disk in
+      source order.
+    - ``(None, None)`` — file is empty, has no leading ``---`` delimiter,
+      or has no closing ``---`` delimiter (missing frontmatter).
+    - ``(None, <yaml-error-str>)`` — YAML between delimiters is unparseable;
+      the string is the PyYAML parser message.
+    - ``(None, "frontmatter is not a mapping")`` — parsed top-level value
+      is not a dict (e.g. a YAML list).
+    """
+    text = Path(filepath).read_text()
+    if text.startswith("---\n"):
+        rest = text[4:]
+    elif text.startswith("---\r\n"):
+        rest = text[5:]
+    else:
+        return (None, None)
+
+    end = rest.find("\n---")
+    if end == -1:
+        return (None, None)
+    fm_text = rest[:end]
+
+    try:
+        frontmatter = yaml.safe_load(fm_text)
+    except yaml.YAMLError as exc:
+        return (None, str(exc))
+
+    if frontmatter is None:
+        return (None, None)
+    if not isinstance(frontmatter, dict):
+        return (None, "frontmatter is not a mapping")
+    return (frontmatter, None)

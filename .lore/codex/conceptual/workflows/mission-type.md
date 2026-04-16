@@ -1,10 +1,14 @@
 ---
 id: conceptual-workflows-mission-type
 title: Mission Type Field
-summary: >
-  What the system does when a mission type is set, displayed, and updated — free-form string schema, null display guards across all four output sites, CLI acceptance, and oracle rendering.
-related: ["conceptual-entities-mission", "decisions-004-mission-type-dumb-storage"]
-stability: stable
+summary: 'What the system does when a mission type is set, displayed, and updated
+  — free-form string schema, null display guards across all four output sites, CLI
+  acceptance, and oracle rendering.
+
+  '
+related:
+- conceptual-entities-mission
+- decisions-004-mission-type-dumb-storage
 ---
 
 # Mission Type Field

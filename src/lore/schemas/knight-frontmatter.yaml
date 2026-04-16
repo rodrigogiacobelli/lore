@@ -1,0 +1,17 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/knight-frontmatter"
+title: Knight Frontmatter
+type: object
+additionalProperties: false
+required: [id, title, summary]
+properties:
+  id:
+    type: string
+    minLength: 1
+    description: Knight id. Must match the filename stem.
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1

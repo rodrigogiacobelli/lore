@@ -1,15 +1,13 @@
 ---
 id: conceptual-relationships-artifact--doctrine
-title: "Artifact to Doctrine"
+title: Artifact to Doctrine
 related:
-  - conceptual-entities-artifact
-  - conceptual-entities-doctrine
-  - tech-doctrine-internals
-stability: stable
-summary: >
-  Artifact IDs may appear in Doctrine step notes as free-text references.
-  There is no FK and no validation. Orchestrators and workers read the step notes
-  and retrieve the Artifact via `lore artifact show <id>` when needed.
+- conceptual-entities-artifact
+- conceptual-entities-doctrine
+- tech-doctrine-internals
+summary: Artifact IDs may appear in Doctrine step notes as free-text references. There
+  is no FK and no validation. Orchestrators and workers read the step notes and retrieve
+  the Artifact via `lore artifact show <id>` when needed.
 ---
 
 # Artifact to Doctrine

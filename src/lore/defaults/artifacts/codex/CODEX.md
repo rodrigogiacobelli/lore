@@ -1,10 +1,7 @@
 ---
 id: example-codex
 title: Codex
-related: []
-stability: stable
-summary: >
-  What this documentation system is, how it is structured, and how to use it.
+summary: What this documentation system is, how it is structured, and how to use it.
   Read this before reading or writing any other file in this repository.
 ---
 

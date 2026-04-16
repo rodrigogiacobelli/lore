@@ -1,13 +1,14 @@
 ---
 id: decisions-006-id-references
 title: Agents reference entities by ID, never by file path
-summary: >
-  ADR recording the decision that agents must use Lore CLI commands to access
-  artifacts, doctrines, and knights by ID rather than reading file paths
-  directly. This enforces the CLI as the only stable interface and prevents
-  agents from bypassing the abstraction layer.
-related: ["tech-cli-commands"]
-stability: stable
+summary: 'ADR recording the decision that agents must use Lore CLI commands to access
+  artifacts, doctrines, and knights by ID rather than reading file paths directly.
+  This enforces the CLI as the only stable interface and prevents agents from bypassing
+  the abstraction layer.
+
+  '
+related:
+- tech-cli-commands
 ---
 
 # ADR-006: Agents reference entities by ID, never by file path

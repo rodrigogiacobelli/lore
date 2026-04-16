@@ -1,9 +1,16 @@
 ---
 id: tech-db-schema
 title: Database Schema
-summary: Full SQLite database reference for Lore — DDL for all tables, indexes, pragmas, ID generation algorithm, cascade algorithm, cycle detection, soft-delete filtering, quest status derivation, priority queue SQL, and schema migrations (v1–v6).
-related: ["decisions-003-soft-delete-semantics", "decisions-005-auto-close-toggle", "tech-api-surface", "tech-cli-commands", "conceptual-workflows-concurrent-access", "conceptual-workflows-schema-migrations"]
-stability: stable
+summary: Full SQLite database reference for Lore — DDL for all tables, indexes, pragmas,
+  ID generation algorithm, cascade algorithm, cycle detection, soft-delete filtering,
+  quest status derivation, priority queue SQL, and schema migrations (v1–v6).
+related:
+- decisions-003-soft-delete-semantics
+- decisions-005-auto-close-toggle
+- tech-api-surface
+- tech-cli-commands
+- conceptual-workflows-concurrent-access
+- conceptual-workflows-schema-migrations
 ---
 
 # Database Schema

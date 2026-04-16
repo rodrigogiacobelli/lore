@@ -1,9 +1,12 @@
 ---
 id: ops-installation
 title: Installation
-summary: How to install Lore as an end-user CLI tool (uv tool, pipx) and how to set up a development environment, build a distributable package, publish to PyPI, and verify the install.
-related: ["ops-git-workflow", "decisions-002-package-name"]
-stability: stable
+summary: How to install Lore as an end-user CLI tool (uv tool, pipx) and how to set
+  up a development environment, build a distributable package, publish to PyPI, and
+  verify the install.
+related:
+- ops-git-workflow
+- decisions-002-package-name
 ---
 
 # Installation

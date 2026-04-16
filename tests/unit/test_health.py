@@ -1906,8 +1906,9 @@ def test_health_check_scope_codex_only_check_codex_runs(lore_dir):
 
 
 def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
-    """health_check scope=None is equivalent to scope=['codex', 'artifacts', 'doctrines', 'knights', 'watchers'].
+    """health_check scope=None is equivalent to the full _ALL_SCOPES list.
 
+    Updated by US-004: _ALL_SCOPES now includes 'schemas'.
     Exercises: lore codex show conceptual-workflows-health
     """
     # Inject watcher error to produce non-empty results
@@ -1919,7 +1920,7 @@ def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
     report_none = health_check(lore_dir, scope=None)
     report_all = health_check(
         lore_dir,
-        scope=["codex", "artifacts", "doctrines", "knights", "watchers"],
+        scope=["codex", "artifacts", "doctrines", "knights", "watchers", "schemas"],
     )
 
     assert report_none.errors == report_all.errors
@@ -2056,4 +2057,425 @@ def test_health_check_other_checkers_run_when_watchers_raises(lore_dir):
         "Expected island_node warning from codex checker but none found. "
         f"All issues: {report.issues!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# US-005 — HealthIssue new fields, JSON serialization, exact message wording
+# Workflow: conceptual-workflows-health
+# ---------------------------------------------------------------------------
+
+
+class TestUS005HealthIssueFields:
+    """HealthIssue is additively widened with schema_id/rule/pointer."""
+
+    def test_new_fields_default_to_none_for_non_schema_issue(self):
+        """conceptual-workflows-health — widening is strictly additive."""
+        issue = HealthIssue(
+            severity="error",
+            entity_type="knights",
+            id="pm",
+            check="broken_ref",
+            detail="x",
+        )
+        assert issue.schema_id is None
+        assert issue.rule is None
+        assert issue.pointer is None
+
+    def test_new_fields_assignable_for_schema_issue(self):
+        """conceptual-workflows-health — schema issues carry full triple."""
+        issue = HealthIssue(
+            severity="error",
+            entity_type="knight",
+            id=".lore/knights/default/feature-implementation/pm.md",
+            check="schema",
+            detail="Unknown property 'stability' — allowed keys are id, title, summary.",
+            schema_id="lore://schemas/knight-frontmatter",
+            rule="additionalProperties",
+            pointer="/stability",
+        )
+        assert issue.schema_id == "lore://schemas/knight-frontmatter"
+        assert issue.rule == "additionalProperties"
+        assert issue.pointer == "/stability"
+
+
+class TestUS005HealthIssueAsdict:
+    """dataclasses.asdict must expose all new fields for every issue."""
+
+    def test_asdict_non_schema_emits_null_extras(self):
+        """conceptual-workflows-json-output — keys present, values None."""
+        issue = HealthIssue(
+            severity="error",
+            entity_type="codex",
+            id="doc-1",
+            check="missing_frontmatter",
+            detail="field 'id' absent",
+        )
+        d = dataclasses.asdict(issue)
+        assert "schema_id" in d
+        assert "rule" in d
+        assert "pointer" in d
+        assert d["schema_id"] is None
+        assert d["rule"] is None
+        assert d["pointer"] is None
+
+    def test_asdict_schema_issue_full_shape(self):
+        """conceptual-workflows-json-output — PRD W5 canonical dict shape."""
+        issue = HealthIssue(
+            severity="error",
+            entity_type="knight",
+            id=".lore/knights/default/feature-implementation/pm.md",
+            check="schema",
+            detail="Unknown property 'stability' — allowed keys are id, title, summary.",
+            schema_id="lore://schemas/knight-frontmatter",
+            rule="additionalProperties",
+            pointer="/stability",
+        )
+        assert dataclasses.asdict(issue) == {
+            "severity": "error",
+            "entity_type": "knight",
+            "id": ".lore/knights/default/feature-implementation/pm.md",
+            "check": "schema",
+            "detail": "Unknown property 'stability' — allowed keys are id, title, summary.",
+            "schema_id": "lore://schemas/knight-frontmatter",
+            "rule": "additionalProperties",
+            "pointer": "/stability",
+        }
+
+    def test_asdict_round_trip_json_safe(self):
+        """conceptual-workflows-json-output — asdict output must serialize cleanly."""
+        issue = HealthIssue(
+            severity="error",
+            entity_type="knights",
+            id="ghost",
+            check="broken_ref",
+            detail="x",
+        )
+        d = dataclasses.asdict(issue)
+        serialized = json.loads(json.dumps(d))
+        assert serialized["schema_id"] is None
+        assert serialized["rule"] is None
+        assert serialized["pointer"] is None
+
+
+class TestUS005SchemaMessageWording:
+    """Formatter wording is frozen: em dash, exact punctuation, exact order."""
+
+    def test_additional_properties_message_verbatim(self):
+        """conceptual-workflows-health — additionalProperties wording with em dash."""
+        import jsonschema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+            },
+            "additionalProperties": False,
+        }
+        instance = {
+            "id": "pm",
+            "title": "PM",
+            "summary": "s",
+            "stability": "experimental",
+        }
+        validator = jsonschema.Draft202012Validator(schema)
+        errors = [e for e in validator.iter_errors(instance) if e.validator == "additionalProperties"]
+        assert errors, "Expected an additionalProperties error"
+
+        from lore.schemas import _format_message
+
+        assert (
+            _format_message(errors[0])
+            == "Unknown property 'stability' — allowed keys are id, title, summary."
+        )
+
+    def test_required_message_verbatim(self):
+        """conceptual-workflows-doctrine-show — required wording verbatim."""
+        import jsonschema
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string"},
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+            },
+            "required": ["id", "title", "summary"],
+        }
+        instance = {"id": "x", "title": "t"}
+        validator = jsonschema.Draft202012Validator(schema)
+        errors = [e for e in validator.iter_errors(instance) if e.validator == "required"]
+        assert errors
+
+        from lore.schemas import _format_message
+
+        assert _format_message(errors[0]) == "Missing required property 'summary'."
+
+
+class TestUS005HasErrorsContract:
+    """has_errors = any issue with severity == 'error' regardless of check."""
+
+    def test_has_errors_true_for_schema_issue_alone(self):
+        """conceptual-workflows-health — schema errors block green (FR-7)."""
+        schema_issue = HealthIssue(
+            severity="error",
+            entity_type="knight",
+            id=".lore/knights/default/feature-implementation/pm.md",
+            check="schema",
+            detail="x",
+            schema_id="lore://schemas/knight-frontmatter",
+            rule="additionalProperties",
+            pointer="/stability",
+        )
+        report = HealthReport(errors=(schema_issue,), warnings=())
+        assert report.has_errors is True
+
+    def test_has_errors_true_for_mixed_schema_and_non_schema_errors(self):
+        """conceptual-workflows-health — check value irrelevant to has_errors."""
+        schema_issue = HealthIssue(
+            severity="error", entity_type="knight", id="x", check="schema",
+            detail="x", schema_id="s", rule="r", pointer="/p",
+        )
+        ref_issue = HealthIssue(
+            severity="error", entity_type="knights", id="ghost",
+            check="broken_ref", detail="x",
+        )
+        report = HealthReport(errors=(schema_issue, ref_issue), warnings=())
+        assert report.has_errors is True
+
+
+# ---------------------------------------------------------------------------
+# US-008 Red — _write_report Schema validation section
+# story: schema-validation-us-008
+# workflow: conceptual-workflows-oracle (lore codex show conceptual-workflows-oracle)
+# ---------------------------------------------------------------------------
+
+
+def _schema_issue(kind: str, path: str, rule: str, pointer: str, message: str) -> HealthIssue:
+    return HealthIssue(
+        severity="error",
+        entity_type=kind,
+        id=path,
+        check="schema",
+        detail=message,
+        schema_id=f"lore://schemas/{kind}",
+        rule=rule,
+        pointer=pointer,
+    )
+
+
+def _non_schema_issue() -> HealthIssue:
+    return HealthIssue(
+        severity="error",
+        entity_type="codex",
+        id="some-doc",
+        check="broken_related_link",
+        detail="related ID 'x' does not exist",
+    )
+
+
+def test_us008_write_report_zero_schema_issues_section(tmp_path):
+    """US-008: zero schema issues, schemas_ran=True → exact two-line block."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    report = HealthReport(errors=(), warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+    assert "## Schema validation\n\nNo schema errors.\n" in text
+
+
+def test_us008_write_report_schema_section_multi_kind_exact_format(tmp_path):
+    """US-008: multi-kind sorted block verbatim (em dashes, backticks, punctuation)."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    issues = (
+        _schema_issue(
+            kind="knight",
+            path=".lore/knights/default/feature-implementation/pm.md",
+            rule="additionalProperties",
+            pointer="/stability",
+            message="Unknown property 'stability' — allowed keys are id, title, summary.",
+        ),
+        _schema_issue(
+            kind="doctrine-design-frontmatter",
+            path=".lore/doctrines/feature-implementation/feature-implementation.design.md",
+            rule="required",
+            pointer="/",
+            message="Missing required property 'summary'.",
+        ),
+    )
+    report = HealthReport(errors=issues, warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+
+    expected = (
+        "## Schema validation\n\n"
+        "### doctrine-design-frontmatter\n"
+        "- `.lore/doctrines/feature-implementation/feature-implementation.design.md` — "
+        "`required` at `/` — Missing required property 'summary'.\n\n"
+        "### knight\n"
+        "- `.lore/knights/default/feature-implementation/pm.md` — "
+        "`additionalProperties` at `/stability` — "
+        "Unknown property 'stability' — allowed keys are id, title, summary.\n"
+    )
+    assert expected in text
+
+
+def test_us008_write_report_kinds_sorted_alphabetically(tmp_path):
+    """US-008: kinds appear in alphabetical order within the Schema validation section."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    issues = (
+        _schema_issue("watcher", ".lore/watchers/w.yaml", "required", "/", "m"),
+        _schema_issue("artifact", ".lore/artifacts/a.md", "required", "/", "m"),
+        _schema_issue("knight", ".lore/knights/k.md", "required", "/", "m"),
+    )
+    report = HealthReport(errors=issues, warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+    section = text[text.index("## Schema validation"):]
+    assert section.index("### artifact") < section.index("### knight") < section.index("### watcher")
+
+
+def test_us008_write_report_paths_sorted_within_kind(tmp_path):
+    """US-008: within a kind, entries are sorted by file path."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    issues = (
+        _schema_issue("knight", ".lore/knights/b.md", "required", "/", "m"),
+        _schema_issue("knight", ".lore/knights/a.md", "required", "/", "m"),
+        _schema_issue("knight", ".lore/knights/c.md", "required", "/", "m"),
+    )
+    report = HealthReport(errors=issues, warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+    section = text[text.index("## Schema validation"):]
+    assert section.index("a.md") < section.index("b.md") < section.index("c.md")
+
+
+def test_us008_write_report_entry_format_verbatim(tmp_path):
+    """US-008: each entry renders exactly as '- `<path>` — `<rule>` at `<pointer>` — <message>'."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    issue = _schema_issue(
+        kind="knight",
+        path=".lore/knights/pm.md",
+        rule="additionalProperties",
+        pointer="/stability",
+        message="Unknown property 'stability'.",
+    )
+    report = HealthReport(errors=(issue,), warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+    line = "- `.lore/knights/pm.md` — `additionalProperties` at `/stability` — Unknown property 'stability'."
+    assert line in text
+
+
+def test_us008_write_report_section_omitted_when_schemas_not_run(tmp_path):
+    """US-008: section omitted entirely when schemas_ran=False (scope gating)."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    report = HealthReport(errors=(_non_schema_issue(),), warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=False)
+    text = path.read_text()
+    assert "## Schema validation" not in text
+    assert "No schema errors." not in text
+
+
+def test_us008_write_report_section_appended_after_existing_issues_table(tmp_path):
+    """US-008: Schema validation section comes AFTER the existing issues table."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    ref_issue = _non_schema_issue()
+    schema_issue = _schema_issue(
+        "knight", ".lore/knights/pm.md", "required", "/", "m",
+    )
+    report = HealthReport(errors=(ref_issue, schema_issue), warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+    # The existing issues table contains the markdown header row.
+    assert "| Severity | Entity Type | ID | Check | Detail |" in text
+    assert "## Schema validation" in text
+    assert text.index("| Severity | Entity Type | ID | Check | Detail |") < text.index("## Schema validation")
+
+
+def test_us008_write_report_zero_schema_issues_section_still_emitted_with_other_issues(tmp_path):
+    """US-008: even with non-schema issues, zero-schema zero-case prints 'No schema errors.'."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    report = HealthReport(errors=(_non_schema_issue(),), warnings=())
+    path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
+    text = path.read_text()
+    assert "## Schema validation\n\nNo schema errors.\n" in text
+
+
+# ---------------------------------------------------------------------------
+# US-009: Python API parity — health_check parity + scan_failed wrapping
+# Exercises: lore codex show schema-validation-us-009
+#            lore codex show conceptual-workflows-python-api
+# ---------------------------------------------------------------------------
+
+
+def _write_bad_knight(lore_dir):
+    knight_dir = lore_dir / ".lore" / "knights"
+    knight_dir.mkdir(parents=True, exist_ok=True)
+    (knight_dir / "pm.md").write_text(
+        "---\n"
+        "id: pm\n"
+        "title: Product Manager\n"
+        "summary: Writes PRDs.\n"
+        "stability: x\n"
+        "---\n"
+        "# Body\n"
+    )
+
+
+def test_us009_health_check_scan_failed_on_schema_load_error(lore_dir):
+    """schema-validation-us-009 — load_schema failure surfaces as scan_failed.
+
+    NFR-Reliability contract: a failure to load the authoritative schema must
+    NOT silently skip the schema check (false-green). It must propagate as a
+    scan_failed HealthIssue whose detail identifies the offending schema.
+    """
+    _write_bad_knight(lore_dir)
+
+    from lore.health import _check_schemas
+    from lore.schemas import _validator_for
+
+    def boom(kind):
+        if kind == "knight-frontmatter":
+            raise FileNotFoundError("knight-frontmatter resource missing")
+        return _validator_for(kind)
+
+    issues = _check_schemas(lore_dir, get_validator=boom)
+
+    scan_failed = [i for i in issues if i.check == "scan_failed"]
+    assert scan_failed, (
+        f"expected scan_failed issue, got issues: {issues!r}"
+    )
+    # Spec — unit AC: "scan_failed issue has detail containing the schema id
+    # that failed to load" (not merely the exception text). That identifies
+    # which authoritative schema the oracle could not load.
+    assert any(
+        "lore://schemas/knight-frontmatter" in (i.detail or "") for i in scan_failed
+    ), (
+        "expected 'lore://schemas/knight-frontmatter' in scan_failed detail, "
+        f"got: {[i.detail for i in scan_failed]!r}"
+    )
+    # Original exception message must also be carried through for debuggability.
+    assert any(
+        "knight-frontmatter resource missing" in (i.detail or "") for i in scan_failed
+    )
+    # No schema false-green: a schema check that could not load its authoritative
+    # schema must not emit check='schema' entries pretending success.
+    schema_issues = [i for i in issues if i.check == "schema"]
+    assert not any(
+        i.schema_id == "lore://schemas/knight-frontmatter" for i in schema_issues
+    )
+
+
+def test_us009_health_check_callable_without_project_root(lore_dir, monkeypatch):
+    """schema-validation-us-009 — project_root is optional; defaults to CLI discovery.
+
+    Unit AC: "accepts an optional project_root argument (or uses the same
+    discovery as the CLI)". Calling health_check() with no arguments from a
+    project root must succeed and return a HealthReport.
+    """
+    monkeypatch.chdir(lore_dir)
+    report = health_check()  # No positional project_root.
+    from lore.models import HealthReport as _HR
+    assert isinstance(report, _HR)
 

@@ -1,10 +1,12 @@
 ---
 id: conceptual-workflows-schema-migrations
 title: Schema Migrations
-summary: >
-  What the system does internally when schema migrations run — version detection, sequential application, rollback on failure, and specific migration contracts.
-related: ["tech-db-schema"]
-stability: stable
+summary: 'What the system does internally when schema migrations run — version detection,
+  sequential application, rollback on failure, and specific migration contracts.
+
+  '
+related:
+- tech-db-schema
 ---
 
 # Schema Migrations

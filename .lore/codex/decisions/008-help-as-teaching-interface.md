@@ -1,14 +1,15 @@
 ---
 id: decisions-008-help-as-teaching-interface
 title: CLI --help is the primary teaching interface for AI agents
-summary: >
-  ADR establishing that Lore's --help output must teach agents how the tool
+summary: 'ADR establishing that Lore''s --help output must teach agents how the tool
   works — entities, concepts, and workflow — not just describe syntax. Enrichment
-  is scoped to top-level and command-group levels only. JSON --help is deferred
-  (implementation cost exceeds benefit). AGENTS.md is reduced to ~40-50 lines.
-  board command enrichment deferred until spec-mission-board ships.
-related: ["decisions-001-dumb-infrastructure"]
-stability: stable
+  is scoped to top-level and command-group levels only. JSON --help is deferred (implementation
+  cost exceeds benefit). AGENTS.md is reduced to ~40-50 lines. board command enrichment
+  deferred until spec-mission-board ships.
+
+  '
+related:
+- decisions-001-dumb-infrastructure
 ---
 
 # ADR-008: CLI `--help` is the primary teaching interface for AI agents

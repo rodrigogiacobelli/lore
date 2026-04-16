@@ -3,18 +3,25 @@
 import dataclasses
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 
 import yaml
+
+if TYPE_CHECKING:
+    from jsonschema import Draft202012Validator
 
 
 @dataclasses.dataclass(frozen=True)
 class HealthIssue:
     """Structured health check issue (severity, entity_type, id, check, detail)."""
     severity: str      # "error" | "warning"
-    entity_type: str   # "codex" | "artifacts" | "doctrines" | "knights" | "watchers"
+    entity_type: str   # "codex" | "artifacts" | "doctrines" | "knights" | "watchers" | schema kind
     id: str            # entity ID or filepath string when ID is unknown
-    check: str         # e.g. "broken_related_link", "missing_frontmatter"
+    check: str         # e.g. "broken_related_link", "missing_frontmatter", "schema"
     detail: str        # human-readable explanation
+    schema_id: str | None = None  # e.g. "lore://schemas/knight-frontmatter" (schema check only)
+    rule: str | None = None       # JSON Schema validator name (schema check only)
+    pointer: str | None = None    # JSON pointer to offending field (schema check only)
 
     @classmethod
     def from_dict(cls, d: dict) -> "HealthIssue":
@@ -24,6 +31,9 @@ class HealthIssue:
             id=d["id"],
             check=d["check"],
             detail=d["detail"],
+            schema_id=d.get("schema_id"),
+            rule=d.get("rule"),
+            pointer=d.get("pointer"),
         )
 
 
@@ -43,7 +53,29 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas")
+
+# Schema-validated entity kinds. Each tuple is:
+#   (entity_type label used on HealthIssue,
+#    schema kind fed to lore.schemas.load_schema / _validator_for,
+#    entity root under .lore/,
+#    glob pattern evaluated under that root).
+_SCHEMA_KINDS: tuple[tuple[str, str, str, str], ...] = (
+    ("doctrine-yaml",               "doctrine-yaml",               "doctrines", "**/*.yaml"),
+    ("doctrine-design-frontmatter", "doctrine-design-frontmatter", "doctrines", "**/*.design.md"),
+    ("knight",                      "knight-frontmatter",          "knights",   "**/*.md"),
+    ("watcher",                     "watcher-yaml",                "watchers",  "**/*.yaml"),
+    ("codex",                       "codex-frontmatter",           "codex",     "**/*.md"),
+    ("artifact",                    "artifact-frontmatter",        "artifacts", "**/*.md"),
+)
+
+# Schema kinds whose payload lives in a leading YAML frontmatter block.
+_FRONTMATTER_SCHEMA_KINDS: frozenset[str] = frozenset({
+    "knight-frontmatter",
+    "codex-frontmatter",
+    "artifact-frontmatter",
+    "doctrine-design-frontmatter",
+})
 
 _ARTIFACT_ID_PATTERN = re.compile(r"\bfi-[a-z0-9-]+\b")
 
@@ -380,21 +412,174 @@ def _check_watchers(watchers_dir: Path, doctrines_dir: Path) -> list[HealthIssue
     return issues
 
 
-def _write_report(report: HealthReport, codex_dir: Path, timestamp: str) -> Path:
+def _load_schema_payload(path: Path, schema_kind: str):
+    """Read a file and extract the dict to be schema-validated.
+
+    Returns ``(data, issues)``. On success ``issues`` is empty and ``data`` is
+    the parsed YAML mapping (or raw YAML document for non-frontmatter kinds).
+    On failure ``data`` is ``None`` and ``issues`` holds one
+    ``SchemaIssue`` describing why the payload is unreachable.
+    """
+    from lore.schemas import (
+        MISSING_FRONTMATTER_MESSAGE,
+        NON_MAPPING_FRONTMATTER_MESSAGE,
+        SchemaIssue,
+    )
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, [SchemaIssue(rule="read-failed", pointer="/", message=str(exc))]
+
+    def _missing_fm(msg: str) -> list["SchemaIssue"]:
+        return [SchemaIssue(rule="missing-frontmatter", pointer="/", message=msg)]
+
+    if schema_kind in _FRONTMATTER_SCHEMA_KINDS:
+        parts = text.split("---", 2) if text.startswith("---") else []
+        if len(parts) < 3:
+            return None, _missing_fm(MISSING_FRONTMATTER_MESSAGE)
+        try:
+            data = yaml.safe_load(parts[1])
+        except yaml.YAMLError as exc:
+            return None, [SchemaIssue(rule="yaml-parse", pointer="/", message=str(exc))]
+        if not isinstance(data, dict):
+            return None, _missing_fm(NON_MAPPING_FRONTMATTER_MESSAGE)
+        return data, []
+
+    # Full-document YAML kinds (doctrine-yaml, watcher-yaml).
+    try:
+        return yaml.safe_load(text), []
+    except yaml.YAMLError as exc:
+        return None, [SchemaIssue(rule="yaml-parse", pointer="/", message=str(exc))]
+
+
+def _check_schemas(
+    project_root: Path,
+    get_validator: "Callable[[str], Draft202012Validator] | None" = None,
+) -> list[HealthIssue]:
+    """Validate every entity file on disk against its packaged JSON Schema.
+
+    Walks the six entity globs; missing entity directories are a silent no-op.
+    Emits one HealthIssue(check="schema") per underlying schema violation —
+    multiple violations on the same file are preserved (not aggregated).
+    """
+    from lore.schemas import SchemaIssue, _issue_from_error, _validator_for
+
+    get_validator = get_validator or _validator_for
+
+    issues: list[HealthIssue] = []
+    lore_dir = project_root / ".lore"
+
+    for entity_label, schema_kind, root_name, glob in _SCHEMA_KINDS:
+        entity_root = lore_dir / root_name
+        if not entity_root.exists():
+            continue
+
+        schema_id = f"lore://schemas/{schema_kind}"
+        try:
+            validator = get_validator(schema_kind)
+            schema_id = str(validator.schema.get("$id", schema_id))
+        except Exception as exc:
+            issues.append(HealthIssue(
+                severity="error",
+                entity_type=entity_label,
+                id=schema_id,
+                check="scan_failed",
+                detail=f"{schema_id}: {exc}",
+                schema_id=schema_id,
+            ))
+            continue
+
+        for filepath in sorted(entity_root.glob(glob)):
+            if not filepath.is_file():
+                continue
+
+            rel = filepath.relative_to(project_root).as_posix()
+            try:
+                data, schema_issues = _load_schema_payload(filepath, schema_kind)
+                if not schema_issues:
+                    schema_issues = [_issue_from_error(err) for err in validator.iter_errors(data)]
+            except Exception as exc:
+                schema_issues = [SchemaIssue(rule="read-failed", pointer="/", message=str(exc))]
+
+            for si in schema_issues:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type=entity_label,
+                    id=rel,
+                    check="schema",
+                    detail=si.message,
+                    schema_id=schema_id,
+                    rule=si.rule,
+                    pointer=si.pointer,
+                ))
+
+    return issues
+
+
+def _humanize_timestamp(timestamp: str) -> str:
+    """Convert a filename-safe timestamp like 2026-04-09T14-32-00 to 2026-04-09T14:32:00."""
+    date_part, sep, time_part = timestamp.partition("T")
+    if not sep:
+        return timestamp
+    return f"{date_part}T{time_part.replace('-', ':')}"
+
+
+def _render_issues_table(issues: tuple[HealthIssue, ...]) -> str:
+    """Render the markdown issues table, or the zero-issue placeholder."""
+    if not issues:
+        return "No issues found.\n"
+    header = (
+        "| Severity | Entity Type | ID | Check | Detail |\n"
+        "|----------|-------------|-----|-------|--------|\n"
+    )
+    rows = "".join(
+        f"| {i.severity.upper()} | {i.entity_type} | {i.id} | {i.check} | {i.detail} |\n"
+        for i in issues
+    )
+    return header + rows
+
+
+def _render_schema_section(issues: tuple[HealthIssue, ...]) -> str:
+    """Render the '## Schema validation' section grouped by kind, sorted by path.
+
+    Expects the caller to have already decided the section should be emitted
+    (i.e. the ``schemas`` scope ran). Returns the full section text with its
+    leading blank line, ready to concatenate to the report body.
+    """
+    schema_issues = [i for i in issues if i.check == "schema"]
+    if not schema_issues:
+        return "\n## Schema validation\n\nNo schema errors.\n"
+
+    by_kind: dict[str, list[HealthIssue]] = {}
+    for issue in schema_issues:
+        by_kind.setdefault(issue.entity_type, []).append(issue)
+
+    kind_blocks: list[str] = []
+    for kind in sorted(by_kind):
+        entries = sorted(by_kind[kind], key=lambda i: i.id)
+        lines = [f"### {kind}"]
+        lines.extend(
+            f"- `{e.id}` — `{e.rule}` at `{e.pointer}` — {e.detail}"
+            for e in entries
+        )
+        kind_blocks.append("\n".join(lines) + "\n")
+
+    return "\n## Schema validation\n\n" + "\n".join(kind_blocks)
+
+
+def _write_report(
+    report: HealthReport,
+    codex_dir: Path,
+    timestamp: str,
+    schemas_ran: bool = False,
+) -> Path:
     """Write markdown report to codex_dir/transient/health-{timestamp}.md."""
     transient_dir = codex_dir / "transient"
     transient_dir.mkdir(parents=True, exist_ok=True)
+    filepath = transient_dir / f"health-{timestamp}.md"
 
-    filename = f"health-{timestamp}.md"
-    filepath = transient_dir / filename
-
-    # Convert timestamp like 2026-04-09T14-32-00 to 2026-04-09T14:32:00
-    parts = timestamp.split("T")
-    if len(parts) == 2:
-        human_ts = f"{parts[0]}T{parts[1].replace('-', ':')}"
-    else:
-        human_ts = timestamp
-
+    human_ts = _humanize_timestamp(timestamp)
     frontmatter = (
         f"---\n"
         f"id: health-{timestamp}\n"
@@ -402,38 +587,32 @@ def _write_report(report: HealthReport, codex_dir: Path, timestamp: str) -> Path
         f"summary: lore health report generated at {human_ts} UTC\n"
         f"---\n"
     )
-
     header = f"\n# Health Report — {human_ts} UTC\n\n"
+    body = _render_issues_table(report.issues)
+    schema_section = _render_schema_section(report.issues) if schemas_ran else ""
 
-    if not report.issues:
-        body = "No issues found.\n"
-    else:
-        table_header = "| Severity | Entity Type | ID | Check | Detail |\n"
-        table_sep = "|----------|-------------|-----|-------|--------|\n"
-        rows = "".join(
-            f"| {issue.severity.upper()} | {issue.entity_type} | {issue.id} | {issue.check} | {issue.detail} |\n"
-            for issue in report.issues
-        )
-        body = table_header + table_sep + rows
-
-    filepath.write_text(frontmatter + header + body)
+    filepath.write_text(frontmatter + header + body + schema_section)
     return filepath
 
 
 def health_check(
-    project_root: Path,
+    project_root: Path | None = None,
     scope: list[str] | None = None,
+    scopes: list[str] | None = None,
 ) -> HealthReport:
     """Audit file-based entity types and return a HealthReport.
 
-    scope=None audits all five types.
+    scope=None audits all scopes in ``_ALL_SCOPES``.
     scope=["codex", "watchers"] audits only those two.
+    ``scopes`` is an alias for ``scope`` (US-004 signature).
     Never prints to stdout or stderr.
     """
-    if scope is None:
-        active_scope = list(_ALL_SCOPES)
-    else:
-        active_scope = list(scope)
+    selected = scopes if scopes is not None else scope
+    active_scope = list(_ALL_SCOPES) if selected is None else list(selected)
+
+    if project_root is None:
+        from lore.root import find_project_root
+        project_root = find_project_root()
 
     lore_dir = project_root / ".lore"
     codex_dir = lore_dir / "codex"
@@ -451,6 +630,7 @@ def health_check(
         "doctrines": lambda: _check_doctrines(doctrines_dir, knights_dir, artifacts_dir),
         "knights": lambda: _check_knights(knights_dir, project_root),
         "watchers": lambda: _check_watchers(watchers_dir, doctrines_dir),
+        "schemas": lambda: _check_schemas(project_root),
     }
 
     for scope_name in active_scope:

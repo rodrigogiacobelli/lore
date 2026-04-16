@@ -3,8 +3,7 @@ id: conceptual-workflows-knight-crud
 title: Knight CRUD Operations
 summary: >
   What the system does internally when creating, editing, and deleting knights via the CLI, including name validation rules shared with doctrines.
-related: ["conceptual-entities-knight", "conceptual-workflows-knight-list"]
-stability: stable
+related: ["conceptual-entities-knight", "conceptual-workflows-knight-list", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 
 # Knight CRUD Operations
@@ -101,6 +100,10 @@ Text: `Deleted knight <name>`. JSON: `{"name": "<name>", "deleted": true}`.
 | Source file not found (--from) | Error to stderr | 1 |
 | Empty stdin content | Error to stderr | 1 |
 | Knight not found (edit/delete) | Error to stderr | 1 |
+
+## Schema Validation
+
+Knight file frontmatter is validated at create time via `lore.schemas.validate_entity("knight", meta)` — the authoritative schema is `lore://schemas/knight-frontmatter`, which allows only `id`, `title`, `summary` (`additionalProperties: false`). Hallucinated keys such as `stability`, `role`, or `tags` are rejected at write time and also flagged by `lore health --scope schemas` on any knight already on disk.
 
 ## Out of Scope
 

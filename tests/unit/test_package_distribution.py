@@ -212,3 +212,62 @@ class TestPackageName:
         assert project.get("name") == "lore-agent-task-manager", (
             "Package name must be 'lore-agent-task-manager'"
         )
+
+
+# ---------- Schema Resources Shipped in Wheel (US-001) ----------
+
+
+SCHEMA_KINDS = [
+    "doctrine-yaml",
+    "doctrine-design-frontmatter",
+    "knight-frontmatter",
+    "watcher-yaml",
+    "codex-frontmatter",
+    "artifact-frontmatter",
+]
+
+
+class TestSchemaResourcesInWheel:
+    """Every packaged schema YAML ships with the wheel (US-001 FR-19)."""
+
+    def test_schema_source_directory_exists(self):
+        schema_dir = PROJECT_ROOT / "src" / "lore" / "schemas"
+        assert schema_dir.is_dir(), (
+            "src/lore/schemas/ must exist as a Python package directory"
+        )
+
+    def test_schema_package_has_init(self):
+        init = PROJECT_ROOT / "src" / "lore" / "schemas" / "__init__.py"
+        assert init.exists(), "src/lore/schemas/__init__.py required for package discovery"
+
+    def test_every_schema_yaml_present_on_disk(self):
+        schema_dir = PROJECT_ROOT / "src" / "lore" / "schemas"
+        for kind in SCHEMA_KINDS:
+            path = schema_dir / f"{kind}.yaml"
+            assert path.exists(), f"missing schema file: {path}"
+
+    def test_importlib_resources_lists_every_schema(self):
+        from importlib.resources import files
+
+        names = {p.name for p in files("lore.schemas").iterdir()}
+        for kind in SCHEMA_KINDS:
+            assert f"{kind}.yaml" in names, f"{kind}.yaml not discoverable via importlib.resources"
+
+    def test_jsonschema_is_a_runtime_dependency(self):
+        data = _read_pyproject()
+        deps = data.get("project", {}).get("dependencies", [])
+        assert any("jsonschema" in d for d in deps), (
+            "jsonschema must be declared as a runtime dependency in [project].dependencies"
+        )
+
+    def test_wheel_build_config_includes_schema_yaml(self):
+        data = _read_pyproject()
+        tool = data.get("tool", {}).get("hatch", {}).get("build", {})
+        wheel_cfg = tool.get("targets", {}).get("wheel", {})
+        # Must either include schemas via an explicit pattern, or rely on
+        # force-include / artifacts / package-data covering *.yaml under lore.schemas.
+        serialized = repr(wheel_cfg) + repr(tool)
+        assert "schemas" in serialized or "*.yaml" in serialized or "yaml" in serialized, (
+            "hatch wheel build config must ship src/lore/schemas/*.yaml "
+            "(via include / artifacts / force-include / package-data)"
+        )

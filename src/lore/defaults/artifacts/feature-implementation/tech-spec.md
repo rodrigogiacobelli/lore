@@ -1,12 +1,10 @@
 ---
 id: fi-tech-spec
 title: Tech Spec
-group: feature-implementation
-summary: >
-  Template for the final Tech Spec produced by the Architect after incorporating
-  user feedback from the Tech Spec Draft review and insights from the Crazy Tech
-  Spec. This is the authoritative technical document — clean, complete, all
-  decisions made. Flows to BA, Tech Writer, and Tech Lead.
+summary: Template for the final Tech Spec produced by the Architect after incorporating
+  user feedback from the Tech Spec Draft review and insights from the Crazy Tech Spec.
+  This is the authoritative technical document — clean, complete, all decisions made.
+  Flows to BA, Tech Writer, and Tech Lead.
 ---
 
 # {Feature Name} — Tech Spec

@@ -1,12 +1,9 @@
 ---
 id: example-security-model
 title: Security Model
-related: []
-stability: stable
-summary: >
-  Authentication model, authorization rules, sensitive data inventory,
-  external exposure surface, and agent-specific security rules.
-  Read before modifying any auth, data access, or input handling code.
+summary: Authentication model, authorization rules, sensitive data inventory, external
+  exposure surface, and agent-specific security rules. Read before modifying any auth,
+  data access, or input handling code.
 ---
 
 # Security Model

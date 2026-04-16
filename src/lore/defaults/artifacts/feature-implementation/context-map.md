@@ -1,12 +1,9 @@
 ---
 id: fi-context-map
 title: Context Map
-group: feature-implementation
-summary: >
-  Template for the Scout to produce a context map for a feature. Identifies
-  all relevant codex documents from one lens (business or technical).
-  Used twice per feature cycle — once per Scout. Mandatory input for all
-  planning agents.
+summary: Template for the Scout to produce a context map for a feature. Identifies
+  all relevant codex documents from one lens (business or technical). Used twice per
+  feature cycle — once per Scout. Mandatory input for all planning agents.
 ---
 
 # Context Map — {Feature Name} ({lens: business|technical})

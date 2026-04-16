@@ -287,7 +287,7 @@ def test_doctrine_new_yaml_with_legacy_name_fails(runner, project_dir, tmp_path)
         ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
     )
     assert result.exit_code == 1
-    assert "Unexpected field in YAML: name" in (result.output + (result.stderr or ""))
+    assert "Unknown property 'name'" in (result.output + (result.stderr or ""))
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +310,7 @@ def test_doctrine_new_yaml_with_legacy_description_fails(runner, project_dir, tm
         ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
     )
     assert result.exit_code == 1
-    assert "Unexpected field in YAML: description" in (result.output + (result.stderr or ""))
+    assert "Unknown property 'description'" in (result.output + (result.stderr or ""))
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ def test_doctrine_new_json_mode_success(runner, project_dir, tmp_path):
         "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
     )
     design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\ntitle: My Workflow\n---\n")
+    design_file.write_text("---\nid: my-workflow\ntitle: My Workflow\nsummary: A workflow.\n---\n")
     result = runner.invoke(
         main,
         [
@@ -594,3 +594,54 @@ def test_doctrine_new_invalid_group_rejected(runner, project_dir, tmp_path):
     assert "invalid group" in combined
     doctrines_dir = project_dir / ".lore" / "doctrines"
     assert not (doctrines_dir / "new-doc.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
+# US-010 — Create-time validators delegate to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-doctrine-new
+# ---------------------------------------------------------------------------
+
+
+def test_us010_doctrine_new_rejects_hallucinated_stability_field(runner, project_dir, tmp_path):
+    """A design file with extra frontmatter key `stability` must be rejected via schema,
+    with stderr mentioning additionalProperties or /stability, and no files written."""
+    yaml_file = tmp_path / "fi.yaml"
+    yaml_file.write_text(
+        "id: fi\nsteps:\n"
+        "  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
+    )
+    design_file = tmp_path / "fi.design.md"
+    design_file.write_text(
+        "---\nid: fi\ntitle: FI\nsummary: short.\nstability: stable\n---\n\n# body\n"
+    )
+    result = runner.invoke(
+        main,
+        ["doctrine", "new", "fi", "-f", str(yaml_file), "-d", str(design_file)],
+    )
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr or "")
+    assert ("additionalProperties" in combined) or ("/stability" in combined) or ("stability" in combined)
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    assert not (doctrines_dir / "fi.yaml").exists()
+    assert not (doctrines_dir / "fi.design.md").exists()
+
+
+def test_us010_doctrine_new_rejects_design_missing_summary(runner, project_dir, tmp_path):
+    """Design file frontmatter missing `summary:` must surface the golden schema error."""
+    yaml_file = tmp_path / "fi.yaml"
+    yaml_file.write_text(
+        "id: fi\nsteps:\n"
+        "  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
+    )
+    design_file = tmp_path / "fi.design.md"
+    design_file.write_text("---\nid: fi\ntitle: FI\n---\n\n# body\n")
+    result = runner.invoke(
+        main,
+        ["doctrine", "new", "fi", "-f", str(yaml_file), "-d", str(design_file)],
+    )
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr or "")
+    assert "Missing required property 'summary'" in combined
+    doctrines_dir = project_dir / ".lore" / "doctrines"
+    assert not (doctrines_dir / "fi.yaml").exists()

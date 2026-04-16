@@ -1,10 +1,13 @@
 ---
 id: conceptual-workflows-ready
 title: Ready Queue — lore ready
-summary: >
-  What the system does internally when lore ready runs — priority ordering, exclusion of blocked and closed missions, dependency-gating, and multi-result output.
-related: ["conceptual-entities-mission", "conceptual-workflows-claim"]
-stability: stable
+summary: 'What the system does internally when lore ready runs — priority ordering,
+  exclusion of blocked and closed missions, dependency-gating, and multi-result output.
+
+  '
+related:
+- conceptual-entities-mission
+- conceptual-workflows-claim
 ---
 
 # Ready Queue — `lore ready`

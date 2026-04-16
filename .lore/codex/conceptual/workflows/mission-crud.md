@@ -1,10 +1,14 @@
 ---
 id: conceptual-workflows-mission-crud
 title: Mission CRUD Operations
-summary: >
-  What the system does internally when creating, listing, editing, deleting, and viewing mission detail via the CLI, including active-status filtering and soft-delete behaviour.
-related: ["conceptual-entities-mission", "conceptual-workflows-quest-crud"]
-stability: stable
+summary: 'What the system does internally when creating, listing, editing, deleting,
+  and viewing mission detail via the CLI, including active-status filtering and soft-delete
+  behaviour.
+
+  '
+related:
+- conceptual-entities-mission
+- conceptual-workflows-quest-crud
 ---
 
 # Mission CRUD Operations

@@ -1,11 +1,8 @@
 ---
 id: example-tech-database
 title: Database
-related: []
-stability: stable
-summary: >
-  Database technology, connection setup, migration pattern, and shared access conventions.
-  Read before writing any query or migration.
+summary: Database technology, connection setup, migration pattern, and shared access
+  conventions. Read before writing any query or migration.
 ---
 
 # Database

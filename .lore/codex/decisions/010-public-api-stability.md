@@ -1,13 +1,16 @@
 ---
 id: decisions-010-public-api-stability
-title: "ADR-010: lore.models.__all__ is the stable public API contract"
-summary: >
-  ADR establishing that lore.models.__all__ is the sole public API surface of lore-agent-task-manager.
-  Everything not listed there is internal and may change without notice. Pre-1.0 semver policy:
-  additions are minor bumps; removals and renames require a major bump or explicit breaking-change
-  notice in CHANGELOG.md.
-related: ["standards-public-api-stability", "decisions-011-api-parity-with-cli", "tech-api-surface"]
-stability: stable
+title: 'ADR-010: lore.models.__all__ is the stable public API contract'
+summary: 'ADR establishing that lore.models.__all__ is the sole public API surface
+  of lore-agent-task-manager. Everything not listed there is internal and may change
+  without notice. Pre-1.0 semver policy: additions are minor bumps; removals and renames
+  require a major bump or explicit breaking-change notice in CHANGELOG.md.
+
+  '
+related:
+- standards-public-api-stability
+- decisions-011-api-parity-with-cli
+- tech-api-surface
 ---
 
 # ADR-010: lore.models.__all__ is the stable public API contract

@@ -1,8 +1,9 @@
 ---
 id: adr-no-default-content-tests
 title: No Content Tests for Default Templates
-status: accepted
-summary: Policy decision not to write tests that assert content of default templates, since defaults evolve continuously and content tests create maintenance friction without adding safety value.
+summary: Policy decision not to write tests that assert content of default templates,
+  since defaults evolve continuously and content tests create maintenance friction
+  without adding safety value.
 ---
 
 # ADR: No Content Tests for Default Templates

@@ -1,11 +1,8 @@
 ---
 id: example-tech-backend
 title: Backend
-related: []
-stability: stable
-summary: >
-  Command dispatch lifecycle, domain organisation, error output conventions, and exit codes.
-  Start here before adding or modifying any backend code.
+summary: Command dispatch lifecycle, domain organisation, error output conventions,
+  and exit codes. Start here before adding or modifying any backend code.
 ---
 
 # Backend

@@ -1,12 +1,10 @@
 ---
 id: fi-prd-draft
 title: PRD Draft
-group: feature-implementation
-summary: >
-  Template for the PM to write the initial PRD Draft from raw user input.
-  Covers executive summary, success criteria, user workflows, functional and
-  non-functional requirements. The user appends unstructured feedback directly
-  to this file before the PM produces the final PRD.
+summary: Template for the PM to write the initial PRD Draft from raw user input. Covers
+  executive summary, success criteria, user workflows, functional and non-functional
+  requirements. The user appends unstructured feedback directly to this file before
+  the PM produces the final PRD.
 ---
 
 # {Feature Name} — PRD Draft

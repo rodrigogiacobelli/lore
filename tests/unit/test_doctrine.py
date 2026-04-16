@@ -1013,7 +1013,7 @@ def test_validate_yaml_schema_missing_id():
     data = {"steps": [{"id": "s1", "title": "Step 1", "type": "knight", "knight": "k"}]}
     with pytest.raises(DoctrineError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
-    assert "Missing required field: id" in str(exc_info.value)
+    assert "Missing required property 'id'" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1028,7 +1028,7 @@ def test_validate_yaml_schema_missing_steps():
     data = {"id": "my-workflow"}
     with pytest.raises(DoctrineError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
-    assert "Missing required field: steps" in str(exc_info.value)
+    assert "Missing required property 'steps'" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1066,7 +1066,7 @@ def test_validate_yaml_schema_rejects_name_field():
     }
     with pytest.raises(DoctrineError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
-    assert "Unexpected field in YAML: name" in str(exc_info.value)
+    assert "Unknown property 'name'" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1085,7 +1085,7 @@ def test_validate_yaml_schema_rejects_description_field():
     }
     with pytest.raises(DoctrineError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
-    assert "Unexpected field in YAML: description" in str(exc_info.value)
+    assert "Unknown property 'description'" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1115,7 +1115,8 @@ def test_validate_design_frontmatter_none_meta():
 
     with pytest.raises(DoctrineError) as exc_info:
         _validate_design_frontmatter(None, "my-workflow")
-    assert "Design file missing required frontmatter field: id" in str(exc_info.value)
+    assert "'id'" in str(exc_info.value)
+    assert "Missing required propert" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1130,7 +1131,7 @@ def test_validate_design_frontmatter_missing_id_key():
     meta = {"title": "My Workflow", "summary": "Does things."}
     with pytest.raises(DoctrineError) as exc_info:
         _validate_design_frontmatter(meta, "my-workflow")
-    assert "Design file missing required frontmatter field: id" in str(exc_info.value)
+    assert "Missing required property 'id'" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1534,7 +1535,7 @@ def test_create_doctrine_yaml_with_name_raises(tmp_path):
     with pytest.raises(DoctrineError) as exc_info:
         create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
 
-    assert "Unexpected field in YAML: name" in str(exc_info.value)
+    assert "Unknown property 'name'" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1559,7 +1560,7 @@ def test_create_doctrine_yaml_with_description_raises(tmp_path):
     with pytest.raises(DoctrineError) as exc_info:
         create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
 
-    assert "Unexpected field in YAML: description" in str(exc_info.value)
+    assert "Unknown property 'description'" in str(exc_info.value)
 
 
 # ===========================================================================
@@ -1695,3 +1696,71 @@ class TestCreateDoctrineGroup:
         assert result["group"] is None
         assert result["path"] == str(doctrines_dir / "d.yaml")
 
+
+# ---------------------------------------------------------------------------
+# US-010 — Create-time validators delegate to lore.schemas.validate_entity
+# Spec: schema-validation-us-010 (lore codex show schema-validation-us-010)
+# Workflow: conceptual-workflows-doctrine-new
+# ---------------------------------------------------------------------------
+
+
+import click  # noqa: E402
+import lore.doctrine as _d_mod  # noqa: E402
+import lore.schemas as _schemas  # noqa: E402
+
+
+def test_us010_validate_yaml_schema_delegates_to_schemas(monkeypatch):
+    """_validate_yaml_schema must call lore.schemas.validate_entity("doctrine-yaml", data)."""
+    called = {}
+    real = _schemas.validate_entity
+
+    def spy(kind, data):
+        called["kind"] = kind
+        called["data"] = data
+        return real(kind, data)
+
+    monkeypatch.setattr(_schemas, "validate_entity", spy)
+    # Also patch the module-level binding inside doctrine if it was imported by name
+    if hasattr(_d_mod, "validate_entity"):
+        monkeypatch.setattr(_d_mod, "validate_entity", spy)
+
+    with pytest.raises(click.ClickException):
+        _d_mod._validate_yaml_schema({"id": "x"}, "x")
+    assert called.get("kind") == "doctrine-yaml"
+
+
+def test_us010_validate_yaml_schema_raises_click_on_issues(monkeypatch):
+    """_validate_yaml_schema must raise click.ClickException when validate_entity returns issues."""
+    fake_issue = _schemas.SchemaIssue(rule="required", pointer="/", message="Missing required property 'steps'.")
+    monkeypatch.setattr(_schemas, "validate_entity", lambda k, d: [fake_issue])
+    if hasattr(_d_mod, "validate_entity"):
+        monkeypatch.setattr(_d_mod, "validate_entity", lambda k, d: [fake_issue])
+
+    with pytest.raises(click.ClickException) as exc:
+        _d_mod._validate_yaml_schema({"id": "x"}, "x")
+    assert "Missing required property 'steps'." in str(exc.value.message)
+
+
+def test_us010_validate_design_frontmatter_delegates(monkeypatch):
+    """_validate_design_frontmatter must delegate to validate_entity("doctrine-design-frontmatter", data)."""
+    kinds = []
+    real = _schemas.validate_entity
+
+    def spy(kind, data):
+        kinds.append(kind)
+        return real(kind, data)
+
+    monkeypatch.setattr(_schemas, "validate_entity", spy)
+    if hasattr(_d_mod, "validate_entity"):
+        monkeypatch.setattr(_d_mod, "validate_entity", spy)
+
+    with pytest.raises(click.ClickException):
+        _d_mod._validate_design_frontmatter({"id": "x"}, "x")
+    assert "doctrine-design-frontmatter" in kinds
+
+
+def test_us010_validate_design_frontmatter_missing_summary_golden_message():
+    """Missing 'summary' must surface the frozen golden error text."""
+    with pytest.raises(click.ClickException) as exc:
+        _d_mod._validate_design_frontmatter({"id": "x", "title": "T"}, "x")
+    assert "Missing required property 'summary'" in str(exc.value.message)

@@ -1,15 +1,18 @@
 ---
 id: decisions-009-mission-self-containment
-title: Missions must be self-contained — board messages carry the chain, artifacts carry the content
-summary: >
-  ADR establishing that a mission must be executable using only its description
-  and its board. Board messages are lightweight operational messages posted by
-  predecessor agents to guide successor missions (pointers, paths, IDs). They
-  are distinct from artifact instances (ADR-007), which carry structured work
-  output. The two mechanisms are complementary and operate at different layers
-  of formality.
-related: ["decisions-007-artifact-communication-protocol", "tech-db-schema", "tech-cli-commands"]
-stability: stable
+title: Missions must be self-contained — board messages carry the chain, artifacts
+  carry the content
+summary: 'ADR establishing that a mission must be executable using only its description
+  and its board. Board messages are lightweight operational messages posted by predecessor
+  agents to guide successor missions (pointers, paths, IDs). They are distinct from
+  artifact instances (ADR-007), which carry structured work output. The two mechanisms
+  are complementary and operate at different layers of formality.
+
+  '
+related:
+- decisions-007-artifact-communication-protocol
+- tech-db-schema
+- tech-cli-commands
 ---
 
 # ADR-009: Missions must be self-contained — board messages carry the chain, artifacts carry the content

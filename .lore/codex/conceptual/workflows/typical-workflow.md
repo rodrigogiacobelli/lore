@@ -1,9 +1,17 @@
 ---
 id: conceptual-workflows-typical-workflow
 title: Typical Workflow
-summary: What a complete Lore-driven workflow looks like when driven by an orchestrator — from project initialisation through quest and mission creation, dependency declaration, worker dispatch, and closure. This is a conceptual sequence, not a step-by-step user guide.
-related: ["conceptual-workflows-lore-init", "conceptual-workflows-quest-crud", "conceptual-workflows-mission-crud", "conceptual-workflows-claim", "conceptual-workflows-done", "conceptual-entities-doctrine"]
-stability: stable
+summary: What a complete Lore-driven workflow looks like when driven by an orchestrator
+  — from project initialisation through quest and mission creation, dependency declaration,
+  worker dispatch, and closure. This is a conceptual sequence, not a step-by-step
+  user guide.
+related:
+- conceptual-workflows-lore-init
+- conceptual-workflows-quest-crud
+- conceptual-workflows-mission-crud
+- conceptual-workflows-claim
+- conceptual-workflows-done
+- conceptual-entities-doctrine
 ---
 
 # Typical Workflow

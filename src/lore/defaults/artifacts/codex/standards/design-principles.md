@@ -1,12 +1,9 @@
 ---
 id: example-standards-design-principles
 title: Design Principles
-related: []
-stability: stable
-summary: >
-  Core design principles this project follows, what each means in practice,
-  and which principles are explicitly rejected. Agents must consult this before
-  proposing architectural changes.
+summary: Core design principles this project follows, what each means in practice,
+  and which principles are explicitly rejected. Agents must consult this before proposing
+  architectural changes.
 ---
 
 # Design Principles

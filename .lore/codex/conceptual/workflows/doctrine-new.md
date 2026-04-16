@@ -2,7 +2,7 @@
 id: conceptual-workflows-doctrine-new
 title: lore doctrine new Behaviour
 summary: What the system does internally when `lore doctrine new <name> -f <yaml> -d <design>` runs — name validation, duplicate detection, validation of both source files, and atomic write of both files to disk. Both -f and -d flags are required; no scaffold path exists.
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "conceptual-workflows-doctrine-show", "tech-cli-commands"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "conceptual-workflows-doctrine-show", "tech-cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 
 # `lore doctrine new` Behaviour
@@ -216,6 +216,10 @@ Then confirm it appears in the list:
 ```
 $ lore doctrine list
 ```
+
+## Schema Validation
+
+Both `_validate_yaml_schema` and `_validate_design_frontmatter` delegate to `lore.schemas.validate_entity` — the YAML file is validated against `lore://schemas/doctrine-yaml` and the design frontmatter against `lore://schemas/doctrine-design-frontmatter`. These are the same authoritative schemas enforced by `lore health --scope schemas` at audit time, so drift between create-time and audit-time is impossible by construction. Cross-field rules (doctrine id must equal the command argument) remain inline; everything else lives in the schema.
 
 ## Out of Scope
 

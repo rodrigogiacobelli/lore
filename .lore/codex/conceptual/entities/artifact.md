@@ -1,9 +1,16 @@
 ---
 id: conceptual-entities-artifact
 title: Artifact
-summary: What an Artifact is — a reusable template file stored in .lore/artifacts/ and accessed by stable ID via the read-only CLI (list + show). Covers the artifact lifecycle, the two shipped namespaces (transient/ and codex/), and what agents and maintainers do with artifacts.
-related: ["conceptual-entities-doctrine", "conceptual-entities-knight", "tech-arch-initialized-project-structure", "tech-cli-commands", "conceptual-relationships-artifact--doctrine"]
-stability: stable
+summary: What an Artifact is — a reusable template file stored in .lore/artifacts/
+  and accessed by stable ID via the read-only CLI (list + show). Covers the artifact
+  lifecycle, the two shipped namespaces (transient/ and codex/), and what agents and
+  maintainers do with artifacts.
+related:
+- conceptual-entities-doctrine
+- conceptual-entities-knight
+- tech-arch-initialized-project-structure
+- tech-cli-commands
+- conceptual-relationships-artifact--doctrine
 ---
 
 # Artifact

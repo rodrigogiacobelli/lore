@@ -1,9 +1,13 @@
 ---
 id: standards-separation-of-concerns
 title: Separation of Concerns
-stability: stable
-summary: The CLI is a concern. Business logic is a different concern. They live apart. cli.py formats terminal I/O, db.py enforces database rules, validators.py defines validation rules. Mixing these concerns is a structural defect even when tests pass.
-related: ["decisions-011-api-parity-with-cli", "tech-arch-source-layout", "tech-arch-validators"]
+summary: The CLI is a concern. Business logic is a different concern. They live apart.
+  cli.py formats terminal I/O, db.py enforces database rules, validators.py defines
+  validation rules. Mixing these concerns is a structural defect even when tests pass.
+related:
+- decisions-011-api-parity-with-cli
+- tech-arch-source-layout
+- tech-arch-validators
 ---
 
 # Separation of Concerns

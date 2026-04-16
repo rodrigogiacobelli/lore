@@ -1,10 +1,7 @@
 ---
 id: example-standards-code-conventions
 title: Code Conventions
-related: []
-stability: stable
-summary: >
-  Language style guide, naming conventions, file organisation, import order,
+summary: Language style guide, naming conventions, file organisation, import order,
   and comment policy for this project. All agents and contributors must follow these.
 ---
 

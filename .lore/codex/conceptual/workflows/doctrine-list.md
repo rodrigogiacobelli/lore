@@ -2,12 +2,12 @@
 id: conceptual-workflows-doctrine-list
 title: lore doctrine list Behaviour
 summary: What the system does internally when `lore doctrine list` runs — recursive discovery of `.design.md` files under `.lore/doctrines/`, pairing with matching `.yaml` files, silent skip of orphaned or unpaired files, metadata extraction from design frontmatter, group derivation, and table or JSON output.
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-doctrine-show", "conceptual-workflows-knight-list", "tech-cli-commands", "conceptual-workflows-filter-list"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-doctrine-show", "conceptual-workflows-knight-list", "tech-cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore doctrine list` Behaviour
 
-`lore doctrine list` discovers and displays all valid doctrine pairs found recursively under `.lore/doctrines/`. Discovery is driven by `.design.md` files — a `.yaml` with no design file counterpart is invisible. Only complete, valid pairs are shown. No `[INVALID]` suffix is applied — invalid or incomplete pairs are silently skipped.
+`lore doctrine list` discovers and displays all valid doctrine pairs found recursively under `.lore/doctrines/`. Discovery is driven by `.design.md` files — a `.yaml` with no design file counterpart is invisible. Only complete, valid pairs are shown. No `[INVALID]` suffix is applied — invalid or incomplete pairs are silently skipped. The silent skips are not silent at audit time: `lore health --scope schemas` validates every `.yaml` against `lore://schemas/doctrine-yaml` and every `.design.md` frontmatter against `lore://schemas/doctrine-design-frontmatter` and surfaces the skipped files as errors.
 
 ## Preconditions
 

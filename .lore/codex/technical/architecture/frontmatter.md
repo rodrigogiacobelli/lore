@@ -6,8 +6,7 @@ summary: >
   (metadata-only, for scan functions) and parse_frontmatter_doc_full (includes body,
   for show functions), the required-fields contract, and the extra_fields parameter
   used by _read_related to extract the related frontmatter field for BFS traversal.
-related: ["tech-arch-source-layout", "tech-arch-knight-module", "tech-arch-validators", "tech-arch-codex-map"]
-stability: stable
+related: ["tech-arch-source-layout", "tech-arch-knight-module", "tech-arch-validators", "tech-arch-codex-map", "tech-arch-schemas"]
 ---
 
 # Frontmatter Module Internals
@@ -76,6 +75,22 @@ Both functions require the fields listed in the `required_fields` parameter to b
 
 A file missing any required field is silently skipped — the function returns `None`. This matches the existing behaviour for codex and artifact scan operations.
 
+### `parse_frontmatter_raw(filepath) -> tuple[dict | None, str | None]`
+
+Reads the full raw frontmatter mapping without any required-field filtering. Used exclusively by `lore.schemas.validate_entity_file` because schema validation needs to see every key on disk — including unknown or hallucinated ones — to flag them via `additionalProperties: false`.
+
+Return values:
+
+| Case | Return |
+|------|--------|
+| Happy path — frontmatter parses as a dict | `(raw_dict, None)` — `raw_dict` preserves every key on disk |
+| File has no `---` block | `(None, None)` — distinguishes missing-frontmatter from parse error |
+| YAML inside the frontmatter fails to parse | `(None, "<yaml parser message>")` |
+| Frontmatter parses but is not a mapping | `(None, "frontmatter is not a mapping")` |
+| File read raises OSError / Unicode error | Propagated to caller — schema checker translates to `rule="read-failed"` |
+
+The helper is deliberately surgical: it does not filter, rename, or inject any field. Any existing caller of `parse_frontmatter_doc` / `parse_frontmatter_doc_full` is unaffected by its existence.
+
 ## Callers
 
 | Function | Module | Uses |
@@ -87,8 +102,9 @@ A file missing any required field is silently skipped — the function returns `
 | `scan_artifacts` | `artifact.py` | `parse_frontmatter_doc` (metadata-only) |
 | `read_artifact` | `artifact.py` | `parse_frontmatter_doc_full` (includes body) |
 | `list_knights` | `knight.py` | `parse_frontmatter_doc` (metadata-only, `required_fields=("id","title","summary")`) |
+| `validate_entity_file` | `schemas.py` | `parse_frontmatter_raw` (full raw mapping, no filtering) |
 
-Imported by `codex.py`, `artifact.py`, and `knight.py`.
+Imported by `codex.py`, `artifact.py`, `knight.py`, and `schemas.py`.
 
 ## Why Not Inline
 

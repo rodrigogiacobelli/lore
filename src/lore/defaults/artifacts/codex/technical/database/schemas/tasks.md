@@ -1,11 +1,8 @@
 ---
 id: example-tech-schema-{entity-name}
-title: "Schema — {entity name}"
-related: []
-stability: stable
-summary: >
-  Database schema for the {entity} table. Columns, constraints, indexes,
-  and notes on nullable fields and soft-delete pattern.
+title: Schema — {entity name}
+summary: Database schema for the {entity} table. Columns, constraints, indexes, and
+  notes on nullable fields and soft-delete pattern.
 ---
 
 # Schema — {Entity Name}

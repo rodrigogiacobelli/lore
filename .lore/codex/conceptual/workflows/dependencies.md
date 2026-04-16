@@ -1,10 +1,14 @@
 ---
 id: conceptual-workflows-dependencies
 title: Dependency Declaration and Removal
-summary: >
-  What the system does internally when declaring and removing dependencies between missions, including lore needs / lore unneed and dependency display in lore show.
-related: ["conceptual-entities-mission", "conceptual-workflows-show"]
-stability: stable
+summary: 'What the system does internally when declaring and removing dependencies
+  between missions, including lore needs / lore unneed and dependency display in lore
+  show.
+
+  '
+related:
+- conceptual-entities-mission
+- conceptual-workflows-show
 ---
 
 # Dependency Declaration and Removal

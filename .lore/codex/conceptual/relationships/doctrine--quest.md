@@ -1,14 +1,12 @@
 ---
 id: conceptual-relationships-doctrine--quest
-title: "Doctrine to Quest"
+title: Doctrine to Quest
 related:
-  - conceptual-entities-doctrine
-  - conceptual-entities-quest
-  - tech-doctrine-internals
-stability: stable
-summary: >
-  A Doctrine is a reusable workflow template; a Quest is a single execution of
-  a body of work. There is no FK between them. An orchestrator reads a Doctrine
+- conceptual-entities-doctrine
+- conceptual-entities-quest
+- tech-doctrine-internals
+summary: A Doctrine is a reusable workflow template; a Quest is a single execution
+  of a body of work. There is no FK between them. An orchestrator reads a Doctrine
   and manually creates a Quest; the link is process-level, not database-level.
 ---
 

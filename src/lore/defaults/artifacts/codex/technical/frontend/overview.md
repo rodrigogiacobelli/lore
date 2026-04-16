@@ -1,11 +1,8 @@
 ---
 id: example-tech-frontend
 title: Frontend
-related: []
-stability: stable
-summary: >
-  Frontend technology, project structure, routing, component conventions,
-  and state management. Start here before adding or modifying any UI code.
+summary: Frontend technology, project structure, routing, component conventions, and
+  state management. Start here before adding or modifying any UI code.
 ---
 
 # Frontend

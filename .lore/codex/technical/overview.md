@@ -2,8 +2,7 @@
 id: tech-overview
 title: Technical Overview
 summary: Technology choices (Python, Click, SQLite WAL, PyYAML, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE), and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry between `lore new quest` and `lore edit`.
-related: ["tech-db-schema", "tech-arch-source-layout", "vision-camelot-system"]
-stability: stable
+related: ["tech-db-schema", "tech-arch-source-layout", "vision-camelot-system", "tech-arch-schemas"]
 ---
 
 # Technical Overview
@@ -16,6 +15,7 @@ stability: stable
 | CLI framework | Click 8.x |
 | Storage | SQLite 3.35+ (ships with Python 3.10+; uses `RETURNING` clause in INSERT statements for ID confirmation) |
 | Template format | YAML via PyYAML (for Doctrines) |
+| JSON Schema validation | `jsonschema>=4.18` — Draft 2020-12 validator, pure-Python, MIT. Runtime dependency added for entity-file schema validation used by both `lore health` and create-time validators. See tech-arch-schemas. |
 | IDs | Short random hex (4–6 chars), generated from truncated `uuid4` values, hierarchical with `/` separator |
 | Packaging | Single `uv pip install lore-agent-task-manager`. No extras, no optional dependencies. |
 | Public API types | `lore.models` — `@dataclass(frozen=True)` for all boundary entity types. Zero new runtime dependencies. |
@@ -39,9 +39,13 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    │        └───────────→  (no frontmatter.py — uses yaml.safe_load directly)
    ├──→  graph.py          (topological sort)
    ├──→  oracle.py
-   ├──→  doctrine.py  ──→  paths.py
+   ├──→  doctrine.py  ──→  paths.py, schemas.py
+   ├──→  knight.py    ──→  schemas.py
+   ├──→  watcher.py   ──→  schemas.py
+   ├──→  artifact.py  ──→  frontmatter.py, schemas.py
    ├──→  codex.py     ──→  frontmatter.py
-   └──→  artifact.py  ──→  frontmatter.py
+   ├──→  schemas.py   ──→  frontmatter.py   (loads packaged YAML schemas; no lore.* entity imports)
+   └──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, knight.py, watcher.py, artifact.py, codex.py
 ```
 
 Dependency rules:
@@ -51,8 +55,8 @@ Dependency rules:
   (the `get_ready_missions` pass-through wrapper was removed in REFACTOR-9).
 - `cli.py` imports `db`, `validators`, `paths`, `knight`, `watcher`, `graph`, `oracle`, `doctrine`,
   `codex`, `artifact`, and `root`. It does not contain business logic.
-- `frontmatter.py` is imported by `codex.py`, `artifact.py`, and `knight.py`; it has no
-  `lore.*` dependencies.
+- `frontmatter.py` is imported by `codex.py`, `artifact.py`, `knight.py`, and `schemas.py`; it has no `lore.*` dependencies.
+- `schemas.py` is the single authoritative home for entity JSON Schemas (shared by create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, `artifact.py` and the audit-time `lore health` schema check). It imports only `frontmatter.py` and has no other `lore.*` dependencies.
 - `paths.py` is imported by `cli.py`, `oracle.py`, `db.py`, `knight.py`, `doctrine.py`,
   and `artifact.py`.
 

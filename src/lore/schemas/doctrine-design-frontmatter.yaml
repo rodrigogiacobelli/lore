@@ -1,0 +1,17 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/doctrine-design-frontmatter"
+title: Doctrine Design Frontmatter
+type: object
+additionalProperties: false
+required: [id, title, summary]
+properties:
+  id:
+    type: string
+    minLength: 1
+    description: Doctrine id. Must match the paired YAML file's id.
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1

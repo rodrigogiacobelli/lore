@@ -1,14 +1,15 @@
 ---
 id: conceptual-workflows-codex-map
-title: "lore codex map Behaviour"
-summary: "What the system does internally when lore codex map <id> --depth <n> runs — BFS traversal of the related frontmatter field, deduplication via visited set, and JSON output."
-stability: stable
+title: lore codex map Behaviour
+summary: What the system does internally when lore codex map <id> --depth <n> runs
+  — BFS traversal of the related frontmatter field, deduplication via visited set,
+  and JSON output.
 related:
-  - conceptual-workflows-codex
-  - tech-arch-codex-map
-  - tech-arch-frontmatter
-  - tech-cli-commands
-  - codex
+- conceptual-workflows-codex
+- tech-arch-codex-map
+- tech-arch-frontmatter
+- tech-cli-commands
+- codex
 ---
 # `lore codex map` Behaviour
 

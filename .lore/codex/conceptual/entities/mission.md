@@ -1,9 +1,16 @@
 ---
 id: conceptual-entities-mission
 title: Mission
-summary: What a Mission is — the unit of work an agent executes and closes. Covers the free-form mission type field, the status state machine, and edge cases including orphaned missions and soft-delete.
-related: ["conceptual-entities-quest", "tech-db-schema", "conceptual-workflows-claim", "conceptual-workflows-done", "conceptual-relationships-mission--mission", "conceptual-workflows-dependencies"]
-stability: stable
+summary: What a Mission is — the unit of work an agent executes and closes. Covers
+  the free-form mission type field, the status state machine, and edge cases including
+  orphaned missions and soft-delete.
+related:
+- conceptual-entities-quest
+- tech-db-schema
+- conceptual-workflows-claim
+- conceptual-workflows-done
+- conceptual-relationships-mission--mission
+- conceptual-workflows-dependencies
 ---
 
 # Mission

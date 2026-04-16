@@ -1,10 +1,14 @@
 ---
 id: conceptual-workflows-python-api
 title: Python DB API Contracts
-summary: >
-  What the Python DB API (lore.db) guarantees — return-type contracts, key presence on all code paths, error dicts instead of exceptions, and edge-case characterisation behaviours.
-related: ["tech-api-surface", "decisions-011-api-parity-with-cli"]
-stability: stable
+summary: 'What the Python DB API (lore.db) guarantees — return-type contracts, key
+  presence on all code paths, error dicts instead of exceptions, and edge-case characterisation
+  behaviours.
+
+  '
+related:
+- tech-api-surface
+- decisions-011-api-parity-with-cli
 ---
 
 # Python DB API Contracts

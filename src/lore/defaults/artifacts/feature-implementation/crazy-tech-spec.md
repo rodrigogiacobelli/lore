@@ -1,12 +1,10 @@
 ---
 id: fi-crazy-tech-spec
 title: Crazy Tech Spec — Divergent Architecture Brainstorm
-group: feature-implementation
-summary: >
-  Template for the Crazy Architect brainstorm pass. Captures unconventional,
-  experimental, and contrarian architecture ideas before the structured Tech
-  Spec Draft. Prioritises breadth and provocation over correctness. Top ideas
-  feed into the Tech Spec Draft phase.
+summary: Template for the Crazy Architect brainstorm pass. Captures unconventional,
+  experimental, and contrarian architecture ideas before the structured Tech Spec
+  Draft. Prioritises breadth and provocation over correctness. Top ideas feed into
+  the Tech Spec Draft phase.
 ---
 
 # {Feature Name} — Crazy Tech Spec Brainstorm

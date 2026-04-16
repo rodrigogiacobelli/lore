@@ -1,12 +1,10 @@
 ---
 id: fi-prd
 title: PRD
-group: feature-implementation
-summary: >
-  Template for the final PRD produced by the PM after incorporating user
-  feedback from the PRD Draft review. This is the authoritative product
-  document — clean, complete, all open questions resolved. Flows to every
-  downstream agent: Architects, BA, and Tech Writer all read this before working.
+summary: 'Template for the final PRD produced by the PM after incorporating user feedback
+  from the PRD Draft review. This is the authoritative product document — clean, complete,
+  all open questions resolved. Flows to every downstream agent: Architects, BA, and
+  Tech Writer all read this before working.'
 ---
 
 # {Feature Name} — PRD

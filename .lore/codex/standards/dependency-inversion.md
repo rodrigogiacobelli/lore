@@ -1,9 +1,14 @@
 ---
 id: standards-dependency-inversion
 title: Dependency Inversion
-stability: stable
-summary: Core logic does not depend on the CLI. The dependency arrow always points inward — outer layers (CLI) depend on inner layers (business logic, validators), never the reverse. validators.py has zero lore.* imports. db.py does not import cli.py.
-related: ["tech-overview", "tech-arch-source-layout", "tech-arch-validators"]
+summary: Core logic does not depend on the CLI. The dependency arrow always points
+  inward — outer layers (CLI) depend on inner layers (business logic, validators),
+  never the reverse. validators.py has zero lore.* imports. db.py does not import
+  cli.py.
+related:
+- tech-overview
+- tech-arch-source-layout
+- tech-arch-validators
 ---
 
 # Dependency Inversion

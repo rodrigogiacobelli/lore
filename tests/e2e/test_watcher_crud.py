@@ -12,9 +12,11 @@ VALID_YAML = (
     "id: run-tests-on-push\n"
     "title: Run Tests\n"
     "summary: Triggers test suite on push\n"
-    "watch_target: feature/*\n"
-    "interval: on_push\n"
-    "action: run-tests\n"
+    "watch_target:\n"
+    "  - feature/*\n"
+    "interval: on_merge\n"
+    "action:\n"
+    "  - bash: run-tests\n"
 )
 
 
@@ -980,7 +982,12 @@ class TestWatcherNewGroup:
     def test_watcher_new_nested_target_exists(self, runner, project_dir):
         # Scenario 1 — target dir pre-exists, mkdir idempotent
         (project_dir / ".lore" / "watchers" / "feature-implementation").mkdir(parents=True)
-        (project_dir / "watcher.yaml").write_text("id: on-prd-ready\ntitle: T\n")
+        (project_dir / "watcher.yaml").write_text(
+            "id: on-prd-ready\ntitle: T\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             main,
             [
@@ -995,7 +1002,12 @@ class TestWatcherNewGroup:
 
     def test_watcher_new_nested_success_message_includes_group(self, runner, project_dir):
         # Scenario 1 — success line contains group annotation
-        (project_dir / "watcher.yaml").write_text("id: on-prd-ready\ntitle: T\n")
+        (project_dir / "watcher.yaml").write_text(
+            "id: on-prd-ready\ntitle: T\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             main,
             [
@@ -1008,7 +1020,12 @@ class TestWatcherNewGroup:
 
     def test_watcher_new_nested_json_envelope(self, runner, project_dir):
         # Scenario 2 — JSON envelope carries group + path
-        (project_dir / "watcher.yaml").write_text("id: on-prd-ready\ntitle: T\n")
+        (project_dir / "watcher.yaml").write_text(
+            "id: on-prd-ready\ntitle: T\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             main,
             [
@@ -1025,7 +1042,12 @@ class TestWatcherNewGroup:
 
     def test_watcher_new_deep_path_auto_mkdir(self, runner, project_dir):
         # Scenario 3 — intermediate dirs auto-created for team-a/triggers
-        (project_dir / "w.yaml").write_text("id: nightly\ntitle: T\n")
+        (project_dir / "w.yaml").write_text(
+            "id: nightly\ntitle: T\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             main,
             [
@@ -1039,7 +1061,12 @@ class TestWatcherNewGroup:
 
     def test_watcher_new_root_unchanged(self, runner, project_dir):
         # Scenario 4 — omitting --group still writes flat at root
-        (project_dir / "w.yaml").write_text("id: root-watcher\ntitle: T\n")
+        (project_dir / "w.yaml").write_text(
+            "id: root-watcher\ntitle: T\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             main, ["watcher", "new", "root-watcher", "-f", "w.yaml"]
         )
@@ -1050,7 +1077,12 @@ class TestWatcherNewGroup:
         # Scenario 5 — duplicate anywhere in subtree, exit 1 + error stderr, no file in new group
         (project_dir / ".lore" / "watchers" / "team-b").mkdir(parents=True)
         (project_dir / ".lore" / "watchers" / "team-b" / "nightly.yaml").write_text("id: nightly\n")
-        (project_dir / "w.yaml").write_text("id: nightly\ntitle: T\n")
+        (project_dir / "w.yaml").write_text(
+            "id: nightly\ntitle: T\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             main,
             [
@@ -1063,3 +1095,54 @@ class TestWatcherNewGroup:
         combined = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
         assert "already exists" in combined
         assert not (project_dir / ".lore" / "watchers" / "team-a" / "nightly.yaml").exists()
+
+
+# ---------------------------------------------------------------------------
+# US-010 — Create-time watcher validator delegates to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-watcher-crud
+# ---------------------------------------------------------------------------
+
+
+_US010_VALID_WATCHER_YAML = (
+    "id: wx\n"
+    "title: WX\n"
+    "summary: desc\n"
+    "watch_target:\n  - 'src/**'\n"
+    "interval: on_merge\n"
+    "action:\n  - bash: echo hi\n"
+)
+
+_US010_BOTH_ACTIONS_YAML = (
+    "id: wx\n"
+    "title: WX\n"
+    "summary: desc\n"
+    "watch_target:\n  - 'src/**'\n"
+    "interval: on_merge\n"
+    "action:\n  - doctrine: foo\n    bash: echo hi\n"
+)
+
+
+def test_us010_watcher_new_rejects_both_doctrine_and_bash(runner, project_dir):
+    """A watcher action item carrying both `doctrine:` and `bash:` must be rejected."""
+    result = runner.invoke(main, ["watcher", "new", "wx"], input=_US010_BOTH_ACTIONS_YAML)
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
+    assert ("oneOf" in combined) or ("/action" in combined) or ("action" in combined)
+    assert not (project_dir / ".lore" / "watchers" / "wx.yaml").exists()
+
+
+def test_us010_watcher_new_missing_summary_rejected(runner, project_dir):
+    """A watcher YAML missing `summary:` must be rejected by schema at create time."""
+    yaml_text = (
+        "id: wx\n"
+        "title: WX\n"
+        "watch_target:\n  - 'src/**'\n"
+        "interval: on_merge\n"
+        "action:\n  - bash: echo hi\n"
+    )
+    result = runner.invoke(main, ["watcher", "new", "wx"], input=yaml_text)
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
+    assert "Missing required property 'summary'" in combined
+    assert not (project_dir / ".lore" / "watchers" / "wx.yaml").exists()

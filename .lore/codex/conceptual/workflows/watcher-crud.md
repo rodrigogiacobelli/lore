@@ -6,6 +6,8 @@ related:
   - conceptual-entities-watcher
   - conceptual-workflows-knight-crud
   - tech-cli-commands
+  - tech-arch-schemas
+  - conceptual-workflows-health
 ---
 
 # Watcher CRUD Operations
@@ -117,6 +119,10 @@ Plain: `Deleted watcher <name>`. JSON: `{"id": "<name>", "deleted": true}`.
 | Empty stdin content | Error to stderr | 1 |
 | Invalid YAML content (create/edit) | Error to stderr | 1 |
 | Watcher not found (edit/delete) | Error to stderr | 1 |
+
+## Schema Validation
+
+Watcher YAML shape is validated at create/edit time via `lore.schemas.validate_entity("watcher", data)` — the authoritative schema is `lore://schemas/watcher-yaml`. Required fields (`id`, `title`, `summary`, `watch_target`, `interval`, `action`), the `interval` enum, the `watch_target` array shape, and the per-action `doctrine` XOR `bash` `oneOf` rule all live in the schema. A basic YAML parse-check still runs first so parse errors surface before schema validation. `lore health --scope schemas` enforces the same contract across every watcher already on disk.
 
 ## Related
 

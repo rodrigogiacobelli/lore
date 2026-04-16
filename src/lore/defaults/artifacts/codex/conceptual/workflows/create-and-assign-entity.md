@@ -1,13 +1,7 @@
 ---
 id: example-workflow-{workflow-name-user-facing}
-title: "{Workflow Name — User Facing}"
-persona: "_role that performs this workflow (e.g. team lead, admin)_"
-related: []
-stability: stable
-entities_involved:
-  - example-entity-{entity-name}
-summary: >
-  _One to three sentences. Who performs this workflow, what is their goal,
+title: '{Workflow Name — User Facing}'
+summary: _One to three sentences. Who performs this workflow, what is their goal,
   and what is the key decision point or outcome?_
 ---
 

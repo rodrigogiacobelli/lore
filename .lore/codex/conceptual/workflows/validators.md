@@ -3,13 +3,14 @@ id: conceptual-workflows-validators
 title: Input Validation
 summary: >
   What the system does internally when input validation runs — priority range checks, entity-ID format checks, message emptiness checks, and the wiring of lore.validators into the CLI and DB layers.
-related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "standards-dry", "standards-single-responsibility"]
-stability: stable
+related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "standards-dry", "standards-single-responsibility", "tech-arch-schemas"]
 ---
 
 # Input Validation
 
 `lore.validators` is a standalone, import-free utility module that provides all format and range validation for the CLI and DB layers. Validators return an error string on failure or `None` on success.
+
+`lore.validators` covers **scalar / format / range** validation (IDs, priorities, names, groups, message emptiness). Entity **file shape** validation (JSON Schema against the full frontmatter or YAML mapping) lives in `lore.schemas` — a separate authoritative home to keep `validators.py` free of `lore.*` imports. The two modules are complementary, not duplicative: a call site either validates a scalar value (→ `lore.validators`) or validates a parsed entity file (→ `lore.schemas`).
 
 ## Validator Inventory
 

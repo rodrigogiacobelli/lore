@@ -1,12 +1,8 @@
 ---
 id: example-glossary
 title: Glossary
-related: []
-stability: stable
-summary: >
-  Canonical vocabulary for this project. One definition per term.
-  Agents must use these terms consistently. "Do not use" alternatives
-  prevent terminology drift.
+summary: Canonical vocabulary for this project. One definition per term. Agents must
+  use these terms consistently. "Do not use" alternatives prevent terminology drift.
 ---
 
 # Glossary

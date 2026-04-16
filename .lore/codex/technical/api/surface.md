@@ -2,8 +2,7 @@
 id: tech-api-surface
 title: Python API Entity CRUD Matrix
 summary: Maps every Lore entity to its available Python API operations (lore.db, lore.codex, lore.artifact, lore.doctrine). Shows the function call for each CRUD and traversal operation and highlights gaps. Companion to tech-cli-entity-crud-matrix.
-related: ["decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "tech-cli-entity-crud-matrix", "tech-db-schema", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-health", "standards-facade", "standards-public-api-stability", "conceptual-workflows-python-api"]
-stability: stable
+related: ["decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "tech-cli-entity-crud-matrix", "tech-db-schema", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-health", "standards-facade", "standards-public-api-stability", "conceptual-workflows-python-api", "tech-arch-schemas"]
 ---
 
 # Python API Entity CRUD Matrix
@@ -130,7 +129,27 @@ report: HealthReport = health_check(project_root=Path("."), scope=["codex"])
 report: HealthReport = health_check(project_root=Path("."), scope=["doctrines", "watchers"])
 ```
 
-`health_check(project_root, scope=None)` audits all five file-based entity types (or a subset when `scope` is provided) and returns a `HealthReport`. Never prints to stdout or stderr.
+`health_check(project_root, scope=None)` audits all file-based entity types AND validates every entity file's shape against its JSON Schema (or a subset when `scope` is provided, including the new `"schemas"` scope). Returns a `HealthReport`. Never prints to stdout or stderr.
+
+Valid `scope` tokens: `"codex"`, `"artifacts"`, `"doctrines"`, `"knights"`, `"watchers"`, `"schemas"`. Passing `scope=None` runs every scope including `"schemas"`.
+
+### Schema Validation Helpers
+
+```python
+from lore.models import load_schema, validate_entity_file
+from pathlib import Path
+
+schema = load_schema("knight")  # dict (cached per-process)
+issues = validate_entity_file(Path(".lore/knights/default/feature-implementation/pm.md"), "knight")
+for issue in issues:
+    print(issue.schema_id, issue.rule, issue.pointer, issue.detail)
+```
+
+`load_schema(kind)` returns the cached parsed schema dict for a kind. Raises `FileNotFoundError` for unknown kinds. Kinds: `"doctrine-yaml"`, `"doctrine-design-frontmatter"`, `"knight"`, `"watcher"`, `"codex"`, `"artifact"`.
+
+`validate_entity_file(path, kind)` returns a list of `HealthIssue` records (empty on success). Each issue has `check="schema"`, `severity="error"`, and populated `schema_id` / `rule` / `pointer` fields. The function is self-contained — it opens the file, parses YAML or frontmatter as appropriate for the kind, and runs the validator. Callable from Realm with zero CLI-layer side effects (ADR-011).
+
+Both `load_schema` and `validate_entity_file` are in `lore.models.__all__`.
 
 ### `HealthReport` fields
 
@@ -146,12 +165,15 @@ report: HealthReport = health_check(project_root=Path("."), scope=["doctrines", 
 | Field | Type | Description |
 |-------|------|-------------|
 | `severity` | `str` | `"error"` or `"warning"` |
-| `entity_type` | `str` | `"codex"`, `"artifacts"`, `"doctrines"`, `"knights"`, or `"watchers"` |
-| `id` | `str` | Entity ID, or filepath string when ID is unknown |
-| `check` | `str` | Check name: `"broken_related_link"`, `"missing_frontmatter"`, `"island_node"`, `"orphaned_file"`, `"broken_knight_ref"`, `"broken_artifact_ref"`, `"missing_file"`, `"broken_doctrine_ref"`, `"invalid_yaml"`, `"scan_failed"` |
+| `entity_type` | `str` | `"codex"`, `"artifacts"`, `"doctrines"`, `"knights"`, `"watchers"`, or one of the schema kinds (`"doctrine-yaml"`, `"doctrine-design-frontmatter"`, `"knight"`, `"watcher"`, `"codex"`, `"artifact"`) |
+| `id` | `str` | Entity ID, or filepath string when ID is unknown (schema errors always use a repo-relative path) |
+| `check` | `str` | Check name: `"broken_related_link"`, `"missing_frontmatter"`, `"island_node"`, `"orphaned_file"`, `"broken_knight_ref"`, `"broken_artifact_ref"`, `"missing_file"`, `"broken_doctrine_ref"`, `"invalid_yaml"`, `"scan_failed"`, `"schema"` |
 | `detail` | `str` | Human-readable explanation |
+| `schema_id` | `str \| None` | For `check="schema"`: the `lore://schemas/<kind>` URI. `None` for every other check. |
+| `rule` | `str \| None` | For `check="schema"`: the failing JSON-Schema keyword (`"required"`, `"additionalProperties"`, `"type"`, `"enum"`, ...) or one of the special rules `"yaml-parse"`, `"missing-frontmatter"`, `"read-failed"`. `None` for every other check. |
+| `pointer` | `str \| None` | For `check="schema"`: JSON-Pointer to the failing node (e.g. `"/stability"`, `"/"`). `None` for every other check. |
 
-Both `HealthIssue` and `HealthReport` are frozen dataclasses in `lore.models.__all__`. `HealthIssue.from_dict(d)` is provided for round-tripping JSON output.
+Both `HealthIssue` and `HealthReport` are frozen dataclasses in `lore.models.__all__`. `HealthIssue.from_dict(d)` is provided for round-tripping JSON output and accepts dicts with or without the three schema fields — legacy payloads produced before the schema validation feature continue to round-trip.
 
 ## Gaps
 

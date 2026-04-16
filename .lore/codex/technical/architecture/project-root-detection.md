@@ -1,9 +1,11 @@
 ---
 id: tech-arch-project-root-detection
 title: Project Root Detection
-summary: The .lore/ upward directory traversal algorithm implemented in src/lore/root.py — find_project_root() function, ProjectNotFoundError exception type and message, and lore init special-case behaviour.
-related: ["tech-arch-source-layout"]
-stability: stable
+summary: The .lore/ upward directory traversal algorithm implemented in src/lore/root.py
+  — find_project_root() function, ProjectNotFoundError exception type and message,
+  and lore init special-case behaviour.
+related:
+- tech-arch-source-layout
 ---
 
 # Project Root Detection

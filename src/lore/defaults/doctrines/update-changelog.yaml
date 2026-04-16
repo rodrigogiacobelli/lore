@@ -24,16 +24,15 @@ steps:
       not real releases and must NOT get their own changelog block.
 
       Decide where to write:
-      - If pyproject.toml version matches the last versioned block → add to the existing block.
-      - If pyproject.toml version differs AND has a corresponding git tag → create a new
-        `## [<version>] - <today's date>` block.
-      - If pyproject.toml version differs but has NO git tag yet → create a new
-        `## [<version>] - <today's date>` block (this is the unreleased work being documented
-        ahead of the tag).
-      - Never create a block for any intermediate version that appears between the last
-        changelog entry and pyproject.toml but has no git tag. Fold those commits into the
-        current version block instead.
-      - If only `## [Unreleased]` exists → write into it; do not create a versioned block yet.
+      - A version is "released" only if it has a corresponding git tag. The pyproject.toml
+        version is NOT proof of release — it is just the next version being prepared.
+      - Default target is the `## [Unreleased]` section. All work-in-progress goes there,
+        regardless of what pyproject.toml currently says.
+      - Only create a new `## [<version>] - <YYYY-MM-DD>` block when that version has just
+        been tagged in git. In that case, rename the existing `## [Unreleased]` block to
+        `## [<version>] - <today's date>` and add a fresh empty `## [Unreleased]` above it.
+      - Never create a versioned block for an untagged version. Never create a block for
+        any intermediate untagged version. Fold all such commits into `## [Unreleased]`.
 
       Map each commit to a Keep-a-Changelog subsection:
         feat:                     → Added

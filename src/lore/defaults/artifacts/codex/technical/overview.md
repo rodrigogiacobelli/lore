@@ -1,11 +1,8 @@
 ---
 id: example-tech-overview
 title: Technical Overview
-related: []
-stability: stable
-summary: >
-  Technology stack, project structure, and key architectural patterns.
-  Start here before navigating to any other technical documentation.
+summary: Technology stack, project structure, and key architectural patterns. Start
+  here before navigating to any other technical documentation.
 ---
 
 # Technical Overview

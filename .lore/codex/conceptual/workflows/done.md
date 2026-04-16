@@ -1,9 +1,15 @@
 ---
 id: conceptual-workflows-done
 title: lore done Behaviour
-summary: What the system does internally when `lore done <id>` runs — missions transition any non-closed status to closed, dependents are cascade-unblocked, parent quest auto-close logic fires, and quests can also be closed directly. Idempotent for already-closed entities.
-related: ["conceptual-entities-mission", "conceptual-entities-quest", "conceptual-workflows-claim", "conceptual-workflows-block"]
-stability: stable
+summary: What the system does internally when `lore done <id>` runs — missions transition
+  any non-closed status to closed, dependents are cascade-unblocked, parent quest
+  auto-close logic fires, and quests can also be closed directly. Idempotent for already-closed
+  entities.
+related:
+- conceptual-entities-mission
+- conceptual-entities-quest
+- conceptual-workflows-claim
+- conceptual-workflows-block
 ---
 
 # `lore done` Behaviour

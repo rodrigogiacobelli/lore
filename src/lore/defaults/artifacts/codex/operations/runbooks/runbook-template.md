@@ -1,11 +1,8 @@
 ---
 id: example-ops-runbook-{name}
-title: "Runbook — {Operation Name}"
-related: []
-stability: stable
-summary: >
-  Step-by-step procedure for {operation}. When to run it, prerequisites,
-  exact commands, checkpoints, and rollback steps.
+title: Runbook — {Operation Name}
+summary: Step-by-step procedure for {operation}. When to run it, prerequisites, exact
+  commands, checkpoints, and rollback steps.
 ---
 
 # Runbook — {Operation Name}

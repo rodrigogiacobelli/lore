@@ -1,12 +1,10 @@
 ---
 id: fi-user-story
 title: User Story
-group: feature-implementation
-summary: >
-  Template for a single user story in the feature-implementation workflow.
-  Used by the BA for both draft and final states. Includes mandatory E2E
-  and unit test specifications — every acceptance criterion must map to a
-  testable scenario. Tech Notes section is filled by the Tech Lead, not the BA.
+summary: Template for a single user story in the feature-implementation workflow.
+  Used by the BA for both draft and final states. Includes mandatory E2E and unit
+  test specifications — every acceptance criterion must map to a testable scenario.
+  Tech Notes section is filled by the Tech Lead, not the BA.
 ---
 
 ## Metadata

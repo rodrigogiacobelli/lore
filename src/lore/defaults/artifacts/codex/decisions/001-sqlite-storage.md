@@ -1,10 +1,7 @@
 ---
 id: example-decision-001
-title: "ADR-001: {Decision Title}"
-related: []
-stability: stable
-summary: >
-  _One to three sentences. What was decided and why is this ADR worth reading?
+title: 'ADR-001: {Decision Title}'
+summary: _One to three sentences. What was decided and why is this ADR worth reading?
   Mention the key trade-off that was resolved._
 ---
 

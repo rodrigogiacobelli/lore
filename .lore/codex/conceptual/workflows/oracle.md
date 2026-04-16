@@ -1,10 +1,14 @@
 ---
 id: conceptual-workflows-oracle
 title: Report Generation — lore oracle
-summary: >
-  What the system does internally when lore oracle runs — report generation, directory structure, per-quest markdown files, mission-type inclusion, and slug derivation.
-related: ["tech-oracle-internals", "tech-cli-commands"]
-stability: stable
+summary: 'What the system does internally when lore oracle runs — report generation,
+  directory structure, per-quest markdown files, mission-type inclusion, and slug
+  derivation.
+
+  '
+related:
+- tech-oracle-internals
+- tech-cli-commands
 ---
 
 # Report Generation — `lore oracle`

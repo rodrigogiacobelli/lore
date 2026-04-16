@@ -1,9 +1,13 @@
 ---
 id: standards-single-responsibility
 title: Single Responsibility
-stability: stable
-summary: A CLI handler does one thing — translate between the terminal and the core. A core function does one thing — business logic. Each module owns exactly one concern. When a unit starts doing two things, one of them belongs somewhere else.
-related: ["tech-arch-source-layout", "standards-dry", "standards-separation-of-concerns"]
+summary: A CLI handler does one thing — translate between the terminal and the core.
+  A core function does one thing — business logic. Each module owns exactly one concern.
+  When a unit starts doing two things, one of them belongs somewhere else.
+related:
+- tech-arch-source-layout
+- standards-dry
+- standards-separation-of-concerns
 ---
 
 # Single Responsibility

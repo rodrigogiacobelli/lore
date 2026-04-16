@@ -2,13 +2,12 @@
 id: conceptual-workflows-artifact-list
 title: lore artifact list Behaviour
 summary: What the system does internally when `lore artifact list` runs — recursive discovery of `.md` files under `.lore/artifacts/`, strict frontmatter validation (files missing required fields are silently skipped), group derivation, and table or JSON output.
-related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "tech-cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list"]
-stability: stable
+related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "tech-cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore artifact list` Behaviour
 
-`lore artifact list` discovers and displays all artifact template files found recursively under `.lore/artifacts/`. Unlike knights (which fall back to defaults for missing metadata), artifacts are **strict**: any file missing one or more required frontmatter fields is silently skipped and does not appear in the output.
+`lore artifact list` discovers and displays all artifact template files found recursively under `.lore/artifacts/`. Unlike knights (which fall back to defaults for missing metadata), artifacts are **strict**: any file missing one or more required frontmatter fields is silently skipped and does not appear in the output. Files silently skipped here are no longer invisible — `lore health --scope schemas` validates every file under `.lore/artifacts/` against `lore://schemas/artifact-frontmatter` and surfaces the skipped files as loud audit errors.
 
 ## Preconditions
 

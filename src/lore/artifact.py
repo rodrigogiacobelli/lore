@@ -2,14 +2,27 @@
 
 from pathlib import Path
 
+import click
 import yaml
 
 from lore import frontmatter
 from lore.paths import derive_group, group_matches_filter
+from lore.schemas import validate_entity
 from lore.validators import validate_group, validate_name
 
 
 _REQUIRED_ARTIFACT_FIELDS = ("id", "title", "summary")
+
+
+def _validate_frontmatter(data: dict) -> None:
+    """Validate artifact frontmatter by delegating to ``lore.schemas.validate_entity``.
+
+    Raises ``click.ClickException`` whose ``.message`` contains every issue's
+    human-readable text on any returned issue.
+    """
+    issues = validate_entity("artifact-frontmatter", data)
+    if issues:
+        raise click.ClickException("\n".join(i.message for i in issues))
 
 
 def create_artifact(

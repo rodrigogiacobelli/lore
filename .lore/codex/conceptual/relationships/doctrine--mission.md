@@ -1,15 +1,13 @@
 ---
 id: conceptual-relationships-doctrine--mission
-title: "Doctrine to Mission"
+title: Doctrine to Mission
 related:
-  - conceptual-entities-doctrine
-  - conceptual-entities-mission
-  - tech-doctrine-internals
-stability: stable
-summary: >
-  Each Doctrine step maps to one Mission that an orchestrator creates. There is
-  no FK. The mapping is a process convention: step fields provide the orchestrator
-  with everything needed to write a well-formed Mission.
+- conceptual-entities-doctrine
+- conceptual-entities-mission
+- tech-doctrine-internals
+summary: 'Each Doctrine step maps to one Mission that an orchestrator creates. There
+  is no FK. The mapping is a process convention: step fields provide the orchestrator
+  with everything needed to write a well-formed Mission.'
 ---
 
 # Doctrine to Mission

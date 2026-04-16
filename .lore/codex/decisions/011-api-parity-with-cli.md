@@ -1,9 +1,16 @@
 ---
 id: decisions-011-api-parity-with-cli
-title: "ADR-011: Python API must be safe and behaviourally equivalent to the CLI"
-summary: Establishes that every lore.db function exposed in the public API must be self-contained and safe to call directly — no pre-validation, post-processing, or business logic may live exclusively in the CLI layer. The CLI becomes a thin formatting wrapper. Any gap is a bug.
-related: ["decisions-010-public-api-stability", "standards-separation-of-concerns", "tech-api-surface", "tech-db-schema", "tech-arch-validators"]
-stability: stable
+title: 'ADR-011: Python API must be safe and behaviourally equivalent to the CLI'
+summary: Establishes that every lore.db function exposed in the public API must be
+  self-contained and safe to call directly — no pre-validation, post-processing, or
+  business logic may live exclusively in the CLI layer. The CLI becomes a thin formatting
+  wrapper. Any gap is a bug.
+related:
+- decisions-010-public-api-stability
+- standards-separation-of-concerns
+- tech-api-surface
+- tech-db-schema
+- tech-arch-validators
 ---
 
 # ADR-011: Python API must be safe and behaviourally equivalent to the CLI

@@ -1,12 +1,14 @@
 ---
 id: tech-arch-knight-module
 title: Knight Module Internals
-summary: >
-  Technical reference for src/lore/knight.py. Covers list_knights and find_knight
+summary: 'Technical reference for src/lore/knight.py. Covers list_knights and find_knight
   function signatures, the path-traversal guard, and how cli.py uses these functions
   in knight_list, knight_show, and _show_mission.
-related: ["conceptual-entities-knight", "tech-arch-source-layout"]
-stability: stable
+
+  '
+related:
+- conceptual-entities-knight
+- tech-arch-source-layout
 ---
 
 # Knight Module Internals

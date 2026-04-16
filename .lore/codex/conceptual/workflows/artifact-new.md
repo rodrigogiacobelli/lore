@@ -2,7 +2,7 @@
 id: conceptual-workflows-artifact-new
 title: lore artifact new Behaviour
 summary: What the system does internally when `lore artifact new <name> [--group <path>] --from <body-file>` runs — name and group validation, subtree-wide duplicate detection, strict frontmatter re-check, auto-mkdir of the target group directory, and atomic write of the single `.md` file to `.lore/artifacts/`.
-related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-crud", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "tech-cli-commands"]
+related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-crud", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "tech-cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 
 # `lore artifact new` Behaviour
@@ -90,6 +90,10 @@ Created artifact fi-review (group: codex/templates)
 ```
 
 The target directory `.lore/artifacts/codex/templates/` is auto-created. The resulting artifact is listed with `group: codex/templates` and filters with `--filter codex/templates`.
+
+## Schema Validation
+
+The strict frontmatter re-check at step 5 delegates to `lore.schemas.validate_entity("artifact", meta)`, which enforces `lore://schemas/artifact-frontmatter` — only `id`, `title`, `summary` are allowed (`additionalProperties: false`). This is the same authoritative schema enforced by `lore health --scope schemas` on every existing artifact on disk. A `group:` frontmatter key is rejected — group comes from the directory path on disk, not from frontmatter.
 
 ## Out of Scope
 

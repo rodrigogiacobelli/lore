@@ -1,10 +1,13 @@
 ---
 id: conceptual-workflows-error-handling
 title: CLI Error Handling
-summary: >
-  What the system does when CLI commands encounter errors — exit codes, stderr vs stdout routing, JSON error format, and exception paths.
-related: ["conceptual-workflows-json-output", "tech-cli-commands"]
-stability: stable
+summary: 'What the system does when CLI commands encounter errors — exit codes, stderr
+  vs stdout routing, JSON error format, and exception paths.
+
+  '
+related:
+- conceptual-workflows-json-output
+- tech-cli-commands
 ---
 
 # CLI Error Handling

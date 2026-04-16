@@ -300,9 +300,11 @@ class TestLoadWatcher:
         "id: my-watcher\n"
         "title: My Watcher\n"
         "summary: Watches for push events and triggers the run-checks doctrine\n"
-        "watch_target: feature/*\n"
+        "watch_target:\n"
+        "  - feature/*\n"
         "interval: daily\n"
-        "action: run-checks\n"
+        "action:\n"
+        "  - doctrine: run-checks\n"
     )
 
     def _make_watcher_file(self, base_dir, subdir, filename, content):
@@ -349,7 +351,7 @@ class TestLoadWatcher:
         watchers_dir = tmp_path / ".lore" / "watchers"
         filepath = self._make_watcher_file(watchers_dir, "default", "my-watcher.yaml", self.FULL_YAML)
         result = load_watcher(filepath, watchers_dir)
-        assert result["watch_target"] == "feature/*"
+        assert result["watch_target"] == ["feature/*"]
 
     def test_load_watcher_has_interval_key(self, tmp_path):
         # Spec: watchers-us-2
@@ -365,7 +367,7 @@ class TestLoadWatcher:
         watchers_dir = tmp_path / ".lore" / "watchers"
         filepath = self._make_watcher_file(watchers_dir, "default", "my-watcher.yaml", self.FULL_YAML)
         result = load_watcher(filepath, watchers_dir)
-        assert result["action"] == "run-checks"
+        assert result["action"] == [{"doctrine": "run-checks"}]
 
     def test_load_watcher_has_filename_key(self, tmp_path):
         # Spec: watchers-us-2 — filename key equals filepath.name
@@ -428,9 +430,11 @@ VALID_WATCHER_YAML = (
     "id: run-tests-on-push\n"
     "title: Run Tests\n"
     "summary: Triggers test suite on push\n"
-    "watch_target: feature/*\n"
-    "interval: on_push\n"
-    "action: run-tests\n"
+    "watch_target:\n"
+    "  - feature/*\n"
+    "interval: on_merge\n"
+    "action:\n"
+    "  - bash: run-tests\n"
 )
 
 
@@ -542,18 +546,22 @@ UPDATED_WATCHER_YAML = (
     "id: my-watcher\n"
     "title: My Watcher\n"
     "summary: Updated summary\n"
-    "watch_target: feature/*\n"
+    "watch_target:\n"
+    "  - feature/*\n"
     "interval: daily\n"
-    "action: new-action\n"
+    "action:\n"
+    "  - bash: new-action\n"
 )
 
 ORIGINAL_WATCHER_YAML = (
     "id: my-watcher\n"
     "title: My Watcher\n"
     "summary: Original summary\n"
-    "watch_target: feature/*\n"
+    "watch_target:\n"
+    "  - feature/*\n"
     "interval: daily\n"
-    "action: run-checks\n"
+    "action:\n"
+    "  - doctrine: run-checks\n"
 )
 
 
@@ -1006,7 +1014,12 @@ class TestCliWatcherNewGroupDelegates:
 
         monkeypatch.setattr(watcher_module, "create_watcher", fake_create_watcher)
 
-        (project_dir / "w.yaml").write_text("id: w\n")
+        (project_dir / "w.yaml").write_text(
+            "id: w\ntitle: W\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             cli_main,
             ["watcher", "new", "w", "--group", "a/b", "-f", "w.yaml"],
@@ -1035,9 +1048,79 @@ class TestCliWatcherNewGroupDelegates:
 
         monkeypatch.setattr(watcher_module, "create_watcher", fake_create_watcher)
 
-        (project_dir / "w.yaml").write_text("id: w\n")
+        (project_dir / "w.yaml").write_text(
+            "id: w\ntitle: W\nsummary: s\n"
+            "watch_target:\n  - f\n"
+            "interval: daily\n"
+            "action:\n  - bash: x\n"
+        )
         result = runner.invoke(
             cli_main, ["watcher", "new", "w", "-f", "w.yaml"]
         )
         assert result.exit_code == 0
         assert captured["group"] is None
+
+
+# ---------------------------------------------------------------------------
+# US-010 — Watcher create-time validator delegates to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-watcher-crud
+# ---------------------------------------------------------------------------
+
+
+import click  # noqa: E402
+
+import lore.watcher as _w_mod  # noqa: E402
+import lore.schemas as _schemas  # noqa: E402
+
+
+def _us010_valid_watcher_dict():
+    return {
+        "id": "w",
+        "title": "W",
+        "summary": "s",
+        "watch_target": ["src/**"],
+        "interval": "on_merge",
+        "action": [{"bash": "echo hi"}],
+    }
+
+
+def _us010_watcher_with_both_actions_dict():
+    d = _us010_valid_watcher_dict()
+    d["action"] = [{"doctrine": "foo", "bash": "echo hi"}]
+    return d
+
+
+def test_us010_watcher_create_validator_delegates(monkeypatch):
+    """watcher._validate_yaml delegates to validate_entity("watcher-yaml", data)."""
+    kinds = []
+
+    def spy(kind, data):
+        kinds.append(kind)
+        return []
+
+    monkeypatch.setattr(_schemas, "validate_entity", spy)
+    if hasattr(_w_mod, "validate_entity"):
+        monkeypatch.setattr(_w_mod, "validate_entity", spy)
+
+    _w_mod._validate_yaml(_us010_valid_watcher_dict())
+    assert kinds == ["watcher-yaml"]
+
+
+def test_us010_watcher_create_validator_rejects_both_doctrine_and_bash():
+    """A watcher action item with both doctrine: and bash: must fail create-time validation."""
+    with pytest.raises(click.ClickException) as exc:
+        _w_mod._validate_yaml(_us010_watcher_with_both_actions_dict())
+    msg = str(exc.value.message)
+    assert ("oneOf" in msg) or ("/action" in msg)
+
+
+def test_us010_watcher_create_validator_raises_click_on_issues(monkeypatch):
+    issue = _schemas.SchemaIssue(rule="oneOf", pointer="/action/0", message="oneOf failed at /action/0")
+    monkeypatch.setattr(_schemas, "validate_entity", lambda k, d: [issue])
+    if hasattr(_w_mod, "validate_entity"):
+        monkeypatch.setattr(_w_mod, "validate_entity", lambda k, d: [issue])
+
+    with pytest.raises(click.ClickException) as exc:
+        _w_mod._validate_yaml(_us010_valid_watcher_dict())
+    assert "oneOf" in str(exc.value.message)

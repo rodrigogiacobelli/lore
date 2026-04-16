@@ -1,12 +1,9 @@
 ---
 id: example-integrations
 title: Integrations
-related: []
-stability: stable
-summary: >
-  All external systems this project interacts with: purpose, protocol, auth method,
-  failure behaviour, and what is off-limits to modify. Agents must read this before
-  touching any code that calls an external system.
+summary: 'All external systems this project interacts with: purpose, protocol, auth
+  method, failure behaviour, and what is off-limits to modify. Agents must read this
+  before touching any code that calls an external system.'
 ---
 
 # Integrations

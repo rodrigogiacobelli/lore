@@ -1,14 +1,12 @@
 ---
 id: conceptual-relationships-quest--mission
-title: "Quest to Mission"
+title: Quest to Mission
 related:
-  - conceptual-entities-quest
-  - conceptual-entities-mission
-  - tech-db-schema
-stability: stable
-summary: >
-  A Quest optionally groups one or more Missions. Missions can exist without a
-  Quest (standalone). Quest status is derived entirely from its Missions' statuses;
+- conceptual-entities-quest
+- conceptual-entities-mission
+- tech-db-schema
+summary: A Quest optionally groups one or more Missions. Missions can exist without
+  a Quest (standalone). Quest status is derived entirely from its Missions' statuses;
   there is no independent status field on Quest.
 ---
 

@@ -1,10 +1,13 @@
 ---
 id: conceptual-workflows-concurrent-access
 title: Concurrent Access Safety
-summary: >
-  What the system does to ensure safe concurrent access — WAL mode, busy timeout, FK enforcement, and reader/writer isolation.
-related: ["tech-db-schema", "tech-overview"]
-stability: stable
+summary: 'What the system does to ensure safe concurrent access — WAL mode, busy timeout,
+  FK enforcement, and reader/writer isolation.
+
+  '
+related:
+- tech-db-schema
+- tech-overview
 ---
 
 # Concurrent Access Safety

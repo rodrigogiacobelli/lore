@@ -299,3 +299,54 @@ class TestArtifactNewInvalidGroupRejected:
         artifacts_dir = project_dir / ".lore/artifacts"
         assert artifacts_dir.exists()
         assert not any(artifacts_dir.rglob("fi-review.md"))
+
+
+# ---------------------------------------------------------------------------
+# US-010 — Create-time artifact validator delegates to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-artifact-new
+# ---------------------------------------------------------------------------
+
+
+_US010_GROUP_BODY = (
+    "---\n"
+    "id: fi-review\n"
+    "title: Review\n"
+    "summary: s\n"
+    "group: foo\n"
+    "---\n"
+    "body\n"
+)
+
+
+def test_us010_artifact_new_rejects_group_frontmatter_key(runner, project_dir):
+    """A frontmatter dict carrying `group:` must be rejected via schema additionalProperties."""
+    (project_dir / "body.md").write_text(_US010_GROUP_BODY)
+    result = runner.invoke(
+        main, ["artifact", "new", "fi-review", "--from", "body.md"]
+    )
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
+    assert ("additionalProperties" in combined) or ("/group" in combined) or ("Unknown property" in combined and "group" in combined)
+    artifacts_dir = project_dir / ".lore" / "artifacts"
+    assert not any(artifacts_dir.rglob("fi-review.md"))
+
+
+def test_us010_artifact_new_rejects_extra_stability_field(runner, project_dir):
+    """Extra frontmatter key `stability` must be rejected via schema additionalProperties."""
+    body = (
+        "---\n"
+        "id: fi-review\n"
+        "title: Review\n"
+        "summary: s\n"
+        "stability: stable\n"
+        "---\n"
+        "body\n"
+    )
+    (project_dir / "body.md").write_text(body)
+    result = runner.invoke(main, ["artifact", "new", "fi-review", "--from", "body.md"])
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
+    assert ("additionalProperties" in combined) or ("stability" in combined)
+    artifacts_dir = project_dir / ".lore" / "artifacts"
+    assert not any(artifacts_dir.rglob("fi-review.md"))

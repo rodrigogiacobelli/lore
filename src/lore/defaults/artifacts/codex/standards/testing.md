@@ -1,11 +1,8 @@
 ---
 id: example-standards-testing
 title: Testing Standards
-related: []
-stability: stable
-summary: >
-  Test types, scope, file location conventions, fixture and mock policy,
-  and coverage requirements. Read before writing any test.
+summary: Test types, scope, file location conventions, fixture and mock policy, and
+  coverage requirements. Read before writing any test.
 ---
 
 # Testing Standards

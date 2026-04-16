@@ -1,10 +1,7 @@
 ---
 id: example-relationship-{entity-a}--{entity-b}
-title: "{Entity A} to {Entity B}"
-related: []
-stability: stable
-summary: >
-  _One to three sentences. What are the two named roles in this relationship?
+title: '{Entity A} to {Entity B}'
+summary: _One to three sentences. What are the two named roles in this relationship?
   What is the cardinality? What is mutable vs immutable?_
 ---
 

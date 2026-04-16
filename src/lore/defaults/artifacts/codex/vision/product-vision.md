@@ -1,11 +1,8 @@
 ---
 id: example-vision-{product-name}
-title: "{Product Name} Vision"
-related: []
-stability: stable
-summary: >
-  _One to three sentences. What this product is, the problem it solves, and who it is for.
-  State the core value proposition._
+title: '{Product Name} Vision'
+summary: _One to three sentences. What this product is, the problem it solves, and
+  who it is for. State the core value proposition._
 ---
 
 # {Product Name} Vision

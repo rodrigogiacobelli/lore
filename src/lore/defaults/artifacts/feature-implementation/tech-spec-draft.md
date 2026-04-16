@@ -1,13 +1,10 @@
 ---
 id: fi-tech-spec-draft
 title: Tech Spec Draft
-group: feature-implementation
-summary: >
-  Template for the Architect to write the initial Tech Spec Draft from the
-  final PRD and pre-architecture feedback. Covers architectural decisions,
-  implementation patterns, project structure, and test strategy. The user
-  appends unstructured feedback directly to this file before the Architect
-  produces the final Tech Spec.
+summary: Template for the Architect to write the initial Tech Spec Draft from the
+  final PRD and pre-architecture feedback. Covers architectural decisions, implementation
+  patterns, project structure, and test strategy. The user appends unstructured feedback
+  directly to this file before the Architect produces the final Tech Spec.
 ---
 
 # {Feature Name} — Tech Spec Draft

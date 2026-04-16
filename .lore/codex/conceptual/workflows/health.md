@@ -2,8 +2,7 @@
 id: conceptual-workflows-health
 title: lore health Behaviour
 summary: What the system does internally when lore health runs — full-scan or scoped audit of all five file-based entity types, error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check().
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-workflows-codex", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "tech-api-surface", "tech-cli-commands"]
-stability: stable
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-workflows-codex", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "tech-api-surface", "tech-cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
@@ -25,7 +24,7 @@ lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`. Omitting `--scope` audits all five types.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`. Omitting `--scope` runs every scope including `schemas`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. The report file is always written regardless of `--json`.
 
@@ -34,8 +33,9 @@ lore health --scope codex --json
 ### 1. Resolve scope
 
 The system determines which entity types to audit:
-- No `--scope`: all five types (`codex`, `artifacts`, `doctrines`, `knights`, `watchers`).
-- `--scope TYPE [TYPE ...]`: only the listed types are checked; all others are skipped entirely.
+- No `--scope`: all scopes run, including `schemas`.
+- `--scope TYPE [TYPE ...]`: only the listed scopes are checked; all others are skipped entirely.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`.
 
 ### 2. Run per-entity checkers
 
@@ -66,6 +66,29 @@ Each in-scope entity type is checked independently. A failure in one checker (e.
 - **Invalid YAML** (error): any `.yaml` file under `.lore/watchers/` (excluding `.yaml.deleted` files) that fails YAML parsing. Reports the line number from the parse error.
 - **Broken doctrine ref** (error): any watcher whose `action` field names a doctrine not found on disk.
 
+#### Schema checks (scope: `schemas`)
+
+Schema checks validate the *shape* of every on-disk entity file against its JSON Schema. They are complementary to the reference-integrity checks above — schema checks answer "is this file a valid `X`?", reference checks answer "does this link resolve?". Schema definitions live in `src/lore/schemas/*.yaml` and are the single authoritative contract shared with create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, and `artifact.py` (see tech-arch-schemas).
+
+Every schema violation is an **error** (never a warning) and each emits a `HealthIssue` with `check="schema"` and three extra fields: `schema_id`, `rule`, `pointer`. Multiple violations per file are collected via `jsonschema.Draft202012Validator.iter_errors` — no short-circuit.
+
+Per-kind coverage:
+
+- **`doctrine-yaml`** — every `.lore/doctrines/**/*.yaml` validated against `lore://schemas/doctrine-yaml`.
+- **`doctrine-design-frontmatter`** — frontmatter of every `.lore/doctrines/**/*.design.md` validated against `lore://schemas/doctrine-design-frontmatter`.
+- **`knight`** — frontmatter of every `.lore/knights/**/*.md` validated against `lore://schemas/knight-frontmatter`.
+- **`watcher`** — every `.lore/watchers/**/*.yaml` validated against `lore://schemas/watcher-yaml`.
+- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related` array accepted; mapping form rejected).
+- **`artifact`** — frontmatter of every `.lore/artifacts/**/*.md` validated against `lore://schemas/artifact-frontmatter`.
+
+Special error rules (beyond JSON Schema keywords):
+
+- **`rule="yaml-parse"`** — file's YAML is unparseable. Single error emitted; validation of that file stops. `pointer="/"`, `message` is the YAML parser message.
+- **`rule="missing-frontmatter"`** — frontmatter-validated file has no `---` block. Single error, `pointer="/"`, message `"File has no YAML frontmatter block"`.
+- **`rule="read-failed"`** — I/O or Unicode failure on read. Single error, `pointer="/"`, `message=str(exc)`. Validation continues to the next file.
+
+Files that the existing entity loaders today silently skip (unpaired doctrine designs, frontmatter-less knights, malformed artifacts) are surfaced here as schema errors instead of being silently dropped.
+
 ### 3. Collect results
 
 All checkers return a list of `HealthIssue` objects. The system partitions them into errors and warnings and assembles a `HealthReport`.
@@ -81,7 +104,7 @@ title: Health Report — 2026-04-09T14:32:00
 summary: lore health report generated at 2026-04-09T14:32:00 UTC
 ```
 
-Report body on issues found: a markdown table with columns Severity, Entity Type, ID, Check, Detail.
+Report body on issues found: a markdown table with columns Severity, Entity Type, ID, Check, Detail, followed by a `## Schema validation` section listing every schema error grouped by `kind` then file path. When there are zero schema errors, the section reads `No schema errors.`.
 
 Report body on clean run: `No issues found.`
 
@@ -99,9 +122,22 @@ ERROR     watchers     on-quest-close    broken_doctrine_ref: 'feat-payments' no
 WARNING   codex        proposals-draft   island_node: no documents link here
 ```
 
+Schema violations use a dedicated multi-line ERROR block followed by a summary line:
+
+```
+ERROR .lore/knights/default/feature-implementation/pm.md
+  kind: knight
+  schema: lore://schemas/knight-frontmatter
+  rule: additionalProperties
+  path: /stability
+  message: Unknown property 'stability' — allowed keys are id, title, summary.
+Schema validation: 1 error
+```
+
 Clean run:
 ```
 Health check passed. No issues found.
+Schema validation: 0 errors
 ```
 
 **JSON mode (`--json`):**
@@ -116,18 +152,26 @@ Issues present:
       "entity_type": "doctrines",
       "id": "feat-auth",
       "check": "broken_knight_ref",
-      "detail": "'senior-engineer' not found (step 2)"
+      "detail": "'senior-engineer' not found (step 2)",
+      "schema_id": null,
+      "rule": null,
+      "pointer": null
     },
     {
-      "severity": "warning",
-      "entity_type": "codex",
-      "id": "proposals-draft",
-      "check": "island_node",
-      "detail": "no documents link here"
+      "severity": "error",
+      "entity_type": "knight",
+      "id": ".lore/knights/default/feature-implementation/pm.md",
+      "check": "schema",
+      "detail": "Unknown property 'stability' — allowed keys are id, title, summary.",
+      "schema_id": "lore://schemas/knight-frontmatter",
+      "rule": "additionalProperties",
+      "pointer": "/stability"
     }
   ]
 }
 ```
+
+Schema errors are strictly additive: every `HealthIssue` record carries the three new fields `schema_id`, `rule`, `pointer`, which are `null` for non-schema checks and populated for `check="schema"` rows.
 
 Clean run:
 ```json
@@ -166,7 +210,8 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers.` |
+| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas.` |
+| Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |
 | No entities of a type on disk | Clean result for that type (no issues) |

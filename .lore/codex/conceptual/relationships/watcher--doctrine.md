@@ -1,14 +1,12 @@
 ---
 id: conceptual-relationships-watcher--doctrine
-title: "Watcher to Doctrine"
+title: Watcher to Doctrine
 related:
-  - conceptual-entities-watcher
-  - conceptual-entities-doctrine
-  - conceptual-workflows-watcher-crud
-stability: stable
-summary: >
-  A Watcher's action field may name a Doctrine by filename stem. There is no FK.
-  Lore stores and surfaces the reference but never executes it. Execution is the
+- conceptual-entities-watcher
+- conceptual-entities-doctrine
+- conceptual-workflows-watcher-crud
+summary: A Watcher's action field may name a Doctrine by filename stem. There is no
+  FK. Lore stores and surfaces the reference but never executes it. Execution is the
   consuming layer's responsibility (Realm, CI, human).
 ---
 

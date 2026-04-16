@@ -1,11 +1,8 @@
 ---
 id: example-ops-deployment-staging
 title: Staging Deployment
-related: []
-stability: stable
-summary: >
-  How to deploy a pre-release build to the staging environment: prerequisites,
-  deployment process, verification steps, and rollback procedure.
+summary: 'How to deploy a pre-release build to the staging environment: prerequisites,
+  deployment process, verification steps, and rollback procedure.'
 ---
 
 # Staging Deployment

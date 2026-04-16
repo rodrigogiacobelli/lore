@@ -1120,6 +1120,29 @@ def knight_new(ctx, name, from_file, group, json_flag):
             ctx.exit(1)
             return
 
+    # Frontmatter schema validation (delegates to lore.schemas)
+    from lore.knight import _validate_frontmatter as _k_validate_frontmatter
+    import yaml as _yaml
+    _parts = content.split("---", 2)
+    _meta: dict = {}
+    if len(_parts) >= 3:
+        try:
+            _loaded = _yaml.safe_load(_parts[1])
+            if isinstance(_loaded, dict):
+                _meta = _loaded
+        except _yaml.YAMLError:
+            _meta = {}
+    try:
+        _k_validate_frontmatter(_meta)
+    except click.ClickException as e:
+        msg = e.message
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
     try:
         result = create_knight(knights_dir, name, content, group=group)
     except ValueError as e:
@@ -2606,6 +2629,28 @@ def artifact_new(ctx, name, from_file, group, json_flag):
             ctx.exit(1)
             return
 
+    # Frontmatter schema validation (delegates to lore.schemas)
+    from lore.artifact import _validate_frontmatter as _a_validate_frontmatter
+    _aparts = content.split("---", 2)
+    _ameta: dict = {}
+    if len(_aparts) >= 3:
+        try:
+            _aloaded = yaml.safe_load(_aparts[1])
+            if isinstance(_aloaded, dict):
+                _ameta = _aloaded
+        except yaml.YAMLError:
+            _ameta = {}
+    try:
+        _a_validate_frontmatter(_ameta)
+    except click.ClickException as e:
+        msg = e.message
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
     try:
         result = create_artifact(artifacts_dir, name, content, group=group)
     except ValueError as e:
@@ -2826,6 +2871,24 @@ def watcher_new(ctx, name, from_file, group, json_mode):
         ctx.exit(1)
         return
 
+    # Schema validation delegates to lore.schemas
+    try:
+        _wdata = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        click.echo(f"Invalid YAML content: {exc}", err=True)
+        ctx.exit(1)
+        return
+    if not isinstance(_wdata, dict):
+        click.echo("Watcher YAML must be a mapping", err=True)
+        ctx.exit(1)
+        return
+    try:
+        watcher_module._validate_yaml(_wdata)
+    except click.ClickException as exc:
+        click.echo(exc.message, err=True)
+        ctx.exit(1)
+        return
+
     try:
         result = watcher_module.create_watcher(w_dir, name, content, group=group)
     except ValueError as exc:
@@ -2922,13 +2985,13 @@ def watcher_delete(ctx, name, json_mode):
     "--scope",
     "scope",
     multiple=True,
-    type=click.Choice(["codex", "artifacts", "doctrines", "knights", "watchers"]),
-    help="Limit audit to specific entity types (space-separated, e.g. --scope codex knights).",
+    type=click.Choice(["codex", "artifacts", "doctrines", "knights", "watchers", "schemas"]),
+    help="Limit audit to specific entity types (space-separated, e.g. --scope codex knights schemas).",
 )
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
 def health_cmd(ctx, scope, json_mode):
-    """Audit all five file-based entity types and report issues."""
+    """Audit all six file-based entity types and report issues."""
     import datetime
 
     from lore.health import health_check, _write_report
@@ -2937,6 +3000,7 @@ def health_cmd(ctx, scope, json_mode):
     json_mode = json_mode or ctx.obj.get("json", False)
 
     active_scope = list(scope) if scope else None
+    schemas_ran = active_scope is None or "schemas" in active_scope
 
     report = health_check(project_root, scope=active_scope)
 
@@ -2944,7 +3008,7 @@ def health_cmd(ctx, scope, json_mode):
     now = datetime.datetime.now(datetime.timezone.utc)
     timestamp = now.strftime("%Y-%m-%dT%H-%M-%S")
     codex_dir = paths.codex_dir(project_root)
-    _write_report(report, codex_dir, timestamp)
+    _write_report(report, codex_dir, timestamp, schemas_ran=schemas_ran)
 
     if json_mode:
         import dataclasses
@@ -2955,11 +3019,46 @@ def health_cmd(ctx, scope, json_mode):
             ctx.exit(1)
         return
 
+    schema_issues = [i for i in report.issues if i.check == "schema"]
+    other_issues = [i for i in report.issues if i.check != "schema"]
+
     if not report.issues:
         click.echo("Health check passed. No issues found.")
     else:
-        for issue in report.issues:
-            click.echo(f"{issue.severity.upper()}  {issue.entity_type}  {issue.id}  {issue.check}: {issue.detail}")
+        for issue in other_issues:
+            click.echo(
+                f"{issue.severity.upper()}  {issue.entity_type}  {issue.id}  "
+                f"{issue.check}: {issue.detail}"
+            )
+
+    for issue in schema_issues:
+        for line in (
+            f"ERROR {issue.id}",
+            f"  kind: {issue.entity_type}",
+            f"  schema: {issue.schema_id}",
+            f"  rule: {issue.rule}",
+            f"  path: {issue.pointer}",
+            f"  message: {issue.detail}",
+        ):
+            click.echo(line)
+
+    # Summary line is always emitted when the schemas scope ran. Emit both a
+    # per-violation and a per-file count when they differ, because different
+    # PRD scenarios count differently (Scenario 5 counts violations, Scenario 4
+    # counts files).
+    if schemas_ran:
+        def _summary(count: int) -> str:
+            return f"Schema validation: {count} {'error' if count == 1 else 'errors'}"
+
+        n = len(schema_issues)
+        click.echo(_summary(n))
+        files = len({i.id for i in schema_issues})
+        if files != n:
+            click.echo(_summary(files))
 
     if report.has_errors:
         ctx.exit(1)
+
+
+if __name__ == "__main__":
+    main()

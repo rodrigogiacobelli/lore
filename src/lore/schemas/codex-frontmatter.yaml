@@ -1,0 +1,26 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/codex-frontmatter"
+title: Codex Frontmatter
+type: object
+additionalProperties: false
+required: [id, title, summary]
+properties:
+  id:
+    type: string
+    minLength: 1
+    description: Codex document id. Must be globally unique across the codex.
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1
+  related:
+    type: array
+    uniqueItems: true
+    items:
+      type: string
+      minLength: 1
+    description: >
+      Optional. MUST be a YAML array (flow `[a, b]` or block dash-list `- a`).
+      A mapping is NOT allowed here — each entry is a codex id string.

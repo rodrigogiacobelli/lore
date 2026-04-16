@@ -1,10 +1,12 @@
 ---
 id: conceptual-workflows-stats
 title: Aggregate Statistics — lore stats
-summary: >
-  What the system does internally when lore stats runs — aggregate counts by status across quests and missions, zero-state output, and JSON envelope.
-related: ["tech-cli-commands"]
-stability: stable
+summary: 'What the system does internally when lore stats runs — aggregate counts
+  by status across quests and missions, zero-state output, and JSON envelope.
+
+  '
+related:
+- tech-cli-commands
 ---
 
 # Aggregate Statistics — `lore stats`

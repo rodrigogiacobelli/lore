@@ -2,7 +2,6 @@
 id: tech-arch-codex-map
 title: "Codex Map — map_documents and _read_related Internals"
 summary: "Technical reference for the map_documents and _read_related functions added to src/lore/codex.py for the lore codex map command. Covers BFS algorithm, extra_fields usage, defensive related-field parsing, and the codex_map CLI handler."
-stability: stable
 related:
   - tech-arch-frontmatter
   - tech-arch-source-layout
@@ -10,6 +9,7 @@ related:
   - conceptual-workflows-codex-map
   - tech-cli-commands
   - tech-arch-codex-chaos
+  - tech-arch-schemas
 ---
 # Codex Map — `map_documents` and `_read_related` Internals
 
@@ -72,6 +72,7 @@ Private helper in `codex.py`.
 2. Extracts `doc.get("related")`. If `None` or the parse returns `None`, returns `[]`.
 3. Applies defensive parsing:
    `[str(x).strip() for x in (raw or []) if x is not None and str(x).strip()]`
+   Note: `_read_related` is intentionally permissive (it tolerates mapping-shaped or mixed `related` values at traversal time so a single bad file never breaks the map). The authoritative enforcement point is `lore health --scope schemas`, which rejects any `related` that is not a YAML array of non-empty strings against `lore://schemas/codex-frontmatter`. Health fails loud, map degrades gracefully — by design.
 4. Filters: returns only IDs present as keys in `index`.
 5. Sorts the result alphabetically.
 6. Returns `list[str]`.

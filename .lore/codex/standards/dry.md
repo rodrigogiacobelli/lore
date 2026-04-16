@@ -1,9 +1,8 @@
 ---
 id: standards-dry
 title: DRY — Don't Repeat Yourself
-stability: stable
-summary: Every piece of logic has one authoritative home. If the same rule, check, or transformation appears in more than one place, one of them is wrong. Covers the canonical module homes for validation, path construction, YAML parsing, and graph algorithms.
-related: ["tech-arch-source-layout", "tech-arch-validators", "tech-arch-frontmatter", "tech-arch-graph"]
+summary: Every piece of logic has one authoritative home. If the same rule, check, or transformation appears in more than one place, one of them is wrong. Covers the canonical module homes for validation, path construction, YAML parsing, JSON Schema validation, and graph algorithms.
+related: ["tech-arch-source-layout", "tech-arch-validators", "tech-arch-frontmatter", "tech-arch-graph", "tech-arch-schemas"]
 ---
 
 # DRY — Don't Repeat Yourself
@@ -21,6 +20,7 @@ Every piece of logic has one authoritative home. If the same rule, check, or tra
 | Knight filesystem operations | `knight.py` | `lore.knight` |
 | Doctrine loading and validation | `doctrine.py` | `lore.doctrine` |
 | Watcher filesystem operations | `watcher.py` | `lore.watcher` |
+| Entity JSON Schemas + schema validation | `schemas.py` + `schemas/*.yaml` | `lore.schemas` |
 
 ## Rule
 

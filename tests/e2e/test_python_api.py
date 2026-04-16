@@ -1209,7 +1209,7 @@ class TestPythonApiCreateDoctrine:
         design_src = tmp_path / "my-workflow.design.md"
         design_src.write_text("---\nid: my-workflow\n---\n")
 
-        with pytest.raises(DoctrineError, match="Unexpected field in YAML: name"):
+        with pytest.raises(DoctrineError, match="Unknown property 'name'"):
             create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
 
         assert not (doctrines_dir / "my-workflow.yaml").exists()
@@ -1360,3 +1360,458 @@ class TestDoctrineListEntryFromDictNewShape:
         assert not hasattr(entry, "name")
         assert not hasattr(entry, "description")
         assert not hasattr(entry, "errors")
+
+
+class TestLoadSchemaPythonAPI:
+    """US-001 — `from lore.schemas import load_schema` is a Python API contract.
+
+    Runs in a subprocess against the currently-installed lore (the wheel install
+    in the dev venv) so the test exercises the real import path a Realm consumer
+    would use. Spec: schema-validation-us-001 E2E scenarios 1-3.
+    """
+
+    def test_load_schema_prints_id_for_knight_frontmatter(self):
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.schemas import load_schema; "
+                "print(load_schema('knight-frontmatter')['$id'])",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == "lore://schemas/knight-frontmatter"
+
+    def test_all_six_kinds_load_silently(self):
+        import subprocess
+        import sys
+
+        code = (
+            "from lore.schemas import load_schema; "
+            "[load_schema(k) for k in "
+            "['doctrine-yaml','doctrine-design-frontmatter','knight-frontmatter',"
+            "'watcher-yaml','codex-frontmatter','artifact-frontmatter']]"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout == ""
+
+    def test_unknown_kind_reports_clear_error(self):
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.schemas import load_schema; load_schema('nope')",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode != 0
+        assert "Unknown schema kind: 'nope'" in proc.stderr
+
+
+class TestValidateEntityPythonAPI:
+    """US-002 — validate_entity / validate_entity_file Python API contract.
+
+    PRD scenarios for schema-validation-us-002. Exercises the real install via
+    a subprocess so the test matches the exact usage pattern a Realm or Citadel
+    consumer would hit.
+    """
+
+    def test_scenario_1_valid_knight_dict_prints_empty_list(self):
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.schemas import validate_entity; "
+                "print(validate_entity('knight-frontmatter', "
+                "{'id':'pm','title':'Product Manager','summary':'Writes PRDs.'}))",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == "[]"
+
+    def test_scenario_2_additional_properties_single_issue_at_stability(self):
+        import json
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.schemas import validate_entity; import json; "
+                "print(json.dumps([{'rule':i.rule,'pointer':i.pointer,'message':i.message} "
+                "for i in validate_entity('knight-frontmatter', "
+                "{'id':'pm','title':'PM','summary':'s','stability':'x'})]))",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        data = json.loads(proc.stdout)
+        assert len(data) == 1
+        assert data[0]["rule"] == "additionalProperties"
+        assert data[0]["pointer"] == "/stability"
+
+    def test_scenario_3_validate_entity_file_good_doctrine_yaml(self, tmp_path):
+        import subprocess
+        import sys
+
+        p = tmp_path / "good.yaml"
+        p.write_text(
+            "id: d\n"
+            "steps:\n"
+            "  - id: s1\n"
+            "    title: S1\n"
+            "    type: knight\n"
+            "    knight: pm\n"
+        )
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                f"from lore.schemas import validate_entity_file; "
+                f"print(validate_entity_file('{p}', 'doctrine-yaml'))",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == "[]"
+
+    def test_scenario_4_validate_entity_file_unparseable_yaml(self, tmp_path):
+        import subprocess
+        import sys
+
+        p = tmp_path / "bad.yaml"
+        p.write_text("key: : : nope")
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                f"from lore.schemas import validate_entity_file; "
+                f"r = validate_entity_file('{p}', 'watcher-yaml'); "
+                f"print(r[0].rule, r[0].pointer); print(len(r))",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        lines = proc.stdout.splitlines()
+        assert lines[0] == "yaml-parse /"
+        assert lines[1] == "1"
+
+
+class TestParseFrontmatterRawPythonAPI:
+    """US-003 — `from lore.frontmatter import parse_frontmatter_raw` contract.
+
+    PRD scenarios for schema-validation-us-003. Runs in a subprocess against
+    the installed wheel so the test exercises the real import path a Realm
+    consumer would use.
+    """
+
+    def test_scenario_1_preserves_unknown_keys(self, tmp_path):
+        import subprocess
+        import sys
+
+        p = tmp_path / "k.md"
+        p.write_text(
+            "---\nid: pm\ntitle: PM\nsummary: s\nstability: experimental\n---\nbody\n"
+        )
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.frontmatter import parse_frontmatter_raw; "
+                f"print(parse_frontmatter_raw('{p}'))",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == (
+            "({'id': 'pm', 'title': 'PM', 'summary': 's', "
+            "'stability': 'experimental'}, None)"
+        )
+
+    def test_scenario_2_missing_frontmatter(self, tmp_path):
+        import subprocess
+        import sys
+
+        p = tmp_path / "plain.md"
+        p.write_text("hello world\n")
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.frontmatter import parse_frontmatter_raw; "
+                f"print(parse_frontmatter_raw('{p}'))",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == "(None, None)"
+
+    def test_scenario_3_unparseable_yaml(self, tmp_path):
+        import subprocess
+        import sys
+
+        p = tmp_path / "broken.md"
+        p.write_text("---\nid: : :\n---\n")
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.frontmatter import parse_frontmatter_raw; "
+                f"r = parse_frontmatter_raw('{p}'); "
+                "print(r[0], type(r[1]).__name__)",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip().startswith("None str")
+
+
+class TestUS009HealthCheckPythonAPI:
+    """US-009 — `lore.models` schema-validation Python API parity.
+
+    Spec: schema-validation-us-009 E2E scenarios 1-5.
+          conceptual-workflows-python-api — ADR-011 parity.
+
+    Runs in a subprocess against the currently-installed lore so the test
+    exercises the real import path a Realm or Citadel consumer would hit.
+    """
+
+    def _write_bad_knight(self, project_dir):
+        kdir = project_dir / ".lore" / "knights"
+        kdir.mkdir(parents=True, exist_ok=True)
+        (kdir / "pm.md").write_text(
+            "---\n"
+            "id: pm\n"
+            "title: Product Manager\n"
+            "summary: Writes PRDs.\n"
+            "stability: x\n"
+            "---\n"
+            "# Body\n"
+        )
+
+    def test_scenario_2_public_symbols_present_in_all(self):
+        """schema-validation-us-009 — Scenario 2: health_check, validate_entity_file, load_schema in __all__."""
+        import subprocess
+        import sys
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import lore.models as m; "
+                "print('health_check' in m.__all__, "
+                "'validate_entity_file' in m.__all__, "
+                "'load_schema' in m.__all__)",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == "True True True"
+
+    def test_scenario_3_validate_entity_file_standalone(self, tmp_path):
+        """schema-validation-us-009 — Scenario 3: validate_entity_file via lore.models."""
+        import subprocess
+        import sys
+
+        p = tmp_path / "k.md"
+        p.write_text(
+            "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n"
+        )
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.models import validate_entity_file; "
+                f"r = validate_entity_file({str(p)!r}, 'knight-frontmatter'); "
+                "print(r[0].rule, r[0].pointer)",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == "additionalProperties /stability"
+
+    def test_scenario_1_health_check_parity_with_cli_json(self, project_dir):
+        """schema-validation-us-009 — Scenario 1: health_check == lore health --json schema issues."""
+        import json as _j
+        import subprocess
+        import sys
+
+        self._write_bad_knight(project_dir)
+
+        # CLI path
+        cli_proc = subprocess.run(
+            [sys.executable, "-m", "lore.cli", "health", "--json"],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+        )
+        assert cli_proc.returncode in (0, 1), f"stderr: {cli_proc.stderr}"
+        cli_payload = _j.loads(cli_proc.stdout)
+        cli_schema_issues = [
+            i for i in cli_payload["issues"] if i["check"] == "schema"
+        ]
+        assert len(cli_schema_issues) == 1, (
+            f"expected 1 cli schema issue, got: {cli_schema_issues!r}"
+        )
+
+        # Python API path
+        py_proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.models import health_check; import json; "
+                "r = health_check(); "
+                "print(json.dumps("
+                "[{'check':i.check,'rule':i.rule,'pointer':i.pointer,"
+                "'schema_id':i.schema_id} for i in r.issues if i.check == 'schema']"
+                "))",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+        )
+        assert py_proc.returncode == 0, f"stderr: {py_proc.stderr}"
+        py_schema_issues = _j.loads(py_proc.stdout)
+        assert len(py_schema_issues) == 1
+        assert py_schema_issues[0]["rule"] == cli_schema_issues[0]["rule"]
+        assert py_schema_issues[0]["pointer"] == cli_schema_issues[0]["pointer"]
+        assert py_schema_issues[0]["schema_id"] == cli_schema_issues[0]["schema_id"]
+
+    def test_scenario_1_exact_stdout_shape(self, project_dir):
+        """schema-validation-us-009 — Scenario 1 literal stdout shape."""
+        import subprocess
+        import sys
+
+        self._write_bad_knight(project_dir)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.models import health_check; import json; "
+                "r = health_check(); "
+                "print(json.dumps("
+                "[{'check':i.check,'rule':i.rule,'pointer':i.pointer,"
+                "'schema_id':i.schema_id} for i in r.issues if i.check == 'schema']"
+                "))",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout.strip() == (
+            '[{"check": "schema", "rule": "additionalProperties", '
+            '"pointer": "/stability", '
+            '"schema_id": "lore://schemas/knight-frontmatter"}]'
+        )
+
+    def test_scenario_4_scan_failed_on_missing_schema(self, project_dir):
+        """schema-validation-us-009 — Scenario 4: load_schema failure → scan_failed (no false-green)."""
+        import subprocess
+        import sys
+
+        self._write_bad_knight(project_dir)
+        code = (
+            "import lore.schemas as s\n"
+            "def boom(kind):\n"
+            "    raise FileNotFoundError('knight-frontmatter resource missing')\n"
+            "s.load_schema = boom\n"
+            "try: s._validator_for.cache_clear()\n"
+            "except Exception: pass\n"
+            "from lore.models import health_check\n"
+            "r = health_check()\n"
+            "print(r.has_errors)\n"
+            "scan_failed = [i for i in r.issues if i.check == 'scan_failed']\n"
+            "print(any('knight-frontmatter resource missing' in (i.detail or '') "
+            "for i in scan_failed))\n"
+            "schema = [i for i in r.issues if i.check == 'schema' "
+            "and i.schema_id == 'lore://schemas/knight-frontmatter']\n"
+            "print(len(schema))\n"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        lines = proc.stdout.strip().splitlines()
+        assert lines[0] == "True", f"expected has_errors True, got: {proc.stdout!r}"
+        assert lines[1] == "True", (
+            f"expected scan_failed detail substring match, got: {proc.stdout!r}"
+        )
+        assert lines[2] == "0", (
+            f"expected no schema false-green entries, got: {proc.stdout!r}"
+        )
+
+    def test_scenario_5_no_cli_side_effects(self, project_dir):
+        """schema-validation-us-009 — Scenario 5: health_check writes nothing to stdout/stderr."""
+        import subprocess
+        import sys
+
+        self._write_bad_knight(project_dir)
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.models import health_check; "
+                "r = health_check(); "
+                "assert r.has_errors is True",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        assert proc.stdout == ""
+        assert proc.stderr == ""
+
+    def test_scenario_5_no_transient_report_written(self, project_dir):
+        """schema-validation-us-009 — Scenario 5: no transient health-*.md file written by Python API."""
+        import subprocess
+        import sys
+
+        self._write_bad_knight(project_dir)
+        transient = project_dir / ".lore" / "codex" / "transient"
+        before = set(transient.glob("health-*.md")) if transient.exists() else set()
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from lore.models import health_check; health_check()",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(project_dir),
+        )
+        assert proc.returncode == 0, f"stderr: {proc.stderr}"
+        after = set(transient.glob("health-*.md")) if transient.exists() else set()
+        assert after == before, (
+            f"expected no new transient report, new files: {after - before}"
+        )

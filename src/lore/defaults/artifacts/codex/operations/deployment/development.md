@@ -1,11 +1,8 @@
 ---
 id: example-ops-deployment-dev
 title: Development Environment
-related: []
-stability: stable
-summary: >
-  Step-by-step guide to running the task app locally from a fresh clone.
-  Prerequisites, install, database initialisation, run, and verify.
+summary: Step-by-step guide to running the task app locally from a fresh clone. Prerequisites,
+  install, database initialisation, run, and verify.
 ---
 
 # Development Environment

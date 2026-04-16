@@ -7,11 +7,13 @@ related:
   - conceptual-workflows-knight-list
   - conceptual-workflows-filter-list
   - tech-cli-commands
+  - conceptual-workflows-health
+  - tech-arch-schemas
 ---
 
 # `lore watcher list` Behaviour
 
-`lore watcher list` discovers and displays all watcher YAML files found recursively under `.lore/watchers/`. It never fails due to a single malformed file — files that cannot be parsed fall back to defaults rather than being skipped or causing an error.
+`lore watcher list` discovers and displays all watcher YAML files found recursively under `.lore/watchers/`. It never fails due to a single malformed file — files that cannot be parsed fall back to defaults rather than being skipped or causing an error. The tolerant list path is a display convenience; `lore health --scope schemas` enforces the full `lore://schemas/watcher-yaml` contract (required `id`/`title`/`summary`/`watch_target`/`interval`/`action`, `interval` enum, per-action `doctrine` XOR `bash`) on every watcher file and flags any drift.
 
 ## Preconditions
 

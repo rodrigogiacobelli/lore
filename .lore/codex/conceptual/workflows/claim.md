@@ -1,9 +1,13 @@
 ---
 id: conceptual-workflows-claim
 title: lore claim Behaviour
-summary: What the system does internally when `lore claim <mission-id>` runs — ID format validation, status transition open→in_progress, idempotency on already-in_progress missions, parent quest status recomputation, and multi-mission batch support.
-related: ["conceptual-workflows-ready", "conceptual-workflows-done", "conceptual-entities-mission"]
-stability: stable
+summary: What the system does internally when `lore claim <mission-id>` runs — ID
+  format validation, status transition open→in_progress, idempotency on already-in_progress
+  missions, parent quest status recomputation, and multi-mission batch support.
+related:
+- conceptual-workflows-ready
+- conceptual-workflows-done
+- conceptual-entities-mission
 ---
 
 # `lore claim` Behaviour

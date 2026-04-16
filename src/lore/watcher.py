@@ -3,10 +3,24 @@
 import re
 from pathlib import Path
 
+import click
 import yaml
 
 from lore.paths import derive_group, group_matches_filter
+from lore.schemas import validate_entity
 from lore.validators import validate_group
+
+
+def _validate_yaml(data: dict) -> None:
+    """Validate watcher YAML dict by delegating to ``lore.schemas.validate_entity``.
+
+    Raises ``click.ClickException`` whose ``.message`` contains every issue's
+    human-readable text on any returned issue.
+    """
+    issues = validate_entity("watcher-yaml", data)
+    if issues:
+        lines = [f"{i.pointer}: {i.message} ({i.rule})" for i in issues]
+        raise click.ClickException("\n".join(lines))
 
 
 def find_watcher(watchers_dir: Path, name: str) -> Path | None:

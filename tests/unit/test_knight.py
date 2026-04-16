@@ -301,3 +301,51 @@ class TestCliKnightNewThinWrapper:
         )
         assert result.exit_code == 0
         assert captured["group"] is None
+
+
+# ---------------------------------------------------------------------------
+# US-010 — Knight create-time validator delegates to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-knight-crud
+# ---------------------------------------------------------------------------
+
+
+import click  # noqa: E402
+
+import lore.knight as _k_mod  # noqa: E402
+import lore.schemas as _schemas  # noqa: E402
+
+
+def test_us010_knight_create_validator_delegates(monkeypatch):
+    """knight._validate_frontmatter delegates to validate_entity("knight-frontmatter", data)."""
+    kinds = []
+
+    def spy(kind, data):
+        kinds.append(kind)
+        return []
+
+    monkeypatch.setattr(_schemas, "validate_entity", spy)
+    if hasattr(_k_mod, "validate_entity"):
+        monkeypatch.setattr(_k_mod, "validate_entity", spy)
+
+    _k_mod._validate_frontmatter({"id": "pm", "title": "PM", "summary": "s"})
+    assert kinds == ["knight-frontmatter"]
+
+
+def test_us010_knight_create_validator_raises_click_on_issues(monkeypatch):
+    """knight._validate_frontmatter raises click.ClickException when schema returns issues."""
+    issue = _schemas.SchemaIssue(rule="required", pointer="/", message="Missing required property 'summary'.")
+    monkeypatch.setattr(_schemas, "validate_entity", lambda k, d: [issue])
+    if hasattr(_k_mod, "validate_entity"):
+        monkeypatch.setattr(_k_mod, "validate_entity", lambda k, d: [issue])
+
+    with pytest.raises(click.ClickException) as exc:
+        _k_mod._validate_frontmatter({"id": "pm", "title": "PM"})
+    assert "Missing required property 'summary'" in str(exc.value.message)
+
+
+def test_us010_knight_create_validator_real_missing_summary_golden():
+    """Real (unmocked) golden-text: missing summary produces the US-005 frozen error string."""
+    with pytest.raises(click.ClickException) as exc:
+        _k_mod._validate_frontmatter({"id": "pm", "title": "PM"})
+    assert "Missing required property 'summary'" in str(exc.value.message)

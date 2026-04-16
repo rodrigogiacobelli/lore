@@ -1,9 +1,12 @@
 ---
 id: standards-facade
 title: Facade
-stability: stable
-summary: The public surface of a layer is a facade over its internals — simple, stable, and narrow. lore.models.__all__ is the stable public surface for external consumers. Internal modules may change freely without breaking the facade.
-related: ["decisions-010-public-api-stability", "tech-api-surface"]
+summary: The public surface of a layer is a facade over its internals — simple, stable,
+  and narrow. lore.models.__all__ is the stable public surface for external consumers.
+  Internal modules may change freely without breaking the facade.
+related:
+- decisions-010-public-api-stability
+- tech-api-surface
 ---
 
 # Facade

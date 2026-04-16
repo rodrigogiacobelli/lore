@@ -1,6 +1,6 @@
 [project]
 name = "lore-agent-task-manager"
-version = "0.2.1"
+version = "0.2.2"
 description = "A lightweight CLI task manager for AI coding agents"
 readme = "README.md"
 license = "MIT"
@@ -17,6 +17,7 @@ requires-python = ">=3.10"
 dependencies = [
     "click>=8.0,<9.0",
     "pyyaml>=6.0",
+    "jsonschema>=4.18",
 ]
 
 [project.urls]
@@ -32,6 +33,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/lore"]
 artifacts = ["src/lore/defaults/AGENTS.md"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/lore/schemas" = "lore/schemas"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

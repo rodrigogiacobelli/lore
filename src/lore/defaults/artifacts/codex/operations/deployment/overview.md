@@ -1,11 +1,8 @@
 ---
 id: example-ops-deployment
 title: Deployment Overview
-related: []
-stability: stable
-summary: >
-  Deployment architecture, environment inventory, technology choices, and entry point
-  for all environment-specific deployment documentation.
+summary: Deployment architecture, environment inventory, technology choices, and entry
+  point for all environment-specific deployment documentation.
 ---
 
 # Deployment Overview

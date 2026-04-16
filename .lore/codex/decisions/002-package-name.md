@@ -1,9 +1,11 @@
 ---
 id: decisions-002-package-name
-title: "PyPI package name: lore-agent-task-manager"
-summary: "The canonical PyPI package name is lore-agent-task-manager. The earlier working name lore-taskman has been retired and all references updated."
-related: ["decisions-010-public-api-stability", "ops-installation"]
-stability: stable
+title: 'PyPI package name: lore-agent-task-manager'
+summary: The canonical PyPI package name is lore-agent-task-manager. The earlier working
+  name lore-taskman has been retired and all references updated.
+related:
+- decisions-010-public-api-stability
+- ops-installation
 ---
 
 # ADR 002 — PyPI Package Name

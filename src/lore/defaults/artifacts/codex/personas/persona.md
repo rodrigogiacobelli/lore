@@ -1,10 +1,7 @@
 ---
 id: example-persona-{role-slug}
-title: "Persona — {Role Name}"
-related: []
-stability: stable
-summary: >
-  _One to three sentences. Who this persona is, what their primary goal is,
+title: Persona — {Role Name}
+summary: _One to three sentences. Who this persona is, what their primary goal is,
   and what distinguishes them from other personas in this system._
 ---
 

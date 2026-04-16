@@ -1485,3 +1485,109 @@ class TestDoctrineListEntryDataclassFields:
 
         field_names = {f.name for f in dataclasses.fields(DoctrineListEntry)}
         assert "valid" in field_names
+
+
+# ---------------------------------------------------------------------------
+# US-009: Python API parity for schema validation via lore.models
+# Exercises: lore codex show schema-validation-us-009
+#            lore codex show conceptual-workflows-python-api
+# ---------------------------------------------------------------------------
+
+
+class TestUS009SchemaValidationReexports:
+    """US-009: load_schema, validate_entity, validate_entity_file, SchemaIssue
+    must be re-exported from lore.models (identity, not wrappers) and appear
+    in lore.models.__all__. HealthIssue must still be exported with its
+    widened (schema_id, rule, pointer) fields.
+    """
+
+    def test_all_contains_load_schema(self):
+        import lore.models as m
+        assert "load_schema" in m.__all__, (
+            f"'load_schema' not in lore.models.__all__: {m.__all__!r}"
+        )
+
+    def test_all_contains_validate_entity(self):
+        import lore.models as m
+        assert "validate_entity" in m.__all__, (
+            f"'validate_entity' not in lore.models.__all__: {m.__all__!r}"
+        )
+
+    def test_all_contains_validate_entity_file(self):
+        import lore.models as m
+        assert "validate_entity_file" in m.__all__, (
+            f"'validate_entity_file' not in lore.models.__all__: {m.__all__!r}"
+        )
+
+    def test_all_contains_schema_issue(self):
+        import lore.models as m
+        assert "SchemaIssue" in m.__all__, (
+            f"'SchemaIssue' not in lore.models.__all__: {m.__all__!r}"
+        )
+
+    def test_all_contains_health_issue_regression(self):
+        # Regression guard: widening HealthIssue must not drop it from __all__.
+        import lore.models as m
+        assert "HealthIssue" in m.__all__
+
+    def test_all_contains_health_check_regression(self):
+        # Regression guard: health_check must remain in __all__.
+        import lore.models as m
+        assert "health_check" in m.__all__
+
+    def test_load_schema_is_reexport_not_copy(self):
+        # conceptual-workflows-python-api — identity, not a wrapper
+        import lore.models as m
+        import lore.schemas as s
+        assert m.load_schema is s.load_schema
+
+    def test_validate_entity_is_reexport_not_copy(self):
+        import lore.models as m
+        import lore.schemas as s
+        assert m.validate_entity is s.validate_entity
+
+    def test_validate_entity_file_is_reexport_not_copy(self):
+        import lore.models as m
+        import lore.schemas as s
+        assert m.validate_entity_file is s.validate_entity_file
+
+    def test_schema_issue_is_reexport_not_copy(self):
+        import lore.models as m
+        import lore.schemas as s
+        assert m.SchemaIssue is s.SchemaIssue
+
+    def test_schema_issue_has_expected_fields(self):
+        # Regression guard on SchemaIssue shape (rule, pointer, message).
+        import dataclasses
+        from lore.models import SchemaIssue
+        field_names = {f.name for f in dataclasses.fields(SchemaIssue)}
+        assert {"rule", "pointer", "message"}.issubset(field_names)
+
+    def test_health_issue_has_schema_fields(self):
+        # Widened HealthIssue carries schema_id/rule/pointer (US-007).
+        import dataclasses
+        from lore.models import HealthIssue
+        field_names = {f.name for f in dataclasses.fields(HealthIssue)}
+        assert {"schema_id", "rule", "pointer"}.issubset(field_names)
+
+    def test_validate_entity_file_callable_from_models(self, tmp_path):
+        # Directly via lore.models — returns list of SchemaIssue for a bad knight.
+        from lore.models import validate_entity_file, SchemaIssue
+        p = tmp_path / "k.md"
+        p.write_text(
+            "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n"
+        )
+        issues = validate_entity_file(str(p), "knight-frontmatter")
+        assert isinstance(issues, list)
+        assert issues, "expected at least one schema issue for bad knight"
+        assert all(isinstance(i, SchemaIssue) for i in issues)
+        assert any(
+            i.rule == "additionalProperties" and i.pointer == "/stability"
+            for i in issues
+        )
+
+    def test_load_schema_callable_from_models(self):
+        from lore.models import load_schema
+        schema = load_schema("knight-frontmatter")
+        assert isinstance(schema, dict)
+        assert "$id" in schema or "properties" in schema

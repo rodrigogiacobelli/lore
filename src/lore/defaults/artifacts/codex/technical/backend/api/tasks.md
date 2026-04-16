@@ -1,10 +1,7 @@
 ---
 id: example-tech-api-{domain}
-title: "API — {Domain} Commands"
-related: []
-stability: stable
-summary: >
-  CLI command reference (or HTTP endpoint reference) for the {domain} domain.
+title: API — {Domain} Commands
+summary: CLI command reference (or HTTP endpoint reference) for the {domain} domain.
   Covers all sub-commands, options, output shapes, and error codes.
 ---
 

@@ -1,12 +1,9 @@
 ---
 id: example-constraints
 title: Constraints
-related: []
-stability: stable
-summary: >
-  Hard limits that must never be violated: runtime requirements, legal/compliance,
-  performance budgets, compatibility rules, and explicit "never do" rules.
-  Agents must check this before proposing changes that touch system boundaries.
+summary: 'Hard limits that must never be violated: runtime requirements, legal/compliance,
+  performance budgets, compatibility rules, and explicit "never do" rules. Agents
+  must check this before proposing changes that touch system boundaries.'
 ---
 
 # Constraints

@@ -1,20 +1,20 @@
 ---
 id: tech-arch-codex-chaos
-title: "Codex Chaos — `chaos_documents` and Bidirectional Adjacency Internals"
-summary: >
-  Internal implementation of chaos_documents in codex.py: bidirectional
-  adjacency pre-pass, reachable-set BFS, random walk loop, RNG injection
-  pattern (rng=None default), validate_chaos_threshold in validators.py, and
-  the codex_chaos CLI handler in cli.py. Sibling to tech-arch-codex-map.
-stability: stable
+title: Codex Chaos — `chaos_documents` and Bidirectional Adjacency Internals
+summary: 'Internal implementation of chaos_documents in codex.py: bidirectional adjacency
+  pre-pass, reachable-set BFS, random walk loop, RNG injection pattern (rng=None default),
+  validate_chaos_threshold in validators.py, and the codex_chaos CLI handler in cli.py.
+  Sibling to tech-arch-codex-map.
+
+  '
 related:
-  - tech-arch-codex-map
-  - tech-arch-source-layout
-  - tech-arch-frontmatter
-  - conceptual-workflows-codex-chaos
-  - tech-api-surface
-  - standards-dry
-  - decisions-011-api-parity-with-cli
+- tech-arch-codex-map
+- tech-arch-source-layout
+- tech-arch-frontmatter
+- conceptual-workflows-codex-chaos
+- tech-api-surface
+- standards-dry
+- decisions-011-api-parity-with-cli
 ---
 
 # Codex Chaos — `chaos_documents` and Bidirectional Adjacency Internals

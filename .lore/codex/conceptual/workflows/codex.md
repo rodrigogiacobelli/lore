@@ -1,10 +1,17 @@
 ---
 id: conceptual-workflows-codex
 title: Codex Commands — lore codex
-summary: >
-  What the system does internally when lore codex list, lore codex search, lore codex show, lore codex map, and lore codex chaos run — document discovery, keyword search, multi-ID retrieval with deduplication, BFS graph traversal, probabilistic random-walk traversal, and JSON output.
-related: ["tech-arch-initialized-project-structure", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list"]
-stability: stable
+summary: 'What the system does internally when lore codex list, lore codex search,
+  lore codex show, lore codex map, and lore codex chaos run — document discovery,
+  keyword search, multi-ID retrieval with deduplication, BFS graph traversal, probabilistic
+  random-walk traversal, and JSON output.
+
+  '
+related:
+- tech-arch-initialized-project-structure
+- conceptual-workflows-codex-map
+- conceptual-workflows-codex-chaos
+- conceptual-workflows-filter-list
 ---
 
 # Codex Commands — `lore codex`

@@ -4,15 +4,23 @@ import shutil
 import textwrap
 from pathlib import Path
 
+import click
 import yaml
 
 from lore.frontmatter import parse_frontmatter_doc
 from lore.paths import derive_group, group_matches_filter
+from lore.schemas import validate_entity
 from lore.validators import validate_group, validate_name
 
 
-class DoctrineError(Exception):
-    """Raised when a doctrine fails validation."""
+class DoctrineError(click.ClickException):
+    """Raised when a doctrine fails validation.
+
+    Subclasses ``click.ClickException`` so both exception types catch it.
+    """
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def scaffold_doctrine(name: str) -> str:
@@ -28,52 +36,55 @@ def scaffold_doctrine(name: str) -> str:
         """)
 
 
+def _raise_click_from_issues(issues: list) -> None:
+    """Raise ``DoctrineError`` whose message contains every issue message."""
+    if not issues:
+        return
+    raise DoctrineError("\n".join(i.message for i in issues))
+
+
 def _validate_yaml_schema(data: dict, name: str) -> None:
     """Validate the top-level YAML schema for a doctrine.
 
-    Raises DoctrineError when:
-    - Unexpected legacy fields (name, description) are present
-    - Required fields (id, steps) are missing
-    - id does not match name argument
-    - steps is empty
+    Delegates to ``lore.schemas.validate_entity('doctrine-yaml', data)`` and
+    raises ``click.ClickException`` on any returned issue. Additionally checks
+    that the doctrine id matches the ``name`` argument.
     """
-    # Check for legacy rejected fields first
-    for legacy_field in ("name", "description"):
-        if legacy_field in data:
-            raise DoctrineError(f"Unexpected field in YAML: {legacy_field}")
+    issues = validate_entity("doctrine-yaml", data)
+    if issues:
+        raise DoctrineError("\n".join(i.message for i in issues))
 
-    # Required fields
-    if "id" not in data:
-        raise DoctrineError("Missing required field: id")
-    if "steps" not in data:
-        raise DoctrineError("Missing required field: steps")
-
-    # id must match name argument
     if str(data["id"]) != name:
         raise DoctrineError(
             f'Doctrine id "{data["id"]}" does not match command argument "{name}"'
         )
 
-    # steps must be non-empty
-    if not isinstance(data["steps"], list) or len(data["steps"]) == 0:
-        raise DoctrineError("Steps must be a non-empty list")
-
 
 def _validate_design_frontmatter(meta: dict | None, name: str) -> None:
     """Validate design file frontmatter.
 
-    Raises DoctrineError when:
-    - meta is None (no frontmatter or parse failure)
-    - meta has no 'id' key
-    - meta['id'] does not match name argument
+    Delegates to ``lore.schemas.validate_entity('doctrine-design-frontmatter', data)``
+    and raises ``click.ClickException`` on any returned issue. Additionally checks
+    that the id matches the ``name`` argument.
     """
-    if meta is None or "id" not in meta:
-        raise DoctrineError("Design file missing required frontmatter field: id")
+    data = meta if meta is not None else {}
 
-    if str(meta["id"]) != name:
+    # Check id presence and match before full schema validation so id-mismatch
+    # errors surface ahead of any other schema complaint.
+    if "id" not in data:
+        issues = validate_entity("doctrine-design-frontmatter", data)
+        id_issues = [i for i in issues if "'id'" in i.message]
         raise DoctrineError(
-            f'Design file id "{meta["id"]}" does not match command argument "{name}"'
+            "\n".join(i.message for i in (id_issues or issues))
         )
+    if str(data["id"]) != name:
+        raise DoctrineError(
+            f'Design file id "{data["id"]}" does not match command argument "{name}"'
+        )
+
+    issues = validate_entity("doctrine-design-frontmatter", data)
+    if issues:
+        raise DoctrineError("\n".join(i.message for i in issues))
 
 
 def _check_duplicate_in_subtree(name: str, doctrines_dir: Path) -> None:
@@ -219,10 +230,10 @@ def _validate_required_fields(data: dict) -> None:
     """Check that required top-level fields are present."""
     # Accept id as fallback for name
     if "name" not in data and "id" not in data:
-        raise DoctrineError("Missing required field: name")
+        raise DoctrineError("Missing required property 'name'.")
     for field in ("description", "steps"):
         if field not in data:
-            raise DoctrineError(f"Missing required field: {field}")
+            raise DoctrineError(f"Missing required property '{field}'.")
 
 
 def _validate_steps(steps) -> None:

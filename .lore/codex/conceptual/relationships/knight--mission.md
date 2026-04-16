@@ -1,16 +1,14 @@
 ---
 id: conceptual-relationships-knight--mission
-title: "Knight to Mission"
+title: Knight to Mission
 related:
-  - conceptual-entities-knight
-  - conceptual-entities-mission
-  - tech-db-schema
-  - tech-arch-knight-module
-stability: stable
-summary: >
-  A Mission may optionally name one Knight by filename stem. The Knight is not
-  stored by database ID; it is referenced by name and resolved from disk at
-  show-time. At most one Knight per Mission.
+- conceptual-entities-knight
+- conceptual-entities-mission
+- tech-db-schema
+- tech-arch-knight-module
+summary: A Mission may optionally name one Knight by filename stem. The Knight is
+  not stored by database ID; it is referenced by name and resolved from disk at show-time.
+  At most one Knight per Mission.
 ---
 
 # Knight to Mission

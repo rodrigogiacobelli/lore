@@ -1,9 +1,12 @@
 ---
 id: tech-arch-initialized-project-structure
 title: Initialized Project Structure
-summary: What `lore init` creates on disk — the .lore/ directory layout, file purposes, AGENTS.md placement, and gitignore contents. Includes the artifacts/ directory seeded on init.
-related: ["conceptual-workflows-lore-init", "tech-arch-agents-md"]
-stability: stable
+summary: What `lore init` creates on disk — the .lore/ directory layout, file purposes,
+  AGENTS.md placement, and gitignore contents. Includes the artifacts/ directory seeded
+  on init.
+related:
+- conceptual-workflows-lore-init
+- tech-arch-agents-md
 ---
 
 # Initialized Project Structure

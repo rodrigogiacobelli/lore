@@ -2,8 +2,7 @@
 id: tech-cli-commands
 title: CLI Command Reference
 summary: Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours. Covers all commands including lore health (diagnostic audit), lore board add/delete, lore codex list/show/search/map/chaos, lore artifact new (first CLI write path for artifacts), lore artifact list/show, and the --group option on all four entity new subcommands. Notes the hidden status of --no-auto-close on `lore new quest` versus its visible status on `lore edit`.
-related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005-auto-close-toggle", "decisions-008-help-as-teaching-interface", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health", "decisions-006-id-references", "conceptual-workflows-help", "conceptual-workflows-stats"]
-stability: stable
+related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005-auto-close-toggle", "decisions-008-help-as-teaching-interface", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health", "decisions-006-id-references", "conceptual-workflows-help", "conceptual-workflows-stats", "tech-arch-schemas"]
 ---
 
 # CLI Command Reference
@@ -576,12 +575,14 @@ See tech-cli-oracle-slugification (lore codex show tech-cli-oracle-slugification
 
 `lore health --help` description:
 
-> Audit all five file-based entity types (codex, artifacts, doctrines, knights, watchers) and report every detected inconsistency as an error or warning. Exits 1 on any error, 0 on clean or warnings-only. Always writes a markdown report to .lore/codex/transient/. Use --scope to restrict to specific entity types.
+> Audit every file-based entity type (codex, artifacts, doctrines, knights, watchers) and validate every file's shape against its JSON Schema. Report every detected inconsistency as an error or warning. Exits 1 on any error, 0 on clean or warnings-only. Always writes a markdown report to .lore/codex/transient/. Use --scope to restrict to specific entity types or to run only schema validation.
 
 ```
 lore health
 lore health --scope doctrines knights
 lore health --scope watchers
+lore health --scope schemas
+lore health --scope references schemas
 lore health --json
 lore health --scope codex --json
 ```
@@ -590,12 +591,12 @@ Flags:
 
 | Flag | Description |
 |------|-------------|
-| `--scope TYPE [TYPE ...]` | Restrict audit to one or more space-separated entity types. Valid tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`. Omitting `--scope` audits all five. |
+| `--scope TYPE [TYPE ...]` | Restrict audit to one or more space-separated scopes. Valid tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`. Omitting `--scope` runs every scope including `schemas`. |
 | `--json` | Print machine-readable JSON to stdout instead of the human-readable table. Report file is always written regardless of this flag. |
 
 **Exit codes:** `1` if any error is found; `0` if clean or warnings-only.
 
-**Report file:** Always written to `.lore/codex/transient/health-{timestamp}.md` using UTC ISO 8601 with colons replaced by hyphens (e.g., `health-2026-04-09T14-32-00.md`). No retention policy — reports accumulate.
+**Report file:** Always written to `.lore/codex/transient/health-{timestamp}.md` using UTC ISO 8601 with colons replaced by hyphens (e.g., `health-2026-04-09T14-32-00.md`). No retention policy — reports accumulate. The report body gains a `## Schema validation` section listing every schema error grouped by kind then file path (or `No schema errors.` on a clean run).
 
 **Text output — issues found:**
 
@@ -604,20 +605,31 @@ SEVERITY  ENTITY_TYPE  ID                CHECK
 ERROR     doctrines    feat-auth         broken_knight_ref: 'senior-engineer' not found (step 2)
 ERROR     watchers     on-quest-close    broken_doctrine_ref: 'feat-payments' not found
 WARNING   codex        proposals-draft   island_node: no documents link here
+ERROR .lore/knights/default/feature-implementation/pm.md
+  kind: knight
+  schema: lore://schemas/knight-frontmatter
+  rule: additionalProperties
+  path: /stability
+  message: Unknown property 'stability' — allowed keys are id, title, summary.
+Schema validation: 1 error
 ```
+
+Schema errors use a dedicated multi-line ERROR block (not the SEVERITY/ENTITY_TYPE/ID/CHECK table row format), followed by a summary line `Schema validation: N error(s)`. On a clean run the summary reads `Schema validation: 0 errors`.
 
 **Text output — clean:**
 
 ```
 Health check passed. No issues found.
+Schema validation: 0 errors
 ```
 
 **Error behaviours:**
 
 | Error | Exit code | Message |
 |-------|-----------|---------|
-| Unknown `--scope` token | 1 | `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers.` |
+| Unknown `--scope` token | 1 | `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas.` |
 | Entity directory scan failure | 0 or 1 | `scan_failed` issue recorded for that entity type; other types continue |
+| Authoritative schema resource missing at load time | 1 | `scan_failed` error naming the missing schema id — no partial false-green |
 
 ## Codex
 
@@ -1469,18 +1481,26 @@ Issues found (exit code 1 if any error present):
       "entity_type": "doctrines",
       "id": "feat-auth",
       "check": "broken_knight_ref",
-      "detail": "'senior-engineer' not found (step 2)"
+      "detail": "'senior-engineer' not found (step 2)",
+      "schema_id": null,
+      "rule": null,
+      "pointer": null
     },
     {
-      "severity": "warning",
-      "entity_type": "codex",
-      "id": "proposals-draft",
-      "check": "island_node",
-      "detail": "no documents link here"
+      "severity": "error",
+      "entity_type": "knight",
+      "id": ".lore/knights/default/feature-implementation/pm.md",
+      "check": "schema",
+      "detail": "Unknown property 'stability' — allowed keys are id, title, summary.",
+      "schema_id": "lore://schemas/knight-frontmatter",
+      "rule": "additionalProperties",
+      "pointer": "/stability"
     }
   ]
 }
 ```
+
+Every `HealthIssue` record gains three additional fields: `schema_id`, `rule`, `pointer`. They are `null` for non-schema checks (legacy consumers keep working — the change is strictly additive) and populated for every `check="schema"` record.
 
 Clean run (exit code 0):
 

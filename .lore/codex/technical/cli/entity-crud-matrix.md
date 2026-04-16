@@ -1,9 +1,21 @@
 ---
 id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
-summary: Maps every Lore entity to its available CLI CRUD and traversal operations with the exact command for each. Highlights gaps — Codex has no CLI write path; Artifact gained a `new` write path (first CLI write for artifacts); Board has no standalone list or update; Quest/Mission have no search; lore deps is documented but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher) support --filter GROUP... (slash-delimited segment-prefix matching) and all four entity `new` commands (doctrine, knight, watcher, artifact) support --group GROUP for nested creation.
-related: ["tech-api-surface", "tech-cli-commands", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health"]
-stability: stable
+summary: Maps every Lore entity to its available CLI CRUD and traversal operations
+  with the exact command for each. Highlights gaps — Codex has no CLI write path;
+  Artifact gained a `new` write path (first CLI write for artifacts); Board has no
+  standalone list or update; Quest/Mission have no search; lore deps is documented
+  but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher)
+  support --filter GROUP... (slash-delimited segment-prefix matching) and all four
+  entity `new` commands (doctrine, knight, watcher, artifact) support --group GROUP
+  for nested creation.
+related:
+- tech-api-surface
+- tech-cli-commands
+- tech-arch-codex-map
+- tech-arch-codex-chaos
+- conceptual-workflows-filter-list
+- conceptual-workflows-health
 ---
 
 # CLI Entity CRUD Matrix

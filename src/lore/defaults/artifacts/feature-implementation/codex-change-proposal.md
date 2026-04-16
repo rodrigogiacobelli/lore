@@ -1,12 +1,10 @@
 ---
 id: fi-codex-change-proposal
 title: Codex Change Proposal
-group: feature-implementation
-summary: >
-  Template for the Tech Writer to propose additions, updates, or deletions to
-  the project codex after the Tech Spec is complete. Lists every document to
-  create, update, or retire — with rationale for each. The Tech Writer applies
-  these changes directly after the proposal is written (no separate AR step).
+summary: Template for the Tech Writer to propose additions, updates, or deletions
+  to the project codex after the Tech Spec is complete. Lists every document to create,
+  update, or retire — with rationale for each. The Tech Writer applies these changes
+  directly after the proposal is written (no separate AR step).
 ---
 
 # {Feature Name} — Codex Change Proposal

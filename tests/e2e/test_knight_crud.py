@@ -203,3 +203,33 @@ class TestKnightNewDuplicateSubtreeRejected:
         assert "already exists" in combined
         assert "reviewer" in combined
 
+
+# ---------------------------------------------------------------------------
+# US-010 — Create-time knight validator delegates to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-knight-crud
+# ---------------------------------------------------------------------------
+
+
+_KNIGHT_NO_SUMMARY_MD = "---\nid: pm\ntitle: PM\n---\n# body\n"
+
+
+def test_us010_knight_new_missing_summary_golden_error(runner, project_dir):
+    """Missing `summary:` in knight frontmatter must surface the exact US-005 error text."""
+    (project_dir / "p.md").write_text(_KNIGHT_NO_SUMMARY_MD)
+    result = runner.invoke(main, ["knight", "new", "pm", "--from", "p.md"])
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr or "")
+    assert "Missing required property 'summary'" in combined
+    assert not (project_dir / ".lore" / "knights" / "pm.md").exists()
+
+
+def test_us010_knight_new_rejects_extra_stability_field(runner, project_dir):
+    """An extra frontmatter field must be rejected via schema additionalProperties."""
+    body = "---\nid: pm-extra\ntitle: PM\nsummary: s\nstability: stable\n---\n# body\n"
+    (project_dir / "p.md").write_text(body)
+    result = runner.invoke(main, ["knight", "new", "pm-extra", "--from", "p.md"])
+    assert result.exit_code != 0
+    combined = (result.output or "") + (result.stderr or "")
+    assert ("additionalProperties" in combined) or ("stability" in combined)
+    assert not (project_dir / ".lore" / "knights" / "pm-extra.md").exists()

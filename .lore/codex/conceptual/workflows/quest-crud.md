@@ -1,10 +1,13 @@
 ---
 id: conceptual-workflows-quest-crud
 title: Quest CRUD Operations
-summary: >
-  What the system does internally when creating, listing, editing, and deleting quests via the CLI.
-related: ["conceptual-entities-quest", "conceptual-workflows-mission-crud"]
-stability: stable
+summary: 'What the system does internally when creating, listing, editing, and deleting
+  quests via the CLI.
+
+  '
+related:
+- conceptual-entities-quest
+- conceptual-workflows-mission-crud
 ---
 
 # Quest CRUD Operations

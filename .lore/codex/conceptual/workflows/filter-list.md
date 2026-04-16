@@ -1,16 +1,18 @@
 ---
 id: conceptual-workflows-filter-list
-title: "lore * list --filter Behaviour"
-summary: "What the system does when --filter GROUP... is passed to the list subcommand of codex, artifact, knight, doctrine, or watcher commands — slash-delimited token-to-group segment-prefix matching, root-level file inclusion, Python API parity, and unchanged unfiltered behaviour."
+title: lore * list --filter Behaviour
+summary: What the system does when --filter GROUP... is passed to the list subcommand
+  of codex, artifact, knight, doctrine, or watcher commands — slash-delimited token-to-group
+  segment-prefix matching, root-level file inclusion, Python API parity, and unchanged
+  unfiltered behaviour.
 related:
-  - conceptual-workflows-artifact-list
-  - conceptual-workflows-knight-list
-  - conceptual-workflows-doctrine-list
-  - conceptual-workflows-watcher-list
-  - conceptual-workflows-codex
-  - tech-cli-commands
-  - decisions-011-api-parity-with-cli
-stability: stable
+- conceptual-workflows-artifact-list
+- conceptual-workflows-knight-list
+- conceptual-workflows-doctrine-list
+- conceptual-workflows-watcher-list
+- conceptual-workflows-codex
+- tech-cli-commands
+- decisions-011-api-parity-with-cli
 ---
 
 # `lore * list --filter` Behaviour

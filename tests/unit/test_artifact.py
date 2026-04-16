@@ -347,3 +347,51 @@ class TestCliArtifactNewThinWrapper:
         result = runner.invoke(main, ["artifact", "new", "a", "--from", "b.md"])
         assert result.exit_code == 0
         assert captured["group"] is None
+
+
+# ---------------------------------------------------------------------------
+# US-010 — Artifact create-time validator delegates to lore.schemas
+# Spec: schema-validation-us-010
+# Workflow: conceptual-workflows-artifact-new
+# ---------------------------------------------------------------------------
+
+
+import click  # noqa: E402
+
+import lore.artifact as _a_mod  # noqa: E402
+import lore.schemas as _schemas  # noqa: E402
+
+
+def test_us010_artifact_create_validator_delegates(monkeypatch):
+    """artifact._validate_frontmatter delegates to validate_entity("artifact-frontmatter", data)."""
+    kinds = []
+
+    def spy(kind, data):
+        kinds.append(kind)
+        return []
+
+    monkeypatch.setattr(_schemas, "validate_entity", spy)
+    if hasattr(_a_mod, "validate_entity"):
+        monkeypatch.setattr(_a_mod, "validate_entity", spy)
+
+    _a_mod._validate_frontmatter({"id": "x", "title": "T", "summary": "s"})
+    assert kinds == ["artifact-frontmatter"]
+
+
+def test_us010_artifact_create_validator_rejects_group_key():
+    """A frontmatter dict carrying 'group' must be rejected by additionalProperties."""
+    with pytest.raises(click.ClickException) as exc:
+        _a_mod._validate_frontmatter({"id": "x", "title": "T", "summary": "s", "group": "foo"})
+    msg = str(exc.value.message)
+    assert ("additionalProperties" in msg) or ("/group" in msg) or ("group" in msg and "Unknown property" in msg)
+
+
+def test_us010_artifact_create_validator_raises_click_on_issues(monkeypatch):
+    issue = _schemas.SchemaIssue(rule="required", pointer="/", message="Missing required property 'summary'.")
+    monkeypatch.setattr(_schemas, "validate_entity", lambda k, d: [issue])
+    if hasattr(_a_mod, "validate_entity"):
+        monkeypatch.setattr(_a_mod, "validate_entity", lambda k, d: [issue])
+
+    with pytest.raises(click.ClickException) as exc:
+        _a_mod._validate_frontmatter({"id": "x"})
+    assert "Missing required property 'summary'" in str(exc.value.message)

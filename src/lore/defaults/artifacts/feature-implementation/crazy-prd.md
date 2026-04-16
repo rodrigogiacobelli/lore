@@ -1,11 +1,9 @@
 ---
 id: fi-crazy-prd
 title: Crazy PRD — Divergent Brainstorm
-group: feature-implementation
-summary: >
-  Template for the Crazy PM brainstorm pass. Captures wild, unconstrained product
-  ideas before the structured PRD Draft. Prioritises breadth over correctness —
-  no idea is too ambitious. Top ideas feed into the PRD Draft phase.
+summary: Template for the Crazy PM brainstorm pass. Captures wild, unconstrained product
+  ideas before the structured PRD Draft. Prioritises breadth over correctness — no
+  idea is too ambitious. Top ideas feed into the PRD Draft phase.
 ---
 
 # {Feature Name} — Crazy PRD Brainstorm

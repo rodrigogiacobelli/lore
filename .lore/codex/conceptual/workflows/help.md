@@ -1,10 +1,13 @@
 ---
 id: conceptual-workflows-help
 title: Help Output Contract
-summary: >
-  What the enriched --help output for each command group must contain — the teaching-interface contract established by decisions-008.
-related: ["decisions-008-help-as-teaching-interface", "tech-cli-commands"]
-stability: stable
+summary: 'What the enriched --help output for each command group must contain — the
+  teaching-interface contract established by decisions-008.
+
+  '
+related:
+- decisions-008-help-as-teaching-interface
+- tech-cli-commands
 ---
 
 # Help Output Contract

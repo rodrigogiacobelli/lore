@@ -1,13 +1,8 @@
 ---
 id: example-workflow-{workflow-name}
-title: "{Workflow Name}"
-related: []
-stability: stable
-entities_involved:
-  - example-entity-{entity-name}
-summary: >
-  _One to three sentences. What triggers this workflow? What does the system do?
-  What is the end state?_
+title: '{Workflow Name}'
+summary: _One to three sentences. What triggers this workflow? What does the system
+  do? What is the end state?_
 ---
 
 # {Workflow Name}

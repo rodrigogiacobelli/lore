@@ -1,0 +1,52 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/watcher-yaml"
+title: Watcher YAML
+type: object
+additionalProperties: false
+required: [id, title, summary, watch_target, interval, action]
+properties:
+  id:
+    type: string
+    minLength: 1
+    description: Watcher id. Must match filename stem.
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1
+  watch_target:
+    type: array
+    minItems: 1
+    uniqueItems: true
+    items:
+      type: string
+      minLength: 1
+    description: Paths or globs to watch, relative to repo root.
+  interval:
+    type: string
+    enum: [on_merge, on_commit, hourly, daily, weekly, manual]
+    description: "Trigger cadence or event. Observed value in repo: on_merge."
+  action:
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/action"
+$defs:
+  action:
+    type: object
+    additionalProperties: false
+    minProperties: 1
+    maxProperties: 1
+    properties:
+      doctrine:
+        type: string
+        minLength: 1
+        description: Doctrine id to dispatch.
+      bash:
+        type: string
+        minLength: 1
+        description: Shell command to run.
+    oneOf:
+      - required: [doctrine]
+      - required: [bash]

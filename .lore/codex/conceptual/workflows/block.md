@@ -1,9 +1,13 @@
 ---
 id: conceptual-workflows-block
 title: lore block Behaviour
-summary: What the system does internally when `lore block <mission-id> <reason>` runs — ID format validation, status transition open/in_progress→blocked, reason string storage, parent quest status recomputation, and the complementary unblock path.
-related: ["conceptual-entities-mission", "conceptual-workflows-claim", "conceptual-workflows-done"]
-stability: stable
+summary: What the system does internally when `lore block <mission-id> <reason>` runs
+  — ID format validation, status transition open/in_progress→blocked, reason string
+  storage, parent quest status recomputation, and the complementary unblock path.
+related:
+- conceptual-entities-mission
+- conceptual-workflows-claim
+- conceptual-workflows-done
 ---
 
 # `lore block` Behaviour

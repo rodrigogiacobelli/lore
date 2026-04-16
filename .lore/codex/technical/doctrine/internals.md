@@ -2,7 +2,7 @@
 id: tech-doctrine-internals
 title: Doctrine Module Internals
 summary: Technical reference for src/lore/doctrine.py. Covers two-file doctrine model (design.md + yaml), list_doctrines() scanning .design.md files, show_doctrine() returning both raw content and normalized steps, create_doctrine() atomic two-file write, _validate_yaml_schema(), _validate_design_frontmatter(), _validate_steps(), _normalize(), _check_cycles(), and DoctrineError propagation.
-related: ["conceptual-entities-doctrine", "tech-cli-commands", "tech-arch-source-layout", "decisions-006-id-references"]
+related: ["conceptual-entities-doctrine", "tech-cli-commands", "tech-arch-source-layout", "decisions-006-id-references", "tech-arch-schemas"]
 ---
 
 # Doctrine Module Internals
@@ -104,21 +104,13 @@ Parses YAML text using `yaml.safe_load`. Raises `DoctrineError` if:
 
 ### `_validate_yaml_schema(data: dict, name: str) -> None`
 
-Checks the new YAML schema (`id` and `steps` only):
-1. `id` present → raises `DoctrineError("Missing required field: id")`
-2. `steps` present → raises `DoctrineError("Missing required field: steps")`
-3. `id` matches `name` → raises `DoctrineError(f'Doctrine id "{data["id"]}" does not match command argument "{name}"')`
-4. `name` key in data → raises `DoctrineError("Unexpected field in YAML: name")`
-5. `description` key in data → raises `DoctrineError("Unexpected field in YAML: description")`
-6. Calls `_validate_steps(data["steps"])`
+Thin wrapper around `lore.schemas.validate_entity("doctrine-yaml", data)`. Structural checks (required fields, `additionalProperties: false`, step shape, the `if/then/else` conditional on the `knight` field when `type == "knight"`) live in the authoritative `src/lore/schemas/doctrine-yaml.yaml` JSON Schema, not inline in this function. Any violation returned by `validate_entity` is translated into a `DoctrineError` with the same human-readable message previously raised inline. The `name`-match check (doctrine id must equal the command argument) remains here because it is a cross-field rule not expressible in the schema. Calls `_validate_steps(data["steps"])` for the remaining dependency-graph and cycle checks.
+
+This is the FR-20 DRY guarantee from the schema validation feature: one authoritative schema, enforced at both create time (here) and audit time (`lore health`'s schema check).
 
 ### `_validate_design_frontmatter(meta: dict | None, name: str) -> None`
 
-`meta` is the result of frontmatter parsing or a pre-parsed dict.
-
-Checks:
-- `meta` is None or no `id` → raises `DoctrineError("Design file missing required frontmatter field: id")`
-- `meta["id"]` != `name` → raises `DoctrineError(f'Design file id "{meta["id"]}" does not match command argument "{name}"')`
+`meta` is the result of frontmatter parsing or a pre-parsed dict. Delegates shape validation (required `id`/`title`/`summary`, `additionalProperties: false`) to `lore.schemas.validate_entity("doctrine-design-frontmatter", meta)`. The `meta is None` → `"Design file missing required frontmatter field: id"` case and the `meta["id"] != name` cross-check are kept in-place because they are not expressible in the schema. All other shape errors are translated from the schema validator output into `DoctrineError` with the existing messages.
 
 ### `_validate_steps(steps) -> None`
 
