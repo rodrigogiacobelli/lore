@@ -23,3 +23,4 @@ Stories are user-facing deliverables written from the perspective of someone who
 - Acceptance criteria are specs for the TDD cycle — if a behavior is not specified here, it will not be tested
 - Never write implementation details in story content — that belongs in Tech Notes
 - Never modify the Tech Notes section of any story
+- For UI features, page integration is always a required story. If the PRD mentions a component appearing on a specific page, there must be an acceptance criterion or separate story covering "user visits [page] and sees/can interact with [component]." A component story alone is not sufficient — the deliverable is the working page, not the isolated component.

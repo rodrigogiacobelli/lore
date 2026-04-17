@@ -63,17 +63,17 @@ Use the knight from the doctrine step if one is specified (`-k`).
 Set `-T` to the step type: `knight`, `constable`, or `human`.
 Set `-p` to the phase number from the doctrine.
 
-Keep a local mapping of `doctrine-step-id → mission-id` as you create each mission.
+Keep a local mapping of `doctrine-step-id → mission-id` as you create each mission. Mission IDs returned by `lore new mission` are fully qualified (`q-xxxx/m-yyyy`). Store the full ID in the mapping.
 
 ### 5. Declare dependencies
 
-For each mission that has a `needs:` list in the doctrine, declare the dependency using the real mission IDs:
+For each mission that has a `needs:` list in the doctrine, declare the dependency using the real fully-qualified mission IDs:
 
 ```
-lore needs <mission-id>:<needs-mission-id> <mission-id>:<needs-mission-id>
+lore needs q-xxxx/m-yyyy:q-xxxx/m-zzzz q-xxxx/m-aaaa:q-xxxx/m-yyyy
 ```
 
-Repeat for every dependency pair.
+Always use the `q-xxxx/m-yyyy` form — passing a bare `m-yyyy` will fail with "Mission not found". Repeat pairs until all dependencies are declared.
 
 ### 6. Show the result
 

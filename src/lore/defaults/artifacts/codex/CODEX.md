@@ -42,9 +42,9 @@ These two trees link to each other but never duplicate. If a fact exists in a sc
 Workflows describe processes. The subject determines the framing:
 
 - **System workflow** — the system is the subject. What the system does when triggered. Steps through internal logic, validations, and state changes.
-- **User-facing workflow** — a user is the subject. What a person does to accomplish a goal. Set the `persona` frontmatter field to identify the role performing it.
+- **User-facing workflow** — a user is the subject. What a person does to accomplish a goal. Indicate the role performing it in the document body.
 
-A background job has a system workflow. A settings command may have a user-facing workflow. Creating and assigning a record has both — the user runs commands (`persona` set) while the system validates input and persists state (no `persona`).
+A background job has a system workflow. A settings command may have a user-facing workflow. Creating and assigning a record has both.
 
 ## Stable vs In-Flight
 
@@ -105,36 +105,14 @@ Every file has frontmatter with the fields below. The `summary` field is written
 
 | Field | Description |
 |-------|-------------|
-| `id` | Unique identifier. In defaults, prefixed with `example-` as a convention signal. |
-| `title` | Human-readable document title |
-| `type` | One of the valid types listed below |
+| `id` | Unique identifier. Must be globally unique across the codex. |
+| `title` | Human-readable document title. |
 | `summary` | 1-3 sentences written for scanning. Answers: would someone looking for X find what they need here? |
-| `related` | List of related codex IDs. Use `[]` if none. Traversed by `lore codex map`. |
-| `stability` | `stable` or `experimental` |
 
-### Optional Fields (by type)
+### Optional Fields
 
-| Field | Applies to | Description |
-|-------|-----------|-------------|
-| `persona` | workflows | User role if this is a user-facing workflow (e.g. `team lead`, `admin`) |
-| `entities_involved` | workflows | List of entity IDs this workflow involves |
+| Field | Description |
+|-------|-------------|
+| `related` | YAML array of related codex IDs. Traversed by `lore codex map`. Omit or use `[]` if none. |
 
-### Valid Types
-
-| Type | Used for |
-|------|---------|
-| `meta` | The CODEX.md index file itself |
-| `entity` | A domain entity (thing with identity and behaviour) |
-| `relationship` | The connection between two entities |
-| `workflow` | A system process or user-facing workflow |
-| `technical` | Technical implementation documentation |
-| `decision` | Architecture Decision Record |
-| `standards` | Coding conventions, design principles, framework rules |
-| `glossary` | Vocabulary definitions |
-| `constraints` | Hard limits and non-negotiable rules |
-| `persona` | A user role and their goals |
-| `integration` | An external system the project touches |
-| `security` | Security and trust model |
-| `operations` | Deployment, development setup, and operational runbooks |
-| `context-map` | Scout output: a map of relevant codex documents for a feature |
-| `transient-marker` | Marks a directory as in-flight/transient |
+No other frontmatter fields are permitted. `lore health` enforces this — any extra field fails validation.

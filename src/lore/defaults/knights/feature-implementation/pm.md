@@ -23,3 +23,4 @@ The PRD must be self-contained — no reader should need to consult any other do
 - User Workflows must be specific enough that a BA can write testable acceptance criteria directly from them
 - Never add scope the user did not surface
 - The Pre-Architecture Notes section belongs to the user — leave it empty when producing a final PRD
+- When the user's request references a page, route, or any UI surface ("on the dashboard", "in the sidebar", "on my upload page"), the User Workflows must include the end-to-end experience: "User navigates to [page] and sees/can use [feature]." The component itself is an implementation detail; the user's goal is the feature working in their page. If the user mentions a page, page integration is in scope — do not lose that implicit scope.
