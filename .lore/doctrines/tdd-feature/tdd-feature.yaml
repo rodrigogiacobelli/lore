@@ -1,0 +1,326 @@
+id: tdd-feature
+steps:
+  # --- Phase 0: Branch ---
+
+  - id: branch
+    title: Create feature branch off work
+    type: constable
+    priority: 0
+    notes: |
+      Verify current branch is `work`:
+        git branch --show-current
+
+      If not on `work`, stop and surface to human.
+
+      Derive the feature slug from the quest title (lowercase, hyphens, no spaces).
+
+      Create the feature branch:
+        git checkout -b feat/<feature-slug>
+
+      Post the branch name to the scout mission board:
+        lore board add <scout-mission-id> "Branch: feat/<feature-slug>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 1: Scout ---
+
+  - id: scout
+    title: Map codex from both business and technical perspectives
+    type: knight
+    priority: 1
+    needs:
+      - branch
+    knight: feature-implementation/scout.md
+    notes: |
+      The orchestrator provides the feature request in this mission description.
+
+      Run two passes — one from the BUSINESS lens, one from the TECHNICAL lens.
+
+      Business pass:
+        lore codex search <feature-keywords>   (2-4 searches, product/user/business angle)
+        lore codex map <most-relevant-id> --depth 1
+        lore codex chaos <most-relevant-id> --threshold <int>   (threshold 30-100)
+      Read every document relevant from a product, user, and business perspective.
+      Retrieve the template: `lore artifact show fi-context-map`
+      Write to .lore/codex/transient/<feature-slug>-business-map.md with proper frontmatter
+      (type: context-map, lens: business).
+      The "why relevant" column must be specific — not "related to this feature".
+
+      Technical pass:
+        lore codex search <feature-keywords>   (2-4 searches, architecture/implementation angle)
+        lore codex map <most-relevant-id> --depth 1
+        lore codex chaos <most-relevant-id> --threshold <int>   (threshold 30-100)
+      Read every document relevant from an architecture, implementation, and infrastructure perspective.
+      Retrieve the template: `lore artifact show fi-context-map`
+      Write to .lore/codex/transient/<feature-slug>-technical-map.md with proper frontmatter
+      (type: context-map, lens: technical).
+      The "why relevant" column must be specific.
+
+      When in doubt whether a document is relevant — include it.
+      Downstream agents cannot find what is missing.
+
+      Post board messages to prd, tech-spec, ba-stories, codex-apply, and tech-notes
+      with both map codex IDs:
+        lore board add <mission-id> "Maps ready — business: lore codex show <biz-id> | technical: lore codex show <tech-id>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 2: PRD ---
+
+  - id: prd
+    title: Produce final PRD from user input and context maps
+    type: knight
+    priority: 2
+    needs:
+      - scout
+    knight: feature-implementation/pm.md
+    notes: |
+      The orchestrator provides the raw user input in this mission description.
+
+      Read your board to find the business-map and technical-map IDs: `lore show <mission-id>`
+      Read both maps: `lore codex show <business-map-id> <technical-map-id>`
+
+      Retrieve the template: `lore artifact show fi-prd`
+
+      Produce a structured final PRD — fill every section completely:
+      - Executive Summary, Classification, Success Criteria, Product Scope,
+        User Workflows, Functional Requirements, Non-Functional Requirements
+      - User Workflows must specify exact user actions and exact system responses —
+        not vague descriptions. Example: "User runs `lore list --json`" not "user lists items"
+      - Be concrete — no vague placeholders
+      - Do not invent scope the user did not surface
+      - Resolve all open questions — do not defer
+      - Leave the Pre-Architecture Notes section empty — user fills it next
+
+      Write to .lore/codex/transient/<feature-slug>-prd.md with proper frontmatter.
+
+      Post a board message to prd-gate with the PRD ID:
+        lore board add <prd-gate-mission-id> "PRD ready: lore codex show <id>"
+
+      Mark done: `lore done <mission-id>`
+
+  - id: prd-gate
+    title: Review PRD — append pre-architecture notes
+    type: human
+    priority: 2
+    needs:
+      - prd
+    notes: >
+      Read the PRD from your board: `lore show <mission-id>`.
+      Read it: `lore codex show <prd-id>`.
+      Append pre-architecture notes directly to the Pre-Architecture Notes section —
+      technical preferences, constraints, priorities, or context for the architect.
+      Mark done.
+
+  # --- Phase 3: Tech Spec ---
+
+  - id: tech-spec
+    title: Produce final Tech Spec from PRD and context maps
+    type: knight
+    priority: 3
+    needs:
+      - prd-gate
+    knight: feature-implementation/architect.md
+    notes: |
+      Your board messages contain the PRD ID and technical-map ID posted by the Scout.
+      Read the PRD including Pre-Architecture Notes: `lore codex show <prd-id>`
+      Read the technical-map: `lore codex show <technical-map-id>` and every doc it references.
+
+      Run `lore codex list` and read all relevant existing technical and architectural docs.
+      You must know the current state before designing.
+
+      Retrieve the template: `lore artifact show fi-tech-spec`
+
+      Produce a final Tech Spec:
+      - Make concrete decisions — no "TBD" without explicit justification and rationale
+      - Define project structure to the file-name level for every file that will change or be created
+      - Output formats must show exact examples, not descriptions — if a command returns JSON,
+        show the exact JSON shape
+      - Every decision must trace back to a PRD requirement
+      - Test Strategy section is mandatory: map every PRD user workflow to an E2E scenario,
+        and identify all unit test targets — this section cannot be left empty or vague
+
+      Write to .lore/codex/transient/<feature-slug>-tech-spec.md with proper frontmatter.
+
+      Post a board message to tech-spec-gate with the Tech Spec ID and PRD ID:
+        lore board add <tech-spec-gate-mission-id> "Tech Spec ready: lore codex show <tech-spec-id> | PRD: lore codex show <prd-id>"
+
+      Mark done: `lore done <mission-id>`
+
+  - id: tech-spec-gate
+    title: Review Tech Spec — append feedback
+    type: human
+    priority: 3
+    needs:
+      - tech-spec
+    notes: >
+      Read the Tech Spec from your board: `lore show <mission-id>`.
+      Read it: `lore codex show <tech-spec-id>`.
+      Append your feedback directly to the Tech Spec file — no specific format required.
+      Mark done.
+
+  # --- Phase 4: Parallel ---
+
+  - id: ba-stories
+    title: Write and finalize User Stories
+    type: knight
+    priority: 4
+    needs:
+      - tech-spec-gate
+    knight: feature-implementation/ba.md
+    notes: |
+      Your board messages contain the PRD ID, Tech Spec ID, and business-map ID posted by the Scout and Architect.
+      Read the PRD first: `lore codex show <prd-id>` — this is your primary source. Read it in full.
+      Read the business-map: `lore codex show <business-map-id>` and the docs it references.
+      Read the Tech Spec: `lore codex show <tech-spec-id>`
+
+      Retrieve templates:
+        lore artifact show fi-user-story
+        lore artifact show fi-user-story-index
+
+      Identify all epics from the PRD user workflows and functional requirements.
+
+      For each story:
+      - Write to .lore/codex/transient/<feature-slug>-us-{number}.md with proper frontmatter
+      - Fill Story, Context, Acceptance Criteria, and Out of Scope sections
+      - E2E Scenarios: specify exact commands and exact expected outputs — not descriptions.
+        Example: "User runs `lore list --json`" receives `[{"id": 1, ...}]`, not "returns a list"
+      - Unit Test Scenarios: name the specific function/module and what to assert
+      - Every story must trace back to a specific PRD requirement — if it cannot, it does not belong
+      - Leave the Tech Notes section empty with placeholder text intact
+
+      Write the index file to .lore/codex/transient/<feature-slug>-us-index.md
+      Fill the PRD Coverage Map — every functional requirement must map to at least one story.
+
+      Verify each story before finalizing:
+      - Is every E2E scenario specific enough to write a test directly from it?
+      - Is Out of Scope explicit enough to prevent scope creep?
+      - Update Status to: final on each story and on the index
+
+      Post all story IDs and the index ID to the tech-notes board:
+        lore board add <tech-notes-mission-id> "Stories final: <id1> <id2> ... index: <index-id>"
+
+      Mark done: `lore done <mission-id>`
+
+  - id: codex-apply
+    title: Apply codex changes directly from Tech Spec and PRD
+    type: knight
+    priority: 4
+    needs:
+      - tech-spec-gate
+    knight: feature-implementation/tech-writer.md
+    notes: |
+      Your board messages contain the PRD ID, Tech Spec ID, business-map ID, and technical-map ID.
+      Read the PRD: `lore codex show <prd-id>`
+      Read both context maps and the docs they reference.
+      Read the Tech Spec: `lore codex show <tech-spec-id>`
+
+      Run `lore codex list` and read every document that this feature might affect.
+
+      Explicitly check workflows:
+        lore codex search workflow
+      For every workflow doc returned, ask: does this feature change the described behavior?
+      Does this feature introduce a new user-facing command or flow that needs a new workflow doc?
+      Every new CLI command needs a workflow doc — this is not optional.
+
+      Identify every codex document to create, update, or retire.
+      Apply changes directly — no proposal step:
+      - Create new documents using the correct artifact templates (`lore artifact list` to find them)
+      - Update existing documents with the specific changes needed
+      - Retire obsolete documents
+
+      Post a board message to tech-notes listing all codex document IDs
+      created, updated, or retired — by codex ID only, never by file path:
+        lore board add <tech-notes-mission-id> "Codex updated: created <id1> updated <id2> retired <id3>"
+
+      Mark done: `lore done <mission-id>`
+
+  - id: tech-notes
+    title: Add tech notes and complexity estimates to each user story
+    type: knight
+    priority: 4
+    needs:
+      - ba-stories
+      - codex-apply
+    knight: feature-implementation/tech-lead.md
+    notes: |
+      Your board messages contain all story IDs, PRD ID, Tech Spec ID, technical-map ID,
+      and updated codex IDs posted by the BA and Tech Writer.
+      Read the PRD first: `lore codex show <prd-id>`
+      Read the technical-map: `lore codex show <technical-map-id>` and the docs it references.
+      Read the Tech Spec and updated codex docs.
+      Read every user story.
+
+      Before writing any test stubs, search for workflow documents:
+        lore codex search workflow
+      Read every workflow doc that covers the commands or interactions the stories exercise.
+      Each test stub must trace back to a specific step or decision point in a workflow doc.
+
+      For each story, fill the Tech Notes section:
+      - Implementation Approach: list specific files to create or modify.
+        Verify every path exists in src/ before writing it — never guess.
+      - Test File Locations: exact test file paths following the conventions in the Tech Spec
+      - Test Stubs: write pseudocode stubs for every E2E scenario and every unit test scenario
+        in the story's Acceptance Criteria. One stub per scenario — no exceptions.
+        Each stub must include a comment citing the workflow codex ID it exercises
+        (e.g., `# conceptual-workflows-claim step 3`). A stub without a citation is incomplete.
+        Reference exact output formats from the acceptance criteria.
+      - Complexity Estimate: S / M / L / XL with one-line justification
+
+      Verify before marking done:
+      - Every file path exists in src/ or matches the Tech Spec project structure
+      - Every codex reference is a valid codex ID
+      - Every acceptance criterion scenario has a corresponding test stub
+
+      Post a board message to group-stories with all final story IDs, the index ID,
+      and a flat complexity summary:
+        lore board add <group-stories-mission-id> "Stories sized: <id1>(S) <id2>(M) <id3>(XL) ... Index: <index-id>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 5: Group Stories ---
+
+  - id: group-stories
+    title: Group sized stories into dev cycle batches and commit spec outputs
+    type: knight
+    priority: 5
+    needs:
+      - tech-notes
+    knight: tdd-feature/story-grouper.md
+    notes: |
+      Your board contains all story IDs with complexity estimates and the index ID.
+      Read it: `lore show <mission-id>`
+
+      Read every story: `lore codex show <id1> <id2> ...`
+      Read the index: `lore codex show <index-id>`
+
+      Group stories into dev cycle batches using these rules:
+      - XL story → one group alone
+      - L story → one group alone, or paired with a closely related S
+      - M/S stories → group by theme or shared infrastructure
+      Goal: each group is completable in one coherent coding session.
+
+      Append a "## Dev Cycle Groups" section to the story index file with this exact format:
+        ## Dev Cycle Groups
+        - G1: [<id1>, <id2>] — <one-line rationale>
+        - G2: [<id3>] — <one-line rationale>
+        - G3: [<id4>, <id5>] — <one-line rationale>
+
+      Then commit all spec pipeline outputs on the feature branch:
+        git add .lore/codex/transient/<feature-slug>-*.md
+        git add .lore/codex/   (any new or updated non-transient codex docs)
+        git commit -m "feat(<feature-slug>): spec pipeline — PRD, tech spec, user stories, codex, groups"
+
+      Post a board message to the quest board signalling the orchestrator:
+        lore board add <quest-id> "Spec complete. Groups defined in index: lore codex show <index-id>. Orchestrator: create dev cycle missions."
+
+      Mark done: `lore done <mission-id>`
+
+  # -----------------------------------------------------------------------
+  # Dev cycle missions (Red → Green → Refactor → Dev Commit, per group)
+  # are NOT pre-created here. After group-stories completes, the orchestrator
+  # reads the "Dev Cycle Groups" section from the story index and creates
+  # one Red → Green → Refactor → Dev Commit chain per group.
+  # Groups run sequentially: each group's Red depends on the previous
+  # group's Dev Commit. See start-tdd-quest skill for orchestrator instructions.
+  # -----------------------------------------------------------------------
