@@ -122,3 +122,15 @@ def test_{unit_scenario_slug}():
 ### Complexity Estimate
 
 _{S / M / L / XL — one line justification}_
+
+### Standards References
+
+_Codex documents every agent working this story must read before starting. Populated by the Tech Lead._
+
+**Tester (Red):**
+- `lore codex show {standards-doc-id}` — _{why relevant, e.g. "defines required integration test for seed scripts"}_
+- _{add one line per relevant standard}_
+
+**Implementer (Green):**
+- `lore codex show {standards-doc-id}` — _{why relevant, e.g. "defines error handling conventions for API routes"}_
+- _{add one line per relevant standard}_

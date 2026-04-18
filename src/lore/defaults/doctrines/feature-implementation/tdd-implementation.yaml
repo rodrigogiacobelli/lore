@@ -30,6 +30,15 @@ steps:
 
       No production code — not even stubs or empty functions.
 
+      Before marking done — wiring and coverage check:
+      Read the Tech Spec file structure section. For every file listed as modified or created:
+      - Verify at least one test covers its primary behavior.
+      - For files that assemble child components (page, container, layout, view): verify a test
+        exists asserting the file renders those child components under the correct conditions.
+        The user story test scenarios are a minimum floor — if the acceptance criteria does not
+        list this test explicitly, write it anyway.
+      If any listed file has no test, write one. Do not mark done with an untested file.
+
       Mark done: `lore done <mission-id>`
 
   - id: green
@@ -61,6 +70,11 @@ steps:
       Do not modify test files — tests are the specification.
       Do not refactor or clean up — that is the next step.
 
+      Before marking done — runner check:
+      If the project uses a grep-filtered or project-based test runner (e.g., Playwright):
+      verify every E2E test file written by Red is matched by at least one runner project config.
+      A test file that runs but is silently skipped is a blocker — surface it before marking done.
+
       Mark done: `lore done <mission-id>`
 
   - id: refactor
@@ -90,6 +104,9 @@ steps:
         uv run pytest                          (all tests must stay green)
         uv run ruff check src/ tests/          (no lint violations)
         type checking if configured
+        runner coverage: confirm every test file is reachable by the test runner — for
+        grep-filtered runners, every test name must match at least one project pattern;
+        a silently skipped test is a defect, not a passing test
 
       If refactoring breaks a test — revert the refactor immediately.
       No new features or tests beyond what the story requires.

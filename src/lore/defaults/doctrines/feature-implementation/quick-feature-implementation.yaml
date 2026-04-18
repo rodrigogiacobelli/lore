@@ -162,6 +162,12 @@ steps:
       - E2E Scenarios: specify exact commands and exact expected outputs — not descriptions.
         Example: "User runs `lore list --json`" receives `[{"id": 1, ...}]`, not "returns a list"
       - Unit Test Scenarios: name the specific function/module and what to assert
+      - Wiring Scenarios: for any story involving a page, container, or view that assembles child
+        components — add explicit integration test scenarios asserting the page renders each assembled
+        component under the correct conditions. These are non-optional and separate from the component
+        unit tests. A component test passing in isolation does not substitute for a wiring test.
+        Example: "LibraryPage renders LibrarySidebar when user has groups" is a wiring scenario;
+        "LibrarySidebar renders group names" is a component test. Both are required.
       - Every story must trace back to a specific PRD requirement — if it cannot, it does not belong
       - Leave the Tech Notes section empty with placeholder text intact
 
@@ -171,6 +177,8 @@ steps:
       Verify each story before finalizing:
       - Is every E2E scenario specific enough to write a test directly from it?
       - Is Out of Scope explicit enough to prevent scope creep?
+      - For every page/container/view in the Tech Spec file tree: is there a wiring test scenario
+        asserting it renders its assembled components? If not, add one before finalizing.
       - Update Status to: final on each story and on the index
 
       Post all story IDs and the index ID to the tech-notes board:
@@ -227,10 +235,22 @@ steps:
       Read the Tech Spec and updated codex docs.
       Read every user story.
 
-      Before writing any test stubs, search for workflow documents:
+      Before writing any test stubs, search for workflow and standards documents:
         lore codex search workflow
+        lore codex search standards
+        lore codex search testing
+        lore codex search conventions
       Read every workflow doc that covers the commands or interactions the stories exercise.
       Each test stub must trace back to a specific step or decision point in a workflow doc.
+
+      For each story, populate the Standards References section in Tech Notes:
+      - For every file type in the Implementation Approach (API route, CLI tool, page, component,
+        integration script, etc.) — find the relevant standards codex doc and cite it directly.
+      - Write one line per standard under the correct role (Tester or Implementer).
+      - Format: `lore codex show <id>` — one sentence on why it applies to this story.
+      - If no standards doc exists for a file type, leave the role section empty rather than omit it.
+      This section is the primary mechanism by which Red and Green agents discover project standards —
+      they will not search for them independently.
 
       For each story, fill the Tech Notes section:
       - Implementation Approach: list specific files to create or modify.
@@ -241,12 +261,18 @@ steps:
         Each stub must include a comment citing the workflow codex ID it exercises
         (e.g., `# conceptual-workflows-claim step 3`). A stub without a citation is incomplete.
         Reference exact output formats from the acceptance criteria.
+      - Wiring Stubs: for every file in the Implementation Approach that assembles child components
+        (page, container, layout, view) — write stubs asserting the file renders each child component
+        specified in the Tech Spec file tree. Do this even if the story's acceptance criteria does
+        not list it explicitly. Component isolation tests are a floor, not a ceiling.
       - Complexity Estimate: S / M / L / XL with one-line justification
 
       Verify before marking done:
       - Every file path exists in src/ or matches the Tech Spec project structure
       - Every codex reference is a valid codex ID
       - Every acceptance criterion scenario has a corresponding test stub
+      - Every file in the Implementation Approach has at least one stub — including pages and
+        containers that assemble components not individually called out in the acceptance criteria
 
       Post a board message to the quest board confirming pipeline complete,
       listing all final story IDs and the index ID:

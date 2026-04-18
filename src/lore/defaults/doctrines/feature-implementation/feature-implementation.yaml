@@ -362,6 +362,10 @@ steps:
       - E2E Scenarios: specify exact commands and exact expected outputs — not descriptions.
         Example: "User runs `lore list --json`" receives `[{"id": 1, ...}]`, not "returns a list"
       - Unit Test Scenarios: name the specific function/module and what to assert
+      - Wiring Scenarios: for any story involving a page, container, or view that assembles child
+        components — add explicit integration test scenarios asserting the page renders each assembled
+        component under the correct conditions. These are non-optional and separate from component
+        unit tests. A component test passing in isolation does not substitute for a wiring test.
       - Leave the Tech Notes section empty with placeholder text intact — do not remove it
       - Every story must trace back to a specific PRD requirement — if it cannot, it does not belong
       - Post each story's codex ID to the ba-stories-final board:
@@ -390,6 +394,8 @@ steps:
       - Is every E2E scenario specific enough to write a test directly from it?
         It must name the exact command, exact inputs, and exact expected output.
         If not — fix it before marking final.
+      - For every page/container/view in the Tech Spec file tree: is there a wiring test scenario
+        asserting it renders its assembled components? If not, add one before marking final.
       - Does every story trace back to a PRD requirement?
       - Is Out of Scope explicit enough to prevent scope creep?
       - Update Status to: final
@@ -482,8 +488,11 @@ steps:
       Read the Tech Spec and updated codex docs.
       Read every user story.
 
-      Before writing any test stubs, search for workflow documents:
+      Before writing any test stubs, search for workflow and standards documents:
         lore codex search workflow
+        lore codex search standards
+        lore codex search testing
+        lore codex search conventions
       Read every workflow doc that covers the commands or interactions the stories exercise.
       Each test stub must trace back to a specific step or decision point in a workflow doc.
 
@@ -496,6 +505,14 @@ steps:
         Each stub must include a comment citing the workflow codex ID it exercises
         (e.g., `# conceptual-workflows-claim step 3`). A stub without a citation is incomplete.
         Reference exact output formats from the acceptance criteria.
+      - Wiring Stubs: for every file in the Implementation Approach that assembles child components
+        (page, container, layout, view) — write stubs asserting the file renders each child component
+        specified in the Tech Spec file tree. Component isolation tests are a floor, not a ceiling.
+      - Standards References: for every file type in the Implementation Approach, find the relevant
+        standards codex doc and cite it under the correct role (Tester or Implementer).
+        Format: `lore codex show <id>` — one sentence on why it applies.
+        This is the primary mechanism by which Red and Green agents discover project standards —
+        they will not search for them independently.
       - Complexity Estimate: S / M / L / XL with one-line justification
 
       Post a board message to tech-notes-final listing all story IDs:
@@ -522,6 +539,9 @@ steps:
       - Every unit test scenario in Acceptance Criteria has a corresponding test stub
       - Every stub cites a workflow codex ID in its comment — a stub without a citation is incomplete
       - Test stubs reference the exact output format specified in the acceptance criteria
+      - Every file in Implementation Approach that assembles child components has a wiring stub
+      - Standards References section is populated for both Tester and Implementer roles —
+        every file type in the Implementation Approach has at least one cited standards doc
 
       Fix all gaps, wrong paths, or missing stubs. Update stories in-place.
 

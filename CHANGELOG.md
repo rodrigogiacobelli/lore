@@ -37,6 +37,10 @@ See standards-public-api-stability for the public API stability and semver polic
 - **CODEX.md default artifact** — frontmatter documentation now matches the actual schema enforced by `lore health`. Removed non-existent `type`, `stability`, `persona`, and `entities_involved` fields; corrected required fields to `id`, `title`, `summary` with `related` as the only optional field.
 - **`start-quest` skill** — `lore needs` step now instructs agents to use fully-qualified `q-xxxx/m-yyyy` mission IDs. Bare `m-yyyy` IDs caused "Mission not found" errors.
 - **Feature-implementation PM and BA knights** — UI feature requests now correctly scope page integration. PM captures end-to-end user workflows when a page is mentioned; BA requires a page-integration story for every UI component.
+- **Standards References section in `fi-user-story` template** — Tech Lead now populates a `Standards References` block in every story's Tech Notes, listing relevant codex docs per role (Tester, Implementer). Red and Green agents read these before starting work, eliminating reliance on agents independently searching for standards.
+- **Wiring scenarios and wiring stubs** — BA and Tech Lead steps in all three feature-implementation doctrines now explicitly require integration test scenarios and stubs for any page, container, or view that assembles child components. Component isolation tests are no longer sufficient.
+- **`tdd-red` and `tdd-green` personas** — Red reads `Standards References → Tester` before writing any test; Green reads `Standards References → Implementer` before touching any file. Acceptance criteria are the starting point, not the complete contract.
+- **`tdd-implementation` doctrine** — Red performs a wiring and coverage check against the Tech Spec file tree before marking done; Green verifies E2E test files are matched by the runner config; Refactor audits runner coverage as a quality check.
 
 ## [0.2.0] - 2026-04-10
 
