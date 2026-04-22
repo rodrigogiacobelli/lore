@@ -7,6 +7,7 @@ Specs:
 
 from importlib.resources import files
 
+import jsonschema
 import pytest
 
 from lore.schemas import (
@@ -486,6 +487,171 @@ class TestUs006ReadFailedBranch:
 # Spec: schema-validation-us-010
 # Workflow: conceptual-workflows-validators
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# US-001 (codex-sources-us-001) — codex-source-frontmatter schema file
+# Anchors:
+#   conceptual-workflows-health §Schema checks contract — the codex-source
+#   frontmatter is just another kind in the table; the loader contract is the
+#   same (load_schema returns a dict whose $id / additionalProperties /
+#   required / properties match the authored YAML).
+# Red state: src/lore/schemas/codex-source-frontmatter.yaml does NOT exist yet,
+# so load_schema("codex-source-frontmatter") must raise FileNotFoundError —
+# every US-001 test below therefore fails until the schema file is authored.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def source_validator():
+    """Draft2020 validator bound to the codex-source-frontmatter schema.
+
+    Every US-001 test constructs the same validator against the same schema;
+    the fixture de-duplicates that boilerplate without changing behaviour.
+    """
+    return jsonschema.Draft202012Validator(load_schema("codex-source-frontmatter"))
+
+
+class TestUs001CodexSourceFrontmatterHappy:
+    def test_codex_source_frontmatter_happy(self):
+        # conceptual-workflows-health — schema kind registration: load_schema
+        # returns a dict whose top-level $id / additionalProperties / required
+        # / properties match the authored YAML.
+        schema = load_schema("codex-source-frontmatter")
+        assert schema["$id"] == "lore://schemas/codex-source-frontmatter"
+        assert schema["additionalProperties"] is False
+        assert schema["required"] == ["id", "title", "summary", "related"]
+        assert schema["properties"]["related"]["minItems"] == 1
+        assert schema["properties"]["related"]["uniqueItems"] is True
+
+    def test_codex_source_frontmatter_valid_doc_produces_no_errors(
+        self, source_validator
+    ):
+        # conceptual-workflows-health — positive-path validation (AC Scenario 8).
+        doc = {
+            "id": "KONE-23335",
+            "title": "Integrate retry semantics",
+            "summary": "Jira ticket — retry semantics for the foo connector.",
+            "related": [
+                "technical-backend-retry",
+                "conceptual-entities-connector",
+            ],
+        }
+        assert list(source_validator.iter_errors(doc)) == []
+
+
+class TestUs001CodexSourceFrontmatterRejectsMissingRelated:
+    def test_codex_source_frontmatter_rejects_missing_related(
+        self, source_validator
+    ):
+        # conceptual-workflows-health — missing required field emits
+        # validator=="required" (AC Scenario 2).
+        errors = list(
+            source_validator.iter_errors(
+                {"id": "KONE-23335", "title": "T", "summary": "S"}
+            )
+        )
+        assert any(
+            e.validator == "required" and "related" in str(e.message)
+            for e in errors
+        )
+
+
+class TestUs001CodexSourceFrontmatterRejectsEmptyRelated:
+    def test_codex_source_frontmatter_rejects_empty_related(
+        self, source_validator
+    ):
+        # conceptual-workflows-health — empty array under minItems constraint
+        # (AC Scenario 3). Exactly one minItems error at /related.
+        errors = list(
+            source_validator.iter_errors(
+                {"id": "KONE-23335", "title": "T", "summary": "S", "related": []}
+            )
+        )
+        minitems = [e for e in errors if e.validator == "minItems"]
+        assert len(minitems) == 1
+        assert list(minitems[0].absolute_path) == ["related"]
+
+
+class TestUs001CodexSourceFrontmatterRejectsExtraField:
+    def test_codex_source_frontmatter_rejects_extra_field(self, source_validator):
+        # conceptual-workflows-health — additionalProperties:false contract
+        # (AC Scenario 4). Exactly one additionalProperties error naming 'foo'.
+        errors = list(
+            source_validator.iter_errors(
+                {
+                    "id": "x",
+                    "title": "T",
+                    "summary": "S",
+                    "related": ["a"],
+                    "foo": "bar",
+                }
+            )
+        )
+        extras = [e for e in errors if e.validator == "additionalProperties"]
+        assert len(extras) == 1
+        assert "foo" in str(extras[0].message)
+
+
+class TestUs001CodexSourceFrontmatterRequiredFields:
+    @pytest.mark.parametrize("missing", ["id", "title", "summary", "related"])
+    def test_codex_source_frontmatter_requires_id_title_summary_related(
+        self, missing, source_validator
+    ):
+        # conceptual-workflows-health — every required field fails with
+        # validator=="required" (AC Scenario 5).
+        doc = {"id": "x", "title": "T", "summary": "S", "related": ["a"]}
+        doc.pop(missing)
+        errors = list(source_validator.iter_errors(doc))
+        assert any(
+            e.validator == "required" and missing in str(e.message)
+            for e in errors
+        )
+
+
+class TestUs001CodexSourceFrontmatterEmptyStrings:
+    @pytest.mark.parametrize("field", ["id", "title", "summary"])
+    def test_codex_source_frontmatter_empty_strings_rejected(
+        self, field, source_validator
+    ):
+        # conceptual-workflows-health — minLength:1 on each string field
+        # (AC Scenario 6).
+        doc = {"id": "x", "title": "T", "summary": "S", "related": ["a"]}
+        doc[field] = ""
+        errors = list(source_validator.iter_errors(doc))
+        hits = [
+            e
+            for e in errors
+            if e.validator == "minLength" and list(e.absolute_path) == [field]
+        ]
+        assert len(hits) >= 1
+
+
+class TestUs001CodexSourceFrontmatterDuplicateRelated:
+    def test_codex_source_frontmatter_rejects_duplicate_related(
+        self, source_validator
+    ):
+        # conceptual-workflows-health — uniqueItems constraint on related[]
+        # (AC Scenario 7).
+        errors = list(
+            source_validator.iter_errors(
+                {
+                    "id": "x",
+                    "title": "T",
+                    "summary": "S",
+                    "related": ["a", "a"],
+                }
+            )
+        )
+        assert any(e.validator == "uniqueItems" for e in errors)
+
+
+class TestUs001CodexSourceFrontmatterPackagedResource:
+    def test_schema_yaml_ships_with_package(self):
+        # conceptual-workflows-health — Scenario 1: schema file ships with the
+        # package so it is resolvable at import time.
+        names = {p.name for p in files("lore.schemas").iterdir()}
+        assert "codex-source-frontmatter.yaml" in names
 
 
 class TestUs010CreateTimeModulesDelegateToSchemas:

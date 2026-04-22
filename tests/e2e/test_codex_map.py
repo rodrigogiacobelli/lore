@@ -1267,3 +1267,137 @@ def test_cli_codex_map_broken_related_link_exit_code_0(project_dir):
     )
 
     assert proc.returncode == 0
+
+
+# ---------------------------------------------------------------------------
+# codex-sources-us-007 — outbound 'related' on conceptual-entities-artifact
+# so `lore codex map <source-id> --depth 1` reaches canonical docs named in
+# the source's related list (AC#5 of US-005 / US-007 reachability contract).
+# Anchors:
+#   codex-sources-us-007 AC Scenarios 1 and 2 — canonical outbound IDs
+#   surfaced via `lore codex map --depth 1`.
+#   conceptual-workflows-codex-map §BFS on 'related' field.
+#   decisions-006-no-seed-content-tests — fixture-based codex tree, never
+#   assert against real project-codex prose.
+# Red state: covers the provenance traversal contract. Fails if the outbound
+# 'related' on a source or the canonical artifact doc stops working.
+# ---------------------------------------------------------------------------
+
+
+def _write_source_doc(project_dir, system, doc_id, related):
+    """Write a Sources-layer codex doc under .lore/codex/sources/<system>/."""
+    items = "\n".join(f"  - {r}" for r in related)
+    content = (
+        "---\n"
+        f"id: {doc_id}\n"
+        f"title: {doc_id}\n"
+        f"summary: Verbatim snapshot of {doc_id}.\n"
+        f"related:\n{items}\n"
+        "---\n"
+        "\n"
+        f"Body of {doc_id}.\n"
+    )
+    sources_dir = project_dir / ".lore" / "codex" / "sources" / system
+    sources_dir.mkdir(parents=True, exist_ok=True)
+    path = sources_dir / f"{doc_id}.md"
+    path.write_text(content)
+    return path
+
+
+# conceptual-workflows-codex-map — source-to-canonical reachability.
+def test_codex_map_source_reaches_canonical_docs_depth_1(project_dir, runner):
+    """US-005 AC#5 / US-007 reachability — a source snapshot whose 'related'
+    names canonical codex IDs surfaces those canonical docs via
+    `lore codex map <source-id> --depth 1`.
+    """
+    canonical_ids = [
+        "conceptual-entities-doctrine",
+        "conceptual-entities-knight",
+        "conceptual-workflows-lore-init",
+        "tech-cli-commands",
+    ]
+    for cid in canonical_ids:
+        _write_codex_doc(project_dir, cid, related=[])
+    _write_source_doc(
+        project_dir, "jira", "KONE-23335", related=canonical_ids
+    )
+
+    result = runner.invoke(
+        main, ["codex", "map", "KONE-23335", "--depth", "1"]
+    )
+
+    assert result.exit_code == 0, result.output
+    output = result.output
+    assert "=== KONE-23335 ===" in output
+    # All four canonical docs reachable at depth 1 from the source.
+    for cid in canonical_ids:
+        assert f"=== {cid} ===" in output, (
+            f"canonical doc {cid!r} not reached from source"
+        )
+
+
+# conceptual-workflows-codex-map — fixture replay of conceptual-entities-
+# artifact outbound 'related' list (US-007 AC Scenario 1).
+def test_codex_map_artifact_fixture_exposes_required_outbound_edges(
+    project_dir, runner
+):
+    """US-007 AC Scenario 1 (fixture form) — a fixture doc with ID
+    'conceptual-entities-artifact' and the four canonical outbound IDs in
+    'related' surfaces each of those IDs via `lore codex map --depth 1`.
+    Fixture-based per decisions-006-no-seed-content-tests.
+    """
+    canonical_ids = [
+        "conceptual-entities-doctrine",
+        "conceptual-entities-knight",
+        "conceptual-workflows-lore-init",
+        "tech-cli-commands",
+    ]
+    for cid in canonical_ids:
+        _write_codex_doc(project_dir, cid, related=[])
+    _write_codex_doc(
+        project_dir, "conceptual-entities-artifact", related=canonical_ids
+    )
+
+    result = runner.invoke(
+        main,
+        ["codex", "map", "conceptual-entities-artifact", "--depth", "1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    for cid in canonical_ids:
+        assert f"=== {cid} ===" in result.output, (
+            f"canonical doc {cid!r} not reached from artifact doc"
+        )
+
+
+# conceptual-workflows-codex-map — JSON mode reachability for source doc.
+def test_codex_map_source_json_mode_documents_include_canonical(
+    project_dir, runner
+):
+    """US-007 AC Scenario 2 (JSON form) — JSON 'documents' array at depth 1
+    contains at least one canonical ID named in the source's 'related'.
+    """
+    canonical_ids = [
+        "conceptual-entities-doctrine",
+        "conceptual-entities-knight",
+        "conceptual-workflows-lore-init",
+        "tech-cli-commands",
+    ]
+    for cid in canonical_ids:
+        _write_codex_doc(project_dir, cid, related=[])
+    _write_source_doc(
+        project_dir, "jira", "KONE-23335", related=canonical_ids
+    )
+
+    result = runner.invoke(
+        main,
+        ["--json", "codex", "map", "KONE-23335", "--depth", "1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    ids = {doc["id"] for doc in data.get("documents", [])}
+    assert "KONE-23335" in ids
+    assert ids & set(canonical_ids), (
+        "no canonical doc surfaced from source via depth-1 BFS"
+    )

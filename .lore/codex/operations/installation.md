@@ -2,10 +2,11 @@
 id: ops-installation
 title: Installation
 summary: How to install Lore as an end-user CLI tool (uv tool, pipx) and how to set
-  up a development environment, build a distributable package, publish to PyPI, and
-  verify the install.
+  up a development environment, build a distributable package, and verify the install.
+  See ops-publish-pypi for the release runbook.
 related:
 - ops-git-workflow
+- ops-publish-pypi
 - decisions-002-package-name
 ---
 
@@ -108,17 +109,7 @@ uv tool install dist/lore_agent_task_manager-*.whl
 
 ## Publishing to PyPI
 
-```bash
-uv build
-uv publish
-```
-
-You'll need a [PyPI account](https://pypi.org/account/register/) and API token. For test runs, use [TestPyPI](https://test.pypi.org/) first:
-
-```bash
-uv publish --publish-url https://test.pypi.org/legacy/
-uv tool install --index-url https://test.pypi.org/simple/ lore-agent-task-manager
-```
+See `ops-publish-pypi` for the full release runbook (version bump, changelog, tag, build, upload, verify).
 
 ## Verifying the Install
 

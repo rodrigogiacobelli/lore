@@ -46,15 +46,41 @@ Workflows describe processes. The subject determines the framing:
 
 A background job has a system workflow. A settings command may have a user-facing workflow. Creating and assigning a record has both.
 
-## Stable vs In-Flight
+## The Three Content Classes
 
-Documentation is either stable or in-flight.
+Every file in the codex belongs to exactly one of three classes, defined by its top-level directory and by one question: **what happens when you delete it?**
 
-**Stable** — `conceptual/`, `technical/`, `decisions/`, `standards/`, `glossary/`, `constraints/`, `personas/`, `integrations/`, `security/`, `operations/`. Describes the system as it exists today. Never contains future intentions or work in progress.
+| Class    | Directory                  | Deletion test |
+|----------|----------------------------|---------------|
+| Stable   | `conceptual/`, `technical/`, `decisions/`, `standards/`, `glossary/`, `constraints/`, `personas/`, `integrations/`, `security/`, `operations/` | Deleting any file LOSES information. Never safe. |
+| In-Flight | `transient/` | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. |
+| Sources  | `sources/<system>/<id>.md` | Safe to delete **at any time**. Every fact worth keeping already lives in a stable doc. |
 
-**In-flight** — `transient/`. Describes work being planned or developed. These files are deleted when the feature ships.
+**Stable** describes the system as it exists today. Never future intentions, never work in progress.
 
-**The deletion test:** when a feature ships, its transient files can be deleted. If deleting them causes any information to be lost, the stable documentation was not properly updated. A complete documentation update is part of the definition of done.
+**In-flight** (`transient/`) holds work being planned or developed — PRDs, tech specs, maps, reports. Deleted when the feature ships.
+
+**Sources** (`sources/<system>/<id>.md`) hold raw upstream material — Jira tickets, meeting transcripts, chat threads, pasted documents — captured verbatim as point-in-time snapshots. They are never canonical. Every fact that matters must be propagated into a stable doc before the source becomes deletable; after that, the source is disposable.
+
+### Sources layout
+
+Files live at `sources/<system>/<id>.md` where `<system>` is a free-form slug (e.g. `jira`, `slack`, `meetings`) and `<id>` is unique within that system.
+
+### Sources frontmatter rule
+
+Source files carry exactly four frontmatter fields: `id`, `title`, `summary`, and `related`. All four are required. `related` is a non-empty array of canonical codex IDs — the canonical docs this source caused to change. `lore health` rejects any source file with missing fields, empty `related`, or any extra field.
+
+### Verbatim rule
+
+Source bodies are preserved verbatim from upstream. Light reformatting is permitted only when the upstream format is structurally unreadable (e.g. Atlassian ADF → markdown). Semantic content must not be altered.
+
+### One-way linking
+
+Sources MUST link outward. Every source's `related` list names every canonical doc it caused to change — `lore codex map <source-id> --depth 1` returns exactly those docs. Canonical docs MUST NOT link back: no canonical doc may include a source ID in its `related` list. `lore health` enforces both directions — empty/missing `related` on a source is a schema error; a source ID appearing in any canonical doc's `related` is a `canonical_links_to_source` error.
+
+### Refresh rule
+
+Re-ingestion of an existing source (via `/refresh-source`) **overwrites** the snapshot file. There is no history file. Previous content is retained only in git history.
 
 ## Decisions
 

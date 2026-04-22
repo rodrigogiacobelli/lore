@@ -1,0 +1,29 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/codex-source-frontmatter"
+title: Codex Source Frontmatter
+type: object
+additionalProperties: false
+required: [id, title, summary, related]
+properties:
+  id:
+    type: string
+    minLength: 1
+    description: Source document id. Unique within the parent <system> slug.
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1
+  related:
+    type: array
+    minItems: 1
+    uniqueItems: true
+    items:
+      type: string
+      minLength: 1
+    description: >
+      Canonical codex IDs that this source caused to change. MUST be non-empty.
+      Sources must always link outward — `lore codex map <source-id> --depth 1`
+      surfaces exactly these docs. Canonical docs never link back (enforced by
+      `lore health`'s canonical_links_to_source check).

@@ -734,3 +734,98 @@ class TestSkillsSeeding:
         runner.invoke(main, ["init"])
         assert custom_skill.exists()
         assert custom_skill.read_text() == "# My custom skill\n"
+
+
+# ---------------------------------------------------------------------------
+# US-005 / US-006 (codex-sources) — lore init seeds the ingest-source and
+# refresh-source skill dirs; no file is written under .claude/skills/.
+# Spec anchors: codex-sources-us-005 AC Scenarios 1, 2, 5;
+#               codex-sources-us-006 AC Scenario 1;
+#               conceptual-workflows-lore-init §Step "seed skills";
+#               decisions-006-no-seed-content-tests (structural-only).
+# Red state: the default skill files for ingest-source and refresh-source
+# do not exist under src/lore/defaults/skills/ yet — the _copy_defaults_tree
+# call therefore produces no destination files and these tests fail at the
+# existence / frontmatter assertions. The .claude/skills/ negative assertion
+# already holds under the current implementation (no regression risk).
+# ---------------------------------------------------------------------------
+
+
+class TestInitSeedsIngestSourceSkill:
+    """codex-sources-us-005 — init copies the default ingest-source skill."""
+
+    def _load_frontmatter(self, path: Path) -> dict:
+        import yaml
+
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---"), f"{path} missing frontmatter"
+        parts = text.split("---", 2)
+        assert len(parts) >= 3, f"{path} malformed frontmatter"
+        data = yaml.safe_load(parts[1])
+        assert isinstance(data, dict)
+        return data
+
+    def test_init_seeds_ingest_source_skill_file(self, runner, project_dir):
+        """AC Scenario 1 — .lore/skills/ingest-source/SKILL.md exists after init."""
+        path = project_dir / ".lore" / "skills" / "ingest-source" / "SKILL.md"
+        assert path.is_file(), f"missing seeded skill: {path}"
+
+    def test_seeded_ingest_source_skill_frontmatter_name(self, runner, project_dir):
+        """AC Scenario 2 — seeded skill frontmatter has name == 'ingest-source'."""
+        path = project_dir / ".lore" / "skills" / "ingest-source" / "SKILL.md"
+        fm = self._load_frontmatter(path)
+        assert fm.get("name") == "ingest-source"
+
+
+class TestInitSeedsRefreshSourceSkill:
+    """codex-sources-us-006 — init copies the default refresh-source skill."""
+
+    def _load_frontmatter(self, path: Path) -> dict:
+        import yaml
+
+        text = path.read_text(encoding="utf-8")
+        assert text.startswith("---"), f"{path} missing frontmatter"
+        parts = text.split("---", 2)
+        assert len(parts) >= 3, f"{path} malformed frontmatter"
+        data = yaml.safe_load(parts[1])
+        assert isinstance(data, dict)
+        return data
+
+    def test_init_seeds_refresh_source_skill_file(self, runner, project_dir):
+        """AC Scenario 1 — .lore/skills/refresh-source/SKILL.md exists after init."""
+        path = project_dir / ".lore" / "skills" / "refresh-source" / "SKILL.md"
+        assert path.is_file(), f"missing seeded skill: {path}"
+
+    def test_seeded_refresh_source_skill_frontmatter_name(self, runner, project_dir):
+        """AC Scenario 2 — seeded skill frontmatter has name == 'refresh-source'."""
+        path = project_dir / ".lore" / "skills" / "refresh-source" / "SKILL.md"
+        fm = self._load_frontmatter(path)
+        assert fm.get("name") == "refresh-source"
+
+
+class TestInitDoesNotTouchDotClaudeSkills:
+    """codex-sources-us-005 AC Scenario 5 + PRD FR-19 —
+    lore init MUST NOT write anything under .claude/skills/.
+    """
+
+    def test_dot_claude_skills_dir_absent_after_init(self, runner, project_dir):
+        """AC Scenario 5 — .claude/skills/ must not exist after init."""
+        assert not (project_dir / ".claude" / "skills").exists(), (
+            "lore init wrote under .claude/skills/ — forbidden by FR-19"
+        )
+
+    def test_no_ingest_source_under_dot_claude_after_init(self, runner, project_dir):
+        """AC Scenario 5 — no ingest-source artefact anywhere under .claude/."""
+        dot_claude = project_dir / ".claude"
+        if dot_claude.exists():
+            assert not any(
+                p.name == "ingest-source" for p in dot_claude.rglob("*")
+            ), "ingest-source leaked into .claude/ tree"
+
+    def test_no_refresh_source_under_dot_claude_after_init(self, runner, project_dir):
+        """AC Scenario 5 — no refresh-source artefact anywhere under .claude/."""
+        dot_claude = project_dir / ".claude"
+        if dot_claude.exists():
+            assert not any(
+                p.name == "refresh-source" for p in dot_claude.rglob("*")
+            ), "refresh-source leaked into .claude/ tree"

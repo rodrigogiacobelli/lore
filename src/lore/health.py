@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING, Callable
 
 import yaml
 
+# Re-exported at module scope so tests can monkeypatch `health.get_validator`
+# and `_check_schemas` can resolve its default via `sys.modules[__name__]`.
+from lore.schemas import _validator_for as get_validator  # noqa: F401
+
 if TYPE_CHECKING:
     from jsonschema import Draft202012Validator
 
@@ -73,6 +77,7 @@ _SCHEMA_KINDS: tuple[tuple[str, str, str, str], ...] = (
 _FRONTMATTER_SCHEMA_KINDS: frozenset[str] = frozenset({
     "knight-frontmatter",
     "codex-frontmatter",
+    "codex-source-frontmatter",
     "artifact-frontmatter",
     "doctrine-design-frontmatter",
 })
@@ -125,22 +130,28 @@ def _build_doctrine_name_index(doctrines_dir: Path) -> set[str]:
 
 
 def _check_codex(codex_dir: Path) -> list[HealthIssue]:
-    """Audit codex documents for missing IDs, broken related links, and island nodes."""
+    """Audit codex documents for missing IDs, broken related links, island nodes,
+    and the source one-way-link rule (FR-8, FR-10a)."""
     issues: list[HealthIssue] = []
-
     if not codex_dir.exists():
         return issues
 
-    # Parse all files once; cache frontmatter by doc ID
-    known_ids: set[str] = set()
-    docs: list[dict] = []
-
     transient_dir = codex_dir / "transient"
+    sources_dir = codex_dir / "sources"
+
+    known_ids: set[str] = set()
+    source_ids: set[str] = set()           # subset of known_ids under sources/
+    docs: list[tuple[dict, bool]] = []     # (fm, is_source)
+
     for filepath in codex_dir.rglob("*.md"):
         if filepath.is_relative_to(transient_dir):
             continue
+        is_source = filepath.is_relative_to(sources_dir)
         fm = _parse_frontmatter(filepath)
         if fm is None or not fm.get("id"):
+            if is_source:
+                # Source frontmatter issues are reported by _check_schemas.
+                continue
             issues.append(HealthIssue(
                 severity="error",
                 entity_type="codex",
@@ -151,16 +162,15 @@ def _check_codex(codex_dir: Path) -> list[HealthIssue]:
             continue
         doc_id = str(fm["id"])
         known_ids.add(doc_id)
-        docs.append(fm)
+        if is_source:
+            source_ids.add(doc_id)
+        docs.append((fm, is_source))
 
-    # Check related links and collect referenced IDs
+    # Related-link pass: broken links for everyone; canonical_links_to_source for non-sources only.
     referenced_ids: set[str] = set()
-
-    for fm in docs:
+    for fm, is_source in docs:
         doc_id = str(fm["id"])
-        related = fm.get("related")
-        if not related:
-            continue
+        related = fm.get("related") or []
         for entry in related:
             if entry is None:
                 continue
@@ -174,9 +184,18 @@ def _check_codex(codex_dir: Path) -> list[HealthIssue]:
                     check="broken_related_link",
                     detail=f"related ID '{ref_id}' does not exist",
                 ))
+                continue
+            if (not is_source) and ref_id in source_ids:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type="codex",
+                    id=doc_id,
+                    check="canonical_links_to_source",
+                    detail=f"canonical doc links to source '{ref_id}' — the source→canonical rule is one-way",
+                ))
 
-    # Island nodes: docs with valid IDs not referenced by any other doc
-    for doc_id in known_ids:
+    # Island-node pass: excludes every source id (sources are inbound-orphans by design).
+    for doc_id in known_ids - source_ids:
         if doc_id not in referenced_ids:
             issues.append(HealthIssue(
                 severity="warning",
@@ -455,7 +474,7 @@ def _load_schema_payload(path: Path, schema_kind: str):
 
 def _check_schemas(
     project_root: Path,
-    get_validator: "Callable[[str], Draft202012Validator] | None" = None,
+    get_validator: "Callable[[str], Draft202012Validator] | None" = None,  # noqa: F811
 ) -> list[HealthIssue]:
     """Validate every entity file on disk against its packaged JSON Schema.
 
@@ -463,9 +482,12 @@ def _check_schemas(
     Emits one HealthIssue(check="schema") per underlying schema violation —
     multiple violations on the same file are preserved (not aggregated).
     """
-    from lore.schemas import SchemaIssue, _issue_from_error, _validator_for
+    import sys
 
-    get_validator = get_validator or _validator_for
+    from lore.schemas import SchemaIssue, _issue_from_error
+
+    if get_validator is None:
+        get_validator = sys.modules[__name__].get_validator
 
     issues: list[HealthIssue] = []
     lore_dir = project_root / ".lore"
@@ -476,6 +498,7 @@ def _check_schemas(
             continue
 
         schema_id = f"lore://schemas/{schema_kind}"
+        validator = None
         try:
             validator = get_validator(schema_kind)
             schema_id = str(validator.schema.get("$id", schema_id))
@@ -488,28 +511,74 @@ def _check_schemas(
                 detail=f"{schema_id}: {exc}",
                 schema_id=schema_id,
             ))
+
+        # --- per-file kind override for sources under the codex entity root ---
+        # (Tech Spec FR-10 Critical decision: in-loop dispatch, not a new
+        # _SCHEMA_KINDS row.)
+        sources_override: tuple[str, str, "Draft202012Validator"] | None = None
+        if entity_label == "codex":
+            source_schema_id = "lore://schemas/codex-source-frontmatter"
+            try:
+                src_validator = get_validator("codex-source-frontmatter")
+                resolved_source_id = str(
+                    src_validator.schema.get("$id", source_schema_id)
+                )
+                sources_override = (
+                    "codex-source",
+                    resolved_source_id,
+                    src_validator,
+                )
+            except Exception as exc:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type="codex-source",
+                    id=source_schema_id,
+                    check="scan_failed",
+                    detail=f"{source_schema_id}: {exc}",
+                    schema_id=source_schema_id,
+                ))
+        sources_dir = entity_root / "sources"
+        # --- END ---
+
+        if validator is None and sources_override is None:
             continue
 
         for filepath in sorted(entity_root.glob(glob)):
             if not filepath.is_file():
                 continue
 
+            is_source_file = (
+                entity_label == "codex" and filepath.is_relative_to(sources_dir)
+            )
+            if is_source_file:
+                if sources_override is None:
+                    continue
+                active_label, active_schema_id, active_validator = sources_override
+                active_kind = "codex-source-frontmatter"
+            else:
+                if validator is None:
+                    continue
+                active_label = entity_label
+                active_kind = schema_kind
+                active_validator = validator
+                active_schema_id = schema_id
+
             rel = filepath.relative_to(project_root).as_posix()
             try:
-                data, schema_issues = _load_schema_payload(filepath, schema_kind)
+                data, schema_issues = _load_schema_payload(filepath, active_kind)
                 if not schema_issues:
-                    schema_issues = [_issue_from_error(err) for err in validator.iter_errors(data)]
+                    schema_issues = [_issue_from_error(err) for err in active_validator.iter_errors(data)]
             except Exception as exc:
                 schema_issues = [SchemaIssue(rule="read-failed", pointer="/", message=str(exc))]
 
             for si in schema_issues:
                 issues.append(HealthIssue(
                     severity="error",
-                    entity_type=entity_label,
+                    entity_type=active_label,
                     id=rel,
                     check="schema",
                     detail=si.message,
-                    schema_id=schema_id,
+                    schema_id=active_schema_id,
                     rule=si.rule,
                     pointer=si.pointer,
                 ))

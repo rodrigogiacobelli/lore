@@ -2479,3 +2479,314 @@ def test_us009_health_check_callable_without_project_root(lore_dir, monkeypatch)
     from lore.models import HealthReport as _HR
     assert isinstance(report, _HR)
 
+
+# ---------------------------------------------------------------------------
+# G2 Red — Codex sources layer (US-002, US-003, US-008)
+# Exercises:
+#   lore codex show codex-sources-us-002 codex-sources-us-003 codex-sources-us-008
+# Anchors:
+#   conceptual-workflows-health
+#   decisions-006-no-seed-content-tests (structural assertions, no seed content)
+# ---------------------------------------------------------------------------
+
+
+def _fm(fields: dict) -> str:
+    """Render a YAML frontmatter block for a markdown file.
+
+    Keeps key order stable so tests that grep the payload are predictable.
+    """
+    import yaml as _yaml
+
+    return "---\n" + _yaml.safe_dump(fields, sort_keys=False) + "---\nBody.\n"
+
+
+def _make_lore_project(tmp_path):
+    """Create a minimal .lore/ skeleton under tmp_path (no seed content).
+
+    Matches the fixture shape used by _check_codex / _check_schemas directly,
+    without going through `lore init` — keeps the unit tests hermetic.
+    """
+    lore = tmp_path / ".lore"
+    for d in ("codex", "knights", "doctrines", "artifacts", "watchers"):
+        (lore / d).mkdir(parents=True, exist_ok=True)
+    (lore / "codex" / "transient").mkdir(parents=True, exist_ok=True)
+    return tmp_path
+
+
+def _write_canonical(project, doc_id: str, related=None):
+    """Write a canonical codex doc at .lore/codex/<doc_id>.md with the given id."""
+    codex_dir = project / ".lore" / "codex"
+    codex_dir.mkdir(parents=True, exist_ok=True)
+    fields = {"id": doc_id, "title": doc_id, "summary": "s"}
+    if related is not None:
+        fields["related"] = list(related)
+    path = codex_dir / f"{doc_id}.md"
+    path.write_text(_fm(fields))
+    return path
+
+
+def _write_source(project, system: str, src_id: str, related):
+    """Write a source doc at .lore/codex/sources/<system>/<src_id>.md."""
+    path = project / ".lore" / "codex" / "sources" / system / f"{src_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = {"id": src_id, "title": src_id, "summary": "s", "related": list(related)}
+    path.write_text(_fm(fields))
+    return path
+
+
+# --- US-003: _check_codex island-skip + refactor ----------------------------
+
+
+def test_check_codex_skips_sources_for_islands(tmp_path):
+    """codex-sources-us-003 — Unit Scenario 1: island-node skip is source-scoped.
+
+    Given one canonical doc plus three valid sources all pointing at it, zero
+    island_node issues are emitted for any of the three source IDs.
+    """
+    project = _make_lore_project(tmp_path)
+    _write_canonical(project, "conceptual-entities-foo")
+    for system, src_id in [("jira", "K-1"), ("jira", "K-2"), ("meetings", "2026-04-21")]:
+        _write_source(project, system, src_id, related=["conceptual-entities-foo"])
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    island_hits = [
+        i for i in issues
+        if i.check == "island_node" and i.id in {"K-1", "K-2", "2026-04-21"}
+    ]
+    assert island_hits == []
+
+
+def test_check_codex_canonical_island_still_reported(tmp_path):
+    """codex-sources-us-003 — Unit Scenario 2: skip is scoped to source IDs.
+
+    A canonical doc with no inbound references still triggers island_node.
+    Proves the skip is source-scoped, not a global island suppression.
+    """
+    project = _make_lore_project(tmp_path)
+    _write_canonical(project, "conceptual-entities-foo")
+    _write_canonical(project, "conceptual-foo")  # zero inbound, zero outbound
+    _write_source(project, "jira", "K-1", related=["conceptual-entities-foo"])
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    island = [i for i in issues if i.check == "island_node" and i.id == "conceptual-foo"]
+    assert len(island) == 1
+
+
+def test_check_codex_source_broken_related_link_still_fires(tmp_path):
+    """codex-sources-us-003 — Unit Scenario 3: sources ARE in known_ids.
+
+    A source whose related points at a nonexistent id emits exactly one
+    broken_related_link issue attributed to the source id. This proves the
+    island-skip does NOT exclude sources from the broken-link pass.
+    """
+    project = _make_lore_project(tmp_path)
+    _write_canonical(project, "conceptual-entities-foo")
+    _write_source(project, "jira", "K-4", related=["nonexistent-id"])
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    hits = [i for i in issues if i.check == "broken_related_link" and i.id == "K-4"]
+    assert len(hits) == 1
+
+
+def test_check_codex_handles_missing_sources_dir(tmp_path):
+    """codex-sources-us-003 — Unit Scenario 4: absent sources/ is a no-op.
+
+    _check_codex must not raise when .lore/codex/sources/ does not exist and
+    must not emit any issue whose id references 'sources'.
+    """
+    project = _make_lore_project(tmp_path)
+    _write_canonical(
+        project, "conceptual-entities-foo", related=["conceptual-entities-bar"]
+    )
+    _write_canonical(project, "conceptual-entities-bar")
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    assert not any("sources" in (i.id or "") for i in issues)
+
+
+# --- US-008: canonical_links_to_source error -------------------------------
+
+
+def test_check_codex_emits_canonical_links_to_source(tmp_path):
+    """codex-sources-us-008 — Unit Scenario 1: canonical back-link is an error.
+
+    A canonical doc whose related names a source id emits exactly one
+    canonical_links_to_source error with severity=error, id=canonical id,
+    and detail naming the offending source id.
+    """
+    project = _make_lore_project(tmp_path)
+    _write_source(project, "jira", "KONE-23335", related=["conceptual-entities-foo"])
+    _write_canonical(
+        project, "conceptual-entities-foo", related=["KONE-23335"]
+    )  # illegal back-link
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    hits = [i for i in issues if i.check == "canonical_links_to_source"]
+    assert len(hits) == 1
+    assert hits[0].severity == "error"
+    assert hits[0].entity_type == "codex"
+    assert hits[0].id == "conceptual-entities-foo"
+    assert "KONE-23335" in (hits[0].detail or "")
+
+
+def test_check_codex_source_to_source_link_is_ok(tmp_path):
+    """codex-sources-us-008 — Unit Scenario 2: source-to-source is permitted."""
+    project = _make_lore_project(tmp_path)
+    _write_canonical(project, "conceptual-entities-foo")
+    _write_source(project, "jira", "A", related=["conceptual-entities-foo", "B"])
+    _write_source(project, "jira", "B", related=["conceptual-entities-foo"])
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    assert [i for i in issues if i.check == "canonical_links_to_source"] == []
+
+
+def test_check_codex_broken_related_link_not_reclassified(tmp_path):
+    """codex-sources-us-008 — Unit Scenario 3: classification is preserved.
+
+    A canonical doc linking to a non-existent id stays broken_related_link.
+    The new check must NOT swallow that case (no source with that id exists).
+    """
+    project = _make_lore_project(tmp_path)
+    _write_canonical(
+        project, "conceptual-entities-foo", related=["nonexistent-id"]
+    )
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    broken = [i for i in issues if i.check == "broken_related_link"]
+    ctls = [i for i in issues if i.check == "canonical_links_to_source"]
+    assert len(broken) == 1
+    assert ctls == []
+
+
+def test_check_codex_canonical_links_to_source_one_per_pair(tmp_path):
+    """codex-sources-us-008 — Unit Scenario 4: one issue per offending canonical.
+
+    Two canonical docs that both back-link to the same source id produce two
+    distinct canonical_links_to_source issues, one per canonical doc.
+    """
+    project = _make_lore_project(tmp_path)
+    _write_source(project, "jira", "K-1", related=["conceptual-entities-foo"])
+    _write_canonical(project, "conceptual-entities-foo", related=["K-1"])
+    _write_canonical(project, "conceptual-entities-bar", related=["K-1"])
+
+    issues = _check_codex(project / ".lore" / "codex")
+
+    hits = [i for i in issues if i.check == "canonical_links_to_source"]
+    assert {h.id for h in hits} == {
+        "conceptual-entities-foo",
+        "conceptual-entities-bar",
+    }
+    assert len(hits) == 2
+
+
+# --- US-002: _check_schemas per-file dispatch to codex-source schema --------
+
+
+def test_check_schemas_dispatches_sources_to_source_schema(tmp_path):
+    """codex-sources-us-002 — Unit: files under sources/ route to codex-source schema.
+
+    A source with empty `related: []` must fail the codex-source-frontmatter
+    schema with rule=minItems, pointer=/related, entity_type=codex-source,
+    schema_id=lore://schemas/codex-source-frontmatter.
+    """
+    from lore.health import _check_schemas
+
+    project = _make_lore_project(tmp_path)
+    _write_canonical(project, "conceptual-entities-foo")
+    bad_source = project / ".lore" / "codex" / "sources" / "jira" / "KONE-23335.md"
+    bad_source.parent.mkdir(parents=True, exist_ok=True)
+    bad_source.write_text(
+        _fm({"id": "KONE-23335", "title": "T", "summary": "S", "related": []})
+    )
+
+    issues = _check_schemas(project)
+
+    hits = [i for i in issues if i.id.endswith("KONE-23335.md")]
+    assert len(hits) == 1
+    assert hits[0].entity_type == "codex-source"
+    assert hits[0].schema_id == "lore://schemas/codex-source-frontmatter"
+    assert hits[0].rule == "minItems"
+    assert hits[0].pointer == "/related"
+
+
+def test_check_schemas_canonical_codex_unaffected_by_sources(tmp_path):
+    """codex-sources-us-002 — Unit: canonical files still use codex-frontmatter.
+
+    A clean project whose canonical docs reference each other and whose lone
+    source points at a canonical id must produce zero schema issues.
+    """
+    from lore.health import _check_schemas
+
+    project = _make_lore_project(tmp_path)
+    _write_canonical(
+        project,
+        "conceptual-entities-foo",
+        related=["conceptual-entities-bar"],
+    )
+    _write_canonical(project, "conceptual-entities-bar")
+    _write_source(project, "jira", "K-1", related=["conceptual-entities-foo"])
+
+    assert _check_schemas(project) == []
+
+
+def test_check_schemas_valid_source_file_produces_no_issue(tmp_path):
+    """codex-sources-us-002 — Unit: a well-formed source yields zero issues."""
+    from lore.health import _check_schemas
+
+    project = _make_lore_project(tmp_path)
+    _write_canonical(project, "conceptual-entities-foo")
+    _write_source(project, "jira", "K-1", related=["conceptual-entities-foo"])
+
+    issues = [i for i in _check_schemas(project) if "sources/jira/K-1.md" in i.id]
+    assert issues == []
+
+
+def test_check_schemas_sources_override_reports_scan_failure_loudly(
+    tmp_path, monkeypatch
+):
+    """codex-sources-us-002 — Unit: sources override init failure surfaces loudly.
+
+    When get_validator('codex-source-frontmatter') raises, _check_schemas must
+    emit a HealthIssue(check='scan_failed', entity_type='codex-source',
+    schema_id='lore://schemas/codex-source-frontmatter') whose detail carries
+    the exception message.
+    """
+    import lore.health as health
+
+    def boom(kind):
+        raise RuntimeError("kaboom")
+
+    # Production code under G2 Green is expected to expose `get_validator` at
+    # module scope. Use raising=False so this test fails on assertion (RED),
+    # not on attribute lookup during setup.
+    monkeypatch.setattr(health, "get_validator", boom, raising=False)
+
+    project = _make_lore_project(tmp_path)
+    issues = health._check_schemas(project)
+
+    hit = [
+        i for i in issues
+        if i.check == "scan_failed" and i.entity_type == "codex-source"
+    ]
+    assert len(hit) == 1
+    assert hit[0].schema_id == "lore://schemas/codex-source-frontmatter"
+    assert "kaboom" in (hit[0].detail or "")
+
+
+def test_frontmatter_schema_kinds_includes_codex_source():
+    """codex-sources-us-002 — Unit: _FRONTMATTER_SCHEMA_KINDS covers source kind.
+
+    Ensures _load_schema_payload's frontmatter-aware branch applies to source
+    files (they carry frontmatter, not top-level YAML).
+    """
+    from lore.health import _FRONTMATTER_SCHEMA_KINDS
+
+    assert "codex-source-frontmatter" in _FRONTMATTER_SCHEMA_KINDS
+

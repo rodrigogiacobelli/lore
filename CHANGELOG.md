@@ -6,9 +6,21 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 See standards-public-api-stability for the public API stability and semver policy.
 
-## [Unreleased]
+## [0.3.0] - 2026-04-22
 
 ### Added
+
+#### Codex sources layer
+
+- **New `sources/` codex content class** — third layer alongside stable and in-flight, for ingesting raw upstream material (Jira tickets, meeting transcripts, pasted docs, Confluence pages) as point-in-time snapshots under `.lore/codex/sources/<system>/<id>.md`. Sources are deletable at any time — any fact worth keeping lives in a canonical doc.
+- **`codex-source-frontmatter` JSON Schema** — required `id`, `title`, `summary`, and non-empty outbound `related` listing every canonical codex doc the source touched; `additionalProperties: false`. `lore codex map <source-id> --depth 1` surfaces touched canonical docs via this list.
+- **`lore health` schema dispatch** — files under `.lore/codex/sources/**/*.md` are now validated against `codex-source-frontmatter` instead of `codex-frontmatter`, surfacing with `entity_type="codex-source"` in the report.
+- **Island-node skip for sources** — sources are inbound-orphans by design under the one-way link rule, so the island-node pass now excludes their IDs (previously would emit noisy `no documents link here` warnings).
+- **`canonical_links_to_source` health error** — fires when any non-source codex doc includes a source ID in its `related` list, enforcing the canonical→source back-link ban at validation time.
+- **`ingest-source` skill** — default agent-executed skill for first-time source capture. Access-method agnostic (pasted text, local file, URL, MCP tool). Writes a verbatim snapshot, identifies affected canonical docs, and populates the snapshot's outbound `related` with the touched canonical IDs.
+- **`refresh-source` skill** — mirror of `ingest-source` for re-ingestion. Diffs fresh content vs stored snapshot, propagates approved changes into canonical docs, rewrites `related` from scratch each run (additions + removals), and overwrites the snapshot in place (no history file — git holds prior state).
+
+#### Other additions
 
 - **`lore artifact new`** — scaffold a new artifact file under `.lore/artifacts/` from the CLI.
 - **`--group` flag on `lore knight new`, `lore watcher new`, and `lore doctrine new`** — create the entity directly inside a nested group/subfolder at creation time.
@@ -25,11 +37,17 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ### Changed
 
+- **Default `CODEX.md` restructured** — the "Stable vs In-Flight" section is now **The Three Content Classes** (Stable, In-Flight, Sources) with a deletion-test row per class, the sources layout, the four-field frontmatter rule, the verbatim rule, the one-way linking rule, and the refresh rule.
+- **`conceptual-entities-artifact` gained outbound `related`** — closes an outbound-orphan hub so `lore codex map conceptual-entities-artifact --depth 1` now returns reachable docs.
 - **Breaking:** `--filter` now uses slash-delimited path grammar (e.g. `--filter foo/bar`) across all list commands. Previous comma or dot-separated forms are no longer accepted.
 - Group handling unified on slash-delimited paths throughout `paths.derive_group` and related helpers; list output displays groups using the slash form, and `--json` output reflects the same shape.
 - New `validate_group` validator enforces the slash grammar at entity creation time, rejecting invalid group strings before they hit disk.
 - Create-time validators for every entity now delegate to `lore.schemas`, so the same schema contract governs both file-on-disk audits and in-memory creation paths.
 - `lore init` now produces a project that passes `lore health` schema validation out of the box; bundled default doctrines, knights, watchers, and artifacts were updated to satisfy the schemas.
+- **Standards References section in `fi-user-story` template** — Tech Lead populates a `Standards References` block in every story's Tech Notes, listing relevant codex docs per role (Tester, Implementer). Red and Green agents read these before starting work, eliminating reliance on agents independently searching for standards.
+- **Wiring scenarios and wiring stubs** — BA and Tech Lead steps in all three feature-implementation doctrines now explicitly require integration test scenarios and stubs for any page, container, or view that assembles child components. Component isolation tests are no longer sufficient.
+- **`tdd-red` and `tdd-green` personas** — Red reads `Standards References → Tester` before writing any test; Green reads `Standards References → Implementer` before touching any file. Acceptance criteria are the starting point, not the complete contract.
+- **`tdd-implementation` doctrine** — Red performs a wiring and coverage check against the Tech Spec file tree before marking done; Green verifies E2E test files are matched by the runner config; Refactor audits runner coverage as a quality check.
 
 ### Fixed
 
@@ -37,10 +55,6 @@ See standards-public-api-stability for the public API stability and semver polic
 - **CODEX.md default artifact** — frontmatter documentation now matches the actual schema enforced by `lore health`. Removed non-existent `type`, `stability`, `persona`, and `entities_involved` fields; corrected required fields to `id`, `title`, `summary` with `related` as the only optional field.
 - **`start-quest` skill** — `lore needs` step now instructs agents to use fully-qualified `q-xxxx/m-yyyy` mission IDs. Bare `m-yyyy` IDs caused "Mission not found" errors.
 - **Feature-implementation PM and BA knights** — UI feature requests now correctly scope page integration. PM captures end-to-end user workflows when a page is mentioned; BA requires a page-integration story for every UI component.
-- **Standards References section in `fi-user-story` template** — Tech Lead now populates a `Standards References` block in every story's Tech Notes, listing relevant codex docs per role (Tester, Implementer). Red and Green agents read these before starting work, eliminating reliance on agents independently searching for standards.
-- **Wiring scenarios and wiring stubs** — BA and Tech Lead steps in all three feature-implementation doctrines now explicitly require integration test scenarios and stubs for any page, container, or view that assembles child components. Component isolation tests are no longer sufficient.
-- **`tdd-red` and `tdd-green` personas** — Red reads `Standards References → Tester` before writing any test; Green reads `Standards References → Implementer` before touching any file. Acceptance criteria are the starting point, not the complete contract.
-- **`tdd-implementation` doctrine** — Red performs a wiring and coverage check against the Tech Spec file tree before marking done; Green verifies E2E test files are matched by the runner config; Refactor audits runner coverage as a quality check.
 
 ## [0.2.0] - 2026-04-10
 
