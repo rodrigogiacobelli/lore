@@ -6,6 +6,12 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 See standards-public-api-stability for the public API stability and semver policy.
 
+## [0.3.1] - 2026-04-22
+
+### Fixed
+
+- **Packaging** — removed redundant `[tool.hatch.build.targets.wheel.force-include]` block that duplicated `src/lore/schemas/` in the wheel (the directory was already packaged via `packages = ["src/lore"]`). The 0.3.0 build emitted `Duplicate name:` warnings and the resulting wheel was rejected by PyPI with `400 Invalid distribution file. ZIP archive not accepted: Duplicate filename in local headers`. 0.3.1 is the first release of the 0.3 line available on PyPI; no behavior changes vs 0.3.0.
+
 ## [0.3.0] - 2026-04-22
 
 ### Added
