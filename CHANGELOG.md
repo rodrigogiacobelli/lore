@@ -6,6 +6,12 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 See standards-public-api-stability for the public API stability and semver policy.
 
+## [Unreleased]
+
+### Added
+
+- **`.lore/skills/.gitignore` seeded at init** — `lore init` now writes a `.gitignore` inside `.lore/skills/` listing every Lore-shipped skill directory. When a user copies the skills directory into their project's `.claude/skills/`, the bundled skills are ignored automatically without needing manual gitignore edits. User-added skills in the same directory are unaffected. The list is generated dynamically from `src/lore/defaults/skills/`, so newly shipped defaults are picked up on the next init.
+
 ## [0.3.1] - 2026-04-22
 
 ### Fixed
