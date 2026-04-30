@@ -288,6 +288,25 @@ class Watcher:
 
 
 @dataclasses.dataclass(frozen=True)
+class GlossaryItem:
+    """Typed representation of one entry in .lore/codex/glossary.yaml."""
+
+    keyword: str
+    definition: str
+    aliases: tuple[str, ...] = ()
+    do_not_use: tuple[str, ...] = ()
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "GlossaryItem":
+        return cls(
+            keyword=d["keyword"],
+            definition=d["definition"],
+            aliases=tuple(d.get("aliases", ()) or ()),
+            do_not_use=tuple(d.get("do_not_use", ()) or ()),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
 class DoctrineListEntry:
     """Typed representation of a single entry from list_doctrines() output.
 
@@ -330,6 +349,7 @@ __all__ = [
     "Doctrine",
     "Knight",
     "DoctrineListEntry",
+    "GlossaryItem",
     "Watcher",
     "HealthIssue",
     "HealthReport",

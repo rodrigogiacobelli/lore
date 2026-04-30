@@ -2790,3 +2790,240 @@ def test_frontmatter_schema_kinds_includes_codex_source():
 
     assert "codex-source-frontmatter" in _FRONTMATTER_SCHEMA_KINDS
 
+
+# ===========================================================================
+# US-005 — _check_glossary + --scope glossary plumbing
+# Spec: glossary-us-005 (lore codex show glossary-us-005)
+# Workflow: conceptual-workflows-health, conceptual-workflows-glossary
+#
+# Tests the new lore.health._check_glossary helper, the extended _ALL_SCOPES
+# tuple, the _SCHEMA_KINDS row for the glossary kind, and CLI --scope wiring.
+# Import-failure counts as red until US-005 Green lands the implementation.
+# ===========================================================================
+
+
+def _write_glossary_yaml(project_dir: Path, content: str) -> Path:
+    """Write the glossary YAML at the canonical path under .lore/codex/."""
+    target = project_dir / ".lore" / "codex" / "glossary.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
+def _seed_codex_doc_for_health(
+    project_dir: Path,
+    doc_id: str,
+    *,
+    body: str = "",
+) -> Path:
+    """Write a codex doc with frontmatter + body under .lore/codex/<doc_id>.md."""
+    codex_dir = project_dir / ".lore" / "codex"
+    codex_dir.mkdir(parents=True, exist_ok=True)
+    fm = _fm({"id": doc_id, "title": doc_id, "summary": "s"})
+    # _fm appends a default body — replace it with the requested body.
+    fm = fm.replace("Body.", body)
+    path = codex_dir / f"{doc_id}.md"
+    path.write_text(fm, encoding="utf-8")
+    return path
+
+
+def test_check_glossary_empty_items_no_issues(tmp_path):
+    """_check_glossary on `items: []` produces no issues (Unit row 7)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(project, "items: []\n")
+    assert _check_glossary(project) == []
+
+
+def test_check_glossary_schema_violation_emits_one_schema_error(tmp_path):
+    """Schema violation surfaces a single schema HealthIssue with all fields (Unit row 8)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(project, "items:\n  - keyword: Mission\n")  # missing definition
+    issues = _check_glossary(project)
+    schema_errors = [i for i in issues if i.check == "schema"]
+    assert len(schema_errors) == 1
+    err = schema_errors[0]
+    assert err.severity == "error"
+    assert err.entity_type == "glossary"
+    assert err.schema_id == "lore://schemas/glossary"
+    assert err.rule == "required"
+    assert err.pointer is not None
+
+
+def test_check_glossary_schema_failure_short_circuits_intra_checks(tmp_path):
+    """Schema violation suppresses intra-glossary checks for that file (Unit row 9)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    # Two items, both missing required `definition` AND duplicating keyword.
+    _write_glossary_yaml(
+        project, "items:\n  - keyword: Mission\n  - keyword: mission\n"
+    )
+    issues = _check_glossary(project)
+    assert all(i.check == "schema" for i in issues)
+    assert not any(i.check == "duplicate_keyword" for i in issues)
+
+
+def test_check_glossary_duplicate_keyword_error(tmp_path):
+    """Two items sharing a casefolded keyword emit one duplicate_keyword error (Unit row 10)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(
+        project,
+        "items:\n"
+        "  - keyword: Mission\n    definition: First.\n"
+        "  - keyword: mission\n    definition: Second.\n",
+    )
+    issues = _check_glossary(project)
+    dup = [i for i in issues if i.check == "duplicate_keyword"]
+    assert len(dup) == 1
+    assert dup[0].severity == "error"
+    assert dup[0].entity_type == "glossary"
+    assert dup[0].id == ".lore/codex/glossary.yaml"
+    assert dup[0].detail == "'mission' appears in items[0] and items[1]"
+
+
+def test_check_glossary_alias_keyword_collision_warning(tmp_path):
+    """Alias colliding with another item's keyword emits one warning (Unit row 11)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(
+        project,
+        "items:\n"
+        "  - keyword: Quest\n    definition: g\n    aliases: [Mission]\n"
+        "  - keyword: Mission\n    definition: u\n",
+    )
+    issues = _check_glossary(project)
+    coll = [i for i in issues if i.check == "alias_keyword_collision"]
+    assert len(coll) == 1
+    assert coll[0].severity == "warning"
+    assert coll[0].entity_type == "glossary"
+    assert coll[0].detail == "alias 'mission' on 'Quest' collides with keyword 'Mission'"
+
+
+def test_check_glossary_do_not_use_collision_error(tmp_path):
+    """do_not_use colliding with any keyword/alias emits one error (Unit row 12)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(
+        project,
+        "items:\n"
+        "  - keyword: Knight\n    definition: agent persona.\n    do_not_use: [Mission]\n"
+        "  - keyword: Mission\n    definition: unit of work.\n",
+    )
+    issues = _check_glossary(project)
+    dnu = [i for i in issues if i.check == "do_not_use_collision"]
+    assert len(dnu) == 1
+    assert dnu[0].severity == "error"
+    assert dnu[0].entity_type == "glossary"
+    assert dnu[0].detail == (
+        "'mission' in do_not_use of 'Knight' collides with keyword/alias 'Mission'"
+    )
+
+
+def test_check_glossary_cross_codex_deprecated_warns_per_occurrence(tmp_path):
+    """Cross-codex scan emits one warning per occurrence per doc (Unit row 13)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(
+        project,
+        "items:\n"
+        "  - keyword: Knight\n    definition: persona.\n    do_not_use: [agent]\n"
+        "  - keyword: Quest\n    definition: grouping.\n    do_not_use: [epic]\n",
+    )
+    _seed_codex_doc_for_health(project, "doc-a", body="The agent retrieves the codex.")
+    _seed_codex_doc_for_health(
+        project,
+        "doc-b",
+        body="An epic encompasses many features. Another agent collaborates here.",
+    )
+    issues = _check_glossary(project)
+    warns = [i for i in issues if i.check == "glossary_deprecated_term"]
+    assert len(warns) == 3
+    assert all(i.severity == "warning" and i.entity_type == "codex" for i in warns)
+    details = [i.detail for i in warns]
+    assert 'document uses deprecated term "agent" — prefer "Knight"' in details
+    assert 'document uses deprecated term "epic" — prefer "Quest"' in details
+
+
+def test_check_glossary_results_sorted_by_id_then_term(tmp_path):
+    """Cross-codex scan results sorted by (id, matched_term) (Unit row 14, FR-21)."""
+    from lore.health import _check_glossary
+
+    project = _make_lore_project(tmp_path)
+    _write_glossary_yaml(
+        project,
+        "items:\n"
+        "  - keyword: Knight\n    definition: x\n    do_not_use: [agent]\n"
+        "  - keyword: Quest\n    definition: y\n    do_not_use: [epic]\n",
+    )
+    _seed_codex_doc_for_health(project, "doc-a", body="The agent retrieves.")
+    _seed_codex_doc_for_health(project, "doc-b", body="An epic. Another agent.")
+    issues = [
+        i for i in _check_glossary(project) if i.check == "glossary_deprecated_term"
+    ]
+    keys = [(i.id, i.detail) for i in issues]
+    assert keys == sorted(keys)
+
+
+def test_health_scope_choice_includes_glossary(tmp_path, monkeypatch):
+    """`--scope glossary` is accepted by Click — no Invalid value error (Unit row 15a, FR-22)."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(main, ["init"])
+    res = runner.invoke(main, ["health", "--scope", "glossary"])
+    combined = res.output + (res.stderr if res.stderr else "")
+    assert "Invalid value" not in combined
+
+
+def test_health_combined_scope_codex_glossary_accepted(tmp_path, monkeypatch):
+    """`--scope codex glossary` is accepted (multi-value per ADR-012, Unit row 15b).
+
+    Today both tokens fail validation in different ways: `glossary` is rejected
+    as an invalid choice when alone, and as an unexpected extra argument when
+    paired with `codex`. After Green, the multi-value `--scope` accepts both
+    tokens cleanly with exit code 0 or 1 (depending on project state) — never
+    a Click usage-error 2.
+    """
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(main, ["init"])
+    res = runner.invoke(main, ["health", "--scope", "codex", "glossary"])
+    combined = res.output + (res.stderr if res.stderr else "")
+    assert "Invalid value" not in combined
+    assert "unexpected extra argument" not in combined.lower()
+    # Click usage errors exit with code 2; a clean health invocation exits 0/1.
+    assert res.exit_code in (0, 1), (res.exit_code, combined)
+
+
+def test_health_unknown_scope_lists_glossary_in_valid(tmp_path, monkeypatch):
+    """Unknown scope error message lists `glossary` among valid tokens (Unit row 16)."""
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(main, ["init"])
+    res = runner.invoke(main, ["health", "--scope", "nonsense"])
+    err = res.stderr if res.stderr else res.output
+    assert "glossary" in err
+    assert res.exit_code != 0
+
+
+def test_all_scopes_contains_glossary():
+    """`_ALL_SCOPES` contains the literal `glossary` token (Unit row 17, FR-22)."""
+    from lore.health import _ALL_SCOPES
+
+    assert "glossary" in _ALL_SCOPES
+
+
+def test_schema_kinds_contains_glossary_row():
+    """`_SCHEMA_KINDS` contains the glossary row (Unit row 18, Tech Spec Health Glob Wiring)."""
+    from lore.health import _SCHEMA_KINDS
+
+    assert ("glossary", "glossary", "codex", "glossary.yaml") in _SCHEMA_KINDS
+

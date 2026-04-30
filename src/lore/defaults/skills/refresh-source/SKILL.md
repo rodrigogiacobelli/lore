@@ -46,6 +46,14 @@ Ask the user which parts of the diff should drive canonical-doc updates. The use
 
 For each codex-worthy change, name the specific canonical doc to update and the proposed edit. Apply after approval.
 
+If any proposed edit adds or modifies a `.lore/codex/glossary.yaml` entry, gate it through the design checklist before proposing:
+
+```
+lore artifact show glossary-design
+```
+
+The Glossary is for small, project-specific terms only. Entities, named workflows, generic IT vocabulary, and future-scope ideas belong elsewhere — not the glossary.
+
 ### 9. Overwrite the snapshot (rewriting `related` from scratch)
 
 Write `.lore/codex/sources/<system>/<id>.md` with the fresh content, using the same structure as `/ingest-source` step 7 — frontmatter has `id`, `title`, `summary`, and `related`. Update `title` and `summary` if the upstream headline changed.

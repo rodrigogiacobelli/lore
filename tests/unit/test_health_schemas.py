@@ -515,3 +515,41 @@ def test_check_schemas_unreadable_file_emits_read_failed(tmp_path, monkeypatch):
     assert rf[0].severity == "error"
     assert rf[0].pointer == "/"
     assert "Permission denied" in rf[0].detail
+
+
+# ---------------------------------------------------------------------------
+# US-005 — single-file (no-`*`) glob branch in _check_schemas
+# Spec: glossary-us-005 (lore codex show glossary-us-005)
+# Workflow: conceptual-workflows-health
+#
+# When a `_SCHEMA_KINDS` row's glob has no `*` characters, _check_schemas
+# treats it as a literal filename validated only via
+# `(project_root / ".lore" / root_name / glob).is_file()` (no rglob walk).
+# This is how the new `glossary` row points at exactly
+# `.lore/codex/glossary.yaml`.
+# ---------------------------------------------------------------------------
+
+
+def test_check_schemas_literal_filename_glob(tmp_path):
+    """Unit row 19 — a no-`*` glob is validated as a single literal file.
+
+    A malformed glossary at the literal `.lore/codex/glossary.yaml` path must
+    surface a schema error from `_check_schemas`, proving the no-`*` glob
+    branch routed the literal filename through validation (not via rglob,
+    which would also walk the codex tree picking up `.md` files unrelated to
+    the glossary kind).
+    """
+    _make_lore_skeleton(tmp_path)
+    target = tmp_path / ".lore" / "codex" / "glossary.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Missing required `definition` — forces a schema-required error.
+    target.write_text("items:\n  - keyword: Mission\n", encoding="utf-8")
+
+    issues = _check_schemas(tmp_path)
+
+    glossary_schema = [
+        i for i in issues if i.entity_type == "glossary" and i.check == "schema"
+    ]
+    assert len(glossary_schema) >= 1
+    assert glossary_schema[0].schema_id == "lore://schemas/glossary"
+    assert glossary_schema[0].id.endswith("glossary.yaml")

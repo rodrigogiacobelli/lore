@@ -1,8 +1,8 @@
 ---
 id: tech-arch-schemas
 title: Schemas Module Internals
-summary: Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the six schema kinds, the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact and the audit-time lore health schema check share a single authoritative contract.
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "tech-doctrine-internals", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli"]
+summary: Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the seven schema kinds (the seventh, glossary, is the first full-YAML kind validated against a literal single-file glob rather than a directory walk), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact and the audit-time lore health schema check share a single authoritative contract.
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "tech-doctrine-internals", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 
 # Schemas Module Internals
@@ -22,7 +22,7 @@ This module is the single authoritative home for the JSON Schemas that define th
 
 ## Schema Kinds
 
-Six entity kinds are validated. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
+Seven entity kinds are validated. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
 
 | Kind | Source pattern | Schema `$id` |
 |---|---|---|
@@ -32,6 +32,9 @@ Six entity kinds are validated. Each kind is a short slug that appears in `Healt
 | `watcher` | `.lore/watchers/**/*.yaml` | `lore://schemas/watcher-yaml` |
 | `codex` | Frontmatter of `.lore/codex/**/*.md` | `lore://schemas/codex-frontmatter` |
 | `artifact` | Frontmatter of `.lore/artifacts/**/*.md` | `lore://schemas/artifact-frontmatter` |
+| `glossary` | `.lore/codex/glossary.yaml` (single literal file, NOT a `**/*.yaml` walk) | `lore://schemas/glossary` |
+
+The `glossary` kind is the first full-YAML kind whose source pattern is a literal single-file path rather than a directory glob. `_check_schemas` treats glob entries with no `*` characters as literal filenames and validates only when `(project_root / ".lore" / root_name / glob).is_file()`. The other six kinds continue to use `rglob(glob)` over their entity directory. This isolates the single-file behaviour without changing existing wiring.
 
 Schemas are authored as YAML (not JSON) because they were drafted as fenced YAML blocks and the YAML-at-rest form stays diff-friendly and self-documenting. PyYAML is already a dependency.
 
@@ -51,7 +54,7 @@ The validator is compiled once per kind and reused across all files of that kind
 
 Full file-level validator. Dispatches by kind:
 
-- **Full-YAML kinds** (`doctrine-yaml`, `watcher`): calls `yaml.safe_load` on the file contents.
+- **Full-YAML kinds** (`doctrine-yaml`, `watcher`, `glossary`): calls `yaml.safe_load` on the file contents.
 - **Frontmatter kinds** (`doctrine-design-frontmatter`, `knight`, `codex`, `artifact`): calls `frontmatter.parse_frontmatter_raw(path)` to obtain the raw mapping preserving every key.
 
 Error translation:

@@ -1,19 +1,18 @@
 [project]
 name = "lore-agent-task-manager"
-version = "0.3.2"
+version = "0.4.0"
 description = "A lightweight CLI task manager for AI coding agents"
 readme = "README.md"
 license = "MIT"
 authors = [{name = "Rodrigo Giacobelli"}]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "click>=8.0,<9.0",
     "pyyaml>=6.0",

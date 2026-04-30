@@ -6,6 +6,7 @@ summary: What a Mission is — the unit of work an agent executes and closes. Co
   orphaned missions and soft-delete.
 related:
 - conceptual-entities-quest
+- conceptual-entities-glossary
 - tech-db-schema
 - conceptual-workflows-claim
 - conceptual-workflows-done

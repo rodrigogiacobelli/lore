@@ -57,7 +57,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas")
 
 # Schema-validated entity kinds. Each tuple is:
 #   (entity_type label used on HealthIssue,
@@ -71,6 +71,7 @@ _SCHEMA_KINDS: tuple[tuple[str, str, str, str], ...] = (
     ("watcher",                     "watcher-yaml",                "watchers",  "**/*.yaml"),
     ("codex",                       "codex-frontmatter",           "codex",     "**/*.md"),
     ("artifact",                    "artifact-frontmatter",        "artifacts", "**/*.md"),
+    ("glossary",                    "glossary",                    "codex",     "glossary.yaml"),
 )
 
 # Schema kinds whose payload lives in a leading YAML frontmatter block.
@@ -84,11 +85,34 @@ _FRONTMATTER_SCHEMA_KINDS: frozenset[str] = frozenset({
 
 _ARTIFACT_ID_PATTERN = re.compile(r"\bfi-[a-z0-9-]+\b")
 
+# Warning checks that escalate to the errors bucket so they raise the exit
+# code (per US-005 AC: glossary warnings still bump the process to exit 1
+# even though the issue's severity remains "warning" in the report).
+_ESCALATED_WARNING_CHECKS: frozenset[str] = frozenset({
+    "alias_keyword_collision",
+    "glossary_deprecated_term",
+})
+
 
 def _parse_frontmatter(filepath: Path) -> dict | None:
-    """Return parsed YAML frontmatter dict, or None if absent or invalid."""
+    """Return parsed YAML frontmatter dict, or None if absent or invalid.
+
+    Tolerates a uniform leading-whitespace indent on the opening ``---`` fence
+    (e.g. dedented test fixtures whose multi-line ``related`` block defeats
+    ``textwrap.dedent``); the same prefix is stripped from every frontmatter
+    line before YAML parsing. The body is not modified.
+    """
     try:
         text = filepath.read_text()
+        first, _, _ = text.partition("\n")
+        stripped = first.lstrip(" ")
+        pad_len = len(first) - len(stripped)
+        if pad_len and stripped == "---":
+            pad = " " * pad_len
+            text = "\n".join(
+                line[pad_len:] if line.startswith(pad) else line
+                for line in text.split("\n")
+            )
         parts = text.split("---", 2)
         if len(parts) < 3:
             return None
@@ -431,6 +455,19 @@ def _check_watchers(watchers_dir: Path, doctrines_dir: Path) -> list[HealthIssue
     return issues
 
 
+def _resolve_schema_candidates(entity_root: Path, glob: str) -> list[Path]:
+    """Resolve a ``_SCHEMA_KINDS`` glob entry to a sorted list of files.
+
+    Globs containing ``*`` are passed through ``Path.glob``. Globs without any
+    ``*`` are treated as literal filenames under ``entity_root`` (US-005
+    introduces this for the single-file ``glossary.yaml`` schema row).
+    """
+    if "*" in glob:
+        return sorted(entity_root.glob(glob))
+    literal = entity_root / glob
+    return [literal] if literal.is_file() else []
+
+
 def _load_schema_payload(path: Path, schema_kind: str):
     """Read a file and extract the dict to be schema-validated.
 
@@ -543,7 +580,9 @@ def _check_schemas(
         if validator is None and sources_override is None:
             continue
 
-        for filepath in sorted(entity_root.glob(glob)):
+        candidates = _resolve_schema_candidates(entity_root, glob)
+
+        for filepath in candidates:
             if not filepath.is_file():
                 continue
 
@@ -584,6 +623,157 @@ def _check_schemas(
                 ))
 
     return issues
+
+
+_GLOSSARY_REL_ID = ".lore/codex/glossary.yaml"
+
+
+def _glossary_schema_issues(project_root: Path) -> list[HealthIssue]:
+    """Return only the schema issues for the glossary file (US-005 phase 1)."""
+    return [
+        i for i in _check_schemas(project_root)
+        if i.entity_type == "glossary" and i.check == "schema"
+    ]
+
+
+def _glossary_duplicate_keyword_issues(items: list) -> list[HealthIssue]:
+    """Two items sharing a casefolded keyword (US-005 phase 2, error)."""
+    issues: list[HealthIssue] = []
+    seen: dict[str, int] = {}
+    for idx, item in enumerate(items):
+        kw = item.keyword.casefold()
+        if kw in seen:
+            issues.append(HealthIssue(
+                severity="error",
+                entity_type="glossary",
+                id=_GLOSSARY_REL_ID,
+                check="duplicate_keyword",
+                detail=f"'{kw}' appears in items[{seen[kw]}] and items[{idx}]",
+            ))
+        else:
+            seen[kw] = idx
+    return issues
+
+
+def _glossary_alias_collision_issues(items: list) -> list[HealthIssue]:
+    """Alias on item A casefold-equals keyword of another item B (US-005 phase 3, warning)."""
+    issues: list[HealthIssue] = []
+    for item_a in items:
+        for alias in item_a.aliases:
+            alias_cf = alias.casefold()
+            for item_b in items:
+                if item_b is item_a:
+                    continue
+                if alias_cf == item_b.keyword.casefold():
+                    issues.append(HealthIssue(
+                        severity="warning",
+                        entity_type="glossary",
+                        id=_GLOSSARY_REL_ID,
+                        check="alias_keyword_collision",
+                        detail=(
+                            f"alias '{alias_cf}' on '{item_a.keyword}' "
+                            f"collides with keyword '{item_b.keyword}'"
+                        ),
+                    ))
+    return issues
+
+
+def _glossary_do_not_use_collision_issues(items: list) -> list[HealthIssue]:
+    """``do_not_use`` term casefold-equals any keyword or alias on another item
+    (US-005 phase 4, error)."""
+    issues: list[HealthIssue] = []
+    for item_a in items:
+        for term in item_a.do_not_use:
+            term_cf = term.casefold()
+            for item_b in items:
+                if item_b is item_a:
+                    continue
+                collisions: list[str] = []
+                if term_cf == item_b.keyword.casefold():
+                    collisions.append(item_b.keyword)
+                collisions.extend(a for a in item_b.aliases if term_cf == a.casefold())
+                for collider in collisions:
+                    issues.append(HealthIssue(
+                        severity="error",
+                        entity_type="glossary",
+                        id=_GLOSSARY_REL_ID,
+                        check="do_not_use_collision",
+                        detail=(
+                            f"'{term_cf}' in do_not_use of '{item_a.keyword}' "
+                            f"collides with keyword/alias '{collider}'"
+                        ),
+                    ))
+    return issues
+
+
+def _read_codex_bodies(codex_dir: Path) -> dict[str, str]:
+    """Map codex doc-id → body (post-frontmatter), skipping transient/ and unparseable docs."""
+    bodies: dict[str, str] = {}
+    if not codex_dir.exists():
+        return bodies
+    transient_dir = codex_dir / "transient"
+    for filepath in codex_dir.rglob("*.md"):
+        if filepath.is_relative_to(transient_dir):
+            continue
+        try:
+            text = filepath.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if not text.startswith("---"):
+            continue
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            continue
+        try:
+            fm = yaml.safe_load(parts[1])
+        except yaml.YAMLError:
+            continue
+        if not isinstance(fm, dict) or not fm.get("id"):
+            continue
+        bodies[str(fm["id"])] = parts[2]
+    return bodies
+
+
+def _glossary_deprecated_term_issues(project_root: Path, items: list) -> list[HealthIssue]:
+    """Cross-codex deprecated-term scan (US-005 phase 5, warning)."""
+    from lore.glossary import find_deprecated_terms
+
+    bodies = _read_codex_bodies(project_root / ".lore" / "codex")
+    issues = [
+        HealthIssue(
+            severity="warning",
+            entity_type="codex",
+            id=doc_id,
+            check="glossary_deprecated_term",
+            detail=f'document uses deprecated term "{term}" — prefer "{item.keyword}"',
+        )
+        for item, doc_id, term in find_deprecated_terms(bodies, items=items)
+    ]
+    issues.sort(key=lambda i: (i.id, i.detail))
+    return issues
+
+
+def _check_glossary(project_root: Path) -> list[HealthIssue]:
+    """Audit the glossary file. Five phases: schema (short-circuits on error),
+    duplicate keyword, alias collision, do_not_use collision, cross-codex
+    deprecated-term scan."""
+    from lore.glossary import scan_glossary
+
+    glossary_file = project_root / ".lore" / "codex" / "glossary.yaml"
+    if not glossary_file.exists():
+        return []
+
+    schema_issues = _glossary_schema_issues(project_root)
+    if schema_issues:
+        return schema_issues
+
+    items = scan_glossary(project_root)
+    return [
+        *_glossary_duplicate_keyword_issues(items),
+        *_glossary_alias_collision_issues(items),
+        *_glossary_do_not_use_collision_issues(items),
+        *_glossary_deprecated_term_issues(project_root, items),
+    ]
 
 
 def _humanize_timestamp(timestamp: str) -> str:
@@ -700,6 +890,7 @@ def health_check(
         "knights": lambda: _check_knights(knights_dir, project_root),
         "watchers": lambda: _check_watchers(watchers_dir, doctrines_dir),
         "schemas": lambda: _check_schemas(project_root),
+        "glossary": lambda: _check_glossary(project_root),
     }
 
     for scope_name in active_scope:
@@ -717,7 +908,7 @@ def health_check(
                 detail=str(exc),
             )]
         for issue in issues:
-            if issue.severity == "error":
+            if issue.severity == "error" or issue.check in _ESCALATED_WARNING_CHECKS:
                 errors.append(issue)
             else:
                 warnings.append(issue)

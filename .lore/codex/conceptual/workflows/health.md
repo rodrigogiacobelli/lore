@@ -1,13 +1,13 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — full-scan or scoped audit of all five file-based entity types, error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check().
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-workflows-codex", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "tech-api-surface", "tech-cli-commands", "tech-arch-schemas"]
+summary: What the system does internally when lore health runs — full-scan or scoped audit of all six file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema, intra-file collision, and cross-codex deprecated-term scan.
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "tech-api-surface", "tech-cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
 
-`lore health` audits all five file-based entity types in a Lore project and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove the project's knowledge base is internally consistent.
+`lore health` audits all six file-based entity types in a Lore project — codex, artifacts, doctrines, knights, watchers, and the Glossary (lore codex show conceptual-entities-glossary) — and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove the project's knowledge base is internally consistent.
 
 ## Preconditions
 
@@ -20,11 +20,13 @@ related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conce
 lore health
 lore health --scope doctrines knights
 lore health --scope watchers
+lore health --scope glossary
+lore health --scope codex glossary
 lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`. Omitting `--scope` runs every scope including `schemas`.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`. Omitting `--scope` runs every scope including `schemas` and `glossary`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. The report file is always written regardless of `--json`.
 
@@ -33,9 +35,9 @@ lore health --scope codex --json
 ### 1. Resolve scope
 
 The system determines which entity types to audit:
-- No `--scope`: all scopes run, including `schemas`.
+- No `--scope`: all scopes run, including `schemas` and `glossary`.
 - `--scope TYPE [TYPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`.
 
 ### 2. Run per-entity checkers
 
@@ -61,6 +63,21 @@ Each in-scope entity type is checked independently. A failure in one checker (e.
 
 - **Missing file** (error): any active (non-closed, non-deleted) mission that names a knight whose `.md` file is absent from disk. A `.md.deleted` file means intentional soft-delete — not an error. A completely absent file is an error.
 
+#### Glossary checks (scope: `glossary`)
+
+The glossary scope runs three families of check over `.lore/codex/glossary.yaml` and the rest of the codex. See conceptual-entities-glossary (lore codex show conceptual-entities-glossary) for the entity model and conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary) for the matcher used by the deprecated-term scan.
+
+1. **Schema validation.** `lore.schemas.validate_entity_file(path, "glossary")` validates the file against `lore://schemas/glossary`. Schema errors are always errors (never warnings) and short-circuit the intra-glossary checks for that file (the unsafe-to-interpret rule). The `glossary` schema kind also runs as part of `--scope schemas`.
+2. **Intra-glossary collisions:**
+   - **`duplicate_keyword`** (error): two items share a casefolded `keyword`. `id=<glossary path>`, `detail="'<kw>' appears in items[i] and items[j]"`.
+   - **`alias_keyword_collision`** (warning): an alias of item A casefold-equals the keyword of item B (B != A). `detail="alias '<a>' on '<kw>' collides with keyword '<other>'"`.
+   - **`do_not_use_collision`** (error): a `do_not_use` term casefold-equals any other item's `keyword` or any `alias`. `detail="'<term>' in do_not_use of '<kw>' collides with keyword/alias '<other>'"`.
+3. **Cross-codex deprecated-term scan.** Every codex `.md` body is loaded once. `lore.glossary.find_deprecated_terms` runs the shared tokeniser over each body and matches `do_not_use` token-tuples (canonical keywords and aliases are NOT scanned here — only deprecated forms). Each occurrence emits one `HealthIssue(severity="warning", entity_type="codex", id=<doc-id>, check="glossary_deprecated_term", detail='document uses deprecated term "<term>" — prefer "<canonical-keyword>"')`. Mirrors the existing `broken_related_link` warning shape.
+
+`--scope glossary` runs only those three families (no codex `related` checks, no doctrine checks, etc.). `--scope codex glossary` runs codex reference-integrity checks AND the glossary checks (multi-scope per ADR-012). `--scope schemas` continues to validate every schema kind, including `glossary`, so a malformed glossary surfaces in `--scope schemas` even without `glossary` in the scope set.
+
+A missing `.lore/codex/glossary.yaml` is NOT an error — empty glossary is a valid state. Schema validation of an absent file is a no-op for this kind. The intra-glossary and deprecated-term scans both no-op on an empty/absent file.
+
 #### Watcher checks
 
 - **Invalid YAML** (error): any `.yaml` file under `.lore/watchers/` (excluding `.yaml.deleted` files) that fails YAML parsing. Reports the line number from the parse error.
@@ -80,6 +97,7 @@ Per-kind coverage:
 - **`watcher`** — every `.lore/watchers/**/*.yaml` validated against `lore://schemas/watcher-yaml`.
 - **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related` array accepted; mapping form rejected).
 - **`artifact`** — frontmatter of every `.lore/artifacts/**/*.md` validated against `lore://schemas/artifact-frontmatter`.
+- **`glossary`** — the single file `.lore/codex/glossary.yaml` (full-YAML, not frontmatter) validated against `lore://schemas/glossary`. Unique among schema kinds: a literal file glob, not a `**/*.yaml` walk.
 
 Special error rules (beyond JSON Schema keywords):
 
@@ -210,7 +228,7 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas.` |
+| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary.` |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |

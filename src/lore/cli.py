@@ -188,7 +188,14 @@ def _format_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
-@click.group(invoke_without_command=True)
+class _OrderedGroup(click.Group):
+    """Click group preserving command registration order in help output."""
+
+    def list_commands(self, ctx):
+        return list(self.commands.keys())
+
+
+@click.group(cls=_OrderedGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="lore")
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
@@ -2362,12 +2369,40 @@ def codex_search(ctx, keyword):
         )
 
 
+def _collect_codex_glossary(project_root, bodies, *, enabled):
+    """Match the glossary against ``bodies``, fail-soft on read/parse errors.
+
+    Returns ``(items, warning)``. ``warning`` is None on success or when
+    ``enabled`` is False; otherwise a stderr-bound ``glossary unavailable: …``
+    string. The auto-surface is best-effort (NFR-Reliability) — a malformed
+    or unreadable glossary must never prevent codex output.
+    """
+    if not enabled:
+        return [], None
+    from lore import glossary as _glossary
+
+    try:
+        return _glossary.match_glossary(bodies, root=project_root), None
+    except (_glossary.GlossaryError, OSError) as exc:
+        return [], f"glossary unavailable: {exc}"
+
+
 @codex.command("show")
 @click.argument("ids", nargs=-1, required=True)
+@click.option(
+    "--skip-glossary",
+    "-S",
+    "skip_glossary",
+    is_flag=True,
+    default=False,
+    help="Suppress the glossary auto-surface for this call.",
+)
 @click.pass_context
-def codex_show(ctx, ids):
+def codex_show(ctx, ids, skip_glossary):
     """Show full content of one or more codex documents."""
     from lore.codex import read_document
+    from lore import glossary as _glossary
+    from lore.config import load_config
 
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
@@ -2388,13 +2423,31 @@ def codex_show(ctx, ids):
             return
         results.append(doc)
 
-    if json_mode:
-        click.echo(json.dumps({"documents": results}))
-        return
+    config = load_config(project_root)
+    auto_surface = config.show_glossary_on_codex_commands and not skip_glossary
+    glossary_items, glossary_warning = _collect_codex_glossary(
+        project_root, [d["body"] for d in results], enabled=auto_surface
+    )
 
-    for doc in results:
-        click.echo(f"=== {doc['id']} ===")
-        click.echo(doc["body"])
+    if json_mode:
+        click.echo(
+            json.dumps(
+                {
+                    "documents": results,
+                    "glossary": [_glossary_entry_dict(i) for i in glossary_items],
+                }
+            )
+        )
+    else:
+        for doc in results:
+            click.echo(f"=== {doc['id']} ===")
+            click.echo(doc["body"])
+        block = _glossary._render_glossary_block(glossary_items)
+        if block:
+            click.echo(block, nl=False)
+
+    if glossary_warning is not None:
+        click.echo(glossary_warning, err=True)
 
 
 @codex.command("map")
@@ -2491,6 +2544,230 @@ def codex_chaos(ctx, doc_id, threshold, json_flag):
     ]
     for line in _format_table(headers, rows):
         click.echo(line)
+
+
+# ---------------------------------------------------------------------------
+# Glossary command group (glossary-us-002).
+# Workflow: conceptual-workflows-glossary
+#
+# CLI handlers stay thin — IO + matching live in `lore.glossary`, the data
+# shape lives in `lore.models.GlossaryItem`. This file only formats output
+# and threads errors through `--json` mode (standards-separation-of-concerns).
+# ---------------------------------------------------------------------------
+
+
+# Sentinel for empty alias / do_not_use lists in text output (Tech Spec).
+_GLOSSARY_EMPTY_LIST = "—"
+
+# List-view definition preview length. Definitions are short summaries here;
+# `lore glossary show <keyword>` is the canonical full-text surface.
+# Kept compact so the table fits in a typical terminal and so list output
+# remains a quick keyword index rather than a documentation dump.
+_GLOSSARY_DEFINITION_PREVIEW = 6
+
+
+def _aliases_or_dash(aliases) -> str:
+    return ", ".join(aliases) if aliases else _GLOSSARY_EMPTY_LIST
+
+
+def _glossary_entry_dict(item) -> dict:
+    """JSON-shaped view of a GlossaryItem — arrays always present (FR-30 contract)."""
+    return {
+        "keyword": item.keyword,
+        "definition": item.definition,
+        "aliases": list(item.aliases),
+        "do_not_use": list(item.do_not_use),
+    }
+
+
+def _sorted_by_keyword(items):
+    """Stable alphabetical order by casefolded keyword (FR-5 / Tech Spec)."""
+    return sorted(items, key=lambda i: i.keyword.casefold())
+
+
+def _truncate_definition(definition: str) -> str:
+    """Trim a definition to the list-view preview length, with `…` if cut."""
+    if len(definition) > _GLOSSARY_DEFINITION_PREVIEW:
+        return definition[:_GLOSSARY_DEFINITION_PREVIEW] + "…"
+    return definition
+
+
+def render_glossary_list_text(items) -> str:
+    """Render the alphabetised KEYWORD/ALIASES/DEFINITION table for `list`/`search`."""
+    headers = ["KEYWORD", "ALIASES", "DEFINITION"]
+    rows = [
+        [item.keyword, _aliases_or_dash(item.aliases), _truncate_definition(item.definition)]
+        for item in _sorted_by_keyword(items)
+    ]
+
+    col_widths = [len(h) for h in headers]
+    for row in rows:
+        for i, val in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(val))
+
+    def _fmt(row):
+        return f"{row[0]:<{col_widths[0]}} {row[1]:<{col_widths[1]}} {row[2]}"
+
+    lines = [_fmt(headers)] + [_fmt(row) for row in rows]
+    return "\n".join(lines) + "\n"
+
+
+def render_glossary_list_json(items) -> dict:
+    """Build the `{"glossary": [...]}` envelope used by `list`/`search` JSON modes."""
+    return {"glossary": [_glossary_entry_dict(i) for i in _sorted_by_keyword(items)]}
+
+
+def _emit_glossary_error(ctx, message: str) -> None:
+    """Write an error to stderr respecting `--json` and exit 1.
+
+    Returns through ``ctx.exit`` (raises ``click.exceptions.Exit``); the caller
+    does not need to ``return`` afterwards but pre-existing handlers do for
+    static-analysis clarity.
+    """
+    json_mode = ctx.obj.get("json", False)
+    if json_mode:
+        click.echo(json.dumps({"error": message}), err=True)
+    else:
+        click.echo(f"Error: {message}", err=True)
+    ctx.exit(1)
+
+
+def _emit_no_glossary(ctx) -> None:
+    """Stdout response when the glossary file is missing or has zero items."""
+    if ctx.obj.get("json", False):
+        click.echo(json.dumps({"glossary": []}))
+    else:
+        click.echo("No glossary defined.")
+
+
+def _load_glossary_or_fail(ctx):
+    """Scan the glossary; on `GlossaryError` emit the standard error and exit 1."""
+    from lore.glossary import GlossaryError, scan_glossary
+
+    try:
+        return scan_glossary(ctx.obj["project_root"])
+    except GlossaryError as e:
+        _emit_glossary_error(ctx, f"glossary unavailable: {e}")
+        return None  # unreachable: ctx.exit raised
+
+
+def _emit_glossary_table(ctx, items) -> None:
+    """Render the shared list/search payload in the active output mode."""
+    if ctx.obj.get("json", False):
+        click.echo(json.dumps(render_glossary_list_json(items)))
+    else:
+        click.echo(render_glossary_list_text(items), nl=False)
+
+
+@main.group(invoke_without_command=True)
+@click.pass_context
+def glossary(ctx):
+    """Access the project glossary — the controlled vocabulary at .lore/codex/glossary.yaml.
+
+    Use 'lore glossary list' to browse all keywords (or just 'lore glossary'),
+    'lore glossary search <query>' to find entries by substring across keyword,
+    aliases, do_not_use and definition, and 'lore glossary show <keyword>' to
+    read full definitions. The CLI is read-only — maintainers edit the YAML
+    file directly. See: lore codex show conceptual-workflows-glossary.
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(glossary_list)
+
+
+@glossary.command("list")
+@click.pass_context
+def glossary_list(ctx):
+    """List all glossary entries — alphabetised, definitions truncated.
+
+    Same as bare 'lore glossary'. Add --json (on the top-level command) for the
+    machine-readable envelope. Empty/missing glossary prints 'No glossary defined.'
+    and exits 0; a malformed glossary fails loud with exit 1.
+    """
+    items = _load_glossary_or_fail(ctx)
+    if items is None:
+        return
+    if not items:
+        _emit_no_glossary(ctx)
+        return
+    _emit_glossary_table(ctx, items)
+
+
+@glossary.command("search")
+@click.argument("query")
+@click.pass_context
+def glossary_search(ctx, query):
+    """Search the glossary by case-insensitive substring.
+
+    QUERY is matched against keyword, aliases, do_not_use, and definition for
+    each entry. Results are alphabetised by keyword. With no matches, prints
+    'No glossary entries matching "<query>".' (or {"glossary": []} in --json
+    mode) and exits 0. Missing glossary file behaves the same as `list`.
+    """
+    from lore.glossary import search_glossary
+
+    items = _load_glossary_or_fail(ctx)
+    if items is None:
+        return
+    if not items:
+        _emit_no_glossary(ctx)
+        return
+
+    results = search_glossary(ctx.obj["project_root"], query)
+    if not results:
+        if ctx.obj.get("json", False):
+            click.echo(json.dumps({"glossary": []}))
+        else:
+            click.echo(f'No glossary entries matching "{query}".')
+        return
+    _emit_glossary_table(ctx, results)
+
+
+def _render_glossary_show_block(item) -> str:
+    """One '=== Keyword ===' block for the `show` text output."""
+    return (
+        f"=== {item.keyword} ===\n"
+        f"Keyword: {item.keyword}\n"
+        f"Aliases: {_aliases_or_dash(item.aliases)}\n"
+        f"Do not use: {_aliases_or_dash(item.do_not_use)}\n"
+        f"Definition:\n"
+        f"  {item.definition}"
+    )
+
+
+@glossary.command("show")
+@click.argument("keywords", nargs=-1, required=True)
+@click.pass_context
+def glossary_show(ctx, keywords):
+    """Show full content of one or more glossary entries.
+
+    Lookup is case-insensitive on keyword (display preserves source casing).
+    Aliases are NOT lookup keys (FR-7). Multiple keywords are accepted as
+    space-separated args (ADR-012); output is alphabetised regardless of input
+    order. Fails fast with no partial stdout if any keyword is missing.
+    """
+    from lore.glossary import GlossaryError, read_glossary_item
+
+    project_root = ctx.obj["project_root"]
+
+    resolved = []
+    for kw in keywords:
+        try:
+            item = read_glossary_item(project_root, kw)
+        except GlossaryError as e:
+            _emit_glossary_error(ctx, f"glossary unavailable: {e}")
+            return
+        if item is None:
+            _emit_glossary_error(ctx, f'glossary keyword "{kw}" not found.')
+            return
+        resolved.append(item)
+
+    resolved = _sorted_by_keyword(resolved)
+
+    if ctx.obj.get("json", False):
+        click.echo(json.dumps({"glossary": [_glossary_entry_dict(i) for i in resolved]}))
+        return
+
+    click.echo("\n\n".join(_render_glossary_show_block(item) for item in resolved))
 
 
 @main.group()
@@ -2980,17 +3257,21 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary")
+
+
 @main.command("health")
 @click.option(
     "--scope",
     "scope",
     multiple=True,
-    type=click.Choice(["codex", "artifacts", "doctrines", "knights", "watchers", "schemas"]),
+    type=click.Choice(list(_VALID_SCOPES)),
     help="Limit audit to specific entity types (space-separated, e.g. --scope codex knights schemas).",
 )
+@click.argument("extra_scopes", nargs=-1)
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def health_cmd(ctx, scope, json_mode):
+def health_cmd(ctx, scope, extra_scopes, json_mode):
     """Audit all six file-based entity types and report issues."""
     import datetime
 
@@ -2999,8 +3280,23 @@ def health_cmd(ctx, scope, json_mode):
     project_root = ctx.obj["project_root"]
     json_mode = json_mode or ctx.obj.get("json", False)
 
-    active_scope = list(scope) if scope else None
-    schemas_ran = active_scope is None or "schemas" in active_scope
+    combined = list(scope) + list(extra_scopes)
+    invalid = [s for s in combined if s not in _VALID_SCOPES]
+    if invalid:
+        click.echo(
+            f"Invalid scope: '{invalid[0]}'. Valid scopes: "
+            + ", ".join(_VALID_SCOPES)
+            + ".",
+            err=True,
+        )
+        ctx.exit(1)
+
+    active_scope = combined if combined else None
+    schemas_ran = (
+        active_scope is None
+        or "schemas" in active_scope
+        or "glossary" in active_scope
+    )
 
     report = health_check(project_root, scope=active_scope)
 

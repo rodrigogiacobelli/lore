@@ -41,6 +41,14 @@ def db_path(root: Path) -> Path:
     return root / ".lore" / "lore.db"
 
 
+def glossary_path(root: Path) -> Path:
+    return root / ".lore" / "codex" / "glossary.yaml"
+
+
+def config_path(root: Path) -> Path:
+    return root / ".lore" / "config.toml"
+
+
 def derive_group(filepath: Path, base_dir: Path) -> str:
     """Derive the GROUP value for an entity from its path relative to its base directory.
 

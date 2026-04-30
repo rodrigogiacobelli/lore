@@ -2,7 +2,7 @@
 id: conceptual-entities-doctrine
 title: Doctrine
 summary: What a Doctrine is — a reusable, passive workflow template stored as a paired .yaml and .design.md file. The .design.md is the primary entry point for discovery. Doctrines are read by orchestrators to guide quest and mission creation; they have no execution engine of their own.
-related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-knight", "tech-doctrine-internals", "conceptual-relationships-doctrine--knight", "conceptual-relationships-doctrine--mission", "conceptual-relationships-doctrine--quest"]
+related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-knight", "conceptual-entities-glossary", "tech-doctrine-internals", "conceptual-relationships-doctrine--knight", "conceptual-relationships-doctrine--mission", "conceptual-relationships-doctrine--quest"]
 ---
 
 # Doctrine

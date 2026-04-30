@@ -5,6 +5,7 @@ summary: What a Watcher is — a YAML-configured trigger definition stored in .l
 related:
   - conceptual-entities-doctrine
   - conceptual-entities-knight
+  - conceptual-entities-glossary
   - conceptual-workflows-watcher-list
   - conceptual-workflows-watcher-crud
   - conceptual-workflows-lore-init

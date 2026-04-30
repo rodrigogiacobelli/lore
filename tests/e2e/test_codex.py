@@ -1233,3 +1233,371 @@ class TestCodexListUs007SlashGroup:
                 f"group must never be hyphen-joined: {d}"
             )
 
+
+# ---------------------------------------------------------------------------
+# US-004 Red: auto-surface glossary on `lore codex show`
+# Spec: glossary-us-004 (lore codex show glossary-us-004)
+# Workflow: conceptual-workflows-glossary
+#
+# Each test below maps to one E2E Scenario from the user story (1–13).
+# Every test must FAIL until G3-Green lands the auto-surface implementation.
+# ---------------------------------------------------------------------------
+
+
+GLOSSARY_FIXTURE = """\
+items:
+  - keyword: Mission
+    definition: The unit of work an agent executes and closes.
+    do_not_use: [task]
+  - keyword: Quest
+    definition: A live grouping of Missions representing one body of work.
+    do_not_use: [epic]
+  - keyword: Codex Source
+    definition: A pluggable backend that supplies codex documents.
+"""
+
+
+MISSION_DOC = """\
+---
+id: conceptual-entities-mission
+title: Mission
+summary: Mission entity doc.
+---
+
+A Mission is the unit of work an agent executes and closes.
+A Mission may belong to a Quest. The codex source's structure also matters.
+"""
+
+
+UNRELATED_DOC = """\
+---
+id: unrelated-doc
+title: Unrelated
+summary: Unrelated doc.
+---
+
+This document mentions nothing relevant.
+"""
+
+
+def _write_glossary_yaml(project_dir, content):
+    """Write the glossary YAML at the canonical path."""
+    target = project_dir / ".lore" / "codex" / "glossary.yaml"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+
+
+def _seed_default_glossary_fixture(project_dir):
+    """Seed the standard glossary + mission doc + unrelated doc."""
+    _write_glossary_yaml(project_dir, GLOSSARY_FIXTURE)
+    _write_codex_doc(project_dir, "conceptual-entities-mission.md", MISSION_DOC)
+    _write_codex_doc(project_dir, "unrelated-doc.md", UNRELATED_DOC)
+
+
+class TestCodexShowAutoSurfaceTextScenario1:
+    """conceptual-workflows-glossary — US-004 Scenario 1: auto-surface text mode."""
+
+    def test_appends_glossary_section_in_alphabetical_order(self, runner, project_dir):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main, ["codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" in result.output
+        assert (
+            "**Mission** — The unit of work an agent executes and closes."
+            in result.output
+        )
+        assert (
+            "**Quest** — A live grouping of Missions representing one body of work."
+            in result.output
+        )
+        assert (
+            "**Codex Source** — A pluggable backend that supplies codex documents."
+            in result.output
+        )
+        # Alphabetical by casefolded keyword: Codex Source, Mission, Quest.
+        assert (
+            result.output.index("**Codex Source**")
+            < result.output.index("**Mission**")
+            < result.output.index("**Quest**")
+        )
+
+
+class TestCodexShowAutoSurfaceJsonScenario2:
+    """conceptual-workflows-glossary — US-004 Scenario 2: JSON envelope (FR-18)."""
+
+    def test_json_envelope_includes_glossary_array_alphabetised(
+        self, runner, project_dir
+    ):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main, ["--json", "codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert "documents" in payload
+        assert "glossary" in payload
+        keywords = [e["keyword"] for e in payload["glossary"]]
+        assert keywords == ["Codex Source", "Mission", "Quest"]
+        # Each entry is the full GlossaryItem dict shape.
+        mission_entry = next(
+            e for e in payload["glossary"] if e["keyword"] == "Mission"
+        )
+        assert mission_entry["definition"] == (
+            "The unit of work an agent executes and closes."
+        )
+        assert mission_entry["aliases"] == []
+        assert mission_entry["do_not_use"] == ["task"]
+
+
+class TestCodexShowSkipGlossaryTextScenario3:
+    """conceptual-workflows-glossary — US-004 Scenario 3: --skip-glossary text."""
+
+    def test_skip_glossary_suppresses_block_and_clean_stderr(
+        self, runner, project_dir
+    ):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main,
+            ["codex", "show", "conceptual-entities-mission", "--skip-glossary"],
+        )
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" not in result.output
+        assert "**Mission** —" not in result.output
+        assert "**Quest** —" not in result.output
+        assert "**Codex Source** —" not in result.output
+        assert result.stderr == ""
+
+
+class TestCodexShowSkipGlossaryJsonScenario4:
+    """conceptual-workflows-glossary — US-004 Scenario 4: --skip-glossary JSON."""
+
+    def test_skip_glossary_returns_empty_glossary_array(self, runner, project_dir):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main,
+            [
+                "--json",
+                "codex",
+                "show",
+                "conceptual-entities-mission",
+                "--skip-glossary",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert "glossary" in payload
+        assert payload["glossary"] == []
+
+
+class TestCodexShowConfigDisabledScenario5:
+    """conceptual-workflows-glossary — US-004 Scenario 5: config disabled."""
+
+    def test_config_disabled_text_no_glossary_block(self, runner, project_dir):
+        (project_dir / ".lore" / "config.toml").write_text(
+            "show-glossary-on-codex-commands = false\n"
+        )
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main, ["codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" not in result.output
+
+    def test_config_disabled_json_glossary_empty_array(self, runner, project_dir):
+        (project_dir / ".lore" / "config.toml").write_text(
+            "show-glossary-on-codex-commands = false\n"
+        )
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main, ["--json", "codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["glossary"] == []
+
+
+class TestCodexShowNoMatchScenario6:
+    """conceptual-workflows-glossary — US-004 Scenario 6: no matches."""
+
+    def test_no_match_text_no_glossary_block(self, runner, project_dir):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(main, ["codex", "show", "unrelated-doc"])
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" not in result.output
+        assert result.stderr == ""
+
+    def test_no_match_json_glossary_empty_array(self, runner, project_dir):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main, ["--json", "codex", "show", "unrelated-doc"]
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["glossary"] == []
+
+
+class TestCodexShowDoNotUseDoesNotSurfaceScenario7:
+    """conceptual-workflows-glossary — US-004 Scenario 7 (FR-17)."""
+
+    def test_do_not_use_term_in_body_does_not_auto_surface(
+        self, runner, project_dir
+    ):
+        _write_glossary_yaml(project_dir, GLOSSARY_FIXTURE)
+        deprecated_doc = (
+            "---\n"
+            "id: deprecated-doc\n"
+            "title: Deprecated\n"
+            "summary: Body uses a do_not_use term plus Quest.\n"
+            "---\n\n"
+            'This task should be a Quest, not a "task".\n'
+        )
+        _write_codex_doc(project_dir, "deprecated-doc.md", deprecated_doc)
+        result = runner.invoke(main, ["codex", "show", "deprecated-doc"])
+        assert result.exit_code == 0, result.output
+        # Quest matched on canonical keyword, so its paragraph appears.
+        assert "**Quest** —" in result.output
+        # Mission's do_not_use term `task` is in body; Mission must NOT surface.
+        assert "**Mission** —" not in result.output
+
+
+class TestCodexShowMissionarySubstringDoesNotMatchScenario8:
+    """conceptual-workflows-glossary — US-004 Scenario 8: tokeniser substring guard."""
+
+    def test_missionary_does_not_match_mission(self, runner, project_dir):
+        _write_glossary_yaml(project_dir, GLOSSARY_FIXTURE)
+        missionary_doc = (
+            "---\n"
+            "id: missionary-doc\n"
+            "title: Missionary\n"
+            "summary: No glossary terms in body.\n"
+            "---\n\n"
+            "The missionary went to a missionary school.\n"
+        )
+        _write_codex_doc(project_dir, "missionary-doc.md", missionary_doc)
+        result = runner.invoke(main, ["codex", "show", "missionary-doc"])
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" not in result.output
+
+
+class TestCodexShowCodexSourceApostropheRegressionScenario9:
+    """conceptual-workflows-glossary — US-004 Scenario 9: multi-word + apostrophe."""
+
+    def test_codex_source_matches_through_apostrophe(self, runner, project_dir):
+        _write_glossary_yaml(project_dir, GLOSSARY_FIXTURE)
+        codex_source_doc = (
+            "---\n"
+            "id: codex-source-ref\n"
+            "title: Codex Source ref\n"
+            "summary: Body references codex source's structure.\n"
+            "---\n\n"
+            "the codex source's structure is plugin-based.\n"
+        )
+        _write_codex_doc(project_dir, "codex-source-ref.md", codex_source_doc)
+        result = runner.invoke(main, ["codex", "show", "codex-source-ref"])
+        assert result.exit_code == 0, result.output
+        assert (
+            "**Codex Source** — A pluggable backend that supplies codex documents."
+            in result.output
+        )
+
+
+class TestCodexShowMultipleDocsDeduplicatedScenario10:
+    """conceptual-workflows-glossary — US-004 Scenario 10."""
+
+    def test_multiple_docs_glossary_dedup_and_alphabetised(
+        self, runner, project_dir
+    ):
+        _seed_default_glossary_fixture(project_dir)
+        result = runner.invoke(
+            main,
+            ["codex", "show", "conceptual-entities-mission", "unrelated-doc"],
+        )
+        assert result.exit_code == 0, result.output
+        # Each matched glossary item appears exactly once.
+        assert result.output.count("**Mission** —") == 1
+        assert result.output.count("**Quest** —") == 1
+        assert result.output.count("**Codex Source** —") == 1
+        # Order: Codex Source, Mission, Quest.
+        assert (
+            result.output.index("**Codex Source**")
+            < result.output.index("**Mission**")
+            < result.output.index("**Quest**")
+        )
+
+
+class TestCodexShowMalformedGlossaryFailSoftScenario11:
+    """conceptual-workflows-glossary — US-004 Scenario 11 (NFR-Reliability)."""
+
+    def test_malformed_glossary_fail_soft_text(self, runner, project_dir):
+        _write_glossary_yaml(project_dir, "items: not-a-list\n")
+        _write_codex_doc(
+            project_dir, "conceptual-entities-mission.md", MISSION_DOC
+        )
+        result = runner.invoke(
+            main, ["codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" not in result.output
+        assert result.stderr.startswith("glossary unavailable:")
+        # Exactly one stderr line.
+        assert result.stderr.count("\n") == 1
+
+    def test_malformed_glossary_fail_soft_json(self, runner, project_dir):
+        _write_glossary_yaml(project_dir, "items: not-a-list\n")
+        _write_codex_doc(
+            project_dir, "conceptual-entities-mission.md", MISSION_DOC
+        )
+        result = runner.invoke(
+            main,
+            ["--json", "codex", "show", "conceptual-entities-mission"],
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["glossary"] == []
+        assert result.stderr.startswith("glossary unavailable:")
+
+
+class TestCodexShowMissingGlossarySilentSkipScenario12:
+    """conceptual-workflows-glossary — US-004 Scenario 12: missing file."""
+
+    def test_missing_glossary_text_silent(self, runner, project_dir):
+        # Ensure no glossary file exists.
+        glossary_file = project_dir / ".lore" / "codex" / "glossary.yaml"
+        if glossary_file.exists():
+            glossary_file.unlink()
+        _write_codex_doc(
+            project_dir, "conceptual-entities-mission.md", MISSION_DOC
+        )
+        result = runner.invoke(
+            main, ["codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        assert "## Glossary" not in result.output
+        assert result.stderr == ""
+
+    def test_missing_glossary_json_empty_array(self, runner, project_dir):
+        glossary_file = project_dir / ".lore" / "codex" / "glossary.yaml"
+        if glossary_file.exists():
+            glossary_file.unlink()
+        _write_codex_doc(
+            project_dir, "conceptual-entities-mission.md", MISSION_DOC
+        )
+        result = runner.invoke(
+            main, ["--json", "codex", "show", "conceptual-entities-mission"]
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert payload["glossary"] == []
+        assert result.stderr == ""
+
+
+class TestCodexShowHelpDocumentsSkipGlossaryScenario13:
+    """conceptual-workflows-glossary — US-004 Scenario 13 (ADR-008)."""
+
+    def test_help_lists_skip_glossary_flag(self, runner, project_dir):
+        result = runner.invoke(main, ["codex", "show", "--help"])
+        assert result.exit_code == 0, result.output
+        assert "--skip-glossary" in result.output
+

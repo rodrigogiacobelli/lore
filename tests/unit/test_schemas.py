@@ -691,3 +691,103 @@ class TestUs010CreateTimeModulesDelegateToSchemas:
             assert "Unexpected field" not in text, (
                 f"{name} still hand-codes 'Unexpected field' — should delegate to lore.schemas"
             )
+
+
+# ---------------------------------------------------------------------------
+# Glossary kind dispatch (glossary-us-001)
+# ---------------------------------------------------------------------------
+# Workflow: conceptual-workflows-glossary
+
+def _write_glossary_yaml(tmp_path, body):
+    p = tmp_path / "glossary.yaml"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+class TestValidateGlossaryKind:
+    """validate_entity_file dispatches the glossary kind through the full-YAML
+    path and raises SchemaValidationError on schema violations.
+
+    Spec: glossary-us-001 (lore codex show glossary-us-001)
+    """
+
+    def test_glossary_schema_loadable(self):
+        # conceptual-workflows-glossary — schema present (FR-19)
+        schema = load_schema("glossary")
+        assert isinstance(schema, dict)
+        assert schema["$id"] == "lore://schemas/glossary"
+
+    def test_validate_glossary_happy_does_not_raise(self, tmp_path):
+        # conceptual-workflows-health — schema validates happy file
+        from lore.schemas import SchemaValidationError  # noqa: F401 — must exist
+
+        p = _write_glossary_yaml(
+            tmp_path,
+            "items:\n  - keyword: K\n    definition: D\n",
+        )
+        validate_entity_file(str(p), "glossary")  # no raise
+
+    def test_validate_glossary_missing_keyword_raises(self, tmp_path):
+        # conceptual-workflows-health — required rule for keyword
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(tmp_path, "items:\n  - definition: D\n")
+        with pytest.raises(SchemaValidationError, match="required.*keyword"):
+            validate_entity_file(str(p), "glossary")
+
+    def test_validate_glossary_missing_definition_raises(self, tmp_path):
+        # conceptual-workflows-health — required rule for definition
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(tmp_path, "items:\n  - keyword: K\n")
+        with pytest.raises(SchemaValidationError, match="required.*definition"):
+            validate_entity_file(str(p), "glossary")
+
+    def test_validate_glossary_extra_top_level_key_raises(self, tmp_path):
+        # conceptual-workflows-health — additionalProperties false at top level
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(tmp_path, "items: []\nextra: nope\n")
+        with pytest.raises(SchemaValidationError, match="additionalProperties|extra"):
+            validate_entity_file(str(p), "glossary")
+
+    def test_validate_glossary_non_list_items_raises(self, tmp_path):
+        # conceptual-workflows-health — type rule for items
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(tmp_path, "items: not-a-list\n")
+        with pytest.raises(SchemaValidationError, match="type"):
+            validate_entity_file(str(p), "glossary")
+
+    def test_validate_glossary_multiline_keyword_rejected(self, tmp_path):
+        # conceptual-workflows-health — pattern rule on keyword
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(
+            tmp_path,
+            'items:\n  - keyword: "two\\nlines"\n    definition: D\n',
+        )
+        with pytest.raises(SchemaValidationError, match="pattern"):
+            validate_entity_file(str(p), "glossary")
+
+    def test_validate_glossary_oversized_definition_rejected(self, tmp_path):
+        # conceptual-workflows-health — maxLength rule on definition
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(
+            tmp_path,
+            f"items:\n  - keyword: K\n    definition: {'x' * 1001}\n",
+        )
+        with pytest.raises(SchemaValidationError, match="maxLength"):
+            validate_entity_file(str(p), "glossary")
+
+    def test_validate_glossary_duplicate_aliases_rejected(self, tmp_path):
+        # conceptual-workflows-health — uniqueItems on aliases
+        from lore.schemas import SchemaValidationError
+
+        p = _write_glossary_yaml(
+            tmp_path,
+            "items:\n  - keyword: K\n    definition: D\n    aliases: [a, a]\n",
+        )
+        with pytest.raises(SchemaValidationError, match="uniqueItems"):
+            validate_entity_file(str(p), "glossary")

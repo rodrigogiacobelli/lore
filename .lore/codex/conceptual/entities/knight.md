@@ -6,6 +6,7 @@ summary: What a Knight is — a reusable AI agent persona stored as a markdown f
   soft-delete semantics, and how Knight contents are surfaced to workers at runtime.
 related:
 - conceptual-entities-mission
+- conceptual-entities-glossary
 - tech-arch-knight-module
 - tech-cli-commands
 - conceptual-relationships-knight--mission

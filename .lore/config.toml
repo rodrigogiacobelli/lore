@@ -1,0 +1,4 @@
+# Project-level Lore configuration.
+# Known keys (additional keys are accepted and ignored):
+#   show-glossary-on-codex-commands : bool, default true
+show-glossary-on-codex-commands = true

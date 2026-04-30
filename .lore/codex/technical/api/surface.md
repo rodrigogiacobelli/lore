@@ -1,8 +1,8 @@
 ---
 id: tech-api-surface
 title: Python API Entity CRUD Matrix
-summary: Maps every Lore entity to its available Python API operations (lore.db, lore.codex, lore.artifact, lore.doctrine). Shows the function call for each CRUD and traversal operation and highlights gaps. Companion to tech-cli-entity-crud-matrix.
-related: ["decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "tech-cli-entity-crud-matrix", "tech-db-schema", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-health", "standards-facade", "standards-public-api-stability", "conceptual-workflows-python-api", "tech-arch-schemas"]
+summary: Maps every Lore entity to its available Python API operations (lore.db, lore.codex, lore.artifact, lore.doctrine, lore.glossary). Shows the function call for each CRUD and traversal operation and highlights gaps. Companion to tech-cli-entity-crud-matrix. Documents the GlossaryItem dataclass and the lore.glossary read-side functions (scan_glossary, read_glossary_item, search_glossary, match_glossary, find_deprecated_terms).
+related: ["decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "tech-cli-entity-crud-matrix", "tech-db-schema", "tech-arch-codex-map", "tech-arch-codex-chaos", "conceptual-workflows-health", "standards-facade", "standards-public-api-stability", "conceptual-workflows-python-api", "tech-arch-schemas", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 
 # Python API Entity CRUD Matrix
@@ -17,6 +17,7 @@ Import root is `lore`. Typed models live in `lore.models`. All `lore.db` functio
 | **Doctrine** | `lore.doctrine.create_doctrine(name, yaml_source_path, design_source_path, doctrines_dir, *, group=None)` → `dict` | `lore.doctrine.show_doctrine(id, doctrines_dir)` → `dict` — keys: `id`, `title`, `summary`, `design` (raw str), `raw_yaml` (raw str), `steps` (list) | `lore.doctrine.list_doctrines(doctrines_dir, filter_groups=None)` → `list[dict]` — dict keys: `id`, `group`, `title`, `summary`, `filename`, `valid` (always True; orphaned entries skipped) | — | — | — | — |
 | **Watcher** | `lore.watcher.create_watcher(watchers_dir, name, content, *, group=None)` → `dict` | `lore.watcher.find_watcher(watchers_dir, name)` → `Path \| None`, then `lore.watcher.load_watcher(filepath)` → `dict` | `lore.watcher.list_watchers(watchers_dir, filter_groups=None)` → `list[dict]` | — | — | `lore.watcher.update_watcher(watchers_dir, name, content)` → `dict` | `lore.watcher.delete_watcher(watchers_dir, name)` → `dict` |
 | **Codex** | ✗ | `lore.codex.read_document(codex_dir, id)` → `dict` | `lore.codex.scan_codex(codex_dir, filter_groups=None)` → `list[dict]` | `lore.codex.search_documents(codex_dir, keyword)` → `list[dict]` | `lore.codex.map_documents(codex_dir, start_id, depth)` → `list[dict] | None`<br>`lore.codex.chaos_documents(codex_dir, start_id, threshold, rng=None)` → `list[dict] | None` | ✗ | ✗ |
+| **Glossary** | ✗ | `lore.glossary.read_glossary_item(root, keyword)` → `GlossaryItem | None` (case-insensitive; aliases NOT lookup keys) | `lore.glossary.scan_glossary(root)` → `list[GlossaryItem]` ([] if file missing; raises `GlossaryError` on parse/schema failure) | `lore.glossary.search_glossary(root, query)` → `list[GlossaryItem]` (substring across keyword/aliases/do_not_use/definition) | `lore.glossary.match_glossary(bodies, root=...)` → `list[GlossaryItem]` (canonical-only token-run match)<br>`lore.glossary.find_deprecated_terms(bodies, root=...)` → `list[tuple[GlossaryItem, doc_id, term]]` (do_not_use scan) | ✗ | ✗ |
 | **Artifact** | `lore.artifact.create_artifact(artifacts_dir, name, content, *, group=None)` → `dict` | `lore.artifact.read_artifact(artifacts_dir, id)` → `dict` | `lore.artifact.scan_artifacts(artifacts_dir, filter_groups=None)` → `list[dict]` | — | — | ✗ | ✗ |
 | **Board Message** | `lore.db.add_board_message(root, entity_id, message, sender)` → `dict` | `lore.db.get_board_messages(root, entity_id)` → `list[dict]` | same as Read | — | — | ✗ (immutable) | `lore.db.delete_board_message(root, message_id)` → `dict` |
 
@@ -80,7 +81,7 @@ All `lore.db` functions return raw `sqlite3.Row` objects. Wrap them with typed m
 
 ```python
 from lore.models import Quest, Mission, BoardMessage, Artifact, CodexDocument
-from lore.models import Doctrine, DoctrineListEntry, Knight, Watcher
+from lore.models import Doctrine, DoctrineListEntry, Knight, Watcher, GlossaryItem
 
 Quest.from_row(row)
 Mission.from_row(row)
@@ -91,7 +92,10 @@ Doctrine.from_dict(show_doctrine(id, doctrines_dir))   # from show_doctrine() �
 DoctrineListEntry.from_dict(d)     # from list_doctrines() — keys: id, group, title, summary, filename, valid
 Knight(name=path.stem, content=path.read_text())   # use lore.knight.find_knight(knights_dir, name) to locate the file first
 Watcher.from_dict(load_watcher(path))   # or Watcher.from_dict(list_watchers(dir)[i])
+GlossaryItem.from_dict(d)          # from scan_glossary() / read_glossary_item() — keys: keyword, definition, aliases, do_not_use
 ```
+
+**Glossary hydration:** `GlossaryItem` is a frozen dataclass with `keyword: str`, `definition: str`, `aliases: tuple[str, ...]`, `do_not_use: tuple[str, ...]`. No `id` field — `keyword` is the natural key. `lore.glossary.scan_glossary(root)` and `read_glossary_item(root, keyword)` already return `GlossaryItem` instances; no wrap step needed. `Config` (the `.lore/config.toml` loader's typed return) is internal — NOT in `lore.models.__all__` until Realm asks (FR-14, ADR-010).
 
 **Knight hydration:** Use `lore.knight.find_knight(knights_dir, name)` to locate the file. Do not glob `.lore/knights/**/*.md` directly. `find_knight` returns `Path | None` (not found) and raises `ValueError` on path-traversal attempts (names containing `/` or `\\`).
 
@@ -131,7 +135,7 @@ report: HealthReport = health_check(project_root=Path("."), scope=["doctrines", 
 
 `health_check(project_root, scope=None)` audits all file-based entity types AND validates every entity file's shape against its JSON Schema (or a subset when `scope` is provided, including the new `"schemas"` scope). Returns a `HealthReport`. Never prints to stdout or stderr.
 
-Valid `scope` tokens: `"codex"`, `"artifacts"`, `"doctrines"`, `"knights"`, `"watchers"`, `"schemas"`. Passing `scope=None` runs every scope including `"schemas"`.
+Valid `scope` tokens: `"codex"`, `"artifacts"`, `"doctrines"`, `"knights"`, `"watchers"`, `"schemas"`, `"glossary"`. Passing `scope=None` runs every scope including `"schemas"` and `"glossary"`.
 
 ### Schema Validation Helpers
 
@@ -145,7 +149,7 @@ for issue in issues:
     print(issue.schema_id, issue.rule, issue.pointer, issue.detail)
 ```
 
-`load_schema(kind)` returns the cached parsed schema dict for a kind. Raises `FileNotFoundError` for unknown kinds. Kinds: `"doctrine-yaml"`, `"doctrine-design-frontmatter"`, `"knight"`, `"watcher"`, `"codex"`, `"artifact"`.
+`load_schema(kind)` returns the cached parsed schema dict for a kind. Raises `FileNotFoundError` for unknown kinds. Kinds: `"doctrine-yaml"`, `"doctrine-design-frontmatter"`, `"knight"`, `"watcher"`, `"codex"`, `"artifact"`, `"glossary"`.
 
 `validate_entity_file(path, kind)` returns a list of `HealthIssue` records (empty on success). Each issue has `check="schema"`, `severity="error"`, and populated `schema_id` / `rule` / `pointer` fields. The function is self-contained — it opens the file, parses YAML or frontmatter as appropriate for the kind, and runs the validator. Callable from Realm with zero CLI-layer side effects (ADR-011).
 

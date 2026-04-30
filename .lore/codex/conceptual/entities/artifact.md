@@ -9,6 +9,7 @@ summary: >
 related:
   - conceptual-entities-doctrine
   - conceptual-entities-knight
+  - conceptual-entities-glossary
   - conceptual-workflows-lore-init
   - tech-arch-initialized-project-structure
   - tech-cli-commands

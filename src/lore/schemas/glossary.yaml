@@ -1,0 +1,42 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/glossary"
+title: Glossary
+type: object
+additionalProperties: false
+required: [items]
+properties:
+  items:
+    type: array
+    items:
+      $ref: "#/$defs/glossaryItem"
+$defs:
+  glossaryItem:
+    type: object
+    additionalProperties: false
+    required: [keyword, definition]
+    properties:
+      keyword:
+        type: string
+        minLength: 1
+        maxLength: 80
+        pattern: "^[^\n\r]+$"
+      definition:
+        type: string
+        minLength: 1
+        maxLength: 1000
+      aliases:
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[^\n\r]+$"
+      do_not_use:
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[^\n\r]+$"

@@ -35,6 +35,14 @@ Use whatever method the user specified. Store the raw body verbatim. Do not summ
 
 Identify new terms, concepts, constraints, or decisions in the snapshot that are not yet in the canonical codex. For each, name a specific canonical doc path that should be updated and the one-sentence addition you propose. Present the list to the user for approval.
 
+If any candidate update is a glossary entry — adding a term to `.lore/codex/glossary.yaml` — gate it through the design checklist before proposing:
+
+```
+lore artifact show glossary-design
+```
+
+The Glossary is for small, project-specific terms only. Entities, named workflows, generic IT vocabulary, and future-scope ideas belong in entity docs, workflow docs, ADRs, standards docs, or nowhere — not the glossary.
+
 ### 6. Apply approved edits
 
 For each approved edit, modify the relevant canonical doc. Canonical docs may mention the source ID in prose; they must NEVER list the source ID in `related` — `lore health` will reject that as `canonical_links_to_source`.

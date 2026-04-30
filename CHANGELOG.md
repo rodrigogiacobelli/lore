@@ -8,9 +8,44 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-30
+
 ### Added
 
+#### Glossary
+
+- **New `Glossary` codex artefact** — single canonical YAML file at `.lore/codex/glossary.yaml` holding short, project-specific term definitions keyed by `keyword`. Each item has a `keyword` and `definition` plus optional `aliases` and `do_not_use` lists. The `keyword` is the natural key — no `id` field. See `conceptual-entities-glossary`.
+- **`lore glossary` CLI group (read-only)** — three subcommands:
+  - `lore glossary list` (alias `lore glossary`) — list every entry alphabetically by keyword. `--json` supported.
+  - `lore glossary search <query>` — case-insensitive match against `keyword`, `aliases`, `do_not_use`, and `definition`. Multi-word queries supported with quoting.
+  - `lore glossary show <keyword> [<keyword>...]` — return full entries by canonical keyword (case-insensitive lookup; aliases are NOT accepted as lookup keys).
+  No `new`/`edit`/`delete` — maintainers edit the YAML directly. Mirrors the artifact CLI pattern.
+- **Auto-surface on `lore codex show`** — when `show-glossary-on-codex-commands = true` (default) in `.lore/config.toml` and `--skip-glossary` is not passed, the system tokenises every returned codex document body, matches against keyword + alias token-tuples, and appends a trailing `## Glossary` section listing each matched item alphabetically. Multi-doc dedup at two levels: within-body and across-bodies. JSON envelope gains an always-present `"glossary": [...]` array. `do_not_use` matches do NOT auto-surface — they only surface in `lore health`. Fail-soft: a malformed glossary emits one stderr `glossary unavailable: <reason>` line and continues; `lore codex show` still exits 0.
+- **`--skip-glossary` flag on `lore codex show`** — per-call escape hatch that suppresses the `## Glossary` section unconditionally and returns an empty `"glossary"` array in JSON mode.
+- **`.lore/config.toml` (new project config file)** — generic, forward-compatible TOML config loader. Unknown keys are accepted and ignored to enable additive evolution. First (and only) MVP setting: `show-glossary-on-codex-commands` (bool, default `true`). Missing file → defaults silently. Malformed file → defaults + one stderr warning per process. Loaded by a new `lore.config` module; `Config` is internal-only and not exported via `lore.models.__all__`.
+- **`lore health --scope glossary`** — runs glossary-only checks: schema validation, intra-file collision audits (duplicate keyword case-insensitive → error; alias-keyword collision → warning escalated to error; `do_not_use` overlap with another item's keyword/alias → error), and a cross-codex `glossary_deprecated_term` scan that emits one warning per occurrence of any `do_not_use` term in any codex document body. The `glossary` token combines with other scopes per ADR-012 (e.g. `lore health --scope codex glossary`).
+- **`lore.glossary` Python module** — exports `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary` (canonical-only matches, alphabetised, deduplicated), `find_deprecated_terms` (per-occurrence health scan), `GlossaryError`. Built on a single shared word-boundary tokeniser (`re.compile(r"[^\w]+", re.UNICODE)` + `str.casefold()`) and lookup primitive reused by both surfaces.
+- **`GlossaryItem` exported from `lore.models`** — frozen immutable dataclass with `keyword`, `definition`, `aliases`, `do_not_use`. `from_dict` classmethod constructs from raw YAML.
+- **`glossary` JSON Schema** — packaged at `src/lore/schemas/glossary.yaml` (`$id: lore://schemas/glossary`). `_check_schemas` extended to support literal-filename globs (single fixed file at a known path) alongside `**/*.yaml` patterns.
+- **ADR-013 — TOML for project config; YAML for glossary content** — `.lore/config.toml` uses TOML for ergonomic single-file key/value editing; `.lore/codex/glossary.yaml` uses YAML to match all other codex content (frontmatter, schemas, doctrines). Records the `lore init` carve-out below.
+- **`conceptual-entities-glossary` codex doc** — full lifecycle, surfaces, properties, edge cases, and a "What Belongs Here" section gating glossary additions through three questions (project-specific? not an entity? not a named workflow?). Links to the design-doc artifact.
+- **`conceptual-workflows-glossary` codex doc** — read-side workflows for `list`, `search`, `show`, auto-surface, and `--skip-glossary`. Test-anchor for every E2E scenario.
+- **`glossary-design` design-document artifact** — checklist agents must run before adding any glossary entry. Contains the three-question gate, worked good/bad examples (Constable passes; Quest, ADR, Soft-delete, Auto-surface, Weapon all fail), YAML stanza template, and a "where to put it instead" table. Retrievable via `lore artifact show glossary-design`. Referenced from `tech-writer` knight, `ingest-source`/`refresh-source` skills, the seeded `CODEX.md`, and the seeded `glossary.yaml` header — every default that writes to the codex now points at the gate.
+
+#### `lore init` and seeded defaults
+
+- **`lore init` seeds `.lore/codex/glossary.yaml`** with a project-agnostic skeleton (`items: []` + a header pointing at `lore artifact show glossary-design`). The Glossary is the only file `lore init` seeds under `.lore/codex/` — a deliberate carve-out from the prior "init never writes to `.lore/codex/`" rule. The skeleton lands directly at `.lore/codex/glossary.yaml`, NOT under `.lore/codex/default/`, because the file is user-tracked vocabulary and a `default/` placement would be gitignored and overwritten on every re-init. Idempotent: existing files are left byte-for-byte untouched.
+- **`lore init` seeds `.lore/config.toml`** with `show-glossary-on-codex-commands = true` and a header comment naming known keys. Idempotent.
+- **`!config.toml` added to the seeded `.lore/.gitignore`** so the new config file is git-tracked alongside the rest of `.lore/`.
+- **Seeded default skills and knights gained glossary references** — `explore-codex/SKILL.md` (added `lore glossary list/search/show` to the command table), `start-quest/SKILL.md` (vocabulary-alignment line), `feature-implementation/scout.md` (glossary added as a primary input alongside PRD and codex), `LORE-AGENT.md` (orientation surface), `CODEX.md` (rewrote the glossary guidance with the strict three-question gate). Dev knights (`tdd-red`, `tdd-green`, `tdd-refactor`, `tech-lead`) deliberately untouched — they don't write codex content.
 - **`.lore/skills/.gitignore` seeded at init** — `lore init` now writes a `.gitignore` inside `.lore/skills/` listing every Lore-shipped skill directory. When a user copies the skills directory into their project's `.claude/skills/`, the bundled skills are ignored automatically without needing manual gitignore edits. User-added skills in the same directory are unaffected. The list is generated dynamically from `src/lore/defaults/skills/`, so newly shipped defaults are picked up on the next init.
+
+### Changed
+
+- **Python minimum bumped to 3.11** — required for stdlib `tomllib` to load `.lore/config.toml` without vendoring `tomli`.
+- **`lore codex show` JSON envelope** — now always includes a `"glossary"` key (empty array when skipped, disabled, no-match, or fail-soft). Existing `"documents"` key unchanged.
+- **`lore health --scope` accepts multiple values** per ADR-012 (`lore health --scope codex glossary`). Previous single-value form still works.
+- **`_ALL_SCOPES` and `_SCHEMA_KINDS` extended** with `glossary`. `_check_schemas` resolves literal-filename globs (no `*` in pattern) via `entity_root / glob` instead of `glob()`, supporting single-fixed-file schema kinds.
 
 ## [0.3.1] - 2026-04-22
 

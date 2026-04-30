@@ -1,8 +1,8 @@
 ---
 id: tech-cli-commands
 title: CLI Command Reference
-summary: Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours. Covers all commands including lore health (diagnostic audit), lore board add/delete, lore codex list/show/search/map/chaos, lore artifact new (first CLI write path for artifacts), lore artifact list/show, and the --group option on all four entity new subcommands. Notes the hidden status of --no-auto-close on `lore new quest` versus its visible status on `lore edit`.
-related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005-auto-close-toggle", "decisions-008-help-as-teaching-interface", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health", "decisions-006-id-references", "conceptual-workflows-help", "conceptual-workflows-stats", "tech-arch-schemas"]
+summary: Complete CLI reference for Lore — every command, flag, argument, output format, JSON schema, exit codes, and error behaviours. Covers all commands including lore health (diagnostic audit, with the new --scope glossary), lore board add/delete, lore codex list/show/search/map/chaos (with the new --skip-glossary flag on show and the auto-surfaced ## Glossary block), lore glossary list/search/show (read-only access to the canonical glossary file), lore artifact new (first CLI write path for artifacts), lore artifact list/show, and the --group option on all four entity new subcommands. Notes the hidden status of --no-auto-close on `lore new quest` versus its visible status on `lore edit`.
+related: ["tech-cli-entity-crud-matrix", "tech-db-schema", "decisions-005-auto-close-toggle", "decisions-008-help-as-teaching-interface", "conceptual-workflows-codex-map", "conceptual-workflows-codex-chaos", "conceptual-workflows-filter-list", "conceptual-workflows-health", "decisions-006-id-references", "conceptual-workflows-help", "conceptual-workflows-stats", "tech-arch-schemas", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 
 # CLI Command Reference
@@ -627,7 +627,7 @@ Schema validation: 0 errors
 
 | Error | Exit code | Message |
 |-------|-----------|---------|
-| Unknown `--scope` token | 1 | `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas.` |
+| Unknown `--scope` token | 1 | `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary.` |
 | Entity directory scan failure | 0 or 1 | `scan_failed` issue recorded for that entity type; other types continue |
 | Authoritative schema resource missing at load time | 1 | `scan_failed` error naming the missing schema id — no partial false-green |
 
@@ -652,10 +652,16 @@ Return a table of contents: every document's ID, group, title, and summary. No b
 The optional `--filter GROUP...` flag limits results to documents in the specified group(s) using slash-delimited segment-prefix matching. For example, `--filter conceptual` returns documents with group `conceptual`, `conceptual/workflows`, `conceptual/reference`, etc. **Breaking change:** the hyphen-delimited input grammar is no longer accepted. Root-level documents (group == "") are always returned regardless of filter. Multiple tokens use OR logic. An unrecognised token produces no error. See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for full filter behaviour.
 
 ```
-lore codex show <id> [id ...]
+lore codex show <id> [id ...] [--skip-glossary]
 ```
 
 Return the full content of one or more documents by stable ID, concatenated in a single response. Accepts one or more IDs as positional arguments. For each ID, returns the full document body (frontmatter stripped). Human output: each document's body preceded by a separator line (`=== <id> ===`). Fail-fast on the first missing ID: no partial results are emitted; error goes to stderr, exit code 1.
+
+After all bodies are emitted, `lore codex show` consults `.lore/config.toml` — `show-glossary-on-codex-commands` (default `true`) — and, when enabled and `--skip-glossary` is not passed, appends a trailing `## Glossary` block listing every matched glossary item. Matching uses the shared tokeniser in `lore.glossary` (split on `[^\w]+` with `re.UNICODE`, casefold, contiguous-token-run match against keywords and aliases; `do_not_use` terms are NOT auto-surfaced). When zero items match the block is omitted. JSON mode adds an always-present `"glossary": [...]` array alongside `"documents"`. Malformed glossary fails soft: a single stderr line `glossary unavailable: <reason>` is emitted, the block is omitted, exit code is unchanged. See conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary).
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--skip-glossary` | off | Suppress the auto-surface `## Glossary` block for this call. JSON envelope still emits `"glossary": []`. |
 
 ```
 lore codex search <keyword>
@@ -722,7 +728,47 @@ Error: if seed document `<id>` is not found, prints `Document "<id>" not found` 
 stderr and exits with code 1. In JSON mode: `{"error": "Document \"<id>\" not found"}`
 to stderr, exit code 1.
 
-All five codex commands support `--json`.
+All five codex commands support `--json`. Only `lore codex show` accepts `--skip-glossary`; `lore codex map` and `lore codex chaos` do not surface glossary entries in MVP.
+
+## Glossary
+
+`lore glossary --help` description:
+
+> Access the project glossary — short term definitions held in .lore/codex/glossary.yaml. Use 'lore glossary list' to see every entry, 'lore glossary search <query>' to filter by keyword/alias/definition substring, and 'lore glossary show <keyword>' to read the full definition for one or more entries. Maintainers edit .lore/codex/glossary.yaml directly — the CLI is read-only.
+
+```
+lore glossary
+lore glossary list
+lore glossary list --json
+lore glossary search <query>
+lore glossary show <keyword> [<keyword> ...]
+```
+
+Registered between `codex` and `artifact` in the help listing — adjacency to `codex` matches the conceptual proximity. `lore glossary` (no subcommand) is an alias for `lore glossary list`.
+
+```
+lore glossary list
+```
+
+Return every glossary entry alphabetised by `keyword` (case-insensitive sort, original casing preserved on display). Text columns: `KEYWORD`, `ALIASES` (comma-joined or em-dash `—` when empty), `DEFINITION` (truncated at 80 characters with `…` when longer). Missing `.lore/codex/glossary.yaml` prints `No glossary defined.` exit 0. Malformed glossary file: stderr `Error: glossary unavailable: <reason>`, exit 1. JSON envelope: `{"glossary": [{"keyword": "...", "definition": "...", "aliases": [], "do_not_use": []}, ...]}` — all four fields always present.
+
+```
+lore glossary search <query>
+```
+
+Substring match (case-insensitive, casefolded) over `keyword`, every `alias`, every `do_not_use` term, and `definition`. Multi-word queries should be quoted on the shell. Output format identical to `list`. No matches: `No glossary entries matching "<query>".` exit 0.
+
+```
+lore glossary show <keyword> [<keyword> ...]
+```
+
+Return the full entry for each keyword. Lookup is case-insensitive. **Aliases are NOT accepted** as `show` keys — only canonical keywords. Fail-fast on the first missing keyword: stderr `Error: glossary keyword "<kw>" not found.`, exit 1, no partial output. JSON error: `{"error": "glossary keyword \"<kw>\" not found."}`.
+
+Text mode renders each entry under a `=== <keyword> ===` separator with `Keyword`, `Aliases`, `Do not use`, and a multi-line `Definition` block. JSON mode emits `{"glossary": [<items>]}` in the order keywords were requested (deduplicated).
+
+There is no `lore glossary new`, `edit`, or `delete`. Maintainers edit `.lore/codex/glossary.yaml` directly. This mirrors the artifact CLI read-only pattern.
+
+All three glossary commands support `--json`. See conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary) for the full behaviour spec, the auto-surface algorithm, and the failure-mode contract.
 
 ## Artifacts
 

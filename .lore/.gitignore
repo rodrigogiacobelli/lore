@@ -1,6 +1,7 @@
 # Created by Lore automatically.
 *
 !.gitignore
+!config.toml
 !codex
 !codex/**
 !artifacts

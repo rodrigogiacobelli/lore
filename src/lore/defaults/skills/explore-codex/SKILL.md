@@ -16,6 +16,9 @@ Use the Lore codex to research a question, compare information, or map out a dom
 | Explore related documents from a starting point | `lore codex map <id> --depth 1` |
 | Discover loosely connected documents serendipitously | `lore codex chaos <id> --threshold <30-100>` |
 | See everything | `lore codex list` |
+| List project vocabulary | `lore glossary list` |
+| Search glossary terms | `lore glossary search <query>` |
+| Read one or more glossary entries | `lore glossary show <kw1> <kw2> ...` |
 
 ## Steps
 

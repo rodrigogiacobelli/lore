@@ -19,7 +19,16 @@ __all__ = [
     "validate_entity",
     "validate_entity_file",
     "SchemaIssue",
+    "SchemaValidationError",
 ]
+
+
+class SchemaValidationError(Exception):
+    """Raised when a full-YAML kind fails schema validation in raise-mode."""
+
+    def __init__(self, message: str, issues: list["SchemaIssue"] | None = None) -> None:
+        super().__init__(message)
+        self.issues = issues or []
 
 
 @functools.lru_cache(maxsize=None)
@@ -55,7 +64,9 @@ _FRONTMATTER_KINDS = {
     "doctrine-design-frontmatter",
 }
 
-_YAML_KINDS = {"doctrine-yaml", "watcher-yaml"}
+_YAML_KINDS = {"doctrine-yaml", "watcher-yaml", "glossary"}
+
+_RAISE_KINDS = {"glossary"}
 
 
 def _pointer_from_path(path_parts: list) -> str:
@@ -161,6 +172,8 @@ def validate_entity_file(path: str, kind: str) -> list[SchemaIssue]:
         try:
             data = yaml.safe_load(text)
         except yaml.YAMLError as e:
+            if kind in _RAISE_KINDS:
+                raise SchemaValidationError(f"yaml-parse: {e}") from e
             return [SchemaIssue(rule="yaml-parse", pointer="/", message=str(e))]
     elif kind in _FRONTMATTER_KINDS:
         if not text.startswith("---"):
@@ -179,4 +192,9 @@ def validate_entity_file(path: str, kind: str) -> list[SchemaIssue]:
         load_schema(kind)
         data = None
 
-    return validate_entity(kind, data)
+    issues = validate_entity(kind, data)
+    if kind in _RAISE_KINDS and issues:
+        first = issues[0]
+        msg_parts = [f"{i.rule} at {i.pointer}: {i.message}" for i in issues]
+        raise SchemaValidationError("; ".join(msg_parts), issues=issues)
+    return issues

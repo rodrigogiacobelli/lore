@@ -1,0 +1,12 @@
+# Project glossary — see `lore codex show conceptual-entities-glossary`.
+# Before adding a term, run: `lore artifact show glossary-design`.
+# Auto-surfaced on `lore codex show`. Toggle via .lore/config.toml.
+items:
+  - keyword: Constable
+    definition: >-
+      Mission type for orchestrator-handled chores — commits, releases,
+      housekeeping. The orchestrator handles a constable Mission inline
+      instead of dispatching a worker.
+    aliases:
+      - constable mission
+      - chore mission

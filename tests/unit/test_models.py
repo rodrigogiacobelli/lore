@@ -1591,3 +1591,88 @@ class TestUS009SchemaValidationReexports:
         schema = load_schema("knight-frontmatter")
         assert isinstance(schema, dict)
         assert "$id" in schema or "properties" in schema
+
+
+# ---------------------------------------------------------------------------
+# GlossaryItem (glossary-us-001)
+# ---------------------------------------------------------------------------
+# Workflow: conceptual-workflows-glossary
+class TestGlossaryItem:
+    """GlossaryItem is a frozen dataclass exported from lore.models."""
+
+    def test_glossary_item_in_all(self):
+        # conceptual-workflows-glossary — public API export (FR-30, US-001 Scenario 7)
+        import lore.models as mod
+        assert "GlossaryItem" in mod.__all__
+
+    def test_glossary_item_is_importable_from_lore_models(self):
+        from lore.models import GlossaryItem
+        assert GlossaryItem is not None
+
+    def test_glossary_item_is_frozen(self):
+        # conceptual-workflows-glossary — immutability (US-001 Scenario 7)
+        from lore.models import GlossaryItem
+        item = GlossaryItem(keyword="x", definition="y")
+        with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+            item.keyword = "z"
+
+    def test_glossary_item_default_aliases_empty_tuple(self):
+        # conceptual-workflows-glossary — aliases default to () not []
+        from lore.models import GlossaryItem
+        item = GlossaryItem(keyword="x", definition="y")
+        assert item.aliases == ()
+
+    def test_glossary_item_default_do_not_use_empty_tuple(self):
+        # conceptual-workflows-glossary — do_not_use default to () not []
+        from lore.models import GlossaryItem
+        item = GlossaryItem(keyword="x", definition="y")
+        assert item.do_not_use == ()
+
+    def test_glossary_item_from_dict_roundtrip(self):
+        # conceptual-workflows-glossary — from_dict tuple-coercion contract
+        from lore.models import GlossaryItem
+        item = GlossaryItem.from_dict({
+            "keyword": "K",
+            "definition": "D",
+            "aliases": ["a", "b"],
+            "do_not_use": ["x"],
+        })
+        assert item.keyword == "K"
+        assert item.definition == "D"
+        assert item.aliases == ("a", "b")
+        assert item.do_not_use == ("x",)
+
+    def test_glossary_item_from_dict_defaults_optional_to_empty_tuple(self):
+        # conceptual-workflows-glossary — optional defaults
+        from lore.models import GlossaryItem
+        item = GlossaryItem.from_dict({"keyword": "K", "definition": "D"})
+        assert item.aliases == ()
+        assert item.do_not_use == ()
+
+    def test_glossary_item_aliases_is_tuple_type(self):
+        # conceptual-workflows-glossary — list→tuple coercion
+        from lore.models import GlossaryItem
+        item = GlossaryItem.from_dict({
+            "keyword": "K",
+            "definition": "D",
+            "aliases": ["a"],
+            "do_not_use": ["b"],
+        })
+        assert isinstance(item.aliases, tuple)
+        assert isinstance(item.do_not_use, tuple)
+
+
+# ---------------------------------------------------------------------------
+# Config NOT in lore.models.__all__ (glossary-us-003)
+# Workflow: conceptual-workflows-glossary
+# Standards: decisions-010-public-api-stability (FR-14)
+# ---------------------------------------------------------------------------
+class TestConfigNotInPublicAPI:
+    """`Config` is internal until Realm asks — must not appear in lore.models.__all__.
+    Per ADR-010 and FR-14 (US-003 Scenario 8, Unit row 14).
+    """
+
+    def test_config_not_in_public_api(self):
+        # conceptual-workflows-glossary — FR-14, ADR-010 (US-003 Scenario 8)
+        import lore.models as mod
+        assert "Config" not in mod.__all__

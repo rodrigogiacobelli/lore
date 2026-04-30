@@ -5,7 +5,9 @@ summary: 'What this documentation system is, how it is structured, and how to us
   it. Read this before reading or writing any other file in this repository.
 
   '
-related: []
+related:
+  - conceptual-entities-glossary
+  - conceptual-workflows-glossary
 ---
 
 # Codex

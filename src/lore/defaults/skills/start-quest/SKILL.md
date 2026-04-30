@@ -33,6 +33,8 @@ Read the full doctrine. Note:
 lore list
 ```
 
+Before drafting missions, run `lore glossary list` to align on project vocabulary — use the canonical keywords in titles and descriptions instead of synonyms.
+
 ### 3. Create the quest
 
 ```

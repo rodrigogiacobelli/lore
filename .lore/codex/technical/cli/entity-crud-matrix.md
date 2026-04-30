@@ -3,12 +3,13 @@ id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
 summary: Maps every Lore entity to its available CLI CRUD and traversal operations
   with the exact command for each. Highlights gaps — Codex has no CLI write path;
-  Artifact gained a `new` write path (first CLI write for artifacts); Board has no
-  standalone list or update; Quest/Mission have no search; lore deps is documented
-  but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher)
-  support --filter GROUP... (slash-delimited segment-prefix matching) and all four
-  entity `new` commands (doctrine, knight, watcher, artifact) support --group GROUP
-  for nested creation.
+  Glossary is read-only via CLI (single file, no group hierarchy); Artifact gained
+  a `new` write path (first CLI write for artifacts); Board has no standalone list
+  or update; Quest/Mission have no search; lore deps is documented but unimplemented.
+  All five list commands (codex, artifact, knight, doctrine, watcher) support --filter
+  GROUP... (slash-delimited segment-prefix matching) and all four entity `new`
+  commands (doctrine, knight, watcher, artifact) support --group GROUP for nested
+  creation. Glossary list does NOT accept --filter — single file with no groups.
 related:
 - tech-api-surface
 - tech-cli-commands
@@ -16,6 +17,8 @@ related:
 - tech-arch-codex-chaos
 - conceptual-workflows-filter-list
 - conceptual-workflows-health
+- conceptual-entities-glossary
+- conceptual-workflows-glossary
 ---
 
 # CLI Entity CRUD Matrix
@@ -27,7 +30,8 @@ related:
 | **Knight** | `lore knight new <name> [--group <path>]` | `lore knight show <name>` | `lore knight list [--filter GROUP...]` | — | — | `lore knight edit <name>` | `lore knight delete <name>` |
 | **Doctrine** | `lore doctrine new <name> [--group <path>] -f <yaml> -d <design>` | `lore doctrine show <name>` | `lore doctrine list [--filter GROUP...]` | — | — | `lore doctrine edit <name>` | `lore doctrine delete <name>` |
 | **Watcher** | `lore watcher new <name> [--group <path>]` | `lore watcher show <name>` | `lore watcher list [--filter GROUP...]` | — | — | `lore watcher edit <name>` | `lore watcher delete <name>` |
-| **Codex** | ✗ (disk only) | `lore codex show <id> [id2…]` | `lore codex list [--filter GROUP...]` | `lore codex search <kw>` | `lore codex map <id> [--depth n]`<br>`lore codex chaos <id> --threshold <int>` | ✗ (disk only) | ✗ (disk only) |
+| **Codex** | ✗ (disk only) | `lore codex show <id> [id2…] [--skip-glossary]` | `lore codex list [--filter GROUP...]` | `lore codex search <kw>` | `lore codex map <id> [--depth n]`<br>`lore codex chaos <id> --threshold <int>` | ✗ (disk only) | ✗ (disk only) |
+| **Glossary** | ✗ (disk only) | `lore glossary show <keyword> [kw2…]` | `lore glossary list` | `lore glossary search <query>` | — | ✗ (disk only) | ✗ (disk only) |
 | **Artifact** | `lore artifact new <name> [--group <path>] --from <body>` | `lore artifact show <id> [id2…]` | `lore artifact list [--filter GROUP...]` | — | — | ✗ (disk only) | ✗ (disk only) |
 | **Board Message** | `lore board add <entity_id> "<msg>" [-s sender]` | (inside `lore show`) | (inside `lore show`) | — | — | ✗ (immutable) | `lore board delete <int_id>` |
 
@@ -74,6 +78,7 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 | Entity | Missing | Notes |
 |--------|---------|-------|
 | **Codex** | Create, Update, Delete | No CLI write path. Authoring is on-disk. Intentional — Codex is the human/agent record layer. The feature's list display and `--filter` grammar change applies to codex in lock-step, but no write path is introduced. |
+| **Glossary** | Create, Update, Delete, `--filter` on list | Read-only CLI by design (mirrors artifact pattern). Maintainers edit `.lore/codex/glossary.yaml` directly. `--filter` does NOT apply — the glossary is a single file with no group hierarchy. |
 | **Artifact** | Update, Delete | `Create` landed via `lore artifact new` — first CLI write path for artifacts. Update and delete remain on-disk. |
 | **Board Message** | Update, standalone List | Append-only by design (ADR-009). Only visible inside `lore show`. |
 | **Quest / Mission** | Search | No keyword search across titles or descriptions. |

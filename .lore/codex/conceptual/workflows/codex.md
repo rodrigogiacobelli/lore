@@ -12,6 +12,9 @@ related:
 - conceptual-workflows-codex-map
 - conceptual-workflows-codex-chaos
 - conceptual-workflows-filter-list
+- conceptual-workflows-glossary
+- conceptual-entities-glossary
+- decisions-013-toml-for-config-yaml-for-glossary
 ---
 
 # Codex Commands — `lore codex`
@@ -88,15 +91,26 @@ Text mode: each document is printed with a `=== <id> ===` separator followed by 
 ...
 ```
 
-### 4. JSON mode
+### 4. Auto-surface glossary block
+
+After all document bodies are emitted, `lore codex show` consults `.lore/config.toml` (`show-glossary-on-codex-commands`, default `true`) and the per-call `--skip-glossary` flag. When auto-surface is enabled, `lore.glossary.match_glossary` tokenises every returned body, matches token runs against canonical glossary keywords and aliases, and appends a trailing `## Glossary` block with each matched item rendered as `**<keyword>** — <definition>`. `do_not_use` terms are NOT auto-surfaced — they are deprecation hits, only surfaced by `lore health` (lore codex show conceptual-workflows-health). When zero items match, no `## Glossary` block is emitted.
+
+A malformed glossary fails soft: a single stderr line `glossary unavailable: <reason>` is emitted, the `## Glossary` block is omitted, and the exit code is unchanged. See conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary) for the full algorithm and policy.
+
+### 5. JSON mode
 
 ```json
 {
   "documents": [
     {"id": "...", "title": "...", "summary": "...", "body": "..."}
+  ],
+  "glossary": [
+    {"keyword": "...", "definition": "...", "aliases": [], "do_not_use": []}
   ]
 }
 ```
+
+`"glossary"` is always present. It is `[]` when no items match, when `--skip-glossary` was passed, when `show-glossary-on-codex-commands = false`, or when the glossary failed to load. The field-presence rule matches conceptual-workflows-json-output.
 
 ## Steps — Map (`lore codex map <id> --depth <n>`)
 
@@ -130,6 +144,8 @@ first row. Output order is non-deterministic.
 | `--threshold` out of range (chaos) | `--threshold must be between 30 and 100` to stderr | 1 |
 | No documents in codex (list) | `No codex documents found.` | 0 |
 | No matching documents (search) | `No documents matching "<keyword>".` | 0 |
+| Glossary parse/schema failure (show, auto-surface) | Single stderr line `glossary unavailable: <reason>`; `## Glossary` block omitted; primary command continues | 0 (unchanged from non-auto-surface) |
+| Glossary auto-surface skipped via flag | `lore codex show <id> --skip-glossary` — no `## Glossary` block; JSON `"glossary": []` | 0 |
 
 ## Out of Scope
 
@@ -137,4 +153,4 @@ first row. Output order is non-deterministic.
 - Full-text search within document bodies — search matches `id`, `title`, and `summary` only.
 - Graph traversal output showing which document linked to which — `lore codex map` returns a flat list in BFS order.
 
-All five codex commands support `--json`.
+All five codex commands support `--json`. Only `lore codex show` accepts `--skip-glossary`; `map` and `chaos` do not surface glossary entries in MVP.
