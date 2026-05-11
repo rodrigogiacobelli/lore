@@ -699,6 +699,8 @@ def test_filter_unknown_token_returns_root_only_exit_zero(project_dir, runner):
 # Exercises: conceptual-workflows-filter-list failure modes (no root + no match → empty-state message)
 def test_filter_unknown_token_no_root_files_empty_message(project_dir, runner):
     """lore codex list --filter nonexistent-group with no root-level files prints empty-codex message, exit 0."""
+    # scenario premise: no root files — drop the lore init seed
+    (project_dir / ".lore/codex/CODEX.md").unlink()
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "nonexistent-group"])

@@ -195,6 +195,8 @@ def test_do_not_use_collision_error(project_dir, runner):
 
 def test_cross_codex_deprecated_term_scan_json(project_dir, runner):
     """Scenario 6 — one warning per deprecated occurrence per doc, alphabetised."""
+    # scenario premise: only fixture docs are scanned — drop the lore init CODEX.md seed
+    (project_dir / ".lore/codex/CODEX.md").unlink()
     _write_glossary(
         project_dir,
         "items:\n"
@@ -308,6 +310,8 @@ def test_missing_glossary_clean_run(project_dir, runner):
 
 def test_tokeniser_substring_guard_no_warnings(project_dir, runner):
     """Scenario 11 — substring guard: `missionary` and `taskforce` do not trigger warnings."""
+    # scenario premise: only fixture docs are scanned — drop the lore init CODEX.md seed
+    (project_dir / ".lore/codex/CODEX.md").unlink()
     _write_glossary(
         project_dir,
         "items:\n"

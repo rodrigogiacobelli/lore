@@ -45,6 +45,10 @@ def glossary_path(root: Path) -> Path:
     return root / ".lore" / "codex" / "glossary.yaml"
 
 
+def codex_md_path(root: Path) -> Path:
+    return root / ".lore" / "codex" / "CODEX.md"
+
+
 def config_path(root: Path) -> Path:
     return root / ".lore" / "config.toml"
 

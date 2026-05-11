@@ -213,3 +213,164 @@ def test_default_gitignore_un_ignores_config_toml():
         "src/lore/defaults/gitignore must contain a literal `!config.toml` line "
         "so .lore/config.toml stays version-controlled despite the catch-all `*` rule."
     )
+
+
+# ---------------------------------------------------------------------------
+# US-001 (init-seed-codex-md-us-1) — _seed_codex_md + _seed_user_tracked
+# umbrella seeder + paths.codex_md_path. ADR-006 enforced — exactly ONE
+# full-equality assertion (test_seed_codex_md_rewrites_id_to_codex_byte_for_byte)
+# pinning the literal `id: example-codex` -> `id: codex` substitution.
+# ---------------------------------------------------------------------------
+
+
+def test_seed_codex_md_writes_file_when_absent(tmp_path):
+    """conceptual-workflows-lore-init step 7a — first bullet (CODEX.md seed-when-absent).
+
+    init-seed-codex-md-us-1 Unit row 1.
+    """
+    from lore.init import _seed_codex_md
+
+    msgs = _seed_codex_md(tmp_path)
+    target = tmp_path / ".lore" / "codex" / "CODEX.md"
+    assert target.is_file()
+    # Structural list-shape only — single-element list with the expected message.
+    assert msgs == ["  Created codex/CODEX.md"]
+
+
+def test_seed_codex_md_idempotent_returns_empty_when_target_exists(tmp_path):
+    """conceptual-workflows-lore-init step 7a (idempotency clause) — ADR-013.
+
+    init-seed-codex-md-us-1 Unit row 2.
+    """
+    from lore.init import _seed_codex_md
+
+    target = tmp_path / ".lore" / "codex" / "CODEX.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("pre-existing user content\n", encoding="utf-8")
+    msgs = _seed_codex_md(tmp_path)
+    assert msgs == []
+    # User content (not seed content) — ADR-006 permits direct equality here.
+    assert (
+        target.read_text(encoding="utf-8") == "pre-existing user content\n"
+    )
+
+
+def test_seed_codex_md_rewrites_id_to_codex_byte_for_byte(tmp_path):
+    """conceptual-workflows-lore-init step 7a — `id:` rewrite contract.
+
+    init-seed-codex-md-us-1 Unit row 3.
+
+    ADR-006 EXCEPTION: this is the ONE allowed full-equality assertion on
+    seeded content, pinning the literal one-line substitution per the Tech
+    Spec "Core Architectural Decisions" row 3. All other tests in this
+    module/file stay structural / substring-only on seeded content.
+    """
+    from importlib import resources
+
+    from lore.init import _seed_codex_md
+
+    _seed_codex_md(tmp_path)
+    written = (tmp_path / ".lore" / "codex" / "CODEX.md").read_text(
+        encoding="utf-8"
+    )
+    source = (
+        resources.files("lore.defaults")
+        .joinpath("artifacts/codex/CODEX.md")
+        .read_text(encoding="utf-8")
+    )
+    # ADR-006 sanctioned full-equality assertion — pins the one-line id rewrite.
+    assert written == source.replace("id: example-codex", "id: codex", 1)
+
+
+def test_seed_codex_md_frontmatter_id_is_codex_not_example(tmp_path):
+    """conceptual-workflows-lore-init step 7a — schema-valid frontmatter (id == 'codex').
+
+    init-seed-codex-md-us-1 Unit row 4. Structural-only assertion (ADR-006).
+    """
+    import yaml
+
+    from lore.init import _seed_codex_md
+
+    _seed_codex_md(tmp_path)
+    text = (tmp_path / ".lore" / "codex" / "CODEX.md").read_text(
+        encoding="utf-8"
+    )
+    fm_end = text.index("\n---\n", 4)
+    front = yaml.safe_load(text[4:fm_end])
+    assert front["id"] == "codex"
+    assert front["id"] != "example-codex"
+
+
+def test_seed_codex_md_creates_codex_parent_dir(tmp_path):
+    """conceptual-workflows-lore-init step 7a — parent dir created on the fly.
+
+    init-seed-codex-md-us-1 Unit row 5. Mirrors _seed_skeleton_if_absent's
+    existing mkdir(parents=True, exist_ok=True) contract.
+    """
+    from lore.init import _seed_codex_md
+
+    assert not (tmp_path / ".lore" / "codex").exists()
+    _seed_codex_md(tmp_path)
+    assert (tmp_path / ".lore" / "codex").is_dir()
+    assert (tmp_path / ".lore" / "codex" / "CODEX.md").is_file()
+
+
+def test_seed_user_tracked_fresh_project_messages_in_order(tmp_path):
+    """conceptual-workflows-lore-init step 7a — umbrella seeder message order.
+
+    init-seed-codex-md-us-1 Unit row 6. CODEX.md first, glossary.yaml second,
+    config.toml third (Tech Spec row 5).
+    """
+    from lore.init import _seed_user_tracked
+
+    msgs = _seed_user_tracked(tmp_path)
+    joined = "\n".join(msgs)
+    i_codex = joined.index("Created codex/CODEX.md")
+    i_gloss = joined.index("Created codex/glossary.yaml")
+    i_conf = joined.index("Created config.toml")
+    assert i_codex < i_gloss < i_conf
+
+
+def test_seed_user_tracked_all_present_returns_empty(tmp_path):
+    """conceptual-workflows-lore-init step 7a (idempotency across all three files).
+
+    init-seed-codex-md-us-1 Unit row 7.
+    """
+    from lore.init import _seed_user_tracked
+
+    codex_dir = tmp_path / ".lore" / "codex"
+    codex_dir.mkdir(parents=True)
+    (codex_dir / "CODEX.md").write_text("user\n", encoding="utf-8")
+    (codex_dir / "glossary.yaml").write_text("items: []\n", encoding="utf-8")
+    (tmp_path / ".lore" / "config.toml").write_text("\n", encoding="utf-8")
+    assert _seed_user_tracked(tmp_path) == []
+
+
+def test_seed_user_tracked_mixed_state_seeds_only_missing(tmp_path):
+    """conceptual-workflows-lore-init step 7a — per-file independence of idempotency.
+
+    init-seed-codex-md-us-1 Unit row 8. CODEX.md exists, glossary/config missing.
+    """
+    from lore.init import _seed_user_tracked
+
+    codex_dir = tmp_path / ".lore" / "codex"
+    codex_dir.mkdir(parents=True)
+    user_codex = "---\nid: codex\ntitle: Mine\nsummary: mine\n---\n"
+    (codex_dir / "CODEX.md").write_text(user_codex, encoding="utf-8")
+    msgs = _seed_user_tracked(tmp_path)
+    joined = "\n".join(msgs)
+    assert "Created codex/CODEX.md" not in joined      # untouched
+    assert "Created codex/glossary.yaml" in joined     # seeded
+    assert "Created config.toml" in joined             # seeded
+    # User content preserved (user-supplied, not seed content — ADR-006 allows).
+    assert (codex_dir / "CODEX.md").read_text(encoding="utf-8") == user_codex
+
+
+def test_codex_md_path_returns_expected_subpath(tmp_path):
+    """conceptual-workflows-lore-init step 7a — new paths helper mirrors glossary_path.
+
+    init-seed-codex-md-us-1 Unit row 9 — covers src/lore/paths.py.
+    """
+    from lore.paths import codex_md_path
+
+    assert codex_md_path(tmp_path) == tmp_path / ".lore" / "codex" / "CODEX.md"

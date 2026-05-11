@@ -12,11 +12,13 @@ See standards-public-api-stability for the public API stability and semver polic
 
 - **Reference Docs convention** documented in `CODEX.md` — `technical/<domain>/ref/` subdirectories with `ref-<system>-<concept>` IDs hold intent (history, gotchas, non-enforced constraints) around concrete artifacts; schema stays in the source of truth.
 - **`update-codex` skill** for direct chat doc edits outside the feature-implementation flow. Treats `.lore/codex/CODEX.md` as a primary input *and* a maintenance responsibility — the skill must read it for project-specific rules and update it when a change introduces a new convention, layer, or project-wide rule. CODEX.md is lean by design; only structural/rule-level changes warrant an edit.
+- **`lore init` seeds `.lore/codex/CODEX.md`** from the packaged `artifacts/codex/CODEX.md` default, rewriting the artifact's `id: example-codex` frontmatter to `id: codex`. Idempotent: an existing `CODEX.md` is left byte-for-byte untouched. Like `glossary.yaml` and `config.toml`, CODEX.md is a user-tracked skeleton seeded directly under `.lore/codex/` (not under `.lore/codex/default/`), making it a second carve-out from the "init never writes to `.lore/codex/`" rule. `lore health` recognises the seeded doc and the new `paths.codex_md_path()` helper exposes its location to other modules.
 
 ### Changed
 
 - Lore's own internal docs migrated to the new pattern: schema/internals dumps for database, API, CLI, and doctrine replaced by `ref-*` cluster docs; `related:` links across the codex updated; seeded default codex template now ships a `ref/` example instead of `schemas/`.
 - `explore-codex` and `ingest-source` skills note the new `ref-*` routing.
+- **`tech-writer` knight, `ingest-source` skill, and `refresh-source` skill** now treat `.lore/codex/CODEX.md` as a primary input *and* a maintenance responsibility, matching the `update-codex` skill. Each must read CODEX.md before writing codex content (to pick up project-specific layers, conventions, and rules) and propose updates to it when their work introduces a new convention, layer, or project-wide rule. CODEX.md remains lean by design — only structural/rule-level changes warrant an edit.
 
 ## [0.4.0] - 2026-04-30
 

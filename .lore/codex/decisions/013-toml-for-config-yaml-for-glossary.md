@@ -48,7 +48,7 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 
 1. **`.lore/config.toml` is TOML.** Loaded with stdlib `tomllib` (Python 3.11+; minimum bumped from 3.10 in the same release). Loader accepts arbitrary additional keys (forward-compatible). The first and only MVP key is the boolean `show-glossary-on-codex-commands`, default `true`.
 2. **`.lore/codex/glossary.yaml` is YAML.** Single file; top-level `items:` list of mappings. Schema is `lore://schemas/glossary` (packaged at `src/lore/schemas/glossary.yaml`).
-3. **`lore init` seeds glossary and config in place.** `lore init` writes `.lore/codex/glossary.yaml` directly (NOT under `.lore/codex/default/`) and `.lore/config.toml` directly (NOT under `.lore/default/`). Both writes are idempotent — re-init never overwrites either file. This is the first and only narrow carve-out to the rule that `lore init` does not seed `.lore/codex/`. Both `tech-arch-initialized-project-structure` and `conceptual-workflows-lore-init` are updated to reflect this.
+3. **`lore init` seeds glossary and config in place.** `lore init` writes `.lore/codex/glossary.yaml` directly (NOT under `.lore/codex/default/`) and `.lore/config.toml` directly (NOT under `.lore/default/`). Both writes are idempotent — re-init never overwrites either file. Originally this was the first and only narrow carve-out; as of the CODEX.md seeding fix (`init-seed-codex-md-tech-spec`), the carve-out covers two files: `.lore/codex/glossary.yaml` and `.lore/codex/CODEX.md`. Both `tech-arch-initialized-project-structure` and `conceptual-workflows-lore-init` are updated to reflect this.
 
 ## Rationale
 
@@ -79,7 +79,7 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 **Harder:**
 - Two file formats in the codex tree (`.md` + `.yaml`). Tooling and tests must understand both.
 - Python 3.11 minimum eliminates 3.10 users — small but real cost.
-- The `lore init` contract is now "does not seed `.lore/codex/`, EXCEPT `glossary.yaml`." The exception must be documented in every doc that previously stated the absolute rule (`tech-arch-initialized-project-structure`, `conceptual-workflows-lore-init`).
+- The `lore init` contract is now "does not seed `.lore/codex/`, EXCEPT `glossary.yaml` and `CODEX.md`." The exception must be documented in every doc that previously stated the absolute rule (`tech-arch-initialized-project-structure`, `conceptual-workflows-lore-init`).
 
 ## Constraints Imposed
 
@@ -95,3 +95,4 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 | Date | Status | Note |
 |------|--------|------|
 | 2026-04-29 | accepted | Initial decision. Captured in the same release that adds `lore glossary`, `.lore/config.toml`, and the `--skip-glossary` flag on `lore codex show`. |
+| 2026-05-11 | accepted (scope widened) | CODEX.md added as a second user-tracked carve-out under .lore/codex/. See init-seed-codex-md-tech-spec. |

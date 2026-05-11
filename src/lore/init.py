@@ -36,6 +36,26 @@ def _seed_skeleton_if_absent(target: Path, content: str, label: str) -> list[str
     return [f"  Created {label}"]
 
 
+def _seed_codex_md(project_root: Path) -> list[str]:
+    """Seed `.lore/codex/CODEX.md` from the packaged artifact if absent.
+
+    Reads `src/lore/defaults/artifacts/codex/CODEX.md`, rewrites the
+    frontmatter `id: example-codex` line to `id: codex`, and writes it
+    via the idempotent `_seed_skeleton_if_absent` helper.
+    """
+    content = (
+        resources.files("lore.defaults")
+        .joinpath("artifacts/codex/CODEX.md")
+        .read_text(encoding="utf-8")
+    )
+    rewritten = content.replace("id: example-codex", "id: codex", 1)
+    return _seed_skeleton_if_absent(
+        paths.codex_md_path(project_root),
+        rewritten,
+        "codex/CODEX.md",
+    )
+
+
 def _seed_glossary(project_root: Path) -> list[str]:
     """Seed `.lore/codex/glossary.yaml` and `.lore/config.toml` if absent.
 
@@ -54,6 +74,17 @@ def _seed_glossary(project_root: Path) -> list[str]:
             "config.toml",
         )
     )
+    return messages
+
+
+def _seed_user_tracked(project_root: Path) -> list[str]:
+    """Seed all user-tracked files (CODEX.md, glossary.yaml, config.toml).
+
+    Idempotent: existing files are left byte-for-byte untouched.  Emits
+    `Created` messages in the order CODEX.md, glossary.yaml, config.toml.
+    """
+    messages = _seed_codex_md(project_root)
+    messages.extend(_seed_glossary(project_root))
     return messages
 
 
@@ -145,7 +176,7 @@ def run_init() -> list[str]:
     messages.extend(_copy_defaults_tree("docs", lore_dir, label="docs"))
 
     # Seed user-tracked skeletons (idempotent — never overwrite user edits)
-    messages.extend(_seed_glossary(cwd))
+    messages.extend(_seed_user_tracked(cwd))
 
     # Copy default watchers and skills
     messages.extend(

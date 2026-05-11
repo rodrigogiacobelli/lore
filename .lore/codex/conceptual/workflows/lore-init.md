@@ -1,7 +1,7 @@
 ---
 id: conceptual-workflows-lore-init
 title: lore init Behaviour
-summary: What the system does internally when `lore init` runs — the ordered sequence of steps from directory creation through database setup, default file seeding (doctrines, knights, artifacts, watchers), the glossary skeleton + project config seeding (the only files lore init places under .lore/codex/ and at .lore/config.toml respectively, both idempotent), and AGENTS.md management. Covers idempotency guarantees and the AGENTS.md marker mechanism.
+summary: What the system does internally when `lore init` runs — the ordered sequence of steps from directory creation through database setup, default file seeding (doctrines, knights, artifacts, watchers), the codex root + glossary skeleton + project config seeding (CODEX.md and glossary.yaml are the only files lore init places under .lore/codex/, plus .lore/config.toml — all three idempotent), and AGENTS.md management. Covers idempotency guarantees and the AGENTS.md marker mechanism.
 related: ["tech-arch-initialized-project-structure", "tech-arch-agents-md", "conceptual-workflows-health", "tech-arch-schemas", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 
@@ -57,14 +57,15 @@ The `bootstrap/` subdirectory is never seeded — it is permanently excluded fro
 
 For the specification of the generated `AGENTS.md` content and structure, see tech-arch-agents-md (lore codex show tech-arch-agents-md).
 
-### 7a. Seed glossary skeleton and project config
+### 7a. Seed user-tracked codex root, glossary skeleton, and project config
 
-`lore init` writes two user-tracked files in place — neither under a `default/` subtree, because both hold user-owned content that must survive every re-init:
+`lore init` writes three user-tracked files in place — none under a `default/` subtree, because all hold user-owned content that must survive every re-init:
 
-- **`.lore/codex/glossary.yaml`** — if absent, written with a two-line header comment + `items: []`. Schema-valid against `lore://schemas/glossary` (validated by `lore health --scope schemas` on a freshly-init'd project — a hard acceptance criterion). If the file already exists, this step is skipped — even when its content has been edited. This is the first and only narrow exception to the rule that `lore init` does NOT seed `.lore/codex/` (decisions-013-toml-for-config-yaml-for-glossary, lore codex show decisions-013-toml-for-config-yaml-for-glossary).
+- **`.lore/codex/CODEX.md`** — if absent, written by copying the packaged source `src/lore/defaults/artifacts/codex/CODEX.md` and rewriting its `id:` line from `example-codex` to `codex`. Schema-valid against `lore://schemas/codex`. If the file already exists, this step is skipped — even when its content has been edited. This is the second narrow exception to the rule that `lore init` does NOT seed `.lore/codex/` (decisions-013-toml-for-config-yaml-for-glossary, lore codex show decisions-013-toml-for-config-yaml-for-glossary).
+- **`.lore/codex/glossary.yaml`** — if absent, written with a two-line header comment + `items: []`. Schema-valid against `lore://schemas/glossary` (validated by `lore health --scope schemas` on a freshly-init'd project — a hard acceptance criterion). If the file already exists, this step is skipped — even when its content has been edited. This is **one of two** narrow exceptions to the rule that `lore init` does NOT seed `.lore/codex/` (decisions-013-toml-for-config-yaml-for-glossary, lore codex show decisions-013-toml-for-config-yaml-for-glossary).
 - **`.lore/config.toml`** — if absent, written with a header comment + `show-glossary-on-codex-commands = true`. Designed as a generic project-config surface from day one (the loader accepts arbitrary additional keys forward-compatibly). If the file already exists, this step is skipped — even when its content has been edited.
 
-Both writes are idempotent: a maintainer's edits to either file survive every subsequent `lore init`. The init summary prints `Created codex/glossary.yaml` and `Created config.toml` for newly created files; nothing is printed when either file is left untouched.
+All three writes are idempotent: a maintainer's edits to any of these files survive every subsequent `lore init`. The init summary prints `Created codex/CODEX.md`, `Created codex/glossary.yaml`, and `Created config.toml` for newly created files; nothing is printed when a file is left untouched.
 
 The gitignore template (step 2) carries the `!config.toml` rule so the user-tracked config file is committed alongside other project state. The glossary file at `.lore/codex/glossary.yaml` is already tracked via the existing `!codex` / `!codex/**` rules.
 
@@ -84,7 +85,7 @@ A summary of what was created, updated, or backed up is printed to stdout.
 
 The `reports/` directory is not created by `lore init`. It is created on demand when `lore oracle` runs for the first time.
 
-The `codex/` documentation directory is not seeded by `lore init`, with one narrow exception per ADR-013 (lore codex show decisions-013-toml-for-config-yaml-for-glossary): the project glossary skeleton at `.lore/codex/glossary.yaml` is written by step 7a when absent. Aside from that single file, codex documentation setup is handled separately through codex doctrines.
+The `codex/` documentation directory is not seeded by `lore init`, with **two narrow exceptions** per ADR-013 (lore codex show decisions-013-toml-for-config-yaml-for-glossary): the project codex root at `.lore/codex/CODEX.md` and the project glossary skeleton at `.lore/codex/glossary.yaml` are both written by step 7a when absent. Aside from those two files, codex documentation setup is handled separately through codex doctrines.
 
 ## Documentation Setup Workflows
 

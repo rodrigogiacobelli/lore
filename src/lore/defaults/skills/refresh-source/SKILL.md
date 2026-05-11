@@ -7,6 +7,12 @@ description: Pull a fresh version of an existing source, diff it against the sto
 
 Re-ingest a source that was captured previously. Produces a diff summary, walks canonical-doc updates driven by the diff, and overwrites the snapshot on disk. Use this when the upstream item has changed since it was first captured. For first-time capture, use `/ingest-source`.
 
+## CODEX.md is your primary input — and a candidate canonical doc
+
+`.lore/codex/CODEX.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it carries project-specific guidance that shapes which parts of the diff are codex-worthy and where they land.
+
+When the diff introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule, propose updating `CODEX.md` in step 8 like any other canonical doc. **CODEX.md is lean by design** — do not propose appending per-feature notes or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit.
+
 ## Steps
 
 ### 1. Ask two questions

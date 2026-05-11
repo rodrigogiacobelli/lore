@@ -219,7 +219,10 @@ def _check_codex(codex_dir: Path) -> list[HealthIssue]:
                 ))
 
     # Island-node pass: excludes every source id (sources are inbound-orphans by design).
+    # Carve-out: 'codex' is the project-wide root guide; no inbound links by design.
     for doc_id in known_ids - source_ids:
+        if doc_id == "codex":
+            continue
         if doc_id not in referenced_ids:
             issues.append(HealthIssue(
                 severity="warning",

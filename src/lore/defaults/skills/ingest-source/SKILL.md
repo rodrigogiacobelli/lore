@@ -7,6 +7,12 @@ description: Capture a raw upstream source (Jira ticket, transcript, pasted doc)
 
 Capture a single upstream item as a verbatim snapshot under `.lore/codex/sources/<system>/<id>.md`, then propose any resulting canonical-doc updates. Use this for first-time capture. To update a source that already exists on disk, use `/refresh-source` instead.
 
+## CODEX.md is your primary input — and a candidate canonical doc
+
+`.lore/codex/CODEX.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it carries project-specific guidance that shapes where new facts from this source should land.
+
+When the ingested source introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule, propose updating `CODEX.md` in step 5 like any other canonical doc. **CODEX.md is lean by design** — do not propose appending per-feature notes or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit.
+
 ## Steps
 
 ### 1. Ask three questions

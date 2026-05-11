@@ -829,3 +829,105 @@ class TestInitDoesNotTouchDotClaudeSkills:
             assert not any(
                 p.name == "refresh-source" for p in dot_claude.rglob("*")
             ), "refresh-source leaked into .claude/ tree"
+
+
+# ---------------------------------------------------------------------------
+# US-001 — lore init seeds .lore/codex/CODEX.md
+# Spec anchors: init-seed-codex-md-us-1 (Scenarios 1-4);
+#               conceptual-workflows-lore-init step 7a (user-tracked seeds);
+#               decisions-013-toml-for-config-yaml-for-glossary (idempotency);
+#               decisions-006-no-seed-content-tests (structural-only).
+# Red state: lore init does not yet seed .lore/codex/CODEX.md — fresh-init
+# tests fail on the existence/substring assertions; re-init tests cannot
+# trigger because the file is never seeded; health/list checks fail because
+# id 'codex' does not appear in the codex index.
+# ---------------------------------------------------------------------------
+
+
+class TestInitSeedsCodexMd:
+    """init-seed-codex-md-us-1 — lore init seeds .lore/codex/CODEX.md."""
+
+    def test_fresh_init_writes_codex_md_with_rewritten_id(self, tmp_path, monkeypatch):
+        # conceptual-workflows-lore-init step 7a — Scenario 1 (Fresh init seeds CODEX.md)
+        # ADR-006: assert structural fields + substring only; no body prose pinning.
+        import yaml
+
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(main, ["init"])
+        assert_exit_ok(result)
+        target = tmp_path / ".lore" / "codex" / "CODEX.md"
+        assert target.is_file()
+        # Parse frontmatter — structural assertions only.
+        text = target.read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        fm_end = text.index("\n---\n", 4)
+        front = yaml.safe_load(text[4:fm_end])
+        assert front["id"] == "codex"           # rewrite ran
+        assert front["id"] != "example-codex"   # source ID never leaks
+        assert front.get("title")               # non-empty title (schema-required)
+        assert front.get("summary")             # non-empty summary (schema-required)
+        # Status line emitted on first seed.
+        assert "Created codex/CODEX.md" in result.output
+
+    def test_reinit_leaves_existing_codex_md_byte_for_byte_untouched(
+        self, tmp_path, monkeypatch
+    ):
+        # conceptual-workflows-lore-init step 7a (idempotency clause) — Scenario 2
+        # ADR-013 idempotency rule: re-init never overwrites a user-edited file.
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        first = runner.invoke(main, ["init"])
+        assert_exit_ok(first)
+        # Init #1 must have created the file — this is what makes the
+        # idempotency assertion meaningful (and forces this test to fail in
+        # red state, where init never seeds CODEX.md).
+        assert "Created codex/CODEX.md" in first.output
+        target = tmp_path / ".lore" / "codex" / "CODEX.md"
+        assert target.is_file()
+        sentinel = (
+            b"---\nid: codex\ntitle: My Custom\nsummary: edited by user\n---\n"
+            b"\n# Custom body\n"
+        )
+        target.write_bytes(sentinel)
+        result = runner.invoke(main, ["init"])
+        assert_exit_ok(result)
+        # Byte-for-byte equality is permitted here — sentinel is user-supplied,
+        # not seed content, so ADR-006 does not forbid it.
+        assert target.read_bytes() == sentinel
+        # Silent skip — no "Created" line for the existing file.
+        assert "Created codex/CODEX.md" not in result.output
+
+    def test_fresh_init_then_health_schemas_is_green(self, tmp_path, monkeypatch):
+        # conceptual-workflows-lore-init (hard acceptance: schema-green after init)
+        # cross-refs conceptual-workflows-health — Scenario 3
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        init_result = runner.invoke(main, ["init"])
+        assert_exit_ok(init_result)
+        # Pre-condition for this scenario: CODEX.md must actually be seeded
+        # so the schema check has something to validate. Without this the
+        # assertion below is vacuously true.
+        codex_md = tmp_path / ".lore" / "codex" / "CODEX.md"
+        assert codex_md.is_file()
+        result = runner.invoke(main, ["health", "--scope", "schemas"])
+        assert_exit_ok(result)
+        # Substring assertion — no specific schema-error prose pinned.
+        # Match "0 errors" exactly to avoid false positive on the literal
+        # word "errors" in the summary line.
+        assert "0 errors" in result.output
+
+    def test_fresh_init_lists_codex_root_via_codex_list(self, tmp_path, monkeypatch):
+        # conceptual-workflows-codex (codex list surface) + conceptual-workflows-lore-init step 7a
+        # Scenario 4 — seeded doc is reachable via the codex ID 'codex'.
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        assert_exit_ok(runner.invoke(main, ["init"]))
+        list_result = runner.invoke(main, ["codex", "list"])
+        assert_exit_ok(list_result)
+        # Structural: the ID 'codex' appears as a row (case-sensitive).
+        assert "codex" in list_result.output
+        show_result = runner.invoke(main, ["codex", "show", "codex"])
+        assert_exit_ok(show_result)
+        # Substring only — no body prose assertion (ADR-006).
+        assert show_result.output.strip() != ""
