@@ -11,8 +11,8 @@ summary: Maps every Lore entity to its available CLI CRUD and traversal operatio
   commands (doctrine, knight, watcher, artifact) support --group GROUP for nested
   creation. Glossary list does NOT accept --filter — single file with no groups.
 related:
-- tech-api-surface
-- tech-cli-commands
+- ref-lore_api-core
+- ref-lore_cli-commands
 - tech-arch-codex-map
 - tech-arch-codex-chaos
 - conceptual-workflows-filter-list

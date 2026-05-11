@@ -7,7 +7,7 @@ summary: What a Mission is — the unit of work an agent executes and closes. Co
 related:
 - conceptual-entities-quest
 - conceptual-entities-glossary
-- tech-db-schema
+- ref-lore_db-core
 - conceptual-workflows-claim
 - conceptual-workflows-done
 - conceptual-relationships-mission--mission
@@ -123,5 +123,5 @@ In `--json` output, the `"dependencies"` field is always present with `"needs"` 
 - Quest (lore codex show conceptual-entities-quest) — the grouping that Missions belong to
 - Knight (lore codex show conceptual-entities-knight) — the persona file that guides how a worker executes a Mission
 - Doctrine (lore codex show conceptual-entities-doctrine) — templates that describe patterns of Missions
-- tech-db-schema (lore codex show tech-db-schema) — mission schema, cascade behaviour, dependency system
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore new mission` command reference
+- ref-lore_db-core (lore codex show ref-lore_db-core) — mission schema, cascade behaviour, dependency system
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore new mission` command reference

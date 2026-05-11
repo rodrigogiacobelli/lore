@@ -101,4 +101,4 @@ Each doctrine embeds all guidance needed for an agent to complete the work witho
 - tech-arch-initialized-project-structure (lore codex show tech-arch-initialized-project-structure) — the `.lore/` directory layout and file purposes
 - tech-arch-project-root-detection (lore codex show tech-arch-project-root-detection) — how Lore locates the project root
 - tech-arch-agents-md (lore codex show tech-arch-agents-md) — specification of the generated `AGENTS.md`
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore init` command reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore init` command reference

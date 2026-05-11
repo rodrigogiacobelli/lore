@@ -98,4 +98,4 @@ Exit code 1 on error.
 - conceptual-workflows-claim (lore codex show conceptual-workflows-claim) — transitioning open → in_progress
 - conceptual-workflows-done (lore codex show conceptual-workflows-done) — transitioning any status → closed
 - conceptual-entities-mission (lore codex show conceptual-entities-mission) — full mission status lifecycle
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

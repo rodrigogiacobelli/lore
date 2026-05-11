@@ -6,7 +6,7 @@ summary: 'What the system does internally when schema migrations run — version
 
   '
 related:
-- tech-db-schema
+- ref-lore_db-core
 ---
 
 # Schema Migrations

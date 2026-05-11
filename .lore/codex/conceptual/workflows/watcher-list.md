@@ -6,7 +6,7 @@ related:
   - conceptual-entities-watcher
   - conceptual-workflows-knight-list
   - conceptual-workflows-filter-list
-  - tech-cli-commands
+  - ref-lore_cli-commands
   - conceptual-workflows-health
   - tech-arch-schemas
 ---
@@ -151,4 +151,4 @@ JSON mode error (stderr): `{"error": "Watcher \"nonexistent\" not found in .lore
 - conceptual-entities-watcher (lore codex show conceptual-entities-watcher) — what a Watcher is
 - conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — mirrors this behaviour for knights
 - conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

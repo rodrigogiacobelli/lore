@@ -7,7 +7,7 @@ summary: 'What the enriched --help output for each command group must contain â€
   '
 related:
 - decisions-008-help-as-teaching-interface
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # Help Output Contract

@@ -2,7 +2,7 @@
 id: decisions-012-multi-value-cli-param-convention
 title: "ADR-012: Multi-value CLI parameters use space-separated syntax"
 summary: ADR establishing that CLI parameters accepting multiple values use space-separated syntax (--param a b) not repeatable flags (--param a --param b). Matches the --filter precedent. Applies to all multi-value flags including --scope on lore health.
-related: ["conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-cli-commands"]
+related: ["conceptual-workflows-filter-list", "conceptual-workflows-health", "ref-lore_cli-commands"]
 ---
 
 # ADR-012: Multi-value CLI parameters use space-separated syntax

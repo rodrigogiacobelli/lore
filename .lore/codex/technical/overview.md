@@ -2,7 +2,7 @@
 id: tech-overview
 title: Technical Overview
 summary: Technology choices (Python, Click, SQLite WAL, PyYAML, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE), and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry between `lore new quest` and `lore edit`.
-related: ["tech-db-schema", "tech-arch-source-layout", "vision-camelot-system", "tech-arch-schemas"]
+related: ["ref-lore_db-core", "tech-arch-source-layout", "vision-camelot-system", "tech-arch-schemas"]
 ---
 
 # Technical Overview
@@ -21,7 +21,7 @@ related: ["tech-db-schema", "tech-arch-source-layout", "vision-camelot-system", 
 | Public API types | `lore.models` — `@dataclass(frozen=True)` for all boundary entity types. Zero new runtime dependencies. |
 | Type checking | `mypy` in dev dependencies with `[tool.mypy]` strict configuration. `py.typed` PEP 561 marker ships with the package. |
 
-For the full database schema, see tech-db-schema (lore codex show tech-db-schema). For ID generation details, see tech-db-schema (lore codex show tech-db-schema).
+For the full database schema, see ref-lore_db-core (lore codex show ref-lore_db-core). For ID generation details, see ref-lore_db-core (lore codex show ref-lore_db-core).
 
 ## Module Layering
 
@@ -70,7 +70,7 @@ Lore targets a single-user, single-machine workflow. Multiple agents may run CLI
 - **All write operations use explicit transactions** (`BEGIN IMMEDIATE ... COMMIT`). `BEGIN IMMEDIATE` acquires a write lock at transaction start rather than on first write, preventing deadlocks when multiple processes race.
 - **No connection pooling.** Each CLI invocation opens a connection, does its work, and closes it. The process exits immediately after.
 
-The exact pragma statements are documented in tech-db-schema (lore codex show tech-db-schema).
+The exact pragma statements are documented in ref-lore_db-core (lore codex show ref-lore_db-core).
 
 ## `--no-auto-close` Asymmetry
 
@@ -79,7 +79,7 @@ The `--no-auto-close` flag behaves differently on `lore new quest` vs `lore edit
 - On **`lore new quest`**: `--no-auto-close` is marked `hidden=True` in `cli.py` (line 197) and does not appear in `--help` output. This is intentional — auto-close is disabled by default for new quests (`DEFAULT 0` in the schema), so the flag serves no purpose.
 - On **`lore edit`**: `--no-auto-close` is a visible flag (line 1331). This is the correct mechanism to explicitly disable auto-close on an existing quest that previously had `--auto-close` enabled.
 
-The source documentation (`docs/cli.md`) presents `--no-auto-close` as a user-visible flag in both contexts. The migrated documentation (this file and tech-cli-commands (lore codex show tech-cli-commands)) resolves this inconsistency by noting the hidden status explicitly.
+The source documentation (`docs/cli.md`) presents `--no-auto-close` as a user-visible flag in both contexts. The migrated documentation (this file and ref-lore_cli-commands (lore codex show ref-lore_cli-commands)) resolves this inconsistency by noting the hidden status explicitly.
 
 ## Out of Scope
 

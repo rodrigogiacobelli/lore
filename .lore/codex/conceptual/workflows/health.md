@@ -2,7 +2,7 @@
 id: conceptual-workflows-health
 title: lore health Behaviour
 summary: What the system does internally when lore health runs — full-scan or scoped audit of all six file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema, intra-file collision, and cross-codex deprecated-term scan.
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "tech-api-surface", "tech-cli-commands", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
@@ -251,5 +251,5 @@ When `--scope` is provided, only the named entity types are checked. No other en
 - conceptual-workflows-error-handling (lore codex show conceptual-workflows-error-handling)
 - conceptual-workflows-json-output (lore codex show conceptual-workflows-json-output)
 - decisions-012-multi-value-cli-param-convention (lore codex show decisions-012-multi-value-cli-param-convention)
-- tech-cli-commands (lore codex show tech-cli-commands)
-- tech-api-surface (lore codex show tech-api-surface)
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands)
+- ref-lore_api-core (lore codex show ref-lore_api-core)

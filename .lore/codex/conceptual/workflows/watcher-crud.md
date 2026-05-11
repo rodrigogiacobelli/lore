@@ -5,7 +5,7 @@ summary: What the system does internally when creating, editing, and deleting wa
 related:
   - conceptual-entities-watcher
   - conceptual-workflows-knight-crud
-  - tech-cli-commands
+  - ref-lore_cli-commands
   - tech-arch-schemas
   - conceptual-workflows-health
 ---
@@ -128,4 +128,4 @@ Watcher YAML shape is validated at create/edit time via `lore.schemas.validate_e
 
 - conceptual-entities-watcher (lore codex show conceptual-entities-watcher) — what a Watcher is
 - conceptual-workflows-knight-crud (lore codex show conceptual-workflows-knight-crud) — mirrors this pattern for knights
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

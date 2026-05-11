@@ -2,7 +2,7 @@
 id: conceptual-entities-doctrine
 title: Doctrine
 summary: What a Doctrine is — a reusable, passive workflow template stored as a paired .yaml and .design.md file. The .design.md is the primary entry point for discovery. Doctrines are read by orchestrators to guide quest and mission creation; they have no execution engine of their own.
-related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-knight", "conceptual-entities-glossary", "tech-doctrine-internals", "conceptual-relationships-doctrine--knight", "conceptual-relationships-doctrine--mission", "conceptual-relationships-doctrine--quest"]
+related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-knight", "conceptual-entities-glossary", "ref-lore_doctrine-module", "conceptual-relationships-doctrine--knight", "conceptual-relationships-doctrine--mission", "conceptual-relationships-doctrine--quest"]
 ---
 
 # Doctrine
@@ -18,7 +18,7 @@ A Doctrine describes:
 
 The `.design.md` file contains rich human-readable documentation — tables, narratives, phase overviews — and serves as the primary entry point for all discovery. The `.yaml` file contains only machine-readable step data.
 
-Doctrines are stored in the project's `.lore/doctrines/` directory tree. For the technical schema (field names, types, required/optional) see tech-doctrine-internals (lore codex show tech-doctrine-internals). For CLI commands (`lore doctrine show`, `lore doctrine list`, etc.) see tech-cli-commands (lore codex show tech-cli-commands).
+Doctrines are stored in the project's `.lore/doctrines/` directory tree. For the technical schema (field names, types, required/optional) see ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module). For CLI commands (`lore doctrine show`, `lore doctrine list`, etc.) see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
 
 ## Python API
 
@@ -57,7 +57,7 @@ Entity names are expected to be unique across the entire tree.
 
 ## Validation Rules
 
-When a Doctrine is read, both files are validated. Validation is performed by the `doctrine.py` module (see tech-doctrine-internals (lore codex show tech-doctrine-internals)).
+When a Doctrine is read, both files are validated. Validation is performed by the `doctrine.py` module (see ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module)).
 
 **YAML schema (`<name>.yaml`):**
 - `id` and `steps` are required at the top level.
@@ -134,5 +134,5 @@ steps:
 - Mission (lore codex show conceptual-entities-mission) — the individual tasks described by each step in a Doctrine
 - Knight (lore codex show conceptual-entities-knight) — the persona files referenced by Doctrine steps
 - Artifact (lore codex show conceptual-entities-artifact) — template files referenced by ID in Doctrine step notes
-- tech-doctrine-internals (lore codex show tech-doctrine-internals) — validation pipeline and module internals
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore doctrine` command reference
+- ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module) — validation pipeline and module internals
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore doctrine` command reference

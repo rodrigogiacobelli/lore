@@ -6,7 +6,7 @@ summary: ADR explaining why soft-delete was chosen over hard-delete for all Lore
   table.
 related:
 - decisions-009-mission-self-containment
-- tech-db-schema
+- ref-lore_db-core
 ---
 
 # ADR 003 — Soft-Delete Semantics and FK Omission on the Dependencies Table

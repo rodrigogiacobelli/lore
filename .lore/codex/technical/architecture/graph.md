@@ -89,8 +89,8 @@ original input order. The function does not raise an exception on cycles.
 
 This fallback ensures the display is always complete even if dependency data is somehow
 inconsistent (e.g., circular dependencies that passed cycle-detection at write time).
-Lore's database layer prevents cycles from being created (see tech-db-schema,
-lore codex show tech-db-schema), so this fallback is a defensive measure, not expected
+Lore's database layer prevents cycles from being created (see ref-lore_db-core,
+lore codex show ref-lore_db-core), so this fallback is a defensive measure, not expected
 behaviour.
 
 ## Why Not `priority.py`

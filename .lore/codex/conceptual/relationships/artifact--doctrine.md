@@ -4,7 +4,7 @@ title: Artifact to Doctrine
 related:
 - conceptual-entities-artifact
 - conceptual-entities-doctrine
-- tech-doctrine-internals
+- ref-lore_doctrine-module
 summary: Artifact IDs may appear in Doctrine step notes as free-text references. There
   is no FK and no validation. Orchestrators and workers read the step notes and retrieve
   the Artifact via `lore artifact show <id>` when needed.

@@ -11,7 +11,7 @@ summary: 'ADR recording the decision that official communication between steps i
   '
 related:
 - decisions-009-mission-self-containment
-- tech-db-schema
+- ref-lore_db-core
 ---
 
 # ADR-007: Artifact instances are the official communication protocol between pipeline steps

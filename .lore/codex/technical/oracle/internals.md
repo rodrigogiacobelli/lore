@@ -7,8 +7,8 @@ summary: Technical reference for src/lore/oracle.py. Documents the generate_repo
   naming scheme.
 related:
 - tech-cli-oracle-slugification
-- tech-cli-commands
-- tech-db-schema
+- ref-lore_cli-commands
+- ref-lore_db-core
 ---
 
 # Oracle Module Internals
@@ -117,5 +117,5 @@ Written by `_write_mission_file(path, mission, depends_on, blocks)`. Contains:
 ## Related
 
 - tech-cli-oracle-slugification (lore codex show tech-cli-oracle-slugification) — slugification algorithm detail
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore oracle` CLI command
-- tech-db-schema (lore codex show tech-db-schema) — database functions called by this module
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore oracle` CLI command
+- ref-lore_db-core (lore codex show ref-lore_db-core) — database functions called by this module

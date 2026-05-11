@@ -8,7 +8,7 @@ summary: 'What the system does internally when lore oracle runs — report gener
   '
 related:
 - tech-oracle-internals
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # Report Generation — `lore oracle`

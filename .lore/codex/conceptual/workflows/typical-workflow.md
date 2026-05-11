@@ -69,4 +69,4 @@ Lore does not enforce this sequence. Agents can claim and work on Missions in an
 - conceptual-entities-mission (lore codex show conceptual-entities-mission) — Mission concepts, types, and status machine
 - conceptual-entities-doctrine (lore codex show conceptual-entities-doctrine) — Doctrine concepts
 - conceptual-entities-knight (lore codex show conceptual-entities-knight) — Knight concepts
-- tech-cli-commands (lore codex show tech-cli-commands) — CLI command reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — CLI command reference

@@ -18,7 +18,7 @@ related:
   - conceptual-workflows-codex
   - conceptual-workflows-health
   - conceptual-workflows-lore-init
-  - tech-cli-commands
+  - ref-lore_cli-commands
   - tech-arch-source-layout
   - tech-arch-schemas
   - decisions-013-toml-for-config-yaml-for-glossary

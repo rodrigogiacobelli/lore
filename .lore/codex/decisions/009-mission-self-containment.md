@@ -11,8 +11,8 @@ summary: 'ADR establishing that a mission must be executable using only its desc
   '
 related:
 - decisions-007-artifact-communication-protocol
-- tech-db-schema
-- tech-cli-commands
+- ref-lore_db-core
+- ref-lore_cli-commands
 ---
 
 # ADR-009: Missions must be self-contained — board messages carry the chain, artifacts carry the content

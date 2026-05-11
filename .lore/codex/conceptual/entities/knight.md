@@ -8,7 +8,7 @@ related:
 - conceptual-entities-mission
 - conceptual-entities-glossary
 - tech-arch-knight-module
-- tech-cli-commands
+- ref-lore_cli-commands
 - conceptual-relationships-knight--mission
 ---
 
@@ -16,7 +16,7 @@ related:
 
 A Knight is a reusable AI agent persona — a markdown file containing behavioural instructions that tell a worker agent *how* to approach work. Knights define best practices, coding standards, communication style, or domain-specific guidance.
 
-Knights are always files stored in the project's `.lore/knights/` directory tree. They are never inline text. For CLI commands (`lore knight new`, `lore knight show`, etc.) see tech-cli-commands (lore codex show tech-cli-commands).
+Knights are always files stored in the project's `.lore/knights/` directory tree. They are never inline text. For CLI commands (`lore knight new`, `lore knight show`, etc.) see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
 
 ## The What / How Separation
 
@@ -97,5 +97,5 @@ Soft-deleting a Knight does **not** clear the `knight` field on Missions that re
 - Mission (lore codex show conceptual-entities-mission) — the task that a Knight's persona guides the execution of
 - Doctrine (lore codex show conceptual-entities-doctrine) — templates that reference Knight files for each step
 - Artifact (lore codex show conceptual-entities-artifact) — template files referenced by Knights that produce template-derived documents
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore knight` command reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore knight` command reference
 - tech-arch-knight-module (lore codex show tech-arch-knight-module) — Python API for knight filesystem operations (`list_knights`, `find_knight`)

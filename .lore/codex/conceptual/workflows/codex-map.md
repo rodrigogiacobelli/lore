@@ -8,7 +8,7 @@ related:
 - conceptual-workflows-codex
 - tech-arch-codex-map
 - tech-arch-frontmatter
-- tech-cli-commands
+- ref-lore_cli-commands
 - codex
 ---
 # `lore codex map` Behaviour

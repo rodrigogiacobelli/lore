@@ -6,7 +6,7 @@ summary: The public surface of a layer is a facade over its internals — simple
   Internal modules may change freely without breaking the facade.
 related:
 - decisions-010-public-api-stability
-- tech-api-surface
+- ref-lore_api-core
 ---
 
 # Facade
@@ -17,7 +17,7 @@ The public surface of a layer is a facade over its internals. It should be simpl
 
 `lore.models.__all__` defines the public API surface — the complete set of names that external consumers (Realm, scripts) can safely depend on. Any name not in `__all__` is an internal implementation detail.
 
-Current public surface: `Quest`, `Mission`, `BoardMessage`, `Artifact`, `Doctrine`, `Knight`, `Watcher`, and their associated status enums. See `tech-api-surface` for the full matrix.
+Current public surface: `Quest`, `Mission`, `BoardMessage`, `Artifact`, `Doctrine`, `Knight`, `Watcher`, and their associated status enums. See `ref-lore_api-core` for the full matrix.
 
 ## Rule
 

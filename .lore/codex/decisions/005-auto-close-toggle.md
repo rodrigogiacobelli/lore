@@ -5,8 +5,8 @@ summary: ADR recording the decision to add a per-quest auto_close toggle, defaul
   to disabled for new quests. Covers the schema design, migration default split, and
   the mechanism for manually closing quests.
 related:
-- tech-db-schema
-- tech-cli-commands
+- ref-lore_db-core
+- ref-lore_cli-commands
 - conceptual-entities-quest
 ---
 

@@ -5,9 +5,9 @@ summary: "Technical reference for the map_documents and _read_related functions 
 related:
   - tech-arch-frontmatter
   - tech-arch-source-layout
-  - tech-api-surface
+  - ref-lore_api-core
   - conceptual-workflows-codex-map
-  - tech-cli-commands
+  - ref-lore_cli-commands
   - tech-arch-codex-chaos
   - tech-arch-schemas
 ---

@@ -20,7 +20,7 @@ A Watcher is a YAML file stored in the project's `.lore/watchers/` directory tre
 
 Watchers are deliberately passive. They are declarations, not executors. This keeps Lore's architecture dumb by design (ADR-001) and gives the consuming tool full control over when and how triggers fire.
 
-For CLI commands (`lore watcher new`, `lore watcher list`, etc.) see tech-cli-commands (lore codex show tech-cli-commands).
+For CLI commands (`lore watcher new`, `lore watcher list`, etc.) see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
 
 ## YAML Schema
 
@@ -95,5 +95,5 @@ Watchers are soft-deleted by renaming the YAML file with a `.deleted` suffix. Th
 - conceptual-workflows-watcher-list (lore codex show conceptual-workflows-watcher-list) — `lore watcher list` and `lore watcher show` behaviour
 - conceptual-workflows-watcher-crud (lore codex show conceptual-workflows-watcher-crud) — `lore watcher new/edit/delete` behaviour
 - conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) — how the default watcher is seeded
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore watcher` command reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore watcher` command reference
 - tech-arch-source-layout (lore codex show tech-arch-source-layout) — `watcher.py` module internals

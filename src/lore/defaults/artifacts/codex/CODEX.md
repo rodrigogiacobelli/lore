@@ -33,7 +33,7 @@ Documentation is divided into layers. Each layer has one job.
 
 **Conceptual docs describe the system from the outside.** No file paths, no schema columns, no API endpoints. If a business analyst can read it and understand it without knowing the tech stack, it belongs in conceptual.
 
-**Technical docs describe the system from the inside.** Database schemas, CLI command specs, frontend structure, infrastructure. Each component of the software gets its own subdirectory.
+**Technical docs describe the system from the inside.** Database schemas, CLI command specs, frontend structure, infrastructure. Each component of the software gets its own subdirectory. For concrete artifacts (DB tables, API endpoints, models, events, jobs), prefer **Reference Docs** under `<technical-domain>/ref/` over schema dumps — see "Reference Docs" below.
 
 These two trees link to each other but never duplicate. If a fact exists in a schema file, the entity file links to it — it does not repeat it. One fact, one file.
 
@@ -81,6 +81,42 @@ Sources MUST link outward. Every source's `related` list names every canonical d
 ### Refresh rule
 
 Re-ingestion of an existing source (via `/refresh-source`) **overwrites** the snapshot file. There is no history file. Previous content is retained only in git history.
+
+## Reference Docs
+
+Reference docs capture **intent around** concrete technical artifacts — DB tables, API endpoints, models, events, jobs — without mirroring schema. Schema lives in the source of truth (DDL, OpenAPI, ORM); the codex never owns it. Reference docs explain what the schema cannot say: history, non-enforced constraints, gotchas, ownership, lifecycle.
+
+**Location.** `<technical-domain>/ref/` — e.g. `technical/database/ref/`, `technical/api/ref/`, `technical/events/ref/`. The `ref/` subdirectory is the convention; do not invent siblings.
+
+**ID convention.** `ref-<system>-<concept>` — pure naming, not a frontmatter field. Examples:
+
+- `ref-orders_db-checkout` — covers `orders`, `line_items`, `shipments`
+- `ref-billing_db-ledger` — covers `entries`, `accounts`, `postings`
+- `ref-orders_db-line_items` — single-entity doc when one entity carries intent its cluster does not
+
+**Granularity.** One doc per logical cluster, not per entity. Intent is usually a cluster property — splitting it across siblings duplicates or fragments the why. Go finer only when one entity carries intent that does not belong to its cluster (noisy gotcha, deprecation timeline, different owner). A boring CRUD entity with no surprising history needs no reference doc at all.
+
+**Body shape.**
+
+```markdown
+**Covers:** `orders`, `line_items`, `shipments`
+**Source of truth:** `db/orders/migrations/`
+
+## Why this exists
+...
+
+## Gotchas
+...
+
+## Shape
+~10 columns. Full schema in source file above.
+```
+
+No schema dump. The reader who wants column types reads the migration. The reader who wants to know *why `order_id` has no FK constraint* reads this.
+
+**Discoverability rule (enforced).** Cluster docs MUST name every covered entity verbatim in the body — the `**Covers:**` line is the canonical place — so `lore codex search <table_name>` lands on the cluster doc. Without this, granularity flexibility breaks search.
+
+**No new frontmatter.** Reference docs use the standard three fields (`id`, `title`, `summary`) plus optional `related`. There is no `kind`, no `system`, no `source_of_truth` field — the source-of-truth pointer lives in the body.
 
 ## Decisions
 

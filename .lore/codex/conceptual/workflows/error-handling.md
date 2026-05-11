@@ -7,7 +7,7 @@ summary: 'What the system does when CLI commands encounter errors — exit codes
   '
 related:
 - conceptual-workflows-json-output
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # CLI Error Handling

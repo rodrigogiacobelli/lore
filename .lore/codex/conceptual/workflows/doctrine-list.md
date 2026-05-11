@@ -2,7 +2,7 @@
 id: conceptual-workflows-doctrine-list
 title: lore doctrine list Behaviour
 summary: What the system does internally when `lore doctrine list` runs — recursive discovery of `.design.md` files under `.lore/doctrines/`, pairing with matching `.yaml` files, silent skip of orphaned or unpaired files, metadata extraction from design frontmatter, group derivation, and table or JSON output.
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-doctrine-show", "conceptual-workflows-knight-list", "tech-cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-doctrine-show", "conceptual-workflows-knight-list", "ref-lore_cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore doctrine list` Behaviour
@@ -128,4 +128,4 @@ All entries returned are valid pairs. No validity check is needed at the caller.
 - conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new) — how doctrine creation works
 - conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — mirrors this behaviour for knights (no validation step)
 - conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

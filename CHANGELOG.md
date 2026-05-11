@@ -8,6 +8,16 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+### Added
+
+- **Reference Docs convention** documented in `CODEX.md` — `technical/<domain>/ref/` subdirectories with `ref-<system>-<concept>` IDs hold intent (history, gotchas, non-enforced constraints) around concrete artifacts; schema stays in the source of truth.
+- **`update-codex` skill** for direct chat doc edits outside the feature-implementation flow.
+
+### Changed
+
+- Lore's own internal docs migrated to the new pattern: schema/internals dumps for database, API, CLI, and doctrine replaced by `ref-*` cluster docs; `related:` links across the codex updated; seeded default codex template now ships a `ref/` example instead of `schemas/`.
+- `explore-codex` and `ingest-source` skills note the new `ref-*` routing.
+
 ## [0.4.0] - 2026-04-30
 
 ### Added

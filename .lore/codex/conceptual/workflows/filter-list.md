@@ -11,7 +11,7 @@ related:
 - conceptual-workflows-doctrine-list
 - conceptual-workflows-watcher-list
 - conceptual-workflows-codex
-- tech-cli-commands
+- ref-lore_cli-commands
 - decisions-011-api-parity-with-cli
 ---
 
@@ -157,5 +157,5 @@ No new failure modes are introduced by this feature:
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list)
 - conceptual-workflows-watcher-list (lore codex show conceptual-workflows-watcher-list)
 - conceptual-workflows-codex (lore codex show conceptual-workflows-codex)
-- tech-cli-commands (lore codex show tech-cli-commands)
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands)
 - decisions-011-api-parity-with-cli (lore codex show decisions-011-api-parity-with-cli)

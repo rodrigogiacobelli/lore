@@ -3,7 +3,7 @@ id: conceptual-relationships-mission--mission
 title: Mission to Mission (Dependencies)
 related:
 - conceptual-entities-mission
-- tech-db-schema
+- ref-lore_db-core
 summary: Missions can depend on other Missions via a directed acyclic dependency graph.
   Dependencies are stored in a join table. A Mission with unmet dependencies is blocked
   from being claimed until all its predecessors are done.

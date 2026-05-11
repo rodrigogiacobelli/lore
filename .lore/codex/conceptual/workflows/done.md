@@ -109,4 +109,4 @@ When the global `--json` flag is set:
 - conceptual-workflows-block (lore codex show conceptual-workflows-block) — blocking a mission rather than closing it
 - conceptual-entities-mission (lore codex show conceptual-entities-mission) — full mission status lifecycle and auto-unblock rules
 - conceptual-entities-quest (lore codex show conceptual-entities-quest) — quest status rules and auto_close behaviour
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

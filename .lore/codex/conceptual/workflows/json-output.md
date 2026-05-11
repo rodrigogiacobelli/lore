@@ -7,7 +7,7 @@ summary: 'What the system does when the --json flag is applied to any command â€
   '
 related:
 - conceptual-workflows-error-handling
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # JSON Output Mode

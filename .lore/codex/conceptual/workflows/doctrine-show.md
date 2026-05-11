@@ -2,7 +2,7 @@
 id: conceptual-workflows-doctrine-show
 title: lore doctrine show Behaviour
 summary: What the system does internally when `lore doctrine show <name>` runs — recursive search for a matched design file and YAML pair, verbatim rendering of both files with a separator (text mode), or structured JSON output (JSON mode). Raises an error if either file is missing.
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "tech-cli-commands", "tech-doctrine-internals"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "ref-lore_cli-commands", "ref-lore_doctrine-module"]
 ---
 
 # `lore doctrine show` Behaviour
@@ -152,5 +152,5 @@ doctrine_obj = Doctrine.from_dict(result)
 
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — how doctrine listing works
 - conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new) — how doctrine creation works
-- tech-doctrine-internals (lore codex show tech-doctrine-internals) — module-level implementation details
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module) — module-level implementation details
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

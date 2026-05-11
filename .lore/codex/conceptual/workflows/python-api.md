@@ -7,7 +7,7 @@ summary: 'What the Python DB API (lore.db) guarantees — return-type contracts,
 
   '
 related:
-- tech-api-surface
+- ref-lore_api-core
 - decisions-011-api-parity-with-cli
 ---
 

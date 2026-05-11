@@ -2,7 +2,7 @@
 id: conceptual-workflows-knight-list
 title: lore knight list Behaviour
 summary: What the system does internally when `lore knight list` runs — recursive discovery of `.md` files under `.lore/knights/`, frontmatter parsing with graceful fallbacks for missing fields, group derivation from subdirectory path, sorted output as a table or JSON.
-related: ["conceptual-entities-knight", "tech-arch-knight-module", "tech-cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
+related: ["conceptual-entities-knight", "tech-arch-knight-module", "ref-lore_cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore knight list` Behaviour
@@ -122,4 +122,4 @@ $ lore knight list --json | jq -r '.knights[].id'
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — mirrors this behaviour for doctrines
 - conceptual-workflows-artifact-list (lore codex show conceptual-workflows-artifact-list) — stricter: skips files missing required fields
 - conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

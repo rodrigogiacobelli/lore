@@ -8,8 +8,8 @@ summary: Establishes that every lore.db function exposed in the public API must 
 related:
 - decisions-010-public-api-stability
 - standards-separation-of-concerns
-- tech-api-surface
-- tech-db-schema
+- ref-lore_api-core
+- ref-lore_db-core
 - tech-arch-validators
 ---
 

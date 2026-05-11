@@ -8,7 +8,7 @@ summary: 'What the system does internally when posting, viewing, and deleting bo
 related:
 - conceptual-workflows-show
 - conceptual-workflows-mission-crud
-- tech-cli-commands
+- ref-lore_cli-commands
 - decisions-009-mission-self-containment
 ---
 

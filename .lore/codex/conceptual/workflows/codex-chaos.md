@@ -13,8 +13,8 @@ related:
 - conceptual-workflows-codex-map
 - conceptual-workflows-json-output
 - conceptual-workflows-error-handling
-- tech-cli-commands
-- tech-api-surface
+- ref-lore_cli-commands
+- ref-lore_api-core
 - tech-arch-codex-chaos
 ---
 

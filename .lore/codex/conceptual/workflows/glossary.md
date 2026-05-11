@@ -17,7 +17,7 @@ related:
   - conceptual-workflows-help
   - decisions-013-toml-for-config-yaml-for-glossary
   - decisions-012-multi-value-cli-param-convention
-  - tech-cli-commands
+  - ref-lore_cli-commands
   - tech-arch-schemas
 ---
 
@@ -239,4 +239,4 @@ deprecated = find_deprecated_terms({"doc-id-1": body1}, root=project_root)
 - conceptual-workflows-json-output (lore codex show conceptual-workflows-json-output) — JSON envelope contract.
 - decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary) — file-format split.
 - decisions-012-multi-value-cli-param-convention (lore codex show decisions-012-multi-value-cli-param-convention) — `lore glossary show <kw> [...]` and `--scope glossary` semantics.
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference.
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference.

@@ -6,7 +6,7 @@ summary: Two-stage slugification used by lore oracle to derive filesystem-safe f
   (40-char combined {id}-{slug} result).
 related:
 - tech-oracle-internals
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # Oracle Slugification Algorithm

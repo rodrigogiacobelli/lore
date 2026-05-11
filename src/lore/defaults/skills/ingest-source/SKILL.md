@@ -35,6 +35,8 @@ Use whatever method the user specified. Store the raw body verbatim. Do not summ
 
 Identify new terms, concepts, constraints, or decisions in the snapshot that are not yet in the canonical codex. For each, name a specific canonical doc path that should be updated and the one-sentence addition you propose. Present the list to the user for approval.
 
+When the upstream item creates intent around a concrete technical artifact (DB table, API endpoint, model, event, job), the canonical home is a **reference doc** under `technical/<domain>/ref/` — `ref-<system>-<concept>`, cluster-grained, body explains *why* and points at the source of truth. Never propose a schema dump. If no `ref-*` doc exists yet for the cluster, propose creating one rather than appending intent to an unrelated entity doc.
+
 If any candidate update is a glossary entry — adding a term to `.lore/codex/glossary.yaml` — gate it through the design checklist before proposing:
 
 ```

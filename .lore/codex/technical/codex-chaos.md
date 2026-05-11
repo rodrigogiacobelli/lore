@@ -12,7 +12,7 @@ related:
 - tech-arch-source-layout
 - tech-arch-frontmatter
 - conceptual-workflows-codex-chaos
-- tech-api-surface
+- ref-lore_api-core
 - standards-dry
 - decisions-011-api-parity-with-cli
 ---

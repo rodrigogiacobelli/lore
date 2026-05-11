@@ -69,7 +69,7 @@ call it.
 handler runs; a working implementation would require patching Click internals
 or replacing Click's `--help` option entirely. The implementation cost
 outweighs the benefit: agents needing structured CLI reference can use
-`lore codex show tech-cli-commands` instead. This is deferred indefinitely.
+`lore codex show ref-lore_cli-commands` instead. This is deferred indefinitely.
 
 **AGENTS.md:**
 
@@ -111,7 +111,7 @@ to stay in sync word-for-word.
 - `cli.py` is updated with enriched help strings at the top-level group and
   each command-group level.
 - `--help --json` is not implemented. Agents needing structured CLI reference
-  use `lore codex show tech-cli-commands`.
+  use `lore codex show ref-lore_cli-commands`.
 - The `AGENTS.md` default template (`src/lore/defaults/`) is reduced to
   ~40–50 lines, retaining only the dispatch loop and worker workflow.
 - The `board` command group is excluded from this round of enrichment. It does

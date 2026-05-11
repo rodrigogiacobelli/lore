@@ -20,6 +20,8 @@ Use the Lore codex to research a question, compare information, or map out a dom
 | Search glossary terms | `lore glossary search <query>` |
 | Read one or more glossary entries | `lore glossary show <kw1> <kw2> ...` |
 
+Searching by the name of a concrete artifact (a table, endpoint, event, job) typically lands on a `ref-<system>-<concept>` cluster doc under `technical/<domain>/ref/`. Those docs hold intent (history, gotchas, non-enforced constraints) — not schema. The schema source of truth is named in the doc body and lives in code (migrations, OpenAPI, ORM).
+
 ## Steps
 
 ### 1. Find entry points

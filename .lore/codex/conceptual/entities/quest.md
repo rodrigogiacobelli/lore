@@ -8,7 +8,7 @@ related:
 - conceptual-entities-mission
 - conceptual-entities-doctrine
 - conceptual-entities-glossary
-- tech-db-schema
+- ref-lore_db-core
 - conceptual-relationships-quest--mission
 ---
 
@@ -16,7 +16,7 @@ related:
 
 A Quest is a live grouping of Missions (lore codex show conceptual-entities-mission). It represents a body of work — a feature, a bug fix, a refactor, a research spike. Quests can be created ad-hoc or by an orchestrator following a Doctrine (lore codex show conceptual-entities-doctrine) as a guide.
 
-A Quest is complete when all its Missions are closed. Quest status is automatically derived from its Missions — it is never set directly. See tech-db-schema (lore codex show tech-db-schema) for the derivation algorithm.
+A Quest is complete when all its Missions are closed. Quest status is automatically derived from its Missions — it is never set directly. See ref-lore_db-core (lore codex show ref-lore_db-core) for the derivation algorithm.
 
 ## Python API
 
@@ -37,7 +37,7 @@ Each Quest has an `auto_close` setting that controls whether it closes automatic
 - **`auto_close` enabled:** The Quest closes automatically when all Missions are closed. No manual intervention is needed.
 - **`auto_close` disabled (default for new Quests):** The Quest remains open even when all Missions are closed. It must be explicitly closed via `lore done q-xxxx`.
 
-The default for new Quests is `auto_close` disabled. Use `--auto-close` at creation time or toggle it later with `lore edit`. See tech-cli-commands (lore codex show tech-cli-commands) for the flag details.
+The default for new Quests is `auto_close` disabled. Use `--auto-close` at creation time or toggle it later with `lore edit`. See ref-lore_cli-commands (lore codex show ref-lore_cli-commands) for the flag details.
 
 ## Status Rules
 
@@ -99,5 +99,5 @@ Key properties:
 
 - Mission (lore codex show conceptual-entities-mission) — the individual tasks that belong to a Quest
 - Doctrine (lore codex show conceptual-entities-doctrine) — the optional template an orchestrator follows when structuring a Quest
-- tech-db-schema (lore codex show tech-db-schema) — quest status derivation algorithm and schema
-- tech-cli-commands (lore codex show tech-cli-commands) — `lore new quest`, `lore done`, `lore edit`, `lore delete` command reference
+- ref-lore_db-core (lore codex show ref-lore_db-core) — quest status derivation algorithm and schema
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore new quest`, `lore done`, `lore edit`, `lore delete` command reference

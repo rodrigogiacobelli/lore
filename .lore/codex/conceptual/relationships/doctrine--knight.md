@@ -4,7 +4,7 @@ title: Doctrine to Knight
 related:
 - conceptual-entities-doctrine
 - conceptual-entities-knight
-- tech-doctrine-internals
+- ref-lore_doctrine-module
 summary: A Doctrine step may name a Knight by filename stem. There is no FK. The reference
   is resolved at orchestration time when the orchestrator assigns the Knight to the
   created Mission. No validation is performed at doctrine load time.

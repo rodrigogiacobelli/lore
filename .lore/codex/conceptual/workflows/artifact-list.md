@@ -2,7 +2,7 @@
 id: conceptual-workflows-artifact-list
 title: lore artifact list Behaviour
 summary: What the system does internally when `lore artifact list` runs — recursive discovery of `.md` files under `.lore/artifacts/`, strict frontmatter validation (files missing required fields are silently skipped), group derivation, and table or JSON output.
-related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "tech-cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "ref-lore_cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore artifact list` Behaviour
@@ -107,4 +107,4 @@ Note: `lore artifact list` accepts `--json` as a **local** flag in addition to t
 - conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — lenient fallback behaviour for knights
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — doctrine listing with validation marking
 - conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

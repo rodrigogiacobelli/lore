@@ -97,4 +97,4 @@ When the global `--json` flag is set:
 - conceptual-workflows-done (lore codex show conceptual-workflows-done) — the complementary closure step
 - conceptual-workflows-block (lore codex show conceptual-workflows-block) — blocking a mission in progress
 - conceptual-entities-mission (lore codex show conceptual-entities-mission) — full mission status lifecycle
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

@@ -2,7 +2,7 @@
 id: conceptual-workflows-artifact-new
 title: lore artifact new Behaviour
 summary: What the system does internally when `lore artifact new <name> [--group <path>] --from <body-file>` runs — name and group validation, subtree-wide duplicate detection, strict frontmatter re-check, auto-mkdir of the target group directory, and atomic write of the single `.md` file to `.lore/artifacts/`.
-related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-crud", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "tech-cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
+related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-crud", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 
 # `lore artifact new` Behaviour
@@ -107,4 +107,4 @@ The strict frontmatter re-check at step 5 delegates to `lore.schemas.validate_en
 - conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new) — sibling two-file create flow
 - conceptual-workflows-knight-crud (lore codex show conceptual-workflows-knight-crud) — sibling single-file create flow
 - conceptual-workflows-validators (lore codex show conceptual-workflows-validators) — `validate_group` rules
-- tech-cli-commands (lore codex show tech-cli-commands) — full CLI reference
+- ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

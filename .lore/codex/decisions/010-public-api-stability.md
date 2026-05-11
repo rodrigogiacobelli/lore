@@ -10,7 +10,7 @@ summary: 'ADR establishing that lore.models.__all__ is the sole public API surfa
 related:
 - standards-public-api-stability
 - decisions-011-api-parity-with-cli
-- tech-api-surface
+- ref-lore_api-core
 ---
 
 # ADR-010: lore.models.__all__ is the stable public API contract

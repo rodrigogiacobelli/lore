@@ -2,7 +2,7 @@
 id: tech-arch-schemas
 title: Schemas Module Internals
 summary: Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the seven schema kinds (the seventh, glossary, is the first full-YAML kind validated against a literal single-file glob rather than a directory walk), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact and the audit-time lore health schema check share a single authoritative contract.
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "tech-doctrine-internals", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 
 # Schemas Module Internals
@@ -116,6 +116,6 @@ A catastrophic failure loading the schema resource itself (e.g. the wheel is cor
 
 - conceptual-workflows-health — how `_check_schemas` slots into the overall health pipeline and the `schemas` scope semantics.
 - tech-arch-frontmatter — `parse_frontmatter_raw` is the only parse helper used by schema validation.
-- tech-doctrine-internals — describes the existing create-time validators that delegate to this module.
+- ref-lore_doctrine-module — describes the existing create-time validators that delegate to this module.
 - standards-dry — the DRY guarantee this module exists to enforce.
 - decisions-011-api-parity-with-cli — why `validate_entity_file` and `load_schema` are in `lore.models.__all__`.

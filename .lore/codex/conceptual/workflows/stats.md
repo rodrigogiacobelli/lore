@@ -6,7 +6,7 @@ summary: 'What the system does internally when lore stats runs — aggregate cou
 
   '
 related:
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # Aggregate Statistics — `lore stats`

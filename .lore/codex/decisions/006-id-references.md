@@ -8,7 +8,7 @@ summary: 'ADR recording the decision that agents must use Lore CLI commands to a
 
   '
 related:
-- tech-cli-commands
+- ref-lore_cli-commands
 ---
 
 # ADR-006: Agents reference entities by ID, never by file path

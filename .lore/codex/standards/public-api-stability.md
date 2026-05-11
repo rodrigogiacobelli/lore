@@ -7,7 +7,7 @@ summary: 'Everything in lore.models.__all__ is the public API of lore-agent-task
 
   '
 related:
-- tech-api-surface
+- ref-lore_api-core
 - decisions-011-api-parity-with-cli
 ---
 

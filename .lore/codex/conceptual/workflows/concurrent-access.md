@@ -6,7 +6,7 @@ summary: 'What the system does to ensure safe concurrent access — WAL mode, bu
 
   '
 related:
-- tech-db-schema
+- ref-lore_db-core
 - tech-overview
 ---
 
