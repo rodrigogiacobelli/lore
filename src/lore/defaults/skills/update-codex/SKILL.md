@@ -9,6 +9,12 @@ Use this skill when the user asks, in chat, to add or change a fact in the codex
 
 If the request is "document an entire feature's worth of changes", stop and suggest `/start-quest` with the feature-implementation doctrine instead — that flow has a Tech Writer agent built for it.
 
+## CODEX.md is your primary input — and your responsibility
+
+`.lore/codex/CODEX.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it is the source of truth for how the codex is organised in *this* project, and it may carry project-specific guidance not present anywhere else.
+
+You also **own keeping it current**. When a change introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule that future doc edits must follow, update `CODEX.md` so the next reader (human or agent) finds the rule from the top. **CODEX.md is lean by design** — do not bloat it with per-doc summaries, per-feature notes, or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit. The same dedup and discovery rules below apply to CODEX.md itself.
+
 ## Steps
 
 ### 1. Clarify the change

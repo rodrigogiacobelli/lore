@@ -11,7 +11,7 @@ See standards-public-api-stability for the public API stability and semver polic
 ### Added
 
 - **Reference Docs convention** documented in `CODEX.md` — `technical/<domain>/ref/` subdirectories with `ref-<system>-<concept>` IDs hold intent (history, gotchas, non-enforced constraints) around concrete artifacts; schema stays in the source of truth.
-- **`update-codex` skill** for direct chat doc edits outside the feature-implementation flow.
+- **`update-codex` skill** for direct chat doc edits outside the feature-implementation flow. Treats `.lore/codex/CODEX.md` as a primary input *and* a maintenance responsibility — the skill must read it for project-specific rules and update it when a change introduces a new convention, layer, or project-wide rule. CODEX.md is lean by design; only structural/rule-level changes warrant an edit.
 
 ### Changed
 
