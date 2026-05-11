@@ -8,6 +8,11 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wheel build now ships `src/lore/schemas/*.yaml`** — `[tool.hatch.build.targets.wheel].artifacts` extended so packaged installs can resolve schema YAMLs via `importlib.resources`. Without this, `lore.schemas` was empty in the built wheel.
+- **`test_conceptual_entities_artifact_has_required_outbound_related`** updated to expect `ref-lore_cli-commands` after the rename from `tech-cli-commands` in the Reference Docs convention migration.
+
 ### Added
 
 - **Reference Docs convention** documented in `CODEX.md` — `technical/<domain>/ref/` subdirectories with `ref-<system>-<concept>` IDs hold intent (history, gotchas, non-enforced constraints) around concrete artifacts; schema stays in the source of truth.

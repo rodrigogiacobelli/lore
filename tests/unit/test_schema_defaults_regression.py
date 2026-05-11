@@ -483,7 +483,7 @@ REQUIRED_ARTIFACT_OUTBOUND_IDS = {
     "conceptual-entities-doctrine",
     "conceptual-entities-knight",
     "conceptual-workflows-lore-init",
-    "tech-cli-commands",
+    "ref-lore_cli-commands",
 }
 
 
