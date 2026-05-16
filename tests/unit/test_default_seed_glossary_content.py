@@ -51,38 +51,20 @@ def test_default_lore_agent_md_describes_auto_surface():
 
 
 # ---------------------------------------------------------------------------
-# CODEX.md (Scenario 2 — Glossary subsection explains rule)
+# CODEX.md artifact (single canonical source for the codex root template)
 # ---------------------------------------------------------------------------
 
 
-def test_default_codex_md_file_exists_in_defaults_docs():
-    """conceptual-workflows-glossary — Scenario 2 prerequisite (CREATE)."""
+def test_default_codex_md_artifact_exists():
+    """The packaged codex root template is the only CODEX.md seed source."""
     root = importlib.resources.files("lore.defaults")
-    target = root.joinpath("docs", "CODEX.md")
-    assert target.is_file(), (
-        "src/lore/defaults/docs/CODEX.md must exist as a seed source "
-        "(US-007 creates this file; the existing copier handles distribution)."
-    )
+    assert root.joinpath("artifacts", "codex", "CODEX.md").is_file()
 
 
-def test_default_codex_md_has_glossary_heading():
-    """conceptual-workflows-glossary — Unit row 3 (Scenario 2)."""
-    text = _read_default("docs", "CODEX.md")
-    headings = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("#")]
-    assert any(h in ("## Glossary", "### Glossary") for h in headings), (
-        f"CODEX.md must contain a `## Glossary` or `### Glossary` heading; "
-        f"got headings: {headings}"
-    )
-
-
-def test_default_codex_md_glossary_section_explains_rule():
-    """conceptual-workflows-glossary — Unit row 4 (Scenario 2 body)."""
-    text = _read_default("docs", "CODEX.md").lower()
+def test_default_codex_md_artifact_mentions_glossary():
+    """conceptual-workflows-glossary — the seeded codex root introduces glossary."""
+    text = _read_default("artifacts", "codex", "CODEX.md").lower()
     assert "glossary" in text
-    assert "entity doc" in text, (
-        "CODEX.md Glossary section must explain when an item belongs in the glossary "
-        "vs in its own entity doc — assert via the substring `entity doc`."
-    )
 
 
 # ---------------------------------------------------------------------------

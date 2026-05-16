@@ -12,6 +12,7 @@ See standards-public-api-stability for the public API stability and semver polic
 
 - **Wheel build now ships `src/lore/schemas/*.yaml`** — `[tool.hatch.build.targets.wheel].artifacts` extended so packaged installs can resolve schema YAMLs via `importlib.resources`. Without this, `lore.schemas` was empty in the built wheel.
 - **`test_conceptual_entities_artifact_has_required_outbound_related`** updated to expect `ref-lore_cli-commands` after the rename from `tech-cli-commands` in the Reference Docs convention migration.
+- **Duplicate `CODEX.md` seed source removed.** `src/lore/defaults/docs/CODEX.md` was being copied verbatim to `.lore/CODEX.md` in parallel with the canonical `defaults/artifacts/codex/CODEX.md`. The artifact is now the single source: it lands at `.lore/artifacts/default/codex/CODEX.md` (overwritten on every init like other defaults) and seeds `.lore/codex/CODEX.md` (idempotent, with `id: example-codex` → `id: codex` rewrite). `lore init` no longer produces `.lore/CODEX.md`.
 
 ### Added
 

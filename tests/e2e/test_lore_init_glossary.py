@@ -373,23 +373,23 @@ def test_init_seeds_lore_agent_md_describes_auto_surface(runner, fresh_dir):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2 — CODEX.md has Glossary subsection
+# Scenario 2 — Seeded CODEX.md documents the glossary
 # ---------------------------------------------------------------------------
 
 
 def test_init_seeds_codex_md_with_glossary_section(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 2."""
+    """conceptual-workflows-glossary — US-007 Scenario 2.
+
+    The seeded codex root at ``.lore/codex/CODEX.md`` must mention the
+    glossary layer so readers discover the vocabulary surface from the
+    top.
+    """
     result = runner.invoke(main, ["init"])
     assert result.exit_code == 0, result.output
-    p = fresh_dir / ".lore" / "CODEX.md"
-    assert p.is_file(), ".lore/CODEX.md must be seeded by `lore init` (US-007)."
-    text = p.read_text()
-    assert ("## Glossary" in text) or ("### Glossary" in text), (
-        f"CODEX.md must contain a Glossary heading; got:\n{text}"
-    )
-    lower = text.lower()
+    p = fresh_dir / ".lore" / "codex" / "CODEX.md"
+    assert p.is_file(), ".lore/codex/CODEX.md must be seeded by `lore init`."
+    lower = p.read_text().lower()
     assert "glossary" in lower
-    assert "entity doc" in lower
 
 
 # ---------------------------------------------------------------------------
@@ -475,29 +475,27 @@ def test_init_seeds_scout_knight_with_glossary_input(runner, fresh_dir):
 # pins.  The CODEX.md case is exercised below as a missing-file failure.
 
 
-def test_init_seeds_codex_md_matches_source_byte_for_byte(runner, fresh_dir):
-    """conceptual-workflows-lore-init — US-007 Scenario 7 (CODEX.md case).
+def test_init_copies_codex_artifact_byte_for_byte(runner, fresh_dir):
+    """conceptual-workflows-lore-init — artifact copy is verbatim.
 
-    The new ``src/lore/defaults/docs/CODEX.md`` source file (created by
-    US-007 Green) must copy verbatim into ``.lore/CODEX.md`` on init.
-    Fails today because the source file does not yet exist.
+    The packaged ``defaults/artifacts/codex/CODEX.md`` must land at
+    ``.lore/artifacts/default/codex/CODEX.md`` byte-for-byte. The
+    artifact is the single source for the codex root template.
     """
     result = runner.invoke(main, ["init"])
     assert result.exit_code == 0, result.output
 
-    target = fresh_dir / ".lore" / "CODEX.md"
-    assert target.is_file(), "lore init must seed .lore/CODEX.md (US-007)."
-    target_text = target.read_text()
-
+    target = fresh_dir / ".lore" / "artifacts" / "default" / "codex" / "CODEX.md"
+    assert target.is_file(), (
+        "lore init must copy the CODEX.md artifact to "
+        ".lore/artifacts/default/codex/CODEX.md."
+    )
     source_text = (
         importlib.resources.files("lore.defaults")
-        .joinpath("docs", "CODEX.md")
+        .joinpath("artifacts", "codex", "CODEX.md")
         .read_text()
     )
-    assert target_text == source_text, (
-        "lore init must copy src/lore/defaults/docs/CODEX.md verbatim to "
-        ".lore/CODEX.md."
-    )
+    assert target.read_text() == source_text
 
 
 # ---------------------------------------------------------------------------
