@@ -4,8 +4,8 @@ title: '`lore codex chaos` Behaviour'
 summary: 'Random-walk traversal of the codex graph starting from a seed document.
   Follows randomly sampled neighbours via the related frontmatter field and terminates
   when the ratio of discovered documents to the reachable subgraph exceeds --threshold
-  / 100, or when no unvisited reachable neighbours remain. Output format is identical
-  to lore codex map (ID, TITLE, SUMMARY table).
+  / 100, or when no unvisited reachable neighbours remain. Output is the same list-shape
+  table as lore codex list and lore codex map (default mode) — ID, GROUP, TITLE, SUMMARY.
 
   '
 related:
@@ -24,8 +24,9 @@ related:
 traversal of the codex document graph, starting from a seed document and following
 randomly sampled neighbours via the `related` frontmatter field. The walk terminates
 when the ratio of discovered documents to the total reachable subgraph exceeds
-`--threshold / 100`, or when no unvisited reachable neighbours remain. Output format
-is identical to `lore codex map`: a table with columns ID, TITLE, SUMMARY.
+`--threshold / 100`, or when no unvisited reachable neighbours remain. Output is
+the same list-shape table as `lore codex list` and the default mode of
+`lore codex map` — columns ID, GROUP, TITLE, SUMMARY.
 
 ## Preconditions
 
@@ -120,7 +121,6 @@ The only guarantee is that the seed document is always the first entry in the re
 
 ## Out of Scope
 
-- Modifying `lore codex map` behaviour — the map command is unchanged by this feature.
 - Persisting walk results to disk or database.
 - Multi-root walks — exactly one seed document per invocation.
 - Graph visualisation.

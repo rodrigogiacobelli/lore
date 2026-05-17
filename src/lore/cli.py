@@ -2450,25 +2450,107 @@ def codex_show(ctx, ids, skip_glossary):
         click.echo(glossary_warning, err=True)
 
 
+def _resolve_codex_map_depths(
+    depth: int | None,
+    depth_out: int | None,
+    depth_in: int | None,
+) -> tuple[int, int]:
+    """Resolve effective (depth_out, depth_in) from the three CLI flags.
+
+    Rules:
+      - --depth sets both directions symmetrically.
+      - When only one of --depth-in/--depth-out is given, the other defaults to 0.
+      - When none of the three are given, both default to 1.
+    Caller must reject the conflict (depth + directional) before calling.
+    """
+    if depth is not None:
+        return depth, depth
+    eff_out = depth_out if depth_out is not None else (0 if depth_in is not None else 1)
+    eff_in = depth_in if depth_in is not None else (0 if depth_out is not None else 1)
+    return eff_out, eff_in
+
+
+def _render_codex_map_default(documents: list[dict], *, json_mode: bool) -> None:
+    """Render default-mode (table / json list shape) output for codex map."""
+    if json_mode:
+        data = {"codex": [
+            {"id": d["id"], "group": _group_for_json(d["group"]),
+             "title": d["title"], "summary": d["summary"]}
+            for d in documents
+        ]}
+        click.echo(json.dumps(data))
+        return
+    if not documents:
+        click.echo("No related documents.")
+        return
+    rows = [[d["id"], d["group"], d["title"], d["summary"]] for d in documents]
+    for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+        click.echo(line)
+
+
+def _render_codex_map_full(documents: list[dict], *, json_mode: bool) -> None:
+    """Render full-mode (bodies / raw json documents) output for codex map."""
+    if json_mode:
+        click.echo(json.dumps({"documents": documents}))
+        return
+    for doc in documents:
+        click.echo(f"=== {doc['id']} ===")
+        click.echo(doc["body"])
+
+
 @codex.command("map")
 @click.argument("doc_id")
 @click.option(
     "--depth",
     type=click.IntRange(min=0),
-    default=1,
-    show_default=True,
-    help="BFS traversal depth (0 = root only).",
+    default=None,
+    help="Symmetric traversal depth in both directions. Mutually exclusive with --depth-in/--depth-out. Default 1.",
+)
+@click.option(
+    "--depth-out",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Outbound traversal depth (follows 'related' links). Default 1; not allowed with --depth.",
+)
+@click.option(
+    "--depth-in",
+    type=click.IntRange(min=0),
+    default=None,
+    help="Inbound traversal depth (follows backlinks). Default 1; not allowed with --depth.",
+)
+@click.option(
+    "--full",
+    is_flag=True,
+    default=False,
+    help="Print full document bodies instead of the default neighbour table.",
 )
 @click.pass_context
-def codex_map(ctx, doc_id, depth):
+def codex_map(ctx, doc_id, depth, depth_out, depth_in, full):
     """Map a codex document cluster via BFS traversal of 'related' links."""
+    json_mode = ctx.obj.get("json", False)
+    # FR-10: conflict-flag check BEFORE any I/O.
+    if depth is not None and (depth_in is not None or depth_out is not None):
+        msg = (
+            "--depth cannot be combined with --depth-in or --depth-out. "
+            "Use --depth for symmetric traversal, or --depth-in and/or "
+            "--depth-out for directional traversal."
+        )
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+            ctx.exit(2)
+            return
+        raise click.UsageError(msg)
+
+    eff_out, eff_in = _resolve_codex_map_depths(depth, depth_out, depth_in)
+
     from lore.codex import map_documents
 
     project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
     codex_dir = paths.codex_dir(project_root)
 
-    documents = map_documents(codex_dir, doc_id, depth=depth)
+    documents = map_documents(
+        codex_dir, doc_id, depth_out=eff_out, depth_in=eff_in, full=full,
+    )
 
     if documents is None:
         if json_mode:
@@ -2481,13 +2563,10 @@ def codex_map(ctx, doc_id, depth):
         ctx.exit(1)
         return
 
-    if json_mode:
-        click.echo(json.dumps({"documents": documents}))
-        return
-
-    for doc in documents:
-        click.echo(f"=== {doc['id']} ===")
-        click.echo(doc["body"])
+    if full:
+        _render_codex_map_full(documents, json_mode=json_mode)
+    else:
+        _render_codex_map_default(documents, json_mode=json_mode)
 
 
 @codex.command("chaos")

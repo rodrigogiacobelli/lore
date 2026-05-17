@@ -19,10 +19,8 @@ and the default-file updates.
 
 from __future__ import annotations
 
-import importlib.resources
 import subprocess
 import tomllib
-from pathlib import Path
 
 import pytest
 import yaml
@@ -251,22 +249,6 @@ def test_init_then_codex_show_no_glossary_block(runner, fresh_dir):
 # ---------------------------------------------------------------------------
 
 
-def test_init_dot_gitignore_un_ignores_config_toml(runner, fresh_dir):
-    """conceptual-workflows-lore-init — Scenario 7 (target side)."""
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    gi = (fresh_dir / ".lore" / ".gitignore").read_text()
-    assert "!config.toml" in gi.splitlines(), (
-        f".lore/.gitignore must contain a literal `!config.toml` line; got:\n{gi}"
-    )
-
-
-def test_default_gitignore_template_un_ignores_config_toml():
-    """conceptual-workflows-lore-init — Scenario 7 (template side)."""
-    src = importlib.resources.files("lore.defaults").joinpath("gitignore").read_text()
-    assert "!config.toml" in src.splitlines()
-
-
 def test_init_then_git_status_shows_config_toml_untracked(runner, fresh_dir):
     """conceptual-workflows-lore-init — Scenario 7 (effective un-ignore)."""
     # Initialise a git repo first so .gitignore takes effect
@@ -345,197 +327,9 @@ def test_init_seeded_config_parses_as_toml_with_known_key(runner, fresh_dir):
 # ===========================================================================
 # US-007 — Default-seeded doc, skill, and knight glossary updates
 # ===========================================================================
-
-
-# ---------------------------------------------------------------------------
-# Scenario 1 — LORE-AGENT.md mentions glossary
-# ---------------------------------------------------------------------------
-
-
-def test_init_seeds_lore_agent_md_with_glossary_mention(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 1."""
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    text = (fresh_dir / ".lore" / "LORE-AGENT.md").read_text().lower()
-    assert "lore glossary" in text
-
-
-def test_init_seeds_lore_agent_md_describes_auto_surface(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 1 (auto-surface)."""
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    text = (fresh_dir / ".lore" / "LORE-AGENT.md").read_text().lower()
-    assert (
-        ("auto-attach" in text)
-        or ("auto-surface" in text)
-        or ("appends matched glossary" in text)
-    )
-
-
-# ---------------------------------------------------------------------------
-# Scenario 2 — Seeded CODEX.md documents the glossary
-# ---------------------------------------------------------------------------
-
-
-def test_init_seeds_codex_md_with_glossary_section(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 2.
-
-    The seeded codex root at ``.lore/codex/CODEX.md`` must mention the
-    glossary layer so readers discover the vocabulary surface from the
-    top.
-    """
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    p = fresh_dir / ".lore" / "codex" / "CODEX.md"
-    assert p.is_file(), ".lore/codex/CODEX.md must be seeded by `lore init`."
-    lower = p.read_text().lower()
-    assert "glossary" in lower
-
-
-# ---------------------------------------------------------------------------
-# Scenario 3 — explore-codex SKILL lists glossary commands
-# ---------------------------------------------------------------------------
-
-
-def test_init_seeds_explore_codex_skill_with_glossary_commands(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 3."""
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    text = (
-        fresh_dir / ".lore" / "skills" / "explore-codex" / "SKILL.md"
-    ).read_text()
-    for s in ("lore glossary list", "lore glossary search", "lore glossary show"):
-        assert s in text, f"explore-codex SKILL must list `{s}`"
-
-
-# ---------------------------------------------------------------------------
-# Scenario 4 — start-quest SKILL aligns on vocabulary
-# ---------------------------------------------------------------------------
-
-
-def test_init_seeds_start_quest_skill_with_glossary_alignment(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 4."""
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    text = (fresh_dir / ".lore" / "skills" / "start-quest" / "SKILL.md").read_text()
-    assert "lore glossary" in text
-
-
-# ---------------------------------------------------------------------------
-# Scenario 5 — scout knight names glossary as input
-# ---------------------------------------------------------------------------
-
-
-def test_init_seeds_scout_knight_with_glossary_input(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 5."""
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-    text = (
-        fresh_dir
-        / ".lore"
-        / "knights"
-        / "default"
-        / "feature-implementation"
-        / "scout.md"
-    ).read_text()
-    assert "lore glossary list" in text
-
-
-# ---------------------------------------------------------------------------
-# Scenario 6 — Dev knights remain glossary-free
-# ---------------------------------------------------------------------------
 #
-# Scenario 6 is an FR-29 NEGATIVE guard — the dev knights (tdd-red, tdd-green,
-# tdd-refactor, tech-lead) MUST NOT contain `lore glossary` or `glossary.yaml`.
-# These four files satisfy the constraint today and will continue to satisfy
-# it after Green (Green only edits scout.md, the two SKILLs, LORE-AGENT.md
-# and creates CODEX.md).  A test asserting the negative therefore cannot be
-# made to fail in this Red phase — it is a perpetual invariant, not a
-# behaviour gap.  Per the tdd-red knight rule "tests passing immediately are
-# not testing new behaviour", the negative guard is intentionally NOT
-# included here.  G6 (Refactor) or a separate regression watcher should pin
-# this invariant; the unit-level negative parametrised guard in
-# tests/unit/test_default_seed_glossary_content.py is similarly omitted.
-#
-# Tracking note: glossary-us-007 Scenario 6 is covered by the FR-29 spec
-# language; the Green implementer must NOT touch dev knight files.
-
-
-# ---------------------------------------------------------------------------
-# Scenario 7 — Default copies match seeded sources byte-for-byte
-# ---------------------------------------------------------------------------
-#
-# Scenario 7 asserts the copier propagates seed sources verbatim.  Today the
-# copier already does this for every existing file; the only file the test
-# would fail on is `CODEX.md` (which doesn't exist as a source yet — covered
-# explicitly below).  After Green, every pair must remain byte-equal, but
-# the test would pass *now* on every existing file because nothing has
-# changed.  Per the tdd-red rule, the per-existing-file byte-equality
-# assertions are NOT included here — they belong to G6 (Refactor) regression
-# pins.  The CODEX.md case is exercised below as a missing-file failure.
-
-
-def test_init_copies_codex_artifact_byte_for_byte(runner, fresh_dir):
-    """conceptual-workflows-lore-init — artifact copy is verbatim.
-
-    The packaged ``defaults/artifacts/codex/CODEX.md`` must land at
-    ``.lore/artifacts/default/codex/CODEX.md`` byte-for-byte. The
-    artifact is the single source for the codex root template.
-    """
-    result = runner.invoke(main, ["init"])
-    assert result.exit_code == 0, result.output
-
-    target = fresh_dir / ".lore" / "artifacts" / "default" / "codex" / "CODEX.md"
-    assert target.is_file(), (
-        "lore init must copy the CODEX.md artifact to "
-        ".lore/artifacts/default/codex/CODEX.md."
-    )
-    source_text = (
-        importlib.resources.files("lore.defaults")
-        .joinpath("artifacts", "codex", "CODEX.md")
-        .read_text()
-    )
-    assert target.read_text() == source_text
-
-
-# ---------------------------------------------------------------------------
-# Scenario 8 — Updated seed files preserve frontmatter / structural invariants
-# ---------------------------------------------------------------------------
-#
-# Scenario 8 covers parse-clean and schema-valid invariants on the updated
-# scout knight.  Today scout.md already passes health --scope schemas,
-# making a vanilla post-init health-clean assertion always-true.  To keep
-# the Red phase honest, we instead pin the *combined* US-006 + US-007
-# pipeline: after init, .lore/CODEX.md must be present (US-007 Scenario 2
-# pre-condition) AND scout.md must contain the new substring AND health
-# --scope schemas must pass.  The first two clauses fail today; the third
-# is the schema-invariant the Green implementer must preserve.
-
-
-def test_init_us007_pipeline_health_schemas_remains_clean(runner, fresh_dir):
-    """conceptual-workflows-glossary — US-007 Scenario 8 (combined invariant).
-
-    After Green updates scout.md / SKILLs / LORE-AGENT.md / CODEX.md, the
-    full ``lore health --scope schemas`` run must remain exit-0.  This
-    test couples the schema-clean assertion to the new scout substring so
-    it fails today (substring missing) and only flips green when both the
-    update and the schema invariant hold.
-    """
-    init_res = runner.invoke(main, ["init"])
-    assert init_res.exit_code == 0, init_res.output
-
-    scout_text = (
-        fresh_dir
-        / ".lore"
-        / "knights"
-        / "default"
-        / "feature-implementation"
-        / "scout.md"
-    ).read_text()
-    assert "lore glossary list" in scout_text, (
-        "scout.md must reference `lore glossary list` (US-007 Scenario 5) — "
-        "Scenario 8 schema-clean only matters if the update has landed."
-    )
-
-    res = runner.invoke(main, ["health", "--scope", "schemas"])
-    assert res.exit_code == 0, res.output
+# Removed per ADR-006 (decisions-006-no-seed-content-tests). Every US-007
+# scenario asserted specific substrings or byte-equality on seeded default
+# files (LORE-AGENT.md, CODEX.md, SKILL.md, scout.md). Existence and
+# schema-clean invariants for those files are covered by the US-006 tests
+# above and by `lore health --scope schemas`.

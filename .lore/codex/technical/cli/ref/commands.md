@@ -112,6 +112,35 @@ Slash-delimited segment-prefix matching. `--filter feature-implementation` match
 
 `lore codex show <id1> <id2>` and `lore artifact show <id1> <id2>` emit zero partial output if any ID is missing. Failure: `Document "<id>" not found` or `Artifact "<id>" not found`, exit 1. Avoid scripting on partial output — there is none.
 
+### `lore codex map` flag matrix
+
+Default output is a list-shape table — columns ID, GROUP, TITLE, SUMMARY, same renderer as `lore codex list`. Default JSON envelope key is `"codex"`. Traversal is bidirectional at depth 1 in both axes by default.
+
+| Flags passed | Outbound budget | Inbound budget |
+|--------------|-----------------|----------------|
+| none | `1` | `1` |
+| `--depth N` | `N` | `N` |
+| `--depth-out N` only | `N` | `0` |
+| `--depth-in N` only | `0` | `N` |
+| `--depth-out A --depth-in B` | `A` | `B` |
+| `--depth N` + `--depth-in M` or `--depth-out M` | error — exit 2, see below |
+
+All three depth flags are `click.IntRange(min=0)`. `--full` is a flag (no value); it switches the default neighbour table to the legacy full-body output and composes with directional flags. The seed is never present in the output under any flag combination.
+
+### `lore codex map` conflict-flag error
+
+Combining `--depth` with `--depth-in` or `--depth-out` raises a Click `UsageError` before any I/O. Exit code 2. The byte-for-byte stderr message (used in tests):
+
+```
+--depth cannot be combined with --depth-in or --depth-out. Use --depth for symmetric traversal, or --depth-in and/or --depth-out for directional traversal.
+```
+
+In `--json` mode the same wording lands inside `{"error": "..."}` to stderr, still exit 2. `--depth-in` and `--depth-out` together are valid and combine.
+
+### `lore codex map --full` JSON envelope
+
+Default `--json` envelope key is `"codex"` (matches `lore codex list --json`). `--full --json` keeps the legacy `"documents"` key for backward compatibility, with `group` and `related` keys added per entry (additively — existing consumers reading `id`/`title`/`summary`/`body` are unaffected).
+
 ### `lore codex chaos --threshold` range
 
 Enforced in two places: Click `IntRange(min=30, max=100)` and `lore.validators.validate_chaos_threshold`. Both required for ADR-011 parity. The Python entry point raises `ValueError`; the CLI surfaces a Click usage error (exit 2).

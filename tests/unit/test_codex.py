@@ -28,23 +28,21 @@ def _write_doc(
     omit_related: bool = False,
 ) -> Path:
     """Write a minimal valid codex document into codex_dir and return the path."""
-    related_line = ""
+    lines = [
+        "---",
+        f"id: {doc_id}",
+        f"title: {doc_id.replace('-', ' ').title()}",
+        f"summary: Summary for {doc_id}.",
+    ]
     if not omit_related:
         if related is None:
-            related_line = "related: []"
+            lines.append("related: []")
         else:
-            items = "\n".join(f"  - {r}" for r in related)
-            related_line = f"related:\n{items}"
-    content = textwrap.dedent(f"""\
-        ---
-        id: {doc_id}
-        title: {doc_id.replace("-", " ").title()}
-        summary: Summary for {doc_id}.
-        {related_line}
-        ---
-
-        Body of {doc_id}.
-    """)
+            lines.append("related:")
+            for r in related:
+                lines.append(f"  - {r}")
+    lines.extend(["---", "", f"Body of {doc_id}.", ""])
+    content = "\n".join(lines)
     filepath = codex_dir / f"{doc_id}.md"
     filepath.write_text(content)
     return filepath
@@ -57,183 +55,11 @@ def _make_codex_dir(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# map_documents — depth 1
+# map_documents tests live in tests/unit/test_codex_map.py — rewritten
+# against the new signature `(codex_dir, start_id, *, depth_out=1,
+# depth_in=1, full=False)`. The legacy positional `depth` tests previously
+# at this location were removed per codex-map-tech-spec § Project Structure.
 # ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 2 (depth 1 BFS)
-def test_map_documents_depth_1_returns_root_and_direct_neighbours(tmp_path):
-    """depth=1 returns root dict followed by all direct neighbours in related-list order."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["child-a", "child-b"])
-    _write_doc(codex_dir, "child-a")
-    _write_doc(codex_dir, "child-b")
-
-    result = map_documents(codex_dir, "root", depth=1)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert ids[0] == "root"
-    assert "child-a" in ids
-    assert "child-b" in ids
-    assert len(ids) == 3
-
-
-# ---------------------------------------------------------------------------
-# map_documents — depth 2
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 2 (depth 2 BFS)
-def test_map_documents_depth_2_returns_root_depth1_depth2(tmp_path):
-    """depth=2 returns root + depth-1 + depth-2 in BFS order (depth-1 before depth-2)."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["child-a"])
-    _write_doc(codex_dir, "child-a", related=["grandchild-x"])
-    _write_doc(codex_dir, "grandchild-x")
-
-    result = map_documents(codex_dir, "root", depth=2)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert ids[0] == "root"
-    assert ids.index("child-a") < ids.index("grandchild-x")
-    assert set(ids) == {"root", "child-a", "grandchild-x"}
-
-
-# ---------------------------------------------------------------------------
-# map_documents — deduplication
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 2 (visited set deduplication)
-def test_map_documents_deduplication(tmp_path):
-    """Document reachable via two paths appears exactly once in result."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["child-a", "child-b"])
-    _write_doc(codex_dir, "child-a", related=["shared"])
-    _write_doc(codex_dir, "child-b", related=["shared"])
-    _write_doc(codex_dir, "shared")
-
-    result = map_documents(codex_dir, "root", depth=2)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert ids.count("shared") == 1
-
-
-# ---------------------------------------------------------------------------
-# map_documents — cycle safety
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 2 (cycle safety)
-def test_map_documents_cycle_both_docs_appear_once(tmp_path):
-    """Cycle A → B → A: both documents appear exactly once and function terminates."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "cycle-a", related=["cycle-b"])
-    _write_doc(codex_dir, "cycle-b", related=["cycle-a"])
-
-    result = map_documents(codex_dir, "cycle-a", depth=3)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert ids.count("cycle-a") == 1
-    assert ids.count("cycle-b") == 1
-
-
-# ---------------------------------------------------------------------------
-# map_documents — start_id not found
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 1 (validate root — returns None)
-def test_map_documents_returns_none_when_start_id_missing(tmp_path):
-    """Returns None when start_id is not in the codex index."""
-    codex_dir = _make_codex_dir(tmp_path)
-
-    result = map_documents(codex_dir, "nonexistent-id", depth=1)
-
-    assert result is None
-
-
-# ---------------------------------------------------------------------------
-# map_documents — broken related link
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 3 (dead link skip)
-def test_map_documents_broken_related_link_skipped(tmp_path):
-    """Broken related link (ID not in index) is silently skipped; valid neighbours still traversed."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["existing-child", "nonexistent-id"])
-    _write_doc(codex_dir, "existing-child")
-
-    result = map_documents(codex_dir, "root", depth=1)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert "root" in ids
-    assert "existing-child" in ids
-    assert "nonexistent-id" not in ids
-
-
-# ---------------------------------------------------------------------------
-# map_documents — leaf node with empty related list
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 3 (_read_related returns [] for empty list)
-def test_map_documents_empty_related_list_is_leaf(tmp_path):
-    """Document with related: [] returns list containing only root, no error raised."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "leaf-doc", related=[])
-
-    result = map_documents(codex_dir, "leaf-doc", depth=2)
-
-    assert result is not None
-    assert len(result) == 1
-    assert result[0]["id"] == "leaf-doc"
-
-
-# ---------------------------------------------------------------------------
-# map_documents — absent related field treated as leaf
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 3 (_read_related returns [] for absent field)
-def test_map_documents_absent_related_field_is_leaf(tmp_path):
-    """Document with no related field in frontmatter is treated as leaf node."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "leaf-doc", omit_related=True)
-
-    result = map_documents(codex_dir, "leaf-doc", depth=2)
-
-    assert result is not None
-    assert len(result) == 1
-    assert result[0]["id"] == "leaf-doc"
-
-
-# ---------------------------------------------------------------------------
-# map_documents — determinism
-# ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map step 2 (determinism via alphabetical sort in _read_related)
-def test_map_documents_output_is_deterministic(tmp_path):
-    """Two calls with same input produce identical result list."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["alpha", "beta", "gamma"])
-    _write_doc(codex_dir, "alpha")
-    _write_doc(codex_dir, "beta")
-    _write_doc(codex_dir, "gamma")
-
-    result_1 = map_documents(codex_dir, "root", depth=1)
-    result_2 = map_documents(codex_dir, "root", depth=1)
-
-    assert result_1 is not None
-    assert result_2 is not None
-    assert [d["id"] for d in result_1] == [d["id"] for d in result_2]
 
 
 # ---------------------------------------------------------------------------
@@ -422,58 +248,10 @@ def test_read_related_casts_non_string_entries(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# US-2: map_documents — depth boundary unit tests
+# US-2: map_documents depth-boundary tests live in test_codex_map.py against
+# the new directional kwargs. The legacy `depth=N` boundary tests previously
+# here were removed per codex-map-tech-spec.
 # ---------------------------------------------------------------------------
-
-
-# conceptual-workflows-codex-map parameters table (depth 0)
-def test_map_documents_depth_0_returns_root_only(tmp_path):
-    """depth=0 returns a list containing only the root document dict, with no neighbours."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["child-a"])
-    _write_doc(codex_dir, "child-a")
-
-    result = map_documents(codex_dir, "root", depth=0)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert ids == ["root"]
-    assert "child-a" not in ids
-
-
-# conceptual-workflows-codex-map step 2 (depth 1 cutoff)
-def test_map_documents_depth_1_excludes_grandchildren(tmp_path):
-    """depth=1 returns root plus direct neighbours; grandchildren not included."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["child-a"])
-    _write_doc(codex_dir, "child-a", related=["grandchild-x"])
-    _write_doc(codex_dir, "grandchild-x")
-
-    result = map_documents(codex_dir, "root", depth=1)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert "root" in ids
-    assert "child-a" in ids
-    assert "grandchild-x" not in ids
-
-
-# conceptual-workflows-codex-map step 2 (depth 2)
-def test_map_documents_depth_2_includes_grandchildren(tmp_path):
-    """depth=2 returns root plus depth-1 plus depth-2 documents."""
-    codex_dir = _make_codex_dir(tmp_path)
-    _write_doc(codex_dir, "root", related=["child-a"])
-    _write_doc(codex_dir, "child-a", related=["grandchild-x"])
-    _write_doc(codex_dir, "grandchild-x")
-
-    result = map_documents(codex_dir, "root", depth=2)
-
-    assert result is not None
-    ids = [d["id"] for d in result]
-    assert "root" in ids
-    assert "child-a" in ids
-    assert "grandchild-x" in ids
-    assert ids.index("child-a") < ids.index("grandchild-x")
 
 
 # ---------------------------------------------------------------------------
@@ -506,13 +284,10 @@ def test_codex_map_doc_id_is_required_argument():
     assert doc_id_param.required
 
 
-# conceptual-workflows-codex-map (--depth defaults to 1)
-def test_codex_map_depth_option_defaults_to_1_unit():
-    """The '--depth' option on the 'map' command must default to 1."""
-    from lore.cli import codex_map
-
-    depth_param = next(p for p in codex_map.params if p.name == "depth")
-    assert depth_param.default == 1
+# The legacy `--depth defaults to 1` test was removed: after the refactor,
+# `--depth` defaults to None (the handler resolves the effective budgets).
+# Coverage for the new default — depth_out=1, depth_in=1 at the Python API
+# level — lives in tests/unit/test_codex_map.py.
 
 
 # ---------------------------------------------------------------------------

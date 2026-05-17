@@ -3,8 +3,6 @@
 Workflow: conceptual-workflows-codex-chaos
 """
 
-import textwrap
-
 from lore.cli import main
 
 
@@ -15,23 +13,21 @@ from lore.cli import main
 
 def _write_codex_doc(project_dir, doc_id, *, related=None, omit_related=False):
     """Write a codex document into .lore/codex/ and return its path."""
-    related_line = ""
+    lines = [
+        "---",
+        f"id: {doc_id}",
+        f"title: {doc_id.replace('-', ' ').title()}",
+        f"summary: Summary for {doc_id}.",
+    ]
     if not omit_related:
         if related is None:
-            related_line = "related: []"
+            lines.append("related: []")
         else:
-            items = "\n".join(f"  - {r}" for r in related)
-            related_line = f"related:\n{items}"
-    content = textwrap.dedent(f"""\
-        ---
-        id: {doc_id}
-        title: {doc_id.replace("-", " ").title()}
-        summary: Summary for {doc_id}.
-        {related_line}
-        ---
-
-        Body of {doc_id}.
-    """)
+            lines.append("related:")
+            for r in related:
+                lines.append(f"  - {r}")
+    lines.extend(["---", "", f"Body of {doc_id}.", ""])
+    content = "\n".join(lines)
     codex_dir = project_dir / ".lore" / "codex"
     codex_dir.mkdir(parents=True, exist_ok=True)
     path = codex_dir / f"{doc_id}.md"

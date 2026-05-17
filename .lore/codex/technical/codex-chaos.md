@@ -50,12 +50,15 @@ The algorithm executes in six steps:
    `dict[str, dict]` keyed by document ID. If `start_id` is not in the index,
    return `None`.
 
-4. **Bidirectional adjacency pre-pass** — iterate over every document in the index.
-   For each document, call `_read_related(filepath, index)` to get its declared
-   neighbour IDs. Register each declared link in both directions in an adjacency
-   `dict[str, set[str]]`. This pre-pass runs once; `_read_related` is not called
-   again during the walk. This avoids the N+1 `scan_codex` problem that would arise
-   from calling `_read_related` per walk step.
+4. **Bidirectional adjacency pre-pass** — delegate to the shared
+   `_build_adjacency(index, docs)` helper (also used by `map_documents`). The
+   helper returns `(outbound, inbound)` directional maps; `chaos_documents`
+   unions them into a single undirected adjacency
+   `dict[str, set[str]]` via `{k: outbound[k] | inbound[k] for k in index}`.
+   This pre-pass runs once; `_read_related` is not called again during the
+   walk. Behaviour is identical to the previous inline build — only the helper
+   is shared with `map_documents` (DRY, single home for the per-doc
+   `_read_related` loop). See `tech-arch-codex-map` for the helper's contract.
 
 5. **Reachable-set BFS** — perform a standard BFS from `start_id` over the
    bidirectional adjacency map to produce `reachable: set[str]`. This is the
@@ -86,7 +89,12 @@ undirected: `A → B` is registered as both A ∈ neighbours(B) and B ∈ neighb
 This ensures that a document reachable via an inbound link is included in the walk
 candidate set, not just documents reachable via outbound links.
 
-`map_documents` is unchanged. Its directed-only traversal behaviour is preserved.
+`map_documents` walks the same adjacency via the shared `_build_adjacency`
+helper, but keeps the two directions separate so it can budget outbound and
+inbound traversal independently (`--depth-out` and `--depth-in`). Chaos
+unions the two maps because its random walk treats the graph as undirected;
+map keeps them split because its semantics are directional. See
+`tech-arch-codex-map` for the helper's contract.
 
 ## RNG Injection Pattern
 

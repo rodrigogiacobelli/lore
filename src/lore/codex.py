@@ -4,56 +4,12 @@ import collections
 import random as _random
 from pathlib import Path
 
-import yaml
-
 from lore import frontmatter
 from lore import paths as _paths
 
 
-def _parse_doc_robust(
-    filepath: Path,
-    *,
-    extra_fields: tuple[str, ...] = (),
-    include_body: bool = False,
-) -> dict | None:
-    """Parse a codex markdown file tolerantly.
-
-    Unlike ``frontmatter.parse_frontmatter_doc_full``, this function strips
-    leading/trailing whitespace from each line of the frontmatter block before
-    YAML parsing. This makes it resilient to frontmatter that has been
-    inadvertently indented (e.g. in test fixtures produced by ``textwrap.dedent``
-    on a string with inconsistent indentation).
-
-    Returns a dict with keys for each required field plus ``path`` (and
-    optionally ``body`` and each name in ``extra_fields``), or ``None`` if
-    parsing fails.
-    """
-    try:
-        text = filepath.read_text()
-        parts = text.split("---", 2)
-        if len(parts) < 3:
-            return None
-        # Normalise each line of the frontmatter block so that indented
-        # frontmatter (a common test-fixture artefact) is still parseable.
-        fm_lines = parts[1].split("\n")
-        fm_normalised = "\n".join(line.strip() for line in fm_lines)
-        fm = yaml.safe_load(fm_normalised)
-    except Exception:
-        return None
-
-    if not isinstance(fm, dict):
-        return None
-    if any(field not in fm or fm[field] is None for field in frontmatter._REQUIRED_FIELDS):
-        return None
-
-    result: dict = {field: str(fm[field]) for field in frontmatter._REQUIRED_FIELDS}
-    result["path"] = filepath
-    for field in extra_fields:
-        if field in fm:
-            result[field] = fm[field]
-    if include_body:
-        result["body"] = parts[2].lstrip("\n")
-    return result
+class ConflictingDepthFlags(ValueError):
+    """Raised when callers combine symmetric `depth` with directional flags."""
 
 
 def scan_codex(codex_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
@@ -137,7 +93,7 @@ def _read_related(filepath: Path, index: dict) -> list[str]:
     strips whitespace, drops null entries, and returns a sorted list for
     determinism.
     """
-    record = _parse_doc_robust(filepath, extra_fields=("related",))
+    record = frontmatter.parse_frontmatter_doc(filepath, extra_fields=("related",))
     if record is None:
         return []
 
@@ -156,72 +112,131 @@ def _read_related(filepath: Path, index: dict) -> list[str]:
     return sorted(result)
 
 
-def _scan_codex_robust(codex_dir: Path) -> list[dict]:
-    """Like ``scan_codex`` but uses ``_parse_doc_robust`` for tolerant parsing.
+def _build_adjacency(
+    index: dict[str, dict],
+    docs: list[dict],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Build outbound/inbound adjacency maps from related links.
 
-    Used internally by ``map_documents`` so that test fixtures with indented
-    frontmatter are still discovered.
+    Iterates ``docs`` once, calling ``_read_related`` per doc. Both result
+    dicts are initialised with empty sets for every key in ``index``.
     """
-    if not codex_dir.exists():
-        return []
-
-    results = []
-    for filepath in codex_dir.rglob("*.md"):
-        record = _parse_doc_robust(filepath)
-        if record is not None:
-            results.append(record)
-
-    return sorted(results, key=lambda d: d["id"])
+    outbound: dict[str, set[str]] = {doc_id: set() for doc_id in index}
+    inbound: dict[str, set[str]] = {doc_id: set() for doc_id in index}
+    for doc in docs:
+        neighbours = _read_related(doc["path"], index)
+        for neighbour_id in neighbours:
+            outbound[doc["id"]].add(neighbour_id)
+            inbound[neighbour_id].add(doc["id"])
+    return outbound, inbound
 
 
-def map_documents(codex_dir: Path, start_id: str, depth: int) -> list[dict] | None:
-    """BFS traversal of the codex document graph starting from ``start_id``.
+def _bfs_neighbour_ids(
+    start_id: str,
+    outbound: dict[str, set[str]],
+    inbound: dict[str, set[str]],
+    depth_out: int,
+    depth_in: int,
+) -> list[str]:
+    """BFS from start_id honouring separate outbound/inbound depth budgets.
 
-    Returns a list of full document dicts (id, title, summary, body) in
-    BFS order up to ``depth`` hops from the root. Each document appears at most
-    once. Returns ``None`` if ``start_id`` is not in the codex index.
-
-    Broken ``related`` links (IDs not in the index) are silently skipped.
+    Returns the sorted list of discovered ids excluding the seed. Each id
+    appears at most once (visited-set dedupe across both directions).
     """
-    docs = _scan_codex_robust(codex_dir)
+    visited: set[str] = {start_id}
+    queue: collections.deque = collections.deque([(start_id, 0, 0)])
+    result_ids: list[str] = []
+    while queue:
+        doc_id, out_used, in_used = queue.popleft()
+        if doc_id != start_id:
+            result_ids.append(doc_id)
+        if out_used < depth_out:
+            for nb in outbound[doc_id]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, out_used + 1, in_used))
+        if in_used < depth_in:
+            for nb in inbound[doc_id]:
+                if nb not in visited:
+                    visited.add(nb)
+                    queue.append((nb, out_used, in_used + 1))
+    result_ids.sort()
+    return result_ids
+
+
+def _build_neighbour_record(
+    meta: dict,
+    codex_dir: Path,
+    *,
+    full: bool,
+) -> dict | None:
+    """Build a single map_documents result record for one neighbour id.
+
+    In default mode returns {id, group, title, summary} from index metadata.
+    In full mode re-parses the file to attach related + body. Returns None
+    only in full mode when the file fails to re-parse (caller skips it).
+    """
+    group = _paths.derive_group(meta["path"], codex_dir)
+    if not full:
+        return {
+            "id": meta["id"],
+            "title": meta["title"],
+            "summary": meta["summary"],
+            "group": group,
+        }
+    rec = frontmatter.parse_frontmatter_doc_full(
+        meta["path"], extra_fields=("related",)
+    )
+    if rec is None:
+        return None
+    return {
+        "id": rec["id"],
+        "title": rec["title"],
+        "summary": rec["summary"],
+        "group": group,
+        "related": list(rec.get("related") or []),
+        "body": rec["body"],
+    }
+
+
+def map_documents(
+    codex_dir: Path,
+    start_id: str,
+    *,
+    depth_out: int = 1,
+    depth_in: int = 1,
+    full: bool = False,
+) -> list[dict] | None:
+    """BFS the codex graph from start_id with separate outbound/inbound budgets.
+
+    Returns a list of records (one per neighbour, alphabetically by id):
+      - default (full=False): {"id", "group", "title", "summary"}
+      - full mode (full=True): {"id", "group", "title", "summary", "related", "body"}
+
+    The seed is never present in the result. Records are deduplicated by id.
+
+    Returns None iff start_id is not in the codex index. An empty
+    neighbourhood is the empty list [], not None.
+    """
+    if depth_out < 0 or depth_in < 0:
+        raise ValueError("depth_out and depth_in must be non-negative")
+
+    docs = scan_codex(codex_dir)
     index = {doc["id"]: doc for doc in docs}
-
     if start_id not in index:
         return None
 
-    visited: set[str] = set()
-    result: list[dict] = []
+    outbound, inbound = _build_adjacency(index, docs)
+    neighbour_ids = _bfs_neighbour_ids(
+        start_id, outbound, inbound, depth_out, depth_in
+    )
 
-    # Queue items: (doc_id, current_depth)
-    queue: collections.deque = collections.deque()
-    queue.append((start_id, 0))
-    visited.add(start_id)
-
-    while queue:
-        current_id, current_depth = queue.popleft()
-        doc_meta = index[current_id]
-        full_record = _parse_doc_robust(
-            doc_meta["path"],
-            include_body=True,
-        )
-        if full_record is None:
-            continue
-
-        result.append({
-            "id": full_record["id"],
-            "title": full_record["title"],
-            "summary": full_record["summary"],
-            "body": full_record["body"],
-        })
-
-        if current_depth < depth:
-            neighbours = _read_related(doc_meta["path"], index)
-            for neighbour_id in neighbours:
-                if neighbour_id not in visited:
-                    visited.add(neighbour_id)
-                    queue.append((neighbour_id, current_depth + 1))
-
-    return result
+    records: list[dict] = []
+    for doc_id in neighbour_ids:
+        record = _build_neighbour_record(index[doc_id], codex_dir, full=full)
+        if record is not None:
+            records.append(record)
+    return records
 
 
 def chaos_documents(
@@ -250,7 +265,7 @@ def chaos_documents(
         raise ValueError(err)
 
     codex_dir = project_root / ".lore" / "codex"
-    docs = _scan_codex_robust(codex_dir)
+    docs = scan_codex(codex_dir)
     index = {doc["id"]: doc for doc in docs}
 
     if start_id not in index:
@@ -259,13 +274,9 @@ def chaos_documents(
     if rng is None:
         rng = _random.Random()
 
-    # Build bidirectional adjacency from related links
-    adjacency: dict[str, set[str]] = {doc_id: set() for doc_id in index}
-    for doc in docs:
-        neighbours = _read_related(doc["path"], index)
-        for neighbour_id in neighbours:
-            adjacency[doc["id"]].add(neighbour_id)
-            adjacency[neighbour_id].add(doc["id"])
+    # Build bidirectional adjacency from related links via shared helper.
+    outbound, inbound = _build_adjacency(index, docs)
+    adjacency: dict[str, set[str]] = {k: outbound[k] | inbound[k] for k in index}
 
     # BFS to find all reachable nodes from start_id
     reachable: set[str] = set()
@@ -287,7 +298,7 @@ def chaos_documents(
     visited: set[str] = {start_id}
 
     seed_doc = index[start_id]
-    seed_record = _parse_doc_robust(seed_doc["path"])
+    seed_record = frontmatter.parse_frontmatter_doc(seed_doc["path"])
     if seed_record is not None:
         result.append({
             "id": seed_record["id"],
@@ -317,7 +328,7 @@ def chaos_documents(
         visited.add(next_id)
 
         doc_meta = index[next_id]
-        record = _parse_doc_robust(doc_meta["path"])
+        record = frontmatter.parse_frontmatter_doc(doc_meta["path"])
         if record is not None:
             result.append({
                 "id": record["id"],

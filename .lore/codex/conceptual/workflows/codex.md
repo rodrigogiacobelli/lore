@@ -112,14 +112,25 @@ A malformed glossary fails soft: a single stderr line `glossary unavailable: <re
 
 `"glossary"` is always present. It is `[]` when no items match, when `--skip-glossary` was passed, when `show-glossary-on-codex-commands = false`, or when the glossary failed to load. The field-presence rule matches conceptual-workflows-json-output.
 
-## Steps — Map (`lore codex map <id> --depth <n>`)
+## Steps — Map (`lore codex map <id> [--depth N | --depth-in N --depth-out N] [--full]`)
 
-`lore codex map` performs BFS traversal of the `related` frontmatter field starting
-from a root document, returning every discovered document in BFS order up to the
-requested depth. For the complete workflow, see
-`conceptual-workflows-codex-map` (`lore codex show conceptual-workflows-codex-map`).
+`lore codex map` is a graph-shaped index over the codex. The default output is
+a table of neighbours — same columns as `lore codex list` (ID, GROUP, TITLE,
+SUMMARY) — built by walking outbound `related` edges and inbound backlinks
+from the seed. The seed itself is never included in the output. The default
+mode never reads document bodies; it is intentionally cheap for agents that
+want to triage the neighbourhood before deciding which IDs to `lore codex show`.
 
-Output format matches `lore codex show` exactly in both text and JSON modes.
+Directional flags `--depth-in N` and `--depth-out N` control each axis
+independently. `--depth N` sets both axes to N and is mutually exclusive with
+the directional pair — combining them exits 2 with a clear usage error.
+
+`--full` switches the output to full markdown bodies (the legacy shape). It
+composes with all directional flags.
+
+For the complete workflow, including the JSON envelope shape per mode and the
+exact conflict-flag error message, see `conceptual-workflows-codex-map`
+(`lore codex show conceptual-workflows-codex-map`).
 
 ## Steps — Chaos (`lore codex chaos <id> --threshold <int>`)
 
@@ -140,6 +151,8 @@ first row. Output order is non-deterministic.
 |---|---|---|
 | Document not found (show) | `Document "<id>" not found` to stderr | 1 |
 | Document not found (map) | `Document "<id>" not found` to stderr | 1 |
+| `--depth` combined with `--depth-in` or `--depth-out` (map) | Click `UsageError` with the pinned conflict message; same wording inside `{"error": "..."}` envelope in `--json` mode | 2 |
+| Empty neighbourhood (map, default) | `No related documents.` to stdout; JSON `{"codex": []}` | 0 |
 | Seed not found (chaos) | `Document "<id>" not found` to stderr | 1 |
 | `--threshold` out of range (chaos) | `--threshold must be between 30 and 100` to stderr | 1 |
 | No documents in codex (list) | `No codex documents found.` | 0 |

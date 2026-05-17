@@ -13,7 +13,10 @@ Use the Lore codex to research a question, compare information, or map out a dom
 |------|---------|
 | Find documents by keyword | `lore codex search <keyword>` |
 | Read one or more documents | `lore codex show <id1> <id2> ...` |
-| Explore related documents from a starting point | `lore codex map <id> --depth 1` |
+| List neighbours of a document (bidirectional, depth 1 by default) | `lore codex map <id>` |
+| Read full bodies of a document and its neighbours | `lore codex map <id> --full` |
+| Walk outbound `related` links only | `lore codex map <id> --depth-out N` |
+| Walk inbound backlinks only | `lore codex map <id> --depth-in N` |
 | Discover loosely connected documents serendipitously | `lore codex chaos <id> --threshold <30-100>` |
 | See everything | `lore codex list` |
 | List project vocabulary | `lore glossary list` |
@@ -44,13 +47,19 @@ Prefer batching multiple IDs in one call over separate calls.
 
 ### 3. Traverse the graph if needed
 
-From the most relevant document, explore its connections:
+From the most relevant document, list its neighbours:
 
 ```
-lore codex map <id> --depth 1
+lore codex map <id>
 ```
 
-For broader discovery, use chaos traversal (threshold 30 = broad, 100 = tight):
+Default is a neighbour table — same columns as `lore codex list` — bidirectional at depth 1 (outbound `related` plus inbound backlinks). Tweak as needed:
+
+- `--depth N` — symmetric deeper walk
+- `--depth-out N` / `--depth-in N` — one-direction-only walk (mutually exclusive with `--depth`)
+- `--full` — print full bodies instead of the table
+
+For broader discovery, use chaos traversal. `--threshold` is required (30 = broad walk, 100 = tight walk):
 
 ```
 lore codex chaos <id> --threshold 50

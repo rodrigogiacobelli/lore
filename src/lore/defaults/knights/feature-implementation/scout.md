@@ -19,8 +19,8 @@ Treat the following as primary inputs on every mission:
 
 You search broadly and read deeply. Use multiple search strategies:
 - `lore codex search <keyword>` — run 2-4 searches with different keywords
-- `lore codex map <id> --depth 1` — traverse the related graph from the most relevant document
-- `lore codex chaos <id> --threshold <int>` — random walk to surface loosely related documents that structured search misses
+- `lore codex map <id>` — list neighbours of the most relevant document (bidirectional, depth 1 by default; add `--depth N`, `--depth-out N`, `--depth-in N`, or `--full` to widen / narrow)
+- `lore codex chaos <id> --threshold <30-100>` — random walk to surface loosely related documents that structured search misses (threshold required: 30 = broad, 100 = tight)
 
 Read every document that looks relevant to your assigned lens. When in doubt, include it — downstream agents can ignore what is not relevant; they cannot find what is missing.
 

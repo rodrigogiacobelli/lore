@@ -123,13 +123,18 @@ The `related` field is a list of codex IDs that this document links to. Cross-re
 
 `related` links are **directed**: declaring B in document A's `related` field means A
 references B, but it does not mean B references A. There is no automatic bidirectional
-linking. Cycles are possible (A → B → A) and are handled safely by `lore codex map`
-via a visited set — each document appears at most once in any traversal output.
+linking. Cycles are possible (A → B → A) and are handled safely by every traversal
+command via a visited set — each document appears at most once in any output.
 
-`lore codex map <id> --depth <n>` traverses this field automatically, performing
-deterministic BFS from a root document up to the requested depth.
-`lore codex chaos <id> --threshold <int>` is the non-deterministic sibling: a random
-walk that terminates when the fraction of the reachable subgraph discovered exceeds
-the threshold percentage.
+`lore codex map <id>` walks this field in both directions by default — outbound
+`related` edges and inbound backlinks at depth 1 each. The default output is a
+list-shape table of neighbours (ID, GROUP, TITLE, SUMMARY) — the same shape as
+`lore codex list`. Use `--depth-out N`, `--depth-in N`, or `--depth N` (symmetric)
+to widen the walk; use `--full` to retrieve full document bodies. The seed itself
+is never included in the output — map is a discovery primitive that hands the agent
+a list of IDs to inspect with `lore codex show`. `lore codex chaos <id> --threshold <int>`
+is the non-deterministic sibling: a random walk over the same adjacency that
+terminates when the fraction of the reachable subgraph discovered exceeds the
+threshold percentage.
 
 The `stability` field is either `stable` (production documentation) or `experimental` (provisional, subject to change).

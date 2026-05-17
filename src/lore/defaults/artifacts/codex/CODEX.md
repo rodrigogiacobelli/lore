@@ -71,12 +71,12 @@ Files live at `sources/<system>/<id>.md` where `<system>` is a free-form slug (e
 Source files carry exactly four frontmatter fields: `id`, `title`, `summary`, and `related`. All four are required. `related` is a non-empty array of canonical codex IDs — the canonical docs this source caused to change. `lore health` rejects any source file with missing fields, empty `related`, or any extra field.
 
 ### Verbatim rule
-
+  
 Source bodies are preserved verbatim from upstream. Light reformatting is permitted only when the upstream format is structurally unreadable (e.g. Atlassian ADF → markdown). Semantic content must not be altered.
 
 ### One-way linking
 
-Sources MUST link outward. Every source's `related` list names every canonical doc it caused to change — `lore codex map <source-id> --depth 1` returns exactly those docs. Canonical docs MUST NOT link back: no canonical doc may include a source ID in its `related` list. `lore health` enforces both directions — empty/missing `related` on a source is a schema error; a source ID appearing in any canonical doc's `related` is a `canonical_links_to_source` error.
+Sources MUST link outward. Every source's `related` list names every canonical doc it caused to change — `lore codex map <source-id> --depth-out 1` returns exactly those docs. Canonical docs MUST NOT link back: no canonical doc may include a source ID in its `related` list. `lore health` enforces both directions — empty/missing `related` on a source is a schema error; a source ID appearing in any canonical doc's `related` is a `canonical_links_to_source` error.
 
 ### Refresh rule
 
@@ -96,25 +96,9 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 
 **Granularity.** One doc per logical cluster, not per entity. Intent is usually a cluster property — splitting it across siblings duplicates or fragments the why. Go finer only when one entity carries intent that does not belong to its cluster (noisy gotcha, deprecation timeline, different owner). A boring CRUD entity with no surprising history needs no reference doc at all.
 
-**Body shape.**
+**Body content.** Intent-only: history, non-enforced constraints, gotchas, ownership, lifecycle, and a pointer to the source of truth. No schema dump — the reader who wants column types reads the migration. The reader who wants to know *why `order_id` has no FK constraint* reads this. Browse existing `ref-*` docs in the codex (`lore codex search ref-`) for shape examples.
 
-```markdown
-**Covers:** `orders`, `line_items`, `shipments`
-**Source of truth:** `db/orders/migrations/`
-
-## Why this exists
-...
-
-## Gotchas
-...
-
-## Shape
-~10 columns. Full schema in source file above.
-```
-
-No schema dump. The reader who wants column types reads the migration. The reader who wants to know *why `order_id` has no FK constraint* reads this.
-
-**Discoverability rule (enforced).** Cluster docs MUST name every covered entity verbatim in the body — the `**Covers:**` line is the canonical place — so `lore codex search <table_name>` lands on the cluster doc. Without this, granularity flexibility breaks search.
+**Discoverability rule (enforced).** Cluster docs MUST name every covered entity verbatim in the body — the conventional `**Covers:**` line is the canonical place — so `lore codex search <table_name>` lands on the cluster doc. Without this, granularity flexibility breaks search.
 
 **No new frontmatter.** Reference docs use the standard three fields (`id`, `title`, `summary`) plus optional `related`. There is no `kind`, no `system`, no `source_of_truth` field — the source-of-truth pointer lives in the body.
 
@@ -139,7 +123,7 @@ No schema dump. The reader who wants column types reads the migration. The reade
 
 Cross-references between documents belong exclusively in the `related` frontmatter field. Do not add "Related Documentation" sections to document bodies. One mechanism, one place.
 
-Use `lore codex map <id> --depth 1` to traverse the graph of related documents starting from any document.
+Use `lore codex map <id>` to list neighbours of any document. Default output is a list table — same columns as `lore codex list` — and traversal is bidirectional at depth 1 (outbound `related` plus inbound backlinks). Use `--depth N` for symmetric deeper walks, `--depth-out N` / `--depth-in N` for one-direction-only walks, and `--full` to print bodies instead of the list.
 
 ## The Development Pipeline
 
@@ -175,6 +159,6 @@ Every file has frontmatter with the fields below. The `summary` field is written
 
 | Field | Description |
 |-------|-------------|
-| `related` | YAML array of related codex IDs. Traversed by `lore codex map`. Omit or use `[]` if none. |
+| `related` | YAML array of related codex IDs. Followed outbound by `lore codex map` and surfaced inbound as backlinks. Omit or use `[]` if none. |
 
 No other frontmatter fields are permitted. `lore health` enforces this — any extra field fails validation.
