@@ -5,6 +5,12 @@ summary: Reference doc for `src/lore/doctrine.py` — the two-file model (design
   yaml), the schema-delegation rule, the cross-field validations the schema cannot
   express, and the cycle-detection algorithm. Source of truth is the module plus its
   two JSON Schemas.
+binds:
+- src/lore/doctrine.py
+- tests/unit/test_doctrine.py
+- tests/e2e/test_doctrine_list.py
+- tests/e2e/test_doctrine_new.py
+- tests/e2e/test_doctrine_show.py
 related:
 - conceptual-entities-doctrine
 - ref-lore_cli-commands

@@ -3,6 +3,11 @@ id: conceptual-workflows-knight-crud
 title: Knight CRUD Operations
 summary: >
   What the system does internally when creating, editing, and deleting knights via the CLI, including name validation rules shared with doctrines.
+binds:
+- src/lore/knight.py
+- src/lore/cli.py
+- tests/e2e/test_knight_crud.py
+- tests/unit/test_knight.py
 related: ["conceptual-entities-knight", "conceptual-workflows-knight-list", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 

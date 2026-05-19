@@ -3,7 +3,13 @@ id: conceptual-workflows-validators
 title: Input Validation
 summary: >
   What the system does internally when input validation runs — priority range checks, entity-ID format checks, message emptiness checks, and the wiring of lore.validators into the CLI and DB layers.
-related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "standards-dry", "standards-single-responsibility", "tech-arch-schemas"]
+binds:
+- src/lore/validators.py
+- src/lore/cli.py
+- tests/unit/test_validators.py
+- tests/unit/test_validators_binds.py
+- tests/unit/test_validators_is_glob_pattern.py
+related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "standards-dry", "standards-single-responsibility", "tech-arch-schemas", "conceptual-workflows-impacts"]
 ---
 
 # Input Validation
@@ -71,6 +77,15 @@ Rejects, each with a specific error message:
 - Segment failing `_NAME_RE` → `Error: invalid group '<value>': segment '<seg>' must start with alphanumeric and contain only letters, digits, hyphens, underscores`
 
 Used by: `lore.doctrine.create_doctrine`, `lore.knight.create_knight`, `lore.watcher.create_watcher`, `lore.artifact.create_artifact`. The CLI handlers are thin wrappers — group validation happens inside the core helpers, not in `cli.py`.
+
+### `validate_binds_entry(s)` and `is_glob_pattern(s)`
+
+Both live in `lore.validators` and support the codex `binds:` frontmatter field consumed by `lore impacts` (conceptual-workflows-impacts).
+
+- `validate_binds_entry(s: str) -> str | None` — single-entry check for one string in a `binds:` list. Rejects empty strings, leading `/`, and any `..` segment. Returns the standard `Invalid binds entry: "<value>": <reason>` shape, or `None` if valid. The JSON Schema in `codex-frontmatter.yaml` encodes the same three rules declaratively (`tech-arch-schemas`); the function exists so the same rules are reachable from Python callers (the `impacts` API, post-MVP authoring helpers) without going through schema loading.
+- `is_glob_pattern(s: str) -> bool` — returns `True` iff `s` contains any of `*`, `?`, `[`. Used by `lore impacts` to (a) tag codex-seed JSON output rows as `"kind": "exact"` vs `"glob"` (FR-12), and (b) split literal-vs-glob match paths inside the path-seed lookup.
+
+Path normalisation for `binds:` paths (relative-to-repo conversion, outside-repo rejection, `..` traversal rejection, symlink-resolution safety) lives in `lore.impacts._normalize_path_input`, NOT here — those checks need `lore.paths.find_project_root` and therefore violate `validators.py`'s zero-`lore.*`-imports rule. The split mirrors the `validate_chaos_threshold` pattern (`tech-arch-codex-chaos`): scalar shape in `validators.py`; environment-dependent resolution in the calling module.
 
 ### `paths.derive_group` and `paths.group_matches_filter`
 

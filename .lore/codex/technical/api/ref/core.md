@@ -5,6 +5,11 @@ summary: Reference doc for the Lore Python API — what is public per entity, wh
   intentional gaps are, and the cross-cutting contracts (group= kwarg, filter_groups=
   kwarg, return-dict shapes for high-traffic operations, typed-model boundary).
   Source of truth is the modules themselves and `lore.models.__all__`.
+binds:
+- src/lore/models.py
+- tests/unit/test_models.py
+- tests/unit/test_models_impacts.py
+- tests/e2e/test_python_api.py
 related:
 - decisions-010-public-api-stability
 - decisions-011-api-parity-with-cli
@@ -12,6 +17,7 @@ related:
 - ref-lore_db-core
 - conceptual-workflows-python-api
 - conceptual-workflows-health
+- conceptual-workflows-impacts
 - standards-facade
 - standards-public-api-stability
 - conceptual-entities-glossary
@@ -21,7 +27,7 @@ related:
 
 # Lore Python API — core surface
 
-**Covers:** `lore.db`, `lore.codex`, `lore.artifact`, `lore.doctrine`, `lore.knight`, `lore.watcher`, `lore.glossary`, `lore.priority`, `lore.models`, `Quest`, `Mission`, `Knight`, `Doctrine`, `DoctrineListEntry`, `DoctrineStep`, `Watcher`, `CodexDocument`, `Artifact`, `GlossaryItem`, `BoardMessage`, `Dependency`, `HealthReport`, `HealthIssue`, `claim_mission`, `close_mission`, `add_board_message`, `health_check`, `load_schema`, `validate_entity_file`, `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary`, `find_deprecated_terms`
+**Covers:** `lore.db`, `lore.codex`, `lore.artifact`, `lore.doctrine`, `lore.knight`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, `lore.models`, `Quest`, `Mission`, `Knight`, `Doctrine`, `DoctrineListEntry`, `DoctrineStep`, `Watcher`, `CodexDocument`, `Artifact`, `GlossaryItem`, `BoardMessage`, `Dependency`, `HealthReport`, `HealthIssue`, `ImpactsResult`, `CodexBinding`, `CodeBinding`, `ImpactsError`, `claim_mission`, `close_mission`, `add_board_message`, `health_check`, `load_schema`, `validate_entity_file`, `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary`, `impacts`
 **Source of truth:** `src/lore/` (each module's `__init__.py` + `lore.models.__all__` enumerate the public surface). Function signatures, type annotations, and exhaustive return-dict structures live in code, not here.
 
 ## Why this exists
@@ -52,9 +58,11 @@ related:
 
 - **`scan_glossary` returns `[]` if file missing; raises on parse failure.** `lore.glossary.scan_glossary(root)` is fail-soft on absence (empty file or no file), fail-loud on schema/parse errors (raises `GlossaryError`). `read_glossary_item(root, kw)` is case-insensitive on the keyword; aliases are NOT lookup keys.
 
-- **`match_glossary` and `find_deprecated_terms` operate on body strings.** Pass a `dict[doc_id, body]` (or list of bodies). Canonical-only token-run matching. Used by `lore codex show` auto-surface and `lore health` deprecated-term scan.
+- **`match_glossary` operates on body strings.** Pass a `dict[doc_id, body]` (or list of bodies). Canonical-only token-run matching. Used by `lore codex show` auto-surface. There is no corpus-level deprecated-term scan — `find_deprecated_terms` has been removed.
 
 - **Schema validation is callable from Realm.** `lore.models.load_schema(kind)` returns the cached schema dict; `lore.models.validate_entity_file(path, kind)` returns `list[HealthIssue]` with zero stdout/stderr side effects (ADR-011). Both are in `__all__`.
+
+- **`lore.models.impacts(token, *, project_root, direct_links=False) -> ImpactsResult`.** The Python mirror of `lore impacts` (conceptual-workflows-impacts). `ImpactsResult` is a tagged-union dataclass — `kind == "codex"` populates `codex_items: tuple[CodexBinding, ...]`; `kind == "code"` populates `code_items: tuple[CodeBinding, ...]`. Errors surface as `ImpactsError` (subclass of `ValueError`) — unknown codex id, path outside repo, `..` traversal. The function takes `project_root: Path` (NOT `codex_dir`) because path-seed lookups normalise against the repo root, not the codex subdir.
 
 ## Shape — entity matrix
 
@@ -99,6 +107,8 @@ Validates entity existence inside the same `BEGIN IMMEDIATE` as the insert. Vali
 
 ## Diagnostic operations
 
-`health_check(project_root, scope=None)` audits all file-based entity types and validates every entity file's shape against its JSON Schema. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`. `None` runs every scope.
+`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, and audits codex `binds:` reference integrity. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. `None` runs every scope.
 
 `HealthIssue` is a frozen dataclass with `severity`, `entity_type`, `id`, `check`, `detail`, plus three optional fields populated only on schema checks: `schema_id`, `rule`, `pointer`. `HealthIssue.from_dict(d)` round-trips JSON output and tolerates legacy payloads without the schema fields.
+
+The `bindings` scope emits two check names: `dead_binding` (severity `error`, dead literal `binds:` path) and `empty_glob_binding` (severity `warning`, glob `binds:` matching zero files). Both rows carry `entity_type="codex"`, `id=<codex-entry-id>`, and `schema_id`/`rule`/`pointer` all `None`. Realm filters by `issue.check` to message authoring knights before dispatch (ADR-011 parity with the CLI). See conceptual-workflows-health (lore codex show conceptual-workflows-health).

@@ -3,6 +3,8 @@ id: example-tech-overview
 title: Technical Overview
 summary: Technology stack, project structure, and key architectural patterns. Start
   here before navigating to any other technical documentation.
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Technical Overview

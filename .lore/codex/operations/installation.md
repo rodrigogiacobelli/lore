@@ -4,6 +4,8 @@ title: Installation
 summary: How to install Lore as an end-user CLI tool (uv tool, pipx) and how to set
   up a development environment, build a distributable package, and verify the install.
   See ops-publish-pypi for the release runbook.
+binds:
+- pyproject.toml
 related:
 - ops-git-workflow
 - ops-publish-pypi

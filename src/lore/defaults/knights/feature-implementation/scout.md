@@ -29,7 +29,7 @@ Read every document that looks relevant to your assigned lens. When in doubt, in
 Every mission assigns you a specific lens. You read through that lens only:
 
 - **Business lens**: focus on entities, relationships, workflows, personas, constraints, glossary — what does this feature touch from a product and user perspective?
-- **Technical lens**: focus on technical docs, decisions, standards, integrations, infrastructure — what does this feature touch from an architecture and implementation perspective?
+- **Technical lens**: focus on technical docs, decisions, standards, integrations, infrastructure — what does this feature touch from an architecture and implementation perspective? Run `lore impacts <path>` to surface every codex entry whose `binds:` matches a candidate file — useful when you have a known file path and want every governing doc directly.
 
 Do not cross lenses. A business Scout should not deep-dive into schema files. A technical Scout should not deep-dive into persona documents.
 

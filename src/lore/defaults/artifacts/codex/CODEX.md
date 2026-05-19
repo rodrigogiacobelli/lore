@@ -160,5 +160,16 @@ Every file has frontmatter with the fields below. The `summary` field is written
 | Field | Description |
 |-------|-------------|
 | `related` | YAML array of related codex IDs. Followed outbound by `lore codex map` and surfaced inbound as backlinks. Omit or use `[]` if none. |
+| `binds` | YAML array of repo-root-relative paths or globs naming the code files this doc governs. The codex↔code edge described below. Omit or use `[]` if none. |
+
+The `binds` field is an **optional** list of repo-root-relative paths or globs
+naming the code files this codex entry governs. Each entry is either a literal
+path or a glob (recursive `**` supported). Missing field and empty list
+(`binds: []`) behave identically — both mean "this document governs no specific
+code files." Absolute paths, paths containing `..`, and empty strings are
+rejected by the schema and surfaced by `lore health --scope schemas`. The
+`binds` graph is queried with `lore impacts <token>`: pass a codex id to list
+the bound paths; pass a file path to list the codex entries whose `binds`
+match it (exact-or-glob). See `conceptual-workflows-impacts`.
 
 No other frontmatter fields are permitted. `lore health` enforces this — any extra field fails validation.

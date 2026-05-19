@@ -5,6 +5,10 @@ summary: 'What the system does internally when creating, listing, editing, and d
   quests via the CLI.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_quest_crud.py
 related:
 - conceptual-entities-quest
 - conceptual-workflows-mission-crud

@@ -2,6 +2,11 @@
 id: conceptual-workflows-doctrine-list
 title: lore doctrine list Behaviour
 summary: What the system does internally when `lore doctrine list` runs — recursive discovery of `.design.md` files under `.lore/doctrines/`, pairing with matching `.yaml` files, silent skip of orphaned or unpaired files, metadata extraction from design frontmatter, group derivation, and table or JSON output.
+binds:
+- src/lore/doctrine.py
+- src/lore/cli.py
+- tests/e2e/test_doctrine_list.py
+- tests/unit/test_doctrine.py
 related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-new", "conceptual-workflows-doctrine-show", "conceptual-workflows-knight-list", "ref-lore_cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 

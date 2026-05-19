@@ -96,8 +96,8 @@ def test_all_scopes_is_tuple_and_contains_schemas():
 
 
 def test_all_scopes_length_is_six_after_schemas_added():
-    """Adding schemas grows _ALL_SCOPES (US-005 added glossary, bringing it to 7)."""
-    assert len(_ALL_SCOPES) == 7
+    """Adding schemas grows _ALL_SCOPES (US-005 added glossary → 7; US-001 added bindings → 8)."""
+    assert len(_ALL_SCOPES) == 8
 
 
 # ---------------------------------------------------------------------------

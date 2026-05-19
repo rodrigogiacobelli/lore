@@ -2,12 +2,33 @@
 id: tech-arch-schemas
 title: Schemas Module Internals
 summary: Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the seven schema kinds (the seventh, glossary, is the first full-YAML kind validated against a literal single-file glob rather than a directory walk), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact and the audit-time lore health schema check share a single authoritative contract.
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
+binds:
+- src/lore/schemas/__init__.py
+- src/lore/schemas/doctrine-yaml.yaml
+- src/lore/schemas/doctrine-design-frontmatter.yaml
+- src/lore/schemas/knight-frontmatter.yaml
+- src/lore/schemas/watcher-yaml.yaml
+- src/lore/schemas/codex-frontmatter.yaml
+- src/lore/schemas/codex-source-frontmatter.yaml
+- src/lore/schemas/artifact-frontmatter.yaml
+- src/lore/schemas/glossary.yaml
+- src/lore/health.py
+- tests/unit/test_schemas.py
+- tests/unit/test_health_schemas.py
+- tests/unit/test_health_schemas_binds.py
+- tests/unit/test_health_schemas_us007.py
+- tests/unit/test_schema_defaults_regression.py
+- tests/e2e/test_health_schemas.py
+- tests/e2e/test_health_schemas_binds.py
+- tests/e2e/test_health_schemas_us005.py
+- tests/e2e/test_health_schemas_us007.py
+- tests/e2e/test_health_schemas_us008.py
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 
 # Schemas Module Internals
 
-**Source module:** `src/lore/schemas.py`
+**Source module:** `src/lore/schemas/__init__.py` (the module logic; previously a flat `schemas.py`, now a package because the YAML resources live as sibling files in the same directory)
 **Resource dir:** `src/lore/schemas/*.yaml` (packaged inside the wheel via hatchling `package-data`)
 
 This module is the single authoritative home for the JSON Schemas that define the shape of every on-disk Lore entity. It is consumed by both the create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, and `artifact.py` **and** by the audit-time `_check_schemas` checker in `health.py`. No schema content is duplicated anywhere else in the codebase — this is the DRY guarantee required by FR-19/FR-20 of the schema validation feature.
@@ -96,6 +117,51 @@ One schema, one contract, enforced at both write time and audit time. Any drift 
 
 A catastrophic failure loading the schema resource itself (e.g. the wheel is corrupted) raises out of `_check_schemas` and is caught by `health_check()`'s existing `scan_failed` wrapper — the health check fails loud, never false-greens.
 
+## Codex Frontmatter Fields
+
+The `codex-frontmatter` schema (`src/lore/schemas/codex-frontmatter.yaml`) is `additionalProperties: false`, so every accepted field is named explicitly. The full list:
+
+| Field | Required | Type | Notes |
+|---|---|---|---|
+| `id` | yes | string (minLength 1) | Globally unique across the codex. |
+| `title` | yes | string (minLength 1) | Human-readable title. |
+| `summary` | yes | string (minLength 1) | Scannable one-paragraph summary. |
+| `related` | no | array of unique strings | Directed edges to other codex ids. Empty list and missing field behave identically. |
+| `binds` | no | array of unique strings | Repo-root-relative paths or globs governed by this entry. See "The `binds:` field" below. Empty list and missing field behave identically (FR-4 of `lore-impacts-prd`). |
+
+### The `binds:` field
+
+`binds:` is the codex↔code edge consumed by `lore impacts`. Validation rules
+declared in the schema:
+
+| Rule | Schema construct | Rejects |
+|---|---|---|
+| Must be an array | `type: array` | scalars, mappings |
+| No duplicates | `uniqueItems: true` | repeated strings |
+| Each entry is a non-empty string | `items.type: string`, `items.minLength: 1` | non-strings, `""` |
+| No absolute paths | `items.not.anyOf: [{pattern: '^/'}]` | `"/etc/passwd"` |
+| No `..` traversal | `items.not.anyOf: [{pattern: '(^\|/)\.\.(/\|$)'}]` | `"../foo"`, `"a/../b"` |
+
+The two regex `not.anyOf` rules are how FR-3 of `lore-impacts-prd` is
+expressed declaratively. Filesystem-shape checks beyond strings (file
+existence, symlink-outside-repo) are NOT in the schema — they belong to
+runtime in `lore.impacts._normalize_path_input` (`conceptual-workflows-impacts`).
+
+**Absent-vs-empty semantics.** `binds:` absent from frontmatter and `binds: []`
+both mean "this entry binds nothing." `lore impacts` returns an empty result
+in both cases; the schema validates both identically. Callers must not
+distinguish them.
+
+A separate pure validator `lore.validators.validate_binds_entry(s)` mirrors
+the regex rules for callers that need to validate a single entry without
+loading the JSON Schema (Python API, post-MVP authoring helpers). Two-layer
+enforcement matches the `validate_chaos_threshold` precedent (see
+`tech-arch-codex-chaos`).
+
+`lore health --scope schemas` surfaces every malformed entry as a HealthIssue
+with `entity_type="codex"` and `rule` set to the violated JSON-Schema keyword
+(`type`, `pattern`, `minLength`, `uniqueItems`).
+
 ## Dependency Rules
 
 - `schemas.py` imports **only** `importlib.resources`, `yaml`, `jsonschema`, and `lore.frontmatter`. It has zero imports from any entity module (`doctrine.py`, `knight.py`, etc.), so the create-time validators can import `schemas.py` without creating a cycle.
@@ -115,6 +181,7 @@ A catastrophic failure loading the schema resource itself (e.g. the wheel is cor
 ## See Also
 
 - conceptual-workflows-health — how `_check_schemas` slots into the overall health pipeline and the `schemas` scope semantics.
+- conceptual-workflows-impacts — the `lore impacts` consumer of the `binds:` field declared on `codex-frontmatter`.
 - tech-arch-frontmatter — `parse_frontmatter_raw` is the only parse helper used by schema validation.
 - ref-lore_doctrine-module — describes the existing create-time validators that delegate to this module.
 - standards-dry — the DRY guarantee this module exists to enforce.

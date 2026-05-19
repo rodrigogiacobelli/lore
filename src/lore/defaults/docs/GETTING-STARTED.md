@@ -1,6 +1,6 @@
 # Getting Started with Lore Agent Skills
 
-`lore init` placed these files in `.lore/`. They are not active until you move them to the right place for your agent framework.
+Prereq: `pip install lore-agent-task-manager && lore init` in your project root. That created the `.lore/` directory you're reading from now.
 
 ## Step 1 — Add the agent prompt
 
@@ -26,13 +26,16 @@ Then invoke with the Skill tool (e.g. `/start-quest`, `/new-doctrine`).
 
 **Other frameworks** — check your framework's documentation for custom command or skill directories.
 
-## Available skills
+The full skills table lives in `.lore/LORE-AGENT.md` — single source of truth so the list stays in sync with what your agent sees.
 
-| Skill            | What it does                                                    |
-|------------------|-----------------------------------------------------------------|
-| `start-quest`    | Read a doctrine, create a quest and its missions, ask before dispatching |
-| `new-doctrine`   | Draft and create a new doctrine via `lore doctrine new`        |
-| `new-knight`     | Draft and create a new knight persona via `lore knight new`    |
-| `new-watcher`    | Draft and create a new watcher via `lore watcher new`          |
-| `new-artifact`   | Draft and create a new artifact file in `.lore/artifacts/`     |
-| `explore-codex`  | Search, map, and traverse the codex to answer a question       |
+## Step 3 — Edit your project files
+
+`lore init` seeded three user-tracked files you should review and edit:
+
+- **`.lore/codex/CODEX.md`** — project-wide rules and conventions. Agents read this first.
+- **`.lore/codex/glossary.yaml`** — controlled vocabulary. Run `lore artifact show glossary-design` before adding entries.
+- **`.lore/config.toml`** — generic project config (e.g. glossary auto-surface toggle).
+
+## Verify
+
+Run `lore health` — should exit 0 on a fresh init.

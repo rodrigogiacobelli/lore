@@ -3,6 +3,8 @@ id: example-workflow-{workflow-name-user-facing}
 title: '{Workflow Name — User Facing}'
 summary: _One to three sentences. Who performs this workflow, what is their goal,
   and what is the key decision point or outcome?_
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # {Workflow Name — User Facing}

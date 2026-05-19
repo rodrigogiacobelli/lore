@@ -1,36 +1,110 @@
 # Lore
 
-Lore is your project task manager. Run `lore --help` for the full command reference.
+Lore is your project task manager.
 
-## Orchestrator
+```bash
+lore --help
+Usage: lore [OPTIONS] COMMAND [ARGS]...
 
-Use `lore ready` to get the next available mission. Dispatch based on mission type:
+  Lore — Agent Task Manager.
 
-- **`knight`** — claim it (`lore claim <id>`), then spawn a worker agent passing the mission ID
-- **`constable`** — claim it and handle inline (an orchestrator chore: commit, housekeeping, etc.)
-- **`human`** — do NOT claim; leave it for the human to complete
+  Lore organises agent work into two core entity types:
 
-To start a new quest from a doctrine, use `/start-quest`. For creating doctrines, knights, watchers, artifacts, or exploring the codex, use the relevant skill.
+  Quest   — a body of work (feature, fix, or refactor).
+  Mission — a single executable task assigned to an agent.
 
-## Worker
+  Supporting entities:
 
-You have been assigned a mission ID by the orchestrator.
+  Knight   — a reusable agent persona attached to missions.
+  Doctrine — workflow templates that guide how missions are executed.
+  Codex    — project documentation, searchable and graph-traversable.
+  Artifact — reusable read-only template files referenced by stable ID.
+  Watcher  — definitions for agents that monitor and react to project state.
 
-Run `lore show <id>` — this returns the mission description, acceptance criteria, and knight persona in a single call. Execute the mission. When done, run `lore done <id>`. If you are blocked, run `lore block <id> "<reason>"` with a clear explanation.
+  Run any command group with --help for details on that concept.
 
-Do not create quests or missions. Do not claim work that has not been assigned to you.
+Options:
+  --version  Show the version and exit.
+  --json     Output as JSON.
+  --help     Show this message and exit.
 
-## Glossary
+Commands:
+  stats     Show aggregate statistics across all quests and missions.
+  oracle    Generate human-readable markdown reports in .lore/reports/.
+  init      Initialize a Lore project in the current directory.
+  new       Create quests and missions.
+  claim     Claim one or more missions (open -> in_progress).
+  done      Close one or more missions or quests.
+  block     Mark a mission as blocked with a reason.
+  unblock   Unblock a blocked mission, returning it to open status.
+  ready     Show the highest priority unblocked mission(s), sorted by...
+  needs     Declare dependencies between missions using colon-pair syntax.
+  unneed    Remove dependencies between missions using colon-pair syntax.
+  list      List quests.
+  missions  List missions across all quests, or scoped to one quest.
+  knight    Manage knight personas — reusable markdown files that tell...
+  doctrine  Manage doctrine templates — YAML files that describe the...
+  edit      Edit a quest or mission.
+  delete    Delete a quest or mission.
+  show      Show details of a quest or mission.
+  codex     Access project documentation — a set of typed markdown...
+  impacts   Surface codex<->code bindings.
+  glossary  Access the project glossary — the controlled vocabulary at...
+  artifact  Access project artifacts — reusable template files stored...
+  board     Manage board messages for quests and missions.
+  watcher   Manage watcher definitions stored in .lore/watchers/.
+  health    Audit all six file-based entity types and report issues.
+```
 
-Run `lore glossary` to see project vocabulary. `lore codex show` auto-attaches matched glossary entries to its output, so you learn the canonical terms while reading docs.
+## Roles
+
+You are either the orchestrator (dispatching missions) or a worker (executing one).
+
+### Orchestrator
+
+- `lore ready` → next available mission. Dispatch by type:
+  - **`knight`** — claim (`lore claim <id>`), spawn worker agent with the mission ID
+  - **`constable`** — claim and handle inline (commit, housekeeping, etc.)
+  - **`human`** — do NOT claim, leave for human
+- Start a new quest from a doctrine via `/start-quest`.
+- Use the relevant skill (table below) when creating doctrines, knights, watchers, artifacts, or exploring docs.
+
+Default doctrines shipped via `lore init`:
+
+| Doctrine                      | What it does                                                                                  |
+|-------------------------------|-----------------------------------------------------------------------------------------------|
+| `feature-implementation`      | Full E2E spec pipeline — Scout, PRD (crazy + draft + final), Tech Spec, Stories. Four phases. |
+| `quick-feature-implementation`| Streamlined spec pipeline — single scout, no crazy phases, single commit at the end.          |
+| `tdd-implementation`          | Strict Red-Green-Refactor cycle for one dev-ready story. Hard boundaries between each step.   |
+| `update-changelog`            | Single-step changelog update after a merge to `develop`. Triggered by the changelog watcher.  |
+
+### Worker
+
+- You have a mission ID. Run `lore show <id>` — returns description, acceptance criteria, and knight persona in one call.
+- Execute. Run `lore done <id>` when finished. Run `lore block <id> "<reason>"` if stuck.
+- Do not create quests or missions. Do not claim unassigned work.
+
+## Knowing the project
+
+Primitives for reading project state before you act:
+
+- **`lore codex search <kw>` / `lore codex show <id>`** — typed markdown docs in `.lore/codex/`. `show` auto-attaches matched glossary terms.
+- **`lore codex map <id>`** — bidirectional traversal of related docs.
+- **`lore impacts <path>`** — which codex docs govern this file. Run before editing code.
+- **`lore impacts <codex-id>`** — which files a doc binds. Run when assessing a doc's reach.
+- **`lore glossary` / `lore glossary search <q>`** — project vocabulary.
+- **`lore health`** — audit codex, schemas, bindings, glossary. Run after structural changes.
 
 ## Available skills
 
-| Skill            | What it does                                                    |
-|------------------|-----------------------------------------------------------------|
-| `start-quest`    | Read a doctrine, create a quest and its missions, ask before dispatching |
-| `new-doctrine`   | Draft and create a new doctrine via `lore doctrine new`        |
-| `new-knight`     | Draft and create a new knight persona via `lore knight new`    |
-| `new-watcher`    | Draft and create a new watcher via `lore watcher new`          |
-| `new-artifact`   | Draft and create a new artifact file in `.lore/artifacts/`     |
-| `explore-codex`  | Search, map, and traverse the codex to answer a question       |
+| Skill            | What it does                                                       |
+|------------------|--------------------------------------------------------------------|
+| `start-quest`    | Read a doctrine, create a quest and its missions                   |
+| `new-doctrine`   | Draft and create a new doctrine                                    |
+| `new-knight`     | Draft and create a new knight persona                              |
+| `new-watcher`    | Draft and create a new watcher                                     |
+| `new-artifact`   | Draft and create a new artifact file                               |
+| `explore-codex`  | Search, map, and traverse the codex                                |
+| `update-codex`   | Edit codex docs directly outside the feature-implementation flow   |
+| `ingest-source`  | Capture an upstream source under `codex/sources/`                  |
+| `refresh-source` | Re-ingest a stored source and propagate diffs into canonical docs  |

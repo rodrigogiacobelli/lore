@@ -24,3 +24,17 @@ properties:
     description: >
       Optional. MUST be a YAML array (flow `[a, b]` or block dash-list `- a`).
       A mapping is NOT allowed here — each entry is a codex id string.
+  binds:
+    type: array
+    uniqueItems: true
+    items:
+      type: string
+      minLength: 1
+      not:
+        anyOf:
+          - { pattern: '^/' }
+          - { pattern: '(^|/)\.\.(/|$)' }
+    description: >
+      Optional. List of repo-root-relative paths or globs (recursive **
+      supported) governed by this codex entry. Empty list and missing
+      field behave identically (FR-4).

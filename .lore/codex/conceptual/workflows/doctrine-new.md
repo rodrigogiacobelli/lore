@@ -2,6 +2,11 @@
 id: conceptual-workflows-doctrine-new
 title: lore doctrine new Behaviour
 summary: What the system does internally when `lore doctrine new <name> -f <yaml> -d <design>` runs — name validation, duplicate detection, validation of both source files, and atomic write of both files to disk. Both -f and -d flags are required; no scaffold path exists.
+binds:
+- src/lore/doctrine.py
+- src/lore/cli.py
+- tests/e2e/test_doctrine_new.py
+- tests/unit/test_doctrine.py
 related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "conceptual-workflows-doctrine-show", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 

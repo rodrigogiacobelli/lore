@@ -6,6 +6,9 @@ summary: Reference doc for the Lore CLI — the cross-cutting conventions, exit 
   span more than one command. Per-command flags and help text are canonical via
   `lore <command> --help` (ADR-008); the source of truth for behaviour is
   `src/lore/cli.py` plus the ADRs listed below.
+binds:
+- src/lore/cli.py
+- tests/e2e/test_*.py
 related:
 - tech-cli-entity-crud-matrix
 - ref-lore_db-core
@@ -23,13 +26,14 @@ related:
 - conceptual-workflows-glossary
 - conceptual-workflows-json-output
 - conceptual-workflows-error-handling
+- conceptual-workflows-impacts
 - conceptual-entities-glossary
 - tech-arch-schemas
 ---
 
 # Lore CLI — commands surface
 
-**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore knight`, `lore knight list`, `lore knight show`, `lore knight new`, `lore knight edit`, `lore knight delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
+**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore knight`, `lore knight list`, `lore knight show`, `lore knight new`, `lore knight edit`, `lore knight delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
 **Source of truth:** `src/lore/cli.py` (Click decorators, handler bodies); `lore <command> --help` for per-command flags and prose (canonical per ADR-008).
 
 ## Why this exists
@@ -149,6 +153,10 @@ Enforced in two places: Click `IntRange(min=30, max=100)` and `lore.validators.v
 
 Matches against canonical keywords AND aliases (token-run, canonical-only). Surfaces a `## Glossary` block at the bottom of each shown document. `--skip-glossary` per-call suppresses it. `.lore/config.toml` `[codex] glossary_autosurface = false` disables globally. See conceptual-workflows-glossary.
 
+### `lore impacts` token classification
+
+`lore impacts` is a **top-level command**, not a subcommand under `lore codex` — `lore codex` walks within the codex (`map`, `chaos` on the `related:` edge); `lore impacts` crosses the codex↔code boundary (the `binds:` edge). The token is classified before any I/O: a `/` or `.` in the string → path; otherwise → codex id. Codex ids match `[a-z0-9-]+` and never contain either character, so classification is unambiguous. Path tokens are normalised against `find_project_root()` — absolute paths inside the repo are accepted and normalised; absolute paths outside the repo and any `..` segment exit 1. `--direct-links` drops glob matches from path-seed output and is a silent no-op on codex-seed lookups. JSON envelope key is `"impacts"`; error envelope is the standard `{"error": "..."}` to stderr. See conceptual-workflows-impacts.
+
 ### Board
 
 - `lore board add <entity-id> "<message>"` — entity not found (or soft-deleted) → `Quest "..." not found` or `Mission "..." not found`, exit 1.
@@ -166,7 +174,7 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits all six file-based entity types plus JSON-Schema-validates entity files. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
+Audits all six file-based entity types, JSON-Schema-validates entity files, and audits codex `binds:` reference integrity. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`. The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. See conceptual-workflows-health.
 
 ## Shape — command tree
 
@@ -192,6 +200,7 @@ lore knight    {list|show|new|edit|delete}
 lore watcher   {list|show|new|edit|delete}
 lore artifact  {list|show|new}
 lore codex     {list|show|search|map|chaos}
+lore impacts   <codex-id|path> [--direct-links]
 lore glossary  {list|show|search}
 lore board     {add|delete}
 lore oracle

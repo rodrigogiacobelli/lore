@@ -5,6 +5,10 @@ summary: 'What the system does internally when posting, viewing, and deleting bo
   messages on missions and quests, including sender validation and error paths.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_board.py
 related:
 - conceptual-workflows-show
 - conceptual-workflows-mission-crud

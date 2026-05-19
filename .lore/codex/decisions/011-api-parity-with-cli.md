@@ -5,6 +5,9 @@ summary: Establishes that every lore.db function exposed in the public API must 
   self-contained and safe to call directly — no pre-validation, post-processing, or
   business logic may live exclusively in the CLI layer. The CLI becomes a thin formatting
   wrapper. Any gap is a bug.
+binds:
+- src/lore/validators.py
+- src/lore/db.py
 related:
 - decisions-010-public-api-stability
 - standards-separation-of-concerns

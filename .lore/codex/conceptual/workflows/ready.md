@@ -5,6 +5,11 @@ summary: 'What the system does internally when lore ready runs — priority orde
   exclusion of blocked and closed missions, dependency-gating, and multi-result output.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- src/lore/priority.py
+- tests/e2e/test_ready.py
 related:
 - conceptual-entities-mission
 - conceptual-workflows-claim

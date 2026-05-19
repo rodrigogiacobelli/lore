@@ -2626,6 +2626,60 @@ def codex_chaos(ctx, doc_id, threshold, json_flag):
 
 
 # ---------------------------------------------------------------------------
+# `lore impacts` — codex<->code binding surfacing (US-003 + US-004).
+# Top-level command, sibling to `lore codex` / `lore artifact`.
+# ---------------------------------------------------------------------------
+
+
+@main.command("impacts")
+@click.argument("token")
+@click.option(
+    "--direct-links",
+    is_flag=True,
+    default=False,
+    help="Path seed only: drop glob matches; keep exact only.",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    default=False,
+    help="Emit structured JSON envelope.",
+)
+@click.pass_context
+def impacts_cmd(ctx, token, direct_links, json_flag):
+    """Surface codex<->code bindings.
+
+    TOKEN is a codex ID or a repo-relative/absolute file path. Containing
+    '/' or '.' classifies it as a path; otherwise as a codex ID.
+    """
+    from lore import impacts as _impacts
+
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+
+    try:
+        result = _impacts.impacts(
+            token, project_root=project_root, direct_links=direct_links
+        )
+    except _impacts.ImpactsError as exc:
+        if json_mode:
+            click.echo(json.dumps({"error": str(exc)}), err=True)
+        else:
+            click.echo(str(exc), err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(_impacts._render_impacts_json(result))
+        return
+
+    # `_render_impacts_default` already includes a trailing newline per binding
+    # (and empty string for no bindings), so suppress click's own newline.
+    click.echo(_impacts._render_impacts_default(result), nl=False)
+
+
+# ---------------------------------------------------------------------------
 # Glossary command group (glossary-us-002).
 # Workflow: conceptual-workflows-glossary
 #
@@ -3336,7 +3390,7 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
-_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary")
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings")
 
 
 @main.command("health")

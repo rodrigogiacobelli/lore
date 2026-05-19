@@ -69,7 +69,7 @@ def _seed_codex_doc(
 
 
 def test_clean_glossary_health_passes(project_dir, runner):
-    """Scenario 1 — clean glossary: text mode prints success + 0 schema errors."""
+    """Scenario 1 — clean glossary: text mode prints success."""
     _write_glossary(
         project_dir,
         "items:\n"
@@ -79,7 +79,6 @@ def test_clean_glossary_health_passes(project_dir, runner):
     res = runner.invoke(main, ["health", "--scope", "glossary"])
     assert res.exit_code == 0, res.output
     assert "Health check passed. No issues found." in res.output
-    assert "Schema validation: 0 errors" in res.output
 
 
 def test_clean_glossary_health_passes_json(project_dir, runner):
@@ -118,7 +117,6 @@ def test_schema_violation_short_circuits_intra_checks_json(project_dir, runner):
         "duplicate_keyword",
         "alias_keyword_collision",
         "do_not_use_collision",
-        "glossary_deprecated_term",
     ):
         assert not any(i["check"] == forbidden for i in payload["issues"]), (
             f"forbidden check {forbidden!r} surfaced despite schema violation"
@@ -186,51 +184,6 @@ def test_do_not_use_collision_error(project_dir, runner):
         "'mission' in do_not_use of 'Knight' collides with keyword/alias 'Mission'"
         in res.output
     )
-
-
-# ---------------------------------------------------------------------------
-# Scenario 6: Cross-codex deprecated-term scan — one warning per occurrence per doc
-# ---------------------------------------------------------------------------
-
-
-def test_cross_codex_deprecated_term_scan_json(project_dir, runner):
-    """Scenario 6 — one warning per deprecated occurrence per doc, alphabetised."""
-    # scenario premise: only fixture docs are scanned — drop the lore init CODEX.md seed
-    (project_dir / ".lore/codex/CODEX.md").unlink()
-    _write_glossary(
-        project_dir,
-        "items:\n"
-        "  - keyword: Knight\n    definition: A reusable agent persona.\n    do_not_use: [agent]\n"
-        "  - keyword: Quest\n    definition: A live grouping of Missions.\n    do_not_use: [epic]\n",
-    )
-    _seed_codex_doc(project_dir, "doc-a", body="The agent retrieves the codex.")
-    _seed_codex_doc(
-        project_dir,
-        "doc-b",
-        body="An epic encompasses many features. Another agent collaborates here.",
-    )
-    res = runner.invoke(main, ["--json", "health", "--scope", "glossary"])
-    assert res.exit_code == 1, res.output
-    payload = json.loads(res.stdout)
-    warns = [i for i in payload["issues"] if i["check"] == "glossary_deprecated_term"]
-    assert len(warns) == 3
-    assert all(
-        i["severity"] == "warning" and i["entity_type"] == "codex" for i in warns
-    )
-    # Sorted by (id, matched_term) — alphabetical.
-    assert (warns[0]["id"], warns[0]["detail"]) == (
-        "doc-a",
-        'document uses deprecated term "agent" — prefer "Knight"',
-    )
-    assert (warns[1]["id"], warns[1]["detail"]) == (
-        "doc-b",
-        'document uses deprecated term "agent" — prefer "Knight"',
-    )
-    assert (warns[2]["id"], warns[2]["detail"]) == (
-        "doc-b",
-        'document uses deprecated term "epic" — prefer "Quest"',
-    )
-    assert payload["has_errors"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -303,25 +256,3 @@ def test_missing_glossary_clean_run(project_dir, runner):
     assert "Health check passed." in res.output
 
 
-# ---------------------------------------------------------------------------
-# Scenario 11: Tokeniser substring guard — deprecated-term scan does NOT match `missionary`
-# ---------------------------------------------------------------------------
-
-
-def test_tokeniser_substring_guard_no_warnings(project_dir, runner):
-    """Scenario 11 — substring guard: `missionary` and `taskforce` do not trigger warnings."""
-    # scenario premise: only fixture docs are scanned — drop the lore init CODEX.md seed
-    (project_dir / ".lore/codex/CODEX.md").unlink()
-    _write_glossary(
-        project_dir,
-        "items:\n"
-        "  - keyword: Mission\n    definition: u.\n    do_not_use: [task]\n",
-    )
-    _seed_codex_doc(
-        project_dir,
-        "doc-a",
-        body="The taskforce reviewed the missionary work.",
-    )
-    res = runner.invoke(main, ["health", "--scope", "glossary"])
-    assert res.exit_code == 0, res.output
-    assert "glossary_deprecated_term" not in res.output

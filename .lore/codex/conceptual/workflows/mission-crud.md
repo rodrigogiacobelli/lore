@@ -6,6 +6,10 @@ summary: 'What the system does internally when creating, listing, editing, delet
   behaviour.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_mission_crud.py
 related:
 - conceptual-entities-mission
 - conceptual-workflows-quest-crud

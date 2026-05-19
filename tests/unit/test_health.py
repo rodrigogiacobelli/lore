@@ -5,11 +5,14 @@ Workflow: conceptual-workflows-health (lore codex show conceptual-workflows-heal
 
 import dataclasses
 import json
+import pathlib
 import typing
+from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+import lore.health
 from lore.cli import main
 from lore.health import (
     _build_artifact_index,
@@ -2815,11 +2818,23 @@ def _seed_codex_doc_for_health(
     doc_id: str,
     *,
     body: str = "",
+    binds: list[str] | None = None,
+    related: list[str] | None = None,
 ) -> Path:
-    """Write a codex doc with frontmatter + body under .lore/codex/<doc_id>.md."""
+    """Write a codex doc with frontmatter + body under .lore/codex/<doc_id>.md.
+
+    Optional `binds` / `related` keywords add the corresponding frontmatter
+    blocks (per Tech Spec § "Test Conventions" for health-bindings-glossary).
+    Pass `binds=[]` to emit an explicit empty list.
+    """
     codex_dir = project_dir / ".lore" / "codex"
     codex_dir.mkdir(parents=True, exist_ok=True)
-    fm = _fm({"id": doc_id, "title": doc_id, "summary": "s"})
+    fields: dict = {"id": doc_id, "title": doc_id, "summary": "s"}
+    if binds is not None:
+        fields["binds"] = list(binds)
+    if related is not None:
+        fields["related"] = list(related)
+    fm = _fm(fields)
     # _fm appends a default body — replace it with the requested body.
     fm = fm.replace("Body.", body)
     path = codex_dir / f"{doc_id}.md"
@@ -2927,52 +2942,6 @@ def test_check_glossary_do_not_use_collision_error(tmp_path):
     )
 
 
-def test_check_glossary_cross_codex_deprecated_warns_per_occurrence(tmp_path):
-    """Cross-codex scan emits one warning per occurrence per doc (Unit row 13)."""
-    from lore.health import _check_glossary
-
-    project = _make_lore_project(tmp_path)
-    _write_glossary_yaml(
-        project,
-        "items:\n"
-        "  - keyword: Knight\n    definition: persona.\n    do_not_use: [agent]\n"
-        "  - keyword: Quest\n    definition: grouping.\n    do_not_use: [epic]\n",
-    )
-    _seed_codex_doc_for_health(project, "doc-a", body="The agent retrieves the codex.")
-    _seed_codex_doc_for_health(
-        project,
-        "doc-b",
-        body="An epic encompasses many features. Another agent collaborates here.",
-    )
-    issues = _check_glossary(project)
-    warns = [i for i in issues if i.check == "glossary_deprecated_term"]
-    assert len(warns) == 3
-    assert all(i.severity == "warning" and i.entity_type == "codex" for i in warns)
-    details = [i.detail for i in warns]
-    assert 'document uses deprecated term "agent" — prefer "Knight"' in details
-    assert 'document uses deprecated term "epic" — prefer "Quest"' in details
-
-
-def test_check_glossary_results_sorted_by_id_then_term(tmp_path):
-    """Cross-codex scan results sorted by (id, matched_term) (Unit row 14, FR-21)."""
-    from lore.health import _check_glossary
-
-    project = _make_lore_project(tmp_path)
-    _write_glossary_yaml(
-        project,
-        "items:\n"
-        "  - keyword: Knight\n    definition: x\n    do_not_use: [agent]\n"
-        "  - keyword: Quest\n    definition: y\n    do_not_use: [epic]\n",
-    )
-    _seed_codex_doc_for_health(project, "doc-a", body="The agent retrieves.")
-    _seed_codex_doc_for_health(project, "doc-b", body="An epic. Another agent.")
-    issues = [
-        i for i in _check_glossary(project) if i.check == "glossary_deprecated_term"
-    ]
-    keys = [(i.id, i.detail) for i in issues]
-    assert keys == sorted(keys)
-
-
 def test_health_scope_choice_includes_glossary(tmp_path, monkeypatch):
     """`--scope glossary` is accepted by Click — no Invalid value error (Unit row 15a, FR-22)."""
     monkeypatch.chdir(tmp_path)
@@ -3026,4 +2995,594 @@ def test_schema_kinds_contains_glossary_row():
     from lore.health import _SCHEMA_KINDS
 
     assert ("glossary", "glossary", "codex", "glossary.yaml") in _SCHEMA_KINDS
+
+
+# ===========================================================================
+# US-001 — Scope vocabulary unit tests (health-bindings-glossary)
+# Workflow: conceptual-workflows-health
+# ===========================================================================
+
+
+def test_all_scopes_contains_bindings():
+    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 8."""
+    from lore.health import _ALL_SCOPES
+
+    assert "bindings" in _ALL_SCOPES
+    assert len(_ALL_SCOPES) == 8
+
+
+def test_health_check_scope_bindings_only_routes_to_check_bindings(tmp_path):
+    """US-001 unit — `scope=["bindings"]` invokes `_check_bindings` only.
+
+    Seeds both a binding miss (would fire `_check_bindings`) and a broken
+    related link (would fire `_check_codex`). Asserts only the bindings row
+    appears — proves the dispatcher routes the `"bindings"` token to
+    `_check_bindings` and does NOT bleed into the codex checker.
+    """
+    from lore.health import health_check
+
+    project = _make_lore_project(tmp_path)
+    # Doc that exercises _check_codex (broken_related_link) — must NOT surface
+    # under scope=["bindings"].
+    _seed_codex_doc_for_health(project, "entry-a", related=["nonexistent"])
+    # Doc that exercises _check_bindings (dead_binding) — MUST surface.
+    _seed_codex_doc_for_health(project, "entry-b", binds=["src/missing.py"])
+
+    report = health_check(project, scope=["bindings"])
+    checks = {i.check for i in report.issues}
+
+    assert "dead_binding" in checks
+    assert "broken_related_link" not in checks  # codex scope NOT routed
+
+
+def test_health_check_scope_bindings_and_codex_routes_both(tmp_path):
+    """US-001 unit — `scope=["bindings", "codex"]` routes both checkers exactly once."""
+    from lore.health import health_check
+
+    project = _make_lore_project(tmp_path)
+    _seed_codex_doc_for_health(project, "entry-a", related=["nonexistent"])
+    _seed_codex_doc_for_health(project, "entry-b", binds=["src/missing.py"])
+
+    report = health_check(project, scope=["bindings", "codex"])
+    checks = {i.check for i in report.issues}
+
+    assert "dead_binding" in checks
+    assert "broken_related_link" in checks
+
+
+# ===========================================================================
+# US-002 — `_check_bindings` literal-path branch
+# Workflow: conceptual-workflows-health
+# ===========================================================================
+
+
+class TestCheckBindingsLiteral:
+    """Unit coverage for the literal half of `health._check_bindings` (US-002)."""
+
+    def test_existing_literal_silent(self, tmp_path):
+        """Literal pointing at an on-disk file emits zero rows."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        (project / "existing").mkdir()
+        (project / "existing" / "file.py").write_text("")
+        _seed_codex_doc_for_health(
+            project, "entry-a", binds=["existing/file.py"]
+        )
+        assert _check_bindings(project) == []
+
+    def test_missing_literal_one_issue(self, tmp_path):
+        """Missing literal emits exactly one HealthIssue with the exact field shape."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "entry-a", binds=["missing.py"])
+
+        issues = _check_bindings(project)
+
+        assert issues == [HealthIssue(
+            severity="error",
+            entity_type="codex",
+            id="entry-a",
+            check="dead_binding",
+            detail='"missing.py" — file not found',
+            schema_id=None,
+            rule=None,
+            pointer=None,
+        )]
+
+    def test_two_literals_preserve_declaration_order(self, tmp_path):
+        """Two literals in one entry emit two rows in declaration order."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(
+            project,
+            "entry-a",
+            binds=["a-missing.py", "b-missing.py"],
+        )
+
+        issues = _check_bindings(project)
+
+        assert [i.detail for i in issues] == [
+            '"a-missing.py" — file not found',
+            '"b-missing.py" — file not found',
+        ]
+
+    def test_symlink_target_outside_project_root(self, tmp_path):
+        """Symlink whose target resolves outside project_root → "resolves outside project root"."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        # Stage the symlink target as a sibling of the project root so
+        # Path.resolve() lands outside project_root.resolve().
+        outside_root = tmp_path.parent / "outside_repo"
+        outside_root.mkdir(exist_ok=True)
+        target = outside_root / "target.py"
+        target.write_text("")
+        try:
+            (project / "src").mkdir()
+            (project / "src" / "escape.py").symlink_to(target)
+            _seed_codex_doc_for_health(
+                project, "entry-a", binds=["src/escape.py"]
+            )
+
+            issues = _check_bindings(project)
+
+            assert len(issues) == 1
+            assert issues[0].check == "dead_binding"
+            assert issues[0].detail.endswith("— resolves outside project root")
+        finally:
+            if target.exists():
+                target.unlink()
+            if outside_root.exists():
+                outside_root.rmdir()
+
+    def test_absent_or_empty_binds_silent(self, tmp_path):
+        """Entries with `binds:` absent or `[]` produce no rows."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "no-binds")  # no binds key
+        _seed_codex_doc_for_health(project, "empty-binds", binds=[])
+
+        assert _check_bindings(project) == []
+
+    def test_empty_codex_index_no_crash(self, tmp_path):
+        """Empty `_load_codex_binds_index` mapping → `[]` (no crash, no codex docs)."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        # No codex docs seeded.
+        assert _check_bindings(project) == []
+
+    def test_sorted_by_id_then_declaration_order(self, tmp_path):
+        """Rows sorted by codex id ASC; within an entry, declaration order preserved."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(
+            project, "z-entry", binds=["z1.py", "z2.py"]
+        )
+        _seed_codex_doc_for_health(
+            project, "a-entry", binds=["a1.py", "a2.py"]
+        )
+
+        issues = _check_bindings(project)
+
+        assert [i.id for i in issues] == [
+            "a-entry",
+            "a-entry",
+            "z-entry",
+            "z-entry",
+        ]
+        assert [i.detail for i in issues] == [
+            '"a1.py" — file not found',
+            '"a2.py" — file not found',
+            '"z1.py" — file not found',
+            '"z2.py" — file not found',
+        ]
+
+    def test_literal_directory_is_silent(self, tmp_path):
+        """Literal that resolves to a directory is silent (Path.exists True for dirs)."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        (project / "src" / "lore").mkdir(parents=True)  # directory exists
+        _seed_codex_doc_for_health(project, "entry-a", binds=["src/lore"])
+
+        assert _check_bindings(project) == []
+
+
+# ===========================================================================
+# US-003 — `_check_bindings` glob branch + `_walk_repo_files` helper
+# Workflow: conceptual-workflows-health
+# Workflow: conceptual-workflows-impacts (token classification, glob semantics)
+# ===========================================================================
+
+
+class TestCheckBindingsGlob:
+    """Unit coverage for the glob half of `health._check_bindings` (US-003)."""
+
+    def test_glob_no_matches_one_warning(self, tmp_path):
+        """Zero-match glob emits one HealthIssue with exact warning shape (FR-13)."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(
+            project, "entry-a", binds=["src/missing/**/*.py"]
+        )
+
+        issues = _check_bindings(project)
+
+        assert issues == [HealthIssue(
+            severity="warning",
+            entity_type="codex",
+            id="entry-a",
+            check="empty_glob_binding",
+            detail='"src/missing/**/*.py" — pattern matches zero files',
+            schema_id=None,
+            rule=None,
+            pointer=None,
+        )]
+
+    def test_glob_with_match_silent(self, tmp_path):
+        """Glob with at least one match emits zero rows for THAT entry (FR-14).
+
+        Paired with a sibling zero-match glob: a no-op glob branch would also
+        suppress the warning, so the test fails red until the branch is wired.
+        """
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        (project / "src" / "lore").mkdir(parents=True)
+        (project / "src" / "lore" / "cli.py").write_text("")
+        _seed_codex_doc_for_health(project, "entry-a", binds=["src/lore/*.py"])
+        _seed_codex_doc_for_health(project, "entry-b", binds=["nowhere/**/*.py"])
+
+        issues = _check_bindings(project)
+
+        # entry-a's glob matched → no row.
+        assert not any(i.id == "entry-a" for i in issues)
+        # entry-b's glob did NOT match → exactly one warning row.
+        entry_b = [i for i in issues if i.id == "entry-b"]
+        assert len(entry_b) == 1
+        assert entry_b[0].check == "empty_glob_binding"
+        assert entry_b[0].severity == "warning"
+
+    @pytest.mark.parametrize("binding", [
+        "with*star.py",
+        "with?qmark.py",
+        "with[ab].py",
+    ])
+    def test_classifier_routes_glob_chars_to_glob_branch(self, tmp_path, binding):
+        """Strings containing `*`, `?`, or `[` route to glob branch → empty_glob_binding (FR-7).
+
+        The literal-vs-dead branch is already covered by US-002 tests; this
+        parametrize locks ONLY the new glob-routing rule introduced in US-003.
+        """
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "entry-a", binds=[binding])
+
+        issues = _check_bindings(project)
+
+        assert len(issues) == 1
+        assert issues[0].check == "empty_glob_binding"
+
+    def test_literals_only_skips_walk(self, tmp_path, monkeypatch):
+        """Literal-only entry never invokes `_walk_repo_files` (NFR-Performance lazy)."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(
+            project, "entry-a", binds=["missing-literal.py"]
+        )
+        calls = {"n": 0}
+        real = lore.health._walk_repo_files
+
+        def wrapper(p):
+            calls["n"] += 1
+            return real(p)
+
+        monkeypatch.setattr(lore.health, "_walk_repo_files", wrapper)
+        _check_bindings(project)
+        assert calls["n"] == 0  # NEVER walked
+
+    def test_multiple_globs_single_walk(self, tmp_path, monkeypatch):
+        """Many globs share the walk: `_walk_repo_files` invoked exactly once per call."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(
+            project,
+            "entry-a",
+            binds=["a/**/*.py", "b/**/*.py", "c/**/*.py"],
+        )
+        calls = {"n": 0}
+        real = lore.health._walk_repo_files
+
+        def wrapper(p):
+            calls["n"] += 1
+            return real(p)
+
+        monkeypatch.setattr(lore.health, "_walk_repo_files", wrapper)
+        _check_bindings(project)
+        assert calls["n"] == 1
+
+
+class TestWalkRepoFiles:
+    """Unit coverage for `health._walk_repo_files` (US-003 helper)."""
+
+    def test_skips_excluded_dirs(self, tmp_path):
+        """Walk excludes `.git/`, `.lore/`, `node_modules/`, `__pycache__/`."""
+        from lore.health import _walk_repo_files
+
+        project = _make_lore_project(tmp_path)
+        for skip in (".git", ".lore", "node_modules", "__pycache__"):
+            (project / skip).mkdir(exist_ok=True)
+            (project / skip / "file.py").write_text("")
+        (project / "src").mkdir()
+        (project / "src" / "visible.py").write_text("")
+
+        paths = _walk_repo_files(project)
+
+        assert "src/visible.py" in paths
+        for skip in (".git", ".lore", "node_modules", "__pycache__"):
+            assert not any(p.startswith(skip + "/") for p in paths)
+            assert not any(p == f"{skip}/file.py" for p in paths)
+
+    def test_drops_symlink_escapers(self, tmp_path):
+        """Symlink whose target resolves outside `project_root.resolve()` is dropped (NFR-Security)."""
+        from lore.health import _walk_repo_files
+
+        project = _make_lore_project(tmp_path)
+        outside = tmp_path.parent / "outside_repo_walk"
+        outside.mkdir(exist_ok=True)
+        target = outside / "target.py"
+        target.write_text("")
+        try:
+            (project / "src").mkdir()
+            (project / "src" / "escape.py").symlink_to(target)
+
+            paths = _walk_repo_files(project)
+
+            assert "src/escape.py" not in paths
+        finally:
+            if target.exists():
+                target.unlink()
+            if outside.exists():
+                outside.rmdir()
+
+    def test_keeps_symlinks_inside_repo(self, tmp_path):
+        """Symlink whose target resolves inside `project_root.resolve()` is included."""
+        from lore.health import _walk_repo_files
+
+        project = _make_lore_project(tmp_path)
+        (project / "src").mkdir()
+        (project / "src" / "real.py").write_text("")
+        (project / "src" / "alias.py").symlink_to(project / "src" / "real.py")
+
+        paths = _walk_repo_files(project)
+
+        assert "src/alias.py" in paths
+        assert "src/real.py" in paths
+
+    def test_permission_error_skips_subtree(self, tmp_path, monkeypatch):
+        """`PermissionError` on subdir does NOT abort walk; siblings continue (NFR-Reliability)."""
+        from lore.health import _walk_repo_files
+
+        project = _make_lore_project(tmp_path)
+        (project / "src").mkdir()
+        (project / "src" / "visible.py").write_text("")
+        (project / "forbidden").mkdir()
+        (project / "forbidden" / "hidden.py").write_text("")
+
+        real_iterdir = pathlib.Path.iterdir
+
+        def fake_iterdir(self):
+            if self.name == "forbidden":
+                raise PermissionError("simulated")
+            return real_iterdir(self)
+
+        monkeypatch.setattr(pathlib.Path, "iterdir", fake_iterdir)
+
+        paths = _walk_repo_files(project)
+
+        assert "src/visible.py" in paths  # sibling continued
+        assert not any(p.startswith("forbidden/") for p in paths)
+
+    def test_returns_posix_paths(self, tmp_path):
+        """All returned paths use POSIX separators regardless of platform."""
+        from lore.health import _walk_repo_files
+
+        project = _make_lore_project(tmp_path)
+        (project / "a" / "b").mkdir(parents=True)
+        (project / "a" / "b" / "c.py").write_text("")
+
+        paths = _walk_repo_files(project)
+
+        assert "a/b/c.py" in paths
+        for p in paths:
+            assert "\\" not in p
+
+    def test_sorted_output(self, tmp_path):
+        """Returned list is sorted ascending."""
+        from lore.health import _walk_repo_files
+
+        project = _make_lore_project(tmp_path)
+        (project / "z.py").write_text("")
+        (project / "a.py").write_text("")
+        (project / "m.py").write_text("")
+
+        paths = _walk_repo_files(project)
+
+        assert paths == sorted(paths)
+
+
+# ===========================================================================
+# US-004 — envelope shape + exit-code partition + scan_failed envelope
+# Workflow: conceptual-workflows-health (lore codex show conceptual-workflows-health)
+# ===========================================================================
+
+
+class TestCheckBindingsEnvelope:
+    """Unit envelope/exit-code/scan_failed coverage for `_check_bindings` (US-004)."""
+
+    def test_check_bindings_rows_null_schema_fields(self, tmp_path):
+        """US-004 unit — every row from `_check_bindings` has null schema_id/rule/pointer."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "dead-one", binds=["src/missing.py"])
+        _seed_codex_doc_for_health(
+            project, "empty-one", binds=["src/no-such/**/*.py"]
+        )
+        issues = _check_bindings(project)
+        assert issues, "expected at least one issue for the seeded project"
+        for issue in issues:
+            assert issue.schema_id is None
+            assert issue.rule is None
+            assert issue.pointer is None
+
+    def test_check_bindings_severities(self, tmp_path):
+        """US-004 unit — `dead_binding` severity error; `empty_glob_binding` severity warning."""
+        from lore.health import _check_bindings
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "a", binds=["src/missing.py"])
+        _seed_codex_doc_for_health(project, "b", binds=["src/no-such/**/*.py"])
+        by_check = {i.check: i for i in _check_bindings(project)}
+        assert by_check["dead_binding"].severity == "error"
+        assert by_check["empty_glob_binding"].severity == "warning"
+
+    def test_empty_glob_binding_not_escalated(self):
+        """US-004 unit — `empty_glob_binding` is NOT in `_ESCALATED_WARNING_CHECKS`.
+
+        If it were, warnings-only runs would flip to exit 1 (regression guard
+        on FR-27 isolation of empty_glob_binding).
+        """
+        from lore.health import _ESCALATED_WARNING_CHECKS
+
+        assert "empty_glob_binding" not in _ESCALATED_WARNING_CHECKS
+
+
+    def test_health_check_warnings_only_has_errors_false(self, tmp_path):
+        """US-004 unit — warnings-only bindings run keeps `has_errors` False."""
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "a", binds=["src/no-such/**/*.py"])
+        report = health_check(project, scope=["bindings"])
+        assert report.has_errors is False
+
+    def test_health_check_dead_binding_has_errors_true(self, tmp_path):
+        """US-004 unit — at least one `dead_binding` flips `has_errors` True."""
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "a", binds=["src/missing.py"])
+        report = health_check(project, scope=["bindings"])
+        assert report.has_errors is True
+
+    def test_health_check_bindings_crash_emits_scan_failed(self, tmp_path, monkeypatch):
+        """US-004 unit — `_check_bindings` raise → one scan_failed row; other scopes survive."""
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(
+            project, "entry-broken", related=["nonexistent"]
+        )
+
+        def _boom(_p):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(lore.health, "_check_bindings", _boom)
+        report = health_check(project, scope=["bindings", "codex"])
+        scan_failed = [i for i in report.issues if i.check == "scan_failed"]
+        assert len(scan_failed) == 1
+        row = scan_failed[0]
+        assert row.entity_type == "bindings"
+        assert row.id == "bindings"
+        assert row.severity == "error"
+        assert "boom" in row.detail
+        assert row.schema_id is None
+        assert row.rule is None
+        assert row.pointer is None
+
+        # codex scope still ran despite the bindings crash.
+        related = [i for i in report.issues if i.check == "broken_related_link"]
+        assert len(related) == 1
+
+
+class TestCliHealthExitCodeFromHasErrors:
+    """CLI regression guard — exit code mirrors `report.has_errors` (US-004)."""
+
+    def test_cli_health_warnings_only_exit_zero(self, tmp_path, monkeypatch):
+        """US-004 unit — warnings-only bindings invocation through the CLI exits 0."""
+        monkeypatch.chdir(tmp_path)
+        CliRunner().invoke(main, ["init"])
+        _seed_codex_doc_for_health(tmp_path, "a", binds=["src/no-such/**/*.py"])
+        res = CliRunner().invoke(main, ["health", "--scope", "bindings"])
+        assert res.exit_code == 0, res.output
+
+    def test_cli_health_dead_binding_exit_one(self, tmp_path, monkeypatch):
+        """US-004 unit — one dead_binding flips CLI exit code to 1."""
+        monkeypatch.chdir(tmp_path)
+        CliRunner().invoke(main, ["init"])
+        _seed_codex_doc_for_health(tmp_path, "a", binds=["src/no-such/**/*.py"])
+        _seed_codex_doc_for_health(tmp_path, "b", binds=["src/missing.py"])
+        res = CliRunner().invoke(main, ["health", "--scope", "bindings"])
+        assert res.exit_code == 1, res.output
+
+
+# ===========================================================================
+# US-005 — Python API parity, thin pass-through, signature contract
+# Workflow: conceptual-workflows-health (lore codex show conceptual-workflows-health)
+# ADR-011 — decisions-011-api-parity-with-cli
+# ===========================================================================
+
+
+class TestHealthCheckBindingsApi:
+    """Unit coverage of `lore.models.health_check` over the bindings scope (US-005)."""
+
+    def test_health_check_signature_accepts_bindings_scope(self, tmp_path):
+        """US-005 unit — signature accepts `scope=["bindings"]`; smoke call on empty project."""
+        import inspect
+
+        from lore.models import health_check
+
+        sig = inspect.signature(health_check)
+        assert "scope" in sig.parameters
+
+        project = _make_lore_project(tmp_path)
+        report = health_check(project, scope=["bindings"])
+        assert report.issues == ()
+        assert report.has_errors is False
+
+    def test_health_check_thin_pass_through_to_check_bindings(self, tmp_path):
+        """US-005 unit — `report.issues` equals `_check_bindings(project_root)` row-for-row."""
+        from lore.health import _check_bindings
+        from lore.models import health_check
+
+        project = _make_lore_project(tmp_path)
+        _seed_codex_doc_for_health(project, "entry-a", binds=["src/missing.py"])
+
+        report = health_check(project, scope=["bindings"])
+        assert list(report.issues) == _check_bindings(project)
+
+
+class TestHealthIssueFieldShape:
+    """Dataclass field-set regression guard (US-005)."""
+
+    def test_health_issue_field_set_unchanged(self):
+        """US-005 unit — `HealthIssue` field names match the locked set, no additions."""
+        from lore.models import HealthIssue
+
+        field_names = {f.name for f in dataclasses.fields(HealthIssue)}
+        assert field_names == {
+            "severity",
+            "entity_type",
+            "id",
+            "check",
+            "detail",
+            "schema_id",
+            "rule",
+            "pointer",
+        }
 

@@ -2,6 +2,11 @@
 id: conceptual-workflows-lore-init
 title: lore init Behaviour
 summary: What the system does internally when `lore init` runs — the ordered sequence of steps from directory creation through database setup, default file seeding (doctrines, knights, artifacts, watchers), the codex root + glossary skeleton + project config seeding (CODEX.md and glossary.yaml are the only files lore init places under .lore/codex/, plus .lore/config.toml — all three idempotent), and AGENTS.md management. Covers idempotency guarantees and the AGENTS.md marker mechanism.
+binds:
+- src/lore/init.py
+- src/lore/cli.py
+- tests/e2e/test_lore_init.py
+- tests/unit/test_lore_init.py
 related: ["tech-arch-initialized-project-structure", "tech-arch-agents-md", "conceptual-workflows-health", "tech-arch-schemas", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
 ---
 

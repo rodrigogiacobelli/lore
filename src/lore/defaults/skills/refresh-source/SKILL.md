@@ -50,7 +50,7 @@ Ask the user which parts of the diff should drive canonical-doc updates. The use
 
 ### 8. Propose and apply canonical updates
 
-For each codex-worthy change, name the specific canonical doc to update and the proposed edit. Apply after approval.
+For each codex-worthy change, name the specific canonical doc to update and the proposed edit. Apply after approval. When the distilled canonical doc maps to specific code files in the target repo, populate its `binds:` field so `lore impacts` surfaces the doc when those files are edited.
 
 If any proposed edit adds or modifies a `.lore/codex/glossary.yaml` entry, gate it through the design checklist before proposing:
 

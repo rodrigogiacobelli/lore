@@ -3,6 +3,8 @@ id: example-tech-frontend
 title: Frontend
 summary: Frontend technology, project structure, routing, component conventions, and
   state management. Start here before adding or modifying any UI code.
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Frontend

@@ -6,6 +6,15 @@ summary: What `lore init` creates on disk — the .lore/ directory layout, file 
   on init, the .lore/codex/CODEX.md root and .lore/codex/glossary.yaml skeleton (the two
   files lore init seeds under .lore/codex/), and the .lore/config.toml project config
   seed (TOML, generic from day one).
+binds:
+- src/lore/init.py
+- src/lore/paths.py
+- src/lore/defaults/gitignore
+- tests/unit/test_lore_init.py
+- tests/unit/test_paths.py
+- tests/e2e/test_lore_init.py
+- tests/e2e/test_lore_init_glossary.py
+- tests/e2e/test_lore_init_schema_clean.py
 related:
 - conceptual-workflows-lore-init
 - tech-arch-agents-md

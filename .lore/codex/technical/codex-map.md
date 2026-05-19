@@ -2,6 +2,12 @@
 id: tech-arch-codex-map
 title: "Codex Map — map_documents Internals"
 summary: "Technical reference for map_documents, the shared _build_adjacency helper, and the codex_map CLI handler. Covers the two-budget directional BFS, default body short-circuit, the ConflictingDepthFlags exception, and the relationship to chaos_documents."
+binds:
+  - src/lore/codex.py
+  - src/lore/cli.py
+  - tests/unit/test_codex_map.py
+  - tests/unit/test_codex_build_adjacency.py
+  - tests/e2e/test_codex_map.py
 related:
   - tech-arch-frontmatter
   - tech-arch-source-layout

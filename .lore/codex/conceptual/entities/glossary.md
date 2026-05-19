@@ -5,8 +5,8 @@ summary: >
   What the Glossary is — a single canonical YAML file at `.lore/codex/glossary.yaml`
   that holds short, project-specific term definitions keyed by `keyword`. The
   Glossary is read-only via the `lore glossary` CLI, auto-surfaces matched terms
-  on `lore codex show`, and is audited (schema, intra-file collisions, and
-  cross-codex deprecated-term scan) by `lore health`.
+  on `lore codex show`, and is audited (schema and intra-file collisions) by
+  `lore health`.
 related:
   - conceptual-entities-artifact
   - conceptual-entities-knight
@@ -37,7 +37,7 @@ Every glossary item is a mapping with up to four keys:
 - **`keyword`** — Required. The canonical surface form of the term. Lookup is case-insensitive (via `str.casefold()`); display preserves the original casing. The `keyword` is the natural key — there is no `id` field.
 - **`definition`** — Required. A one-to-two sentence explanation of the term. Multi-line YAML scalars (folded `>` or block `|`) are allowed; the renderer collapses internal whitespace when rendering inline.
 - **`aliases`** — Optional list of additional surface forms that should match the same item. Aliases participate in matching but are NOT accepted as `lore glossary show` lookup keys.
-- **`do_not_use`** — Optional list of deprecated forms. Surfaces ONLY in `lore health` — never in `lore codex show` auto-surface — and emits one `glossary_deprecated_term` warning per occurrence per Codex document.
+- **`do_not_use`** — Optional list of deprecated forms. Documentation hint only. Validated for shape by the `glossary` schema and used by the intra-file `do_not_use_collision` check (a `do_not_use` term that collides with another item's `keyword` or `alias` is an error). NOT surfaced by `lore codex show` auto-surface, and NOT scanned across other codex documents — no automated corpus enforcement of deprecated forms exists.
 
 The glossary file's shape is enforced by the JSON Schema at `lore://schemas/glossary` (packaged at `src/lore/schemas/glossary.yaml`). Schema rules: `keyword` and `definition` are required; `keyword`, `aliases` items, and `do_not_use` items are 1–80 single-line characters; `definition` is 1–1000 characters; `aliases` and `do_not_use` are unique within their list. A multi-line keyword or alias is rejected at the schema layer because the matcher is undefined for newline-bearing strings.
 
@@ -71,19 +71,20 @@ absent ──→ seeded skeleton ──→ user-edited
 |-------|-------------|------------|
 | `absent` | No `.lore/codex/glossary.yaml` exists. `lore glossary list` prints `No glossary defined.` and exits 0. `lore codex show` skips auto-surface silently. | `lore init` seeds the skeleton if absent. |
 | `seeded skeleton` | File exists with header comment + `items: []`. Schema-valid. Auto-surface produces no `## Glossary` block (no items match). | Maintainer adds items by editing the file. |
-| `user-edited` | File contains one or more items. Auto-surface and `lore health` deprecated-term scan operate over the items. | Maintainer adds, edits, or removes items by editing the file. `lore init` is idempotent — a re-init does NOT overwrite a user-edited file. |
+| `user-edited` | File contains one or more items. Auto-surface matches canonical keywords and aliases against codex bodies; `lore health` validates the file shape and intra-file collisions. | Maintainer adds, edits, or removes items by editing the file. `lore init` is idempotent — a re-init does NOT overwrite a user-edited file. |
 
 The Glossary has no soft-delete. Renames or removals are not migrations — dangling references in other Codex documents simply stop matching, with no error.
 
 ## How It Is Surfaced
 
-Three independent surfaces consume the Glossary:
+Two independent surfaces consume the Glossary:
 
 1. **`lore glossary {list,search,show}`** — direct read access. See conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary).
 2. **`lore codex show <id>` auto-surface** — when `show-glossary-on-codex-commands = true` in `.lore/config.toml` (the default) and `--skip-glossary` is not passed, the system tokenises every returned Codex document body, matches tokens against keyword and alias token-tuples, and appends a trailing `## Glossary` block with each matched item. The match algorithm is the single shared normaliser described in conceptual-workflows-glossary. `do_not_use` matches are NOT included in the auto-surface block.
-3. **`lore health`** — schema validates `glossary.yaml`, runs intra-file collision checks (duplicate keyword, alias-keyword collision, `do_not_use` collision), and scans every Codex document body for `do_not_use` term hits. See conceptual-workflows-health (lore codex show conceptual-workflows-health).
 
-All three surfaces share one normaliser (`lore.glossary._normalise_tokens` and `_build_lookup`). Auto-surface and the health scan are two presentation policies over the same matcher — DRY by construction.
+`lore health` also reads `glossary.yaml`, but only to schema-validate it and to run intra-file collision checks (duplicate keyword, alias-keyword collision, `do_not_use` collision). There is no cross-codex scan over `do_not_use` terms — see conceptual-workflows-health (lore codex show conceptual-workflows-health).
+
+Auto-surface owns the single matcher (`lore.glossary._normalise_tokens` and `_build_lookup`). It is the only presentation policy over that matcher.
 
 ## Edge Cases
 
@@ -97,7 +98,7 @@ All three surfaces share one normaliser (`lore.glossary._normalise_tokens` and `
 
 - conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary) — the read-side workflows (`list`, `search`, `show`, auto-surface, `--skip-glossary`).
 - conceptual-workflows-codex (lore codex show conceptual-workflows-codex) — `lore codex show` is the principal auto-surface entry point.
-- conceptual-workflows-health (lore codex show conceptual-workflows-health) — schema, collision, and deprecated-term scanning.
+- conceptual-workflows-health (lore codex show conceptual-workflows-health) — schema and intra-file collision checks.
 - conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) — how the skeleton is seeded.
 - decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary) — file-format split (TOML for config, YAML for glossary) and the init carve-out.
 - tech-arch-schemas (lore codex show tech-arch-schemas) — how the `glossary` schema kind plugs into the schemas module.

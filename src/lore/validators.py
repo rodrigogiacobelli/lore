@@ -129,6 +129,34 @@ def validate_group(group: str | None) -> str | None:
     return None
 
 
+def is_glob_pattern(s: str) -> bool:
+    """Return ``True`` iff *s* contains any of ``*``, ``?``, ``[``.
+
+    Used by the codex-seed JSON renderer to classify each binding as
+    ``"exact"`` or ``"glob"`` (FR-12) and by the path-seed exact/glob
+    dedup (FR-9).
+    """
+    return any(c in s for c in "*?[")
+
+
+def validate_binds_entry(s: object) -> str | None:
+    """Return an error string if *s* is not a valid `binds:` entry, else None.
+
+    Rules mirror the JSON-Schema layer on ``codex-frontmatter.yaml``:
+    must be a non-empty string; must not start with ``/`` (absolute path);
+    must not contain any ``..`` path segment (leading, embedded, or trailing).
+    """
+    if not isinstance(s, str):
+        return f"Invalid binds entry: {s!r} (not a string)"
+    if s == "":
+        return 'Invalid binds entry: "" (empty string)'
+    if s.startswith("/"):
+        return f'Invalid binds entry: "{s}" (absolute path not allowed)'
+    if any(seg == ".." for seg in s.split("/")):
+        return f'Invalid binds entry: "{s}" (".." segment not allowed)'
+    return None
+
+
 def validate_quest_id_loose(quest_id: str) -> str | None:
     """Return an error string if *quest_id* does not match the loose quest ID pattern.
 

@@ -6,6 +6,10 @@ summary: 'What the system does internally when lore oracle runs — report gener
   derivation.
 
   '
+binds:
+- src/lore/oracle.py
+- src/lore/cli.py
+- tests/e2e/test_oracle.py
 related:
 - tech-oracle-internals
 - ref-lore_cli-commands

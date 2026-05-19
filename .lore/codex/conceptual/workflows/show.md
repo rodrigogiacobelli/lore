@@ -6,6 +6,11 @@ summary: 'What the system does internally when lore show <id> runs — quest inl
   for mission IDs, and not-found error paths.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- src/lore/graph.py
+- tests/unit/test_graph.py
 related:
 - tech-arch-graph
 - conceptual-workflows-board

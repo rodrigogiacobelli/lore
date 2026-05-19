@@ -6,6 +6,11 @@ summary: 'Technical reference for src/lore/knight.py. Covers list_knights and fi
   in knight_list, knight_show, and _show_mission.
 
   '
+binds:
+- src/lore/knight.py
+- tests/unit/test_knight.py
+- tests/e2e/test_knight_crud.py
+- tests/e2e/test_knight_list.py
 related:
 - conceptual-entities-knight
 - tech-arch-source-layout

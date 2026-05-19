@@ -8,6 +8,12 @@ summary: >
   the existing rule that `lore init` does not seed `.lore/codex/`: the glossary
   skeleton is written directly to `.lore/codex/glossary.yaml` (not under
   `default/`) because it is user-tracked vocabulary.
+binds:
+  - src/lore/config.py
+  - src/lore/glossary.py
+  - src/lore/schemas/glossary.yaml
+  - src/lore/init.py
+  - pyproject.toml
 related:
   - conceptual-entities-glossary
   - conceptual-workflows-glossary

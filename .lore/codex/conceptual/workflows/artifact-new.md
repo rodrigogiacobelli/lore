@@ -2,6 +2,11 @@
 id: conceptual-workflows-artifact-new
 title: lore artifact new Behaviour
 summary: What the system does internally when `lore artifact new <name> [--group <path>] --from <body-file>` runs — name and group validation, subtree-wide duplicate detection, strict frontmatter re-check, auto-mkdir of the target group directory, and atomic write of the single `.md` file to `.lore/artifacts/`.
+binds:
+- src/lore/artifact.py
+- src/lore/cli.py
+- tests/e2e/test_artifact_new.py
+- tests/unit/test_artifact.py
 related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-crud", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 

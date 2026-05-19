@@ -1,8 +1,16 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — full-scan or scoped audit of all six file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema, intra-file collision, and cross-codex deprecated-term scan.
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+summary: What the system does internally when lore health runs — full-scan or scoped audit of all six file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema and intra-file collision checks, and the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings).
+binds:
+- src/lore/health.py
+- src/lore/cli.py
+- tests/e2e/test_health.py
+- tests/e2e/test_health_glossary.py
+- tests/e2e/test_health_schemas.py
+- tests/unit/test_health.py
+- tests/unit/test_health_schemas.py
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
@@ -22,11 +30,13 @@ lore health --scope doctrines knights
 lore health --scope watchers
 lore health --scope glossary
 lore health --scope codex glossary
+lore health --scope bindings
+lore health --scope bindings codex
 lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`. Omitting `--scope` runs every scope including `schemas` and `glossary`.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. Omitting `--scope` runs every scope including `schemas`, `glossary`, and `bindings`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. The report file is always written regardless of `--json`.
 
@@ -35,9 +45,9 @@ lore health --scope codex --json
 ### 1. Resolve scope
 
 The system determines which entity types to audit:
-- No `--scope`: all scopes run, including `schemas` and `glossary`.
+- No `--scope`: all scopes run, including `schemas`, `glossary`, and `bindings`.
 - `--scope TYPE [TYPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`.
 
 ### 2. Run per-entity checkers
 
@@ -65,18 +75,19 @@ Each in-scope entity type is checked independently. A failure in one checker (e.
 
 #### Glossary checks (scope: `glossary`)
 
-The glossary scope runs three families of check over `.lore/codex/glossary.yaml` and the rest of the codex. See conceptual-entities-glossary (lore codex show conceptual-entities-glossary) for the entity model and conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary) for the matcher used by the deprecated-term scan.
+The glossary scope runs two families of check over `.lore/codex/glossary.yaml`. See conceptual-entities-glossary (lore codex show conceptual-entities-glossary) for the entity model.
 
 1. **Schema validation.** `lore.schemas.validate_entity_file(path, "glossary")` validates the file against `lore://schemas/glossary`. Schema errors are always errors (never warnings) and short-circuit the intra-glossary checks for that file (the unsafe-to-interpret rule). The `glossary` schema kind also runs as part of `--scope schemas`.
 2. **Intra-glossary collisions:**
    - **`duplicate_keyword`** (error): two items share a casefolded `keyword`. `id=<glossary path>`, `detail="'<kw>' appears in items[i] and items[j]"`.
    - **`alias_keyword_collision`** (warning): an alias of item A casefold-equals the keyword of item B (B != A). `detail="alias '<a>' on '<kw>' collides with keyword '<other>'"`.
    - **`do_not_use_collision`** (error): a `do_not_use` term casefold-equals any other item's `keyword` or any `alias`. `detail="'<term>' in do_not_use of '<kw>' collides with keyword/alias '<other>'"`.
-3. **Cross-codex deprecated-term scan.** Every codex `.md` body is loaded once. `lore.glossary.find_deprecated_terms` runs the shared tokeniser over each body and matches `do_not_use` token-tuples (canonical keywords and aliases are NOT scanned here — only deprecated forms). Each occurrence emits one `HealthIssue(severity="warning", entity_type="codex", id=<doc-id>, check="glossary_deprecated_term", detail='document uses deprecated term "<term>" — prefer "<canonical-keyword>"')`. Mirrors the existing `broken_related_link` warning shape.
 
-`--scope glossary` runs only those three families (no codex `related` checks, no doctrine checks, etc.). `--scope codex glossary` runs codex reference-integrity checks AND the glossary checks (multi-scope per ADR-012). `--scope schemas` continues to validate every schema kind, including `glossary`, so a malformed glossary surfaces in `--scope schemas` even without `glossary` in the scope set.
+`--scope glossary` runs only those two families (no codex `related` checks, no doctrine checks, etc.). `--scope codex glossary` runs codex reference-integrity checks AND the glossary checks (multi-scope per ADR-012). `--scope schemas` continues to validate every schema kind, including `glossary`, so a malformed glossary surfaces in `--scope schemas` even without `glossary` in the scope set.
 
-A missing `.lore/codex/glossary.yaml` is NOT an error — empty glossary is a valid state. Schema validation of an absent file is a no-op for this kind. The intra-glossary and deprecated-term scans both no-op on an empty/absent file.
+A missing `.lore/codex/glossary.yaml` is NOT an error — empty glossary is a valid state. Schema validation of an absent file is a no-op for this kind. The intra-glossary checks no-op on an empty/absent file.
+
+There is no cross-codex deprecated-term scan. The `do_not_use` schema field on glossary items is now a documentation hint only — it is still validated for shape and still drives the intra-file `do_not_use_collision` check, but no automated audit scans codex bodies for occurrences of deprecated terms. The replacement signal during authoring is `lore codex show`'s glossary auto-surface, which lists canonical keywords and aliases inline.
 
 #### Watcher checks
 
@@ -106,6 +117,23 @@ Special error rules (beyond JSON Schema keywords):
 - **`rule="read-failed"`** — I/O or Unicode failure on read. Single error, `pointer="/"`, `message=str(exc)`. Validation continues to the next file.
 
 Files that the existing entity loaders today silently skip (unpaired doctrine designs, frontmatter-less knights, malformed artifacts) are surfaced here as schema errors instead of being silently dropped.
+
+#### Bindings checks (scope: `bindings`)
+
+The bindings scope audits the optional `binds:` frontmatter field that codex entries use to declare which on-disk paths they govern. The audit answers the integrity question implied by ADR-006 (lore codex show decisions-006-id-references): when a refactor renames or deletes a file, does any codex entry still claim to govern it? See conceptual-workflows-impacts (lore codex show conceptual-workflows-impacts) for the field's read-side semantics; this scope is the write-side integrity check.
+
+The checker reuses the same codex binds index that `lore impacts` consumes — there is no second walk of the codex. Each `binds:` string is classified literal-vs-glob by the impacts-module rule (any of `*`, `?`, `[` in the string → glob; otherwise → literal). Schema-level validation of binds strings (non-empty, no `..`, not absolute, no duplicates) stays in `--scope schemas`; the bindings scope assumes well-formed input and audits filesystem truth only.
+
+Two checks:
+
+- **`dead_binding`** (error): a literal `binds:` string whose resolved path does not exist on disk. Resolution is anchored at `find_project_root()`; symlinks are followed only when the resolved target stays inside the project root. `HealthIssue(severity="error", entity_type="codex", id=<codex-id>, check="dead_binding", detail='"<binding>" — file not found')` for missing files; `detail='"<binding>" — resolves outside project root'` for symlink-escapers. Each dead literal in a single entry's `binds:` array emits its own row.
+- **`empty_glob_binding`** (warning): a glob `binds:` pattern that matches zero files in the repo. Glob expansion walks the project root once per `health_check()` call (lazy — only built if at least one glob is seen), skipping `.git/`, `.lore/`, `node_modules/`, `__pycache__/`, and any symlink whose target escapes the repo. Pattern matching reuses the regex translation that `lore impacts` uses, so `**`, `*`, `?`, `[...]` semantics are byte-identical to the impacts command. `HealthIssue(severity="warning", entity_type="codex", id=<codex-id>, check="empty_glob_binding", detail='"<pattern>" — pattern matches zero files')`. A glob matching one or more files is silent.
+
+A codex entry with no `binds:` field, or with `binds: []`, emits zero rows. A malformed `binds:` entry is silently skipped — the codex binds index already filters it, and `--scope schemas` reports the malformed shape separately.
+
+Severity split is deliberate: `dead_binding` flips exit code 1 (refactor-induced governance drift fails CI), `empty_glob_binding` does not (forward-looking globs during feature bootstrap stay green). The warning never escalates to an error.
+
+`--scope bindings` runs only this audit. `--scope bindings codex` runs both (multi-scope per ADR-012). `lore health` with no `--scope` runs bindings as part of the default-all-scopes execution.
 
 ### 3. Collect results
 
@@ -213,6 +241,7 @@ from pathlib import Path
 report = health_check(project_root=Path("."), scope=None)
 report = health_check(project_root=Path("."), scope=["codex"])
 report = health_check(project_root=Path("."), scope=["doctrines", "watchers"])
+report = health_check(project_root=Path("."), scope=["bindings"])
 
 report.has_errors       # bool
 report.errors           # tuple[HealthIssue, ...]
@@ -228,7 +257,7 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary.` |
+| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary, bindings.` |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |

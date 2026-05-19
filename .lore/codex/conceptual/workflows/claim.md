@@ -4,6 +4,10 @@ title: lore claim Behaviour
 summary: What the system does internally when `lore claim <mission-id>` runs — ID
   format validation, status transition open→in_progress, idempotency on already-in_progress
   missions, parent quest status recomputation, and multi-mission batch support.
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_claim.py
 related:
 - conceptual-workflows-ready
 - conceptual-workflows-done

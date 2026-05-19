@@ -5,6 +5,10 @@ summary: 'What the system does internally when lore stats runs — aggregate cou
   by status across quests and missions, zero-state output, and JSON envelope.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_stats.py
 related:
 - ref-lore_cli-commands
 ---

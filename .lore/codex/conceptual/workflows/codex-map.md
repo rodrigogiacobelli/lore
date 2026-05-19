@@ -5,6 +5,11 @@ summary: What the system does internally when lore codex map <id> runs — direc
   bidirectional BFS over the related frontmatter field, list-shape default output
   mirroring lore codex list, optional full-body output via --full, and the
   --depth/--depth-in/--depth-out flag matrix with mutual-exclusion enforcement.
+binds:
+- src/lore/codex.py
+- src/lore/cli.py
+- tests/e2e/test_codex_map.py
+- tests/unit/test_codex_map.py
 related:
 - conceptual-workflows-codex
 - conceptual-workflows-codex-chaos

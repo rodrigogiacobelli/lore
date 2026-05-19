@@ -57,7 +57,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings")
 
 # Schema-validated entity kinds. Each tuple is:
 #   (entity_type label used on HealthIssue,
@@ -86,11 +86,9 @@ _FRONTMATTER_SCHEMA_KINDS: frozenset[str] = frozenset({
 _ARTIFACT_ID_PATTERN = re.compile(r"\bfi-[a-z0-9-]+\b")
 
 # Warning checks that escalate to the errors bucket so they raise the exit
-# code (per US-005 AC: glossary warnings still bump the process to exit 1
-# even though the issue's severity remains "warning" in the report).
+# code even though the issue's severity remains "warning" in the report.
 _ESCALATED_WARNING_CHECKS: frozenset[str] = frozenset({
     "alias_keyword_collision",
-    "glossary_deprecated_term",
 })
 
 
@@ -462,8 +460,8 @@ def _resolve_schema_candidates(entity_root: Path, glob: str) -> list[Path]:
     """Resolve a ``_SCHEMA_KINDS`` glob entry to a sorted list of files.
 
     Globs containing ``*`` are passed through ``Path.glob``. Globs without any
-    ``*`` are treated as literal filenames under ``entity_root`` (US-005
-    introduces this for the single-file ``glossary.yaml`` schema row).
+    ``*`` are treated as literal filenames under ``entity_root`` (used for
+    the single-file ``glossary.yaml`` schema row).
     """
     if "*" in glob:
         return sorted(entity_root.glob(glob))
@@ -632,7 +630,7 @@ _GLOSSARY_REL_ID = ".lore/codex/glossary.yaml"
 
 
 def _glossary_schema_issues(project_root: Path) -> list[HealthIssue]:
-    """Return only the schema issues for the glossary file (US-005 phase 1)."""
+    """Return only the schema issues for the glossary file (family 1)."""
     return [
         i for i in _check_schemas(project_root)
         if i.entity_type == "glossary" and i.check == "schema"
@@ -640,7 +638,7 @@ def _glossary_schema_issues(project_root: Path) -> list[HealthIssue]:
 
 
 def _glossary_duplicate_keyword_issues(items: list) -> list[HealthIssue]:
-    """Two items sharing a casefolded keyword (US-005 phase 2, error)."""
+    """Two items sharing a casefolded keyword (family 2, error)."""
     issues: list[HealthIssue] = []
     seen: dict[str, int] = {}
     for idx, item in enumerate(items):
@@ -659,7 +657,7 @@ def _glossary_duplicate_keyword_issues(items: list) -> list[HealthIssue]:
 
 
 def _glossary_alias_collision_issues(items: list) -> list[HealthIssue]:
-    """Alias on item A casefold-equals keyword of another item B (US-005 phase 3, warning)."""
+    """Alias on item A casefold-equals keyword of another item B (family 2, warning)."""
     issues: list[HealthIssue] = []
     for item_a in items:
         for alias in item_a.aliases:
@@ -682,8 +680,8 @@ def _glossary_alias_collision_issues(items: list) -> list[HealthIssue]:
 
 
 def _glossary_do_not_use_collision_issues(items: list) -> list[HealthIssue]:
-    """``do_not_use`` term casefold-equals any keyword or alias on another item
-    (US-005 phase 4, error)."""
+    """``do_not_use`` term casefold-equals any keyword or alias on another item,
+    or appears in the ``do_not_use`` list of 2+ items (intra-file collision, error)."""
     issues: list[HealthIssue] = []
     for item_a in items:
         for term in item_a.do_not_use:
@@ -706,60 +704,161 @@ def _glossary_do_not_use_collision_issues(items: list) -> list[HealthIssue]:
                             f"collides with keyword/alias '{collider}'"
                         ),
                     ))
+    # Cross-item duplicate do_not_use terms — one row per duplicated term.
+    term_to_keywords: dict[str, list[str]] = {}
+    for item in items:
+        seen_in_item: set[str] = set()
+        for term in item.do_not_use:
+            term_cf = term.casefold()
+            if term_cf in seen_in_item:
+                continue
+            seen_in_item.add(term_cf)
+            term_to_keywords.setdefault(term_cf, []).append(item.keyword)
+    for term_cf, keywords in term_to_keywords.items():
+        if len(keywords) < 2:
+            continue
+        issues.append(HealthIssue(
+            severity="error",
+            entity_type="glossary",
+            id=_GLOSSARY_REL_ID,
+            check="do_not_use_collision",
+            detail=(
+                f"'{term_cf}' appears in do_not_use of multiple items: "
+                + ", ".join(f"'{k}'" for k in keywords)
+            ),
+        ))
     return issues
 
 
-def _read_codex_bodies(codex_dir: Path) -> dict[str, str]:
-    """Map codex doc-id → body (post-frontmatter), skipping transient/ and unparseable docs."""
-    bodies: dict[str, str] = {}
-    if not codex_dir.exists():
-        return bodies
-    transient_dir = codex_dir / "transient"
-    for filepath in codex_dir.rglob("*.md"):
-        if filepath.is_relative_to(transient_dir):
-            continue
+_BINDINGS_SKIP_DIRS: frozenset[str] = frozenset(
+    {".git", ".lore", "node_modules", "__pycache__"}
+)
+
+
+def _symlink_escapes_root(entry: Path, root_resolved: Path) -> bool:
+    """Return ``True`` if *entry* is a symlink whose target resolves outside *root_resolved*.
+
+    Non-symlinks return ``False``. ``OSError`` (broken link, etc.) is treated
+    as an escaper — the path is excluded.
+    """
+    if not entry.is_symlink():
+        return False
+    try:
+        entry.resolve().relative_to(root_resolved)
+    except (OSError, ValueError):
+        return True
+    return False
+
+
+def _walk_repo_files(project_root: Path) -> list[str]:
+    """Return sorted POSIX repo-relative paths for files under *project_root*.
+
+    Excludes the well-known skip dirs in ``_BINDINGS_SKIP_DIRS`` and drops
+    symlinks whose target resolves outside ``project_root.resolve()``.
+    ``PermissionError``/``OSError`` on a subdirectory are caught per
+    ``iterdir`` call — the offending subtree is treated as empty and walking
+    continues with sibling entries.
+    """
+    root_resolved = project_root.resolve()
+    results: list[str] = []
+
+    def _walk(dirpath: Path, rel_parts: tuple[str, ...]) -> None:
         try:
-            text = filepath.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if not text.startswith("---"):
-            continue
-        parts = text.split("---", 2)
-        if len(parts) < 3:
-            continue
-        try:
-            fm = yaml.safe_load(parts[1])
-        except yaml.YAMLError:
-            continue
-        if not isinstance(fm, dict) or not fm.get("id"):
-            continue
-        bodies[str(fm["id"])] = parts[2]
-    return bodies
+            entries = list(dirpath.iterdir())
+        except (PermissionError, OSError):
+            return
+        for entry in entries:
+            if _symlink_escapes_root(entry, root_resolved):
+                continue
+            child_parts = rel_parts + (entry.name,)
+            if entry.is_dir():
+                if entry.name in _BINDINGS_SKIP_DIRS:
+                    continue
+                _walk(entry, child_parts)
+            elif entry.is_file():
+                results.append("/".join(child_parts))
+
+    _walk(project_root, ())
+    results.sort()
+    return results
 
 
-def _glossary_deprecated_term_issues(project_root: Path, items: list) -> list[HealthIssue]:
-    """Cross-codex deprecated-term scan (US-005 phase 5, warning)."""
-    from lore.glossary import find_deprecated_terms
+def _check_bindings(project_root: Path) -> list[HealthIssue]:
+    """Audit codex ``binds:`` entries.
 
-    bodies = _read_codex_bodies(project_root / ".lore" / "codex")
-    issues = [
-        HealthIssue(
-            severity="warning",
-            entity_type="codex",
-            id=doc_id,
-            check="glossary_deprecated_term",
-            detail=f'document uses deprecated term "{term}" — prefer "{item.keyword}"',
-        )
-        for item, doc_id, term in find_deprecated_terms(bodies, items=items)
-    ]
-    issues.sort(key=lambda i: (i.id, i.detail))
+    Two branches:
+
+    * Literal binds — every literal path that does not exist on disk (or that
+      resolves outside ``project_root``) surfaces as one ``dead_binding``
+      error row.
+    * Glob binds — every glob pattern whose expansion matches zero files in
+      the project surfaces as one ``empty_glob_binding`` warning row.
+
+    Rows are ordered by codex id ascending; within an entry, declaration
+    order is preserved. The repo file walk is built lazily on the first glob
+    seen and reused for the rest of the call.
+    """
+    from lore.impacts import (
+        _has_glob_chars,
+        _load_codex_binds_index,
+        _normalize_slashes,
+        _pattern_to_regex,
+    )
+
+    codex_dir = project_root / ".lore" / "codex"
+    index = _load_codex_binds_index(codex_dir)
+    if not index:
+        return []
+
+    issues: list[HealthIssue] = []
+    root_resolved = project_root.resolve()
+    repo_files: list[str] | None = None  # lazy — only built if a glob is seen
+
+    for codex_id in sorted(index):
+        for binding in index[codex_id]:
+            pat_norm = _normalize_slashes(binding)
+            if not _has_glob_chars(pat_norm):
+                candidate = project_root / pat_norm
+                try:
+                    resolved = candidate.resolve()
+                    resolved.relative_to(root_resolved)
+                except (OSError, ValueError):
+                    issues.append(HealthIssue(
+                        severity="error",
+                        entity_type="codex",
+                        id=codex_id,
+                        check="dead_binding",
+                        detail=f'"{binding}" — resolves outside project root',
+                    ))
+                    continue
+                if not candidate.exists():
+                    issues.append(HealthIssue(
+                        severity="error",
+                        entity_type="codex",
+                        id=codex_id,
+                        check="dead_binding",
+                        detail=f'"{binding}" — file not found',
+                    ))
+                continue
+
+            # Glob branch — build repo file index lazily.
+            if repo_files is None:
+                repo_files = _walk_repo_files(project_root)
+            regex = re.compile("^" + _pattern_to_regex(pat_norm) + "$")
+            if not any(regex.match(p) for p in repo_files):
+                issues.append(HealthIssue(
+                    severity="warning",
+                    entity_type="codex",
+                    id=codex_id,
+                    check="empty_glob_binding",
+                    detail=f'"{binding}" — pattern matches zero files',
+                ))
     return issues
 
 
 def _check_glossary(project_root: Path) -> list[HealthIssue]:
-    """Audit the glossary file. Five phases: schema (short-circuits on error),
-    duplicate keyword, alias collision, do_not_use collision, cross-codex
-    deprecated-term scan."""
+    """Audit the glossary file. Four phases: schema (short-circuits on error),
+    duplicate keyword, alias collision, do_not_use collision."""
     from lore.glossary import scan_glossary
 
     glossary_file = project_root / ".lore" / "codex" / "glossary.yaml"
@@ -775,7 +874,6 @@ def _check_glossary(project_root: Path) -> list[HealthIssue]:
         *_glossary_duplicate_keyword_issues(items),
         *_glossary_alias_collision_issues(items),
         *_glossary_do_not_use_collision_issues(items),
-        *_glossary_deprecated_term_issues(project_root, items),
     ]
 
 
@@ -894,6 +992,7 @@ def health_check(
         "watchers": lambda: _check_watchers(watchers_dir, doctrines_dir),
         "schemas": lambda: _check_schemas(project_root),
         "glossary": lambda: _check_glossary(project_root),
+        "bindings": lambda: _check_bindings(project_root),
     }
 
     for scope_name in active_scope:

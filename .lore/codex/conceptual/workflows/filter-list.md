@@ -5,6 +5,11 @@ summary: What the system does when --filter GROUP... is passed to the list subco
   of codex, artifact, knight, doctrine, or watcher commands — slash-delimited token-to-group
   segment-prefix matching, root-level file inclusion, Python API parity, and unchanged
   unfiltered behaviour.
+binds:
+- src/lore/cli.py
+- src/lore/paths.py
+- tests/e2e/test_filter_list.py
+- tests/unit/test_filter_subtree.py
 related:
 - conceptual-workflows-artifact-list
 - conceptual-workflows-knight-list

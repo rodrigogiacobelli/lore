@@ -4,6 +4,10 @@ title: Soft-delete semantics and FK omission on the dependencies table
 summary: ADR explaining why soft-delete was chosen over hard-delete for all Lore entities,
   and why foreign key constraints were deliberately omitted from the dependencies
   table.
+binds:
+- src/lore/db.py
+- src/lore/watcher.py
+- src/lore/priority.py
 related:
 - decisions-009-mission-self-containment
 - ref-lore_db-core

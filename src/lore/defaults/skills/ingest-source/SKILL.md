@@ -53,7 +53,7 @@ The Glossary is for small, project-specific terms only. Entities, named workflow
 
 ### 6. Apply approved edits
 
-For each approved edit, modify the relevant canonical doc. Canonical docs may mention the source ID in prose; they must NEVER list the source ID in `related` — `lore health` will reject that as `canonical_links_to_source`.
+For each approved edit, modify the relevant canonical doc. Canonical docs may mention the source ID in prose; they must NEVER list the source ID in `related` — `lore health` will reject that as `canonical_links_to_source`. When the distilled canonical doc maps to specific code files in the target repo, populate its `binds:` field so `lore impacts` surfaces the doc when those files are edited.
 
 Track the canonical codex IDs that were actually edited. You will list these in the snapshot's `related` field.
 

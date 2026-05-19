@@ -2,6 +2,11 @@
 id: conceptual-workflows-watcher-list
 title: lore watcher list Behaviour
 summary: What the system does internally when `lore watcher list` and `lore watcher show` run — recursive YAML discovery under .lore/watchers/, field extraction with fallbacks, group derivation, sorted table or JSON output, and raw-YAML or structured-JSON show behaviour.
+binds:
+- src/lore/watcher.py
+- src/lore/cli.py
+- tests/e2e/test_watcher_list.py
+- tests/unit/test_watcher.py
 related:
   - conceptual-entities-watcher
   - conceptual-workflows-knight-list

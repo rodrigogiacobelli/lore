@@ -6,6 +6,52 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 See standards-public-api-stability for the public API stability and semver policy.
 
+## [Unreleased]
+
+### Added
+
+#### Codex hygiene
+
+- **`conceptual-workflows-schema-migrations` now binds the migration modules** — `binds:` declares `src/lore/migrations/__init__.py` + `v1_to_v2.py` through `v5_to_v6.py` and `src/lore/db.py`. Previously these files were dark code reachable only via the catch-all `src/lore/**/*.py` glob in `tech-arch-source-layout`. `lore impacts src/lore/migrations/<file>.py` now surfaces the workflow doc directly.
+
+#### `lore health --scope bindings`
+
+- **New `bindings` scope on `lore health`** — audits the `binds:` field of every codex entry for reference integrity. Two checks: `dead_binding` (error) when a literal path in `binds:` does not exist on disk, and `empty_glob_binding` (warning) when a glob pattern matches zero files in the repo. `dead_binding` flips exit code 1 via `has_errors`; `empty_glob_binding` is warning-only and leaves exit 0. No orphan detection in either direction — unbound files and unbound codex docs are both legitimate.
+- **Valid scope tokens** for `lore health --scope`: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. Multi-scope per ADR-012 (space-separated). Default (no `--scope`) runs all eight.
+- **`_walk_repo_files` repo walker** — lazy single walk per `health_check()` call, built only when at least one glob binding is encountered. Skip list `{.git, .lore, node_modules, __pycache__}`. Symlink containment via `Path.resolve().relative_to(project_root)` — symlinks escaping the project root are dropped. `PermissionError` / `OSError` on individual `iterdir` calls swallowed so a single unreadable directory does not abort the walk. Paths are POSIX-joined, sorted ascending.
+- **`_check_bindings` reuses `lore.impacts` helpers** — `_has_glob_chars`, `_normalize_slashes`, `_pattern_to_regex`, and `_load_codex_binds_index` are imported rather than duplicated. Exact-vs-glob classification matches the `lore impacts` precedent byte-for-byte.
+- **`HealthIssue` shape** for both new checks: `entity_type="codex"`, `id=<codex-doc-id>`, `check="dead_binding"` or `"empty_glob_binding"`, `schema_id` / `rule` / `pointer` all `null`. Detail strings are exact: `'"<path>" — file not found'`, `'"<path>" — resolves outside project root'`, `'"<pattern>" — pattern matches zero files'`.
+- **Python API parity** — `lore.models.health_check(scope=["bindings"])` returns rows row-for-row identical to the CLI (per ADR-011). No new exports in `lore.models.__all__`.
+- **Codex docs** — `conceptual-workflows-health` documents the new scope, the bindings checker, and the severity-split rationale; `conceptual-workflows-impacts` Out-of-Scope updated to point at `bindings` scope for dead-binding detection; `tech-cli-entity-crud-matrix`, `ref-lore_cli-commands`, and `ref-lore_api-core` register the new scope token and check names.
+
+#### Codex impacts
+
+- **`lore impacts` command** — bidirectional surfacing primitive over the new `binds:` codex frontmatter field. `lore impacts <codex-id>` lists the entry's bound code paths in declaration order; `lore impacts <path>` returns every codex entry whose `binds:` matches that path, annotated `exact` or `glob`. Token classification routes `/` or `.` to the path branch, everything else to the codex-id branch.
+- **`binds:` codex frontmatter field** — optional list of repo-root-relative paths or globs declaring which code files a codex entry governs. Schema rejects non-strings, empty strings, absolute paths, and `..` traversal; `additionalProperties: false` preserved. Absent and `binds: []` are semantically identical (entry appears in no path lookups). `validate_binds_entry` and `is_glob_pattern` added to `lore.validators`.
+- **Exact-vs-glob match semantics** for path lookups — entries containing `*`, `?`, or `[` are treated as globs and matched via stdlib `fnmatch` + manual `**` recursive bridge (no filesystem walk, symlink-safe). Per codex ID, an exact match wins over a glob match. Results sort alphabetically by codex ID; codex-seed output preserves declaration order.
+- **`--json` and `--direct-links` flags on `lore impacts`** — `--json` emits `{"impacts": [...]}` with `{"path", "kind"}` rows for codex-seed and `{"id", "match"}` (plus `pattern` for glob rows) for code-seed. `--direct-links` restricts code-seed output to exact matches; no-op on codex-seed. Unknown codex ID or path resolving outside the repo exits 1 with the error on stderr (text or `{"error": ...}` JSON).
+- **`lore.impacts` Python module re-exported via `lore.models`** — `impacts(token, *, project_root, direct_links=False) -> ImpactsResult` with frozen `CodexBinding` / `CodeBinding` items and an `ImpactsError(ValueError)` for both error paths. `dataclasses.asdict` output matches the CLI `--json` envelope byte-for-byte.
+- **Codex docs** — new `conceptual-workflows-impacts` workflow; `binds:` field documented across `codex`, `tech-arch-schemas`, `tech-arch-frontmatter`, `tech-arch-source-layout`, `tech-arch-validators`, `tech-cli-entity-crud-matrix`, `ref-lore_cli-commands`, `ref-lore_api-core`, `conceptual-workflows-codex`, `conceptual-workflows-validators`, `conceptual-entities-knight`, `tech-overview`, and `vision-benchmarks` (Layer-3 retrieval primitive).
+- **Seed defaults updated** — packaged `CODEX.md` artifact gained the `binds:` paragraph; `scout` and `architect` knight personas instruct agents to run `lore impacts <path>` when sizing or mapping a change; `tech-writer` is told to populate `binds:` on code-governing docs; `new-artifact`, `update-codex`, `ingest-source`, and `refresh-source` skills carry the same guidance; 15 codex-doc artifact templates (standards, ADRs, technical/architecture, technical/ref, conceptual workflows, runbooks, security) ship with a commented `# binds: []` placeholder. Existing `.lore/` instances are untouched on `lore init`; new projects pick up the seeds.
+- **Lore's own `.lore/codex/` bound to source and tests** — 58 codex docs now declare `binds:` against `src/lore/**` and `tests/**` patterns: `technical/architecture/*` to their modules, `technical/cli` / `technical/api` / `technical/database` / `technical/doctrine` / `technical/oracle` refs to their handler modules, all CLI-backed `conceptual/workflows/*` docs to `src/lore/cli.py` + the underlying module + matching e2e tests, and the ADRs that constrain specific files (002, 003, 004, 005, 007, 010, 011, 013) to those files. Cross-cutting workflows (`error-handling`, `json-output`, `help`, `concurrent-access`, `typical-workflow`, `mission-type`, `python-api`, `schema-migrations`) and pure-policy ADRs (001, 006 both, 008, 009, 012) deliberately stay unbound. `lore impacts src/lore/<module>.py` now returns every governing doc for that module — this repo is the worked example of the feature.
+
+### Changed
+
+- **`lore health` glossary scope — `do_not_use_collision` now also catches cross-item duplicates.** When two glossary items declare the same surface form under `do_not_use:` (e.g. both items list `bot mission`), `lore health --scope glossary` emits a `do_not_use_collision` error. The previous family-2 rule only caught a `do_not_use` term colliding with another item's `keyword` or `alias`; the cross-item duplicate-deprecation case slipped through.
+
+### Fixed
+
+- **`tech-arch-schemas` dead binding repaired.** `binds:` referenced `src/lore/schemas.py`, which no longer exists — the schemas module became a package (`src/lore/schemas/__init__.py`) when the YAML resources moved into the same directory. Updated to bind `src/lore/schemas/__init__.py` and added the previously-missing `src/lore/schemas/codex-source-frontmatter.yaml`. `lore health` is now clean on the bindings scope.
+
+### Removed
+
+- **Non-canonical `stability` frontmatter field purged.** The `stability` codex-frontmatter field was never part of `codex-frontmatter.yaml` (which is `additionalProperties: false` and allows only `id`, `title`, `summary`, `related`, `binds`), but it had leaked into `CODEX.md` (both as a required-field claim and a dedicated description paragraph), the `tech-arch-schemas` allowed-fields table, and two transient docs that carried `stability: experimental` in their own frontmatter. All references removed; `lore health` no longer reports `additionalProperties` errors against `/stability`. The `new-doctrine` skill in defaults also drops the negative `never type, stability` clause from its frontmatter rule — positive enforcement only, since not mentioning the field gives an AI no reason to invent it.
+
+- **Cross-codex deprecated-term scan removed from `lore health`.** Glossary scope no longer walks every codex body looking for `do_not_use` token-tuple hits — the scan emitted too many false positives (ADRs explaining the deprecation, quoted historical text, and any prose discussing the deprecated form would all trigger `glossary_deprecated_term` warnings). `do_not_use` field in `glossary.yaml` is preserved as documentation; the intra-file `do_not_use_collision` check stays (and now also catches cross-item duplicates, see above). Glossary scope now runs two families instead of three: schema validation and intra-file collisions.
+- **`lore.glossary.find_deprecated_terms` deleted.** The Python helper that powered the cross-codex scan is gone. `lore.glossary._normalise_tokens`, `_build_lookup`, `_iter_runs`, `_scan_runs`, and `match_glossary` (the shared tokeniser, still used by `lore codex show` auto-surface) all remain. `find_deprecated_terms` was not in `lore.models.__all__`, so the public API surface is unchanged.
+- **`glossary_deprecated_term` removed from `_ESCALATED_WARNING_CHECKS`.** The escalation set in `lore.health` shrinks to `frozenset({"alias_keyword_collision"})`. No remaining check produces the `glossary_deprecated_term` warning name.
+- **Codex docs** — `conceptual-workflows-health` drops the family-3 section under glossary scope and reframes `do_not_use` as documentation-only; `conceptual-entities-glossary` drops the "cross-codex scan" surface count (3 → 2); `conceptual-workflows-glossary` drops `find_deprecated_terms` from its Python API listing; `tech-arch-source-layout` drops `find_deprecated_terms` from the `glossary.py` module symbol list; `ref-lore_api-core` drops the function from its covers-line.
+
 ## [0.5.0] - 2026-05-17
 
 ### Added

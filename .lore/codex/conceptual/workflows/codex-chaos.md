@@ -8,6 +8,10 @@ summary: 'Random-walk traversal of the codex graph starting from a seed document
   table as lore codex list and lore codex map (default mode) — ID, GROUP, TITLE, SUMMARY.
 
   '
+binds:
+- src/lore/codex.py
+- src/lore/cli.py
+- tests/e2e/test_codex_chaos.py
 related:
 - conceptual-workflows-codex
 - conceptual-workflows-codex-map

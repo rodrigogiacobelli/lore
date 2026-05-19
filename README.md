@@ -66,6 +66,7 @@ lore show <id>           # what is this quest or mission?
 lore claim <id>          # I am working on this
 lore done <id>           # finished
 lore block <id> "reason" # stuck — here is why
+lore health              # audit project state — schemas, bindings, glossary
 ```
 
 Quests group related work. Missions are individual tasks. An orchestrator creates them; agents claim and close them.
@@ -86,11 +87,15 @@ Missions can depend on each other. `lore ready` only surfaces unblocked work —
 ```bash
 lore codex search "auth"          # find relevant documents
 lore codex show <id>              # read one document (or many at once)
-lore codex map <id> --depth 1     # traverse the graph from a document
+lore codex map <id>               # traverse the graph (bidirectional by default)
+lore codex chaos <id>             # random-walk traversal from a seed document
 lore codex list                   # see everything
+lore impacts <path>               # which codex docs govern this file?
+lore impacts <codex-id>           # which files does this doc bind?
+lore glossary search <term>       # look up project vocabulary
 ```
 
-The Codex is a graph of typed markdown documents. Documents link to each other via a `related` field. An agent reading a decision document can follow links to the conceptual guide, the workflow spec, and the schema definition — all in one traversal.
+The Codex is a graph of typed markdown documents. Documents link to each other via a `related` field, and bind to source files via a `binds` field. An agent reading a decision document can follow links to the conceptual guide, the workflow spec, and the code it governs — all in one traversal.
 
 New agents orient using the Codex before doing anything else. This is how consistency survives across sessions, across agents, and across months of development.
 
@@ -105,7 +110,10 @@ New agents orient using the Codex before doing anything else. This is how consis
 | **Knight** | An agent persona — a markdown file telling a worker *how* to behave |
 | **Doctrine** | A workflow template — YAML describing the steps and ordering of a body of work |
 | **Artifact** | A reusable document template agents scaffold new files from |
+| **Watcher** | A YAML definition for an agent that monitors and reacts to project state |
 | **Codex** | The project knowledge graph — decisions, concepts, standards |
+| **Glossary** | Project-specific controlled vocabulary, auto-surfaced on `lore codex show` |
+| **Source** | Raw upstream material (tickets, transcripts) captured verbatim under `codex/sources/` — deletable once facts are in canonical docs |
 
 ---
 
@@ -164,7 +172,7 @@ Lore built itself using itself. That is what it is designed to let you do.
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/) (recommended)
 
 ## Development

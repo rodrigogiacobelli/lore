@@ -4,6 +4,8 @@ title: Design Principles
 summary: Core design principles this project follows, what each means in practice,
   and which principles are explicitly rejected. Agents must consult this before proposing
   architectural changes.
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Design Principles

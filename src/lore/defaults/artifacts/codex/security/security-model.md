@@ -4,6 +4,8 @@ title: Security Model
 summary: Authentication model, authorization rules, sensitive data inventory, external
   exposure surface, and agent-specific security rules. Read before modifying any auth,
   data access, or input handling code.
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Security Model

@@ -6,6 +6,10 @@ summary: 'Defines the two-tier test model (unit vs E2E), naming conventions, cod
   is the source of truth for all test authorship in this project.
 
   '
+binds:
+- tests/conftest.py
+- tests/unit/conftest.py
+- tests/e2e/conftest.py
 related:
 - tech-arch-source-layout
 - tech-overview

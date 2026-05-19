@@ -1676,3 +1676,82 @@ class TestConfigNotInPublicAPI:
         # conceptual-workflows-glossary — FR-14, ADR-010 (US-003 Scenario 8)
         import lore.models as mod
         assert "Config" not in mod.__all__
+
+
+# ---------------------------------------------------------------------------
+# US-005 — lore.models.__all__ unchanged for the bindings feature.
+# Workflow: conceptual-workflows-health
+# Standards: decisions-010-public-api-stability, decisions-011-api-parity-with-cli
+# ---------------------------------------------------------------------------
+
+
+# Frozen snapshot of `lore.models.__all__` as of the pre-feature commit. The
+# bindings feature MUST NOT grow or shrink this surface (PRD FR-18). Any change
+# to this set fails the test and forces an explicit decision.
+_PRE_FEATURE_LORE_MODELS_ALL = frozenset({
+    "QuestStatus",
+    "MissionStatus",
+    "DependencyType",
+    "Quest",
+    "Mission",
+    "Dependency",
+    "BoardMessage",
+    "Artifact",
+    "CodexDocument",
+    "DoctrineStep",
+    "Doctrine",
+    "Knight",
+    "DoctrineListEntry",
+    "GlossaryItem",
+    "Watcher",
+    "HealthIssue",
+    "HealthReport",
+    "health_check",
+    "SchemaIssue",
+    "load_schema",
+    "validate_entity",
+    "validate_entity_file",
+    "CodeBinding",
+    "CodexBinding",
+    "ImpactsError",
+    "ImpactsResult",
+    "impacts",
+})
+
+
+class TestLoreModelsAllUnchangedForBindings:
+    """`lore.models.__all__` must not gain or lose entries for the bindings feature.
+
+    Per PRD §"Technical Success" (`lore.models.__all__` surface row: unchanged)
+    and PRD FR-18 (no new public exports for the bindings checks).
+    """
+
+    def test_lore_models_all_set_equals_pre_feature_snapshot(self):
+        """US-005 unit — `set(lore.models.__all__)` equals the frozen pre-feature snapshot."""
+        import lore.models
+
+        assert set(lore.models.__all__) == _PRE_FEATURE_LORE_MODELS_ALL
+
+    def test_no_bindings_specific_exports(self):
+        """US-005 unit — no new entry whose name implies a bindings-specific public surface."""
+        import lore.models
+
+        # CodeBinding / CodexBinding pre-date this feature (the lore-impacts feature
+        # ships them). Any OTHER "bind"-named entry would be new and is forbidden.
+        bind_named = [
+            name for name in lore.models.__all__
+            if "bind" in name.lower() and name not in {"CodeBinding", "CodexBinding"}
+        ]
+        assert bind_named == [], (
+            f"unexpected bindings-named exports in lore.models.__all__: {bind_named!r}"
+        )
+        assert "find_dead_bindings" not in lore.models.__all__
+        assert "BindingsIssue" not in lore.models.__all__
+
+    def test_existing_health_exports_retained(self):
+        """US-005 unit — `health_check`, `HealthReport`, `HealthIssue` still exported."""
+        import lore.models
+
+        assert "health_check" in lore.models.__all__
+        assert "HealthReport" in lore.models.__all__
+        assert "HealthIssue" in lore.models.__all__

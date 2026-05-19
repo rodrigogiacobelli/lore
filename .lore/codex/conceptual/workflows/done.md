@@ -5,6 +5,10 @@ summary: What the system does internally when `lore done <id>` runs — missions
   any non-closed status to closed, dependents are cascade-unblocked, parent quest
   auto-close logic fires, and quests can also be closed directly. Idempotent for already-closed
   entities.
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_done.py
 related:
 - conceptual-entities-mission
 - conceptual-entities-quest

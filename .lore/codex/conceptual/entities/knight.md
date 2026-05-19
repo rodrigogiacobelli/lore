@@ -76,6 +76,7 @@ An orchestrator agent orienting to a project should use the Codex commands to re
 1. Run `lore codex list` to see all available documentation.
 2. Run `lore codex search <keyword>` to find documents relevant to the task at hand.
 3. Run `lore codex show <id>` to retrieve one or more documents in full.
+4. When the mission targets a specific file, run `lore impacts <path>` to retrieve the codex entries whose `binds:` field claims to govern that file. The result is the gold set of governing documents to read before editing — see `conceptual-workflows-impacts`.
 
 Using the CLI commands instead of direct file reads insulates agents from directory restructuring and ensures the correct document is retrieved by its stable ID.
 

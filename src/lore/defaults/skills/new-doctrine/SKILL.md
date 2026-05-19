@@ -126,7 +126,7 @@ Rules:
 - IDs passed via board messages: "your board messages contain the X ID"
 - IDs in the mission description: "your mission description contains the X ID"
 - Never tell the agent to run `lore show <mission-id>` — it already received that output. This applies to all step types including human steps.
-- When specifying frontmatter for output documents in mission notes, require only `id`, `title`, `summary` — never `type`, `stability`, or other fields
+- When specifying frontmatter for output documents in mission notes, require only `id`, `title`, `summary`
 
 ### 5. Write and create the doctrine
 

@@ -7,10 +7,18 @@ summary: 'What the system does internally when lore codex list, lore codex searc
   random-walk traversal, and JSON output.
 
   '
+binds:
+- src/lore/codex.py
+- src/lore/cli.py
+- tests/e2e/test_codex.py
+- tests/unit/test_codex.py
+- tests/unit/test_cli_codex_list.py
+- tests/unit/test_cli_codex_show.py
 related:
 - tech-arch-initialized-project-structure
 - conceptual-workflows-codex-map
 - conceptual-workflows-codex-chaos
+- conceptual-workflows-impacts
 - conceptual-workflows-filter-list
 - conceptual-workflows-glossary
 - conceptual-entities-glossary
@@ -144,6 +152,15 @@ reachable neighbours remain. For the complete workflow, see
 Output format is a table with columns ID, GROUP, TITLE, SUMMARY — identical to
 `lore codex list` in both text and JSON modes. The seed document is always the
 first row. Output order is non-deterministic.
+
+## Related Cross-Graph Surface — `lore impacts`
+
+`lore codex` walks the `related:` edge within the codex. The codex↔code edge —
+declared via the optional `binds:` frontmatter field — is walked by the
+top-level `lore impacts` command, not a `lore codex` subcommand. Pass a codex
+id to list the paths/globs that entry binds; pass a file path to list the
+codex entries whose `binds:` match it. See
+`conceptual-workflows-impacts` (`lore codex show conceptual-workflows-impacts`).
 
 ## Failure Modes
 

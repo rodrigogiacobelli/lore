@@ -4,6 +4,9 @@ title: Oracle Slugification Algorithm
 summary: Two-stage slugification used by lore oracle to derive filesystem-safe filenames
   from entity IDs and titles. Covers slugify() (40-char slug portion) and make_entity_slug()
   (40-char combined {id}-{slug} result).
+binds:
+- src/lore/oracle.py
+- tests/e2e/test_oracle.py
 related:
 - tech-oracle-internals
 - ref-lore_cli-commands

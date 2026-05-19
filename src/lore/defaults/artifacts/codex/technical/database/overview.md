@@ -3,6 +3,8 @@ id: example-tech-database
 title: Database
 summary: Database technology, connection setup, migration pattern, and shared access
   conventions. Read before writing any query or migration.
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Database

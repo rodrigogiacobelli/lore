@@ -4,6 +4,9 @@ title: mission_type is stored and exposed, never interpreted
 summary: ADR recording the decision that Lore stores and exposes mission_type but
   does not interpret it or change behaviour based on it. Dispatch semantics belong
   to the consuming tool, not to Lore.
+binds:
+- src/lore/db.py
+- src/lore/models.py
 related:
 - decisions-001-dumb-infrastructure
 - conceptual-workflows-mission-type

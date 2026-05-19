@@ -3,6 +3,8 @@ id: example-workflow-{workflow-name}
 title: '{Workflow Name}'
 summary: _One to three sentences. What triggers this workflow? What does the system
   do? What is the end state?_
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # {Workflow Name}

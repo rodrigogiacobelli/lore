@@ -4,6 +4,10 @@ title: auto_close toggle on quests
 summary: ADR recording the decision to add a per-quest auto_close toggle, defaulting
   to disabled for new quests. Covers the schema design, migration default split, and
   the mechanism for manually closing quests.
+binds:
+- src/lore/db.py
+- src/lore/cli.py
+- src/lore/migrations/v2_to_v3.py
 related:
 - ref-lore_db-core
 - ref-lore_cli-commands

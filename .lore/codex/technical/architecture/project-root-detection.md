@@ -4,6 +4,9 @@ title: Project Root Detection
 summary: The .lore/ upward directory traversal algorithm implemented in src/lore/root.py
   — find_project_root() function, ProjectNotFoundError exception type and message,
   and lore init special-case behaviour.
+binds:
+- src/lore/root.py
+- tests/unit/test_root.py
 related:
 - tech-arch-source-layout
 ---

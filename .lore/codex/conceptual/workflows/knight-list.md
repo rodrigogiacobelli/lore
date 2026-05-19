@@ -2,6 +2,11 @@
 id: conceptual-workflows-knight-list
 title: lore knight list Behaviour
 summary: What the system does internally when `lore knight list` runs — recursive discovery of `.md` files under `.lore/knights/`, frontmatter parsing with graceful fallbacks for missing fields, group derivation from subdirectory path, sorted output as a table or JSON.
+binds:
+- src/lore/knight.py
+- src/lore/cli.py
+- tests/e2e/test_knight_list.py
+- tests/unit/test_knight.py
 related: ["conceptual-entities-knight", "tech-arch-knight-module", "ref-lore_cli-commands", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 

@@ -6,6 +6,10 @@ summary: 'What the system does internally when declaring and removing dependenci
   show.
 
   '
+binds:
+- src/lore/cli.py
+- src/lore/db.py
+- tests/e2e/test_dependencies.py
 related:
 - conceptual-entities-mission
 - conceptual-workflows-show

@@ -7,6 +7,9 @@ summary: 'ADR establishing that lore.models.__all__ is the sole public API surfa
   require a major bump or explicit breaking-change notice in CHANGELOG.md.
 
   '
+binds:
+- src/lore/models.py
+- src/lore/__init__.py
 related:
 - standards-public-api-stability
 - decisions-011-api-parity-with-cli

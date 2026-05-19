@@ -2,6 +2,11 @@
 id: conceptual-workflows-watcher-crud
 title: Watcher CRUD Operations
 summary: What the system does internally when creating, editing, and deleting watchers via the CLI — name validation, duplicate detection, YAML parse-check on write, rglob-based lookup for edit and delete, and soft-delete semantics.
+binds:
+- src/lore/watcher.py
+- src/lore/cli.py
+- tests/e2e/test_watcher_crud.py
+- tests/unit/test_watcher.py
 related:
   - conceptual-entities-watcher
   - conceptual-workflows-knight-crud

@@ -105,10 +105,12 @@ title: <human title>
 summary: <1-3 sentences for scanning>
 related:        # optional; omit or use [] if none
   - <other-id>
+binds:          # optional; repo-root-relative paths or globs this doc governs
+  - <path-or-glob>
 ---
 ```
 
-No other fields. `lore health` rejects extras.
+No other fields. `lore health` rejects extras. When adding or updating a `technical/*`, `standards/*`, or ADR doc, consider whether `binds:` applies — populate it so `lore impacts <path>` surfaces this doc when those files are touched. See `conceptual-workflows-impacts`.
 
 Body rules:
 

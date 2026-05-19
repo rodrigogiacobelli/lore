@@ -93,23 +93,20 @@ def search_glossary(root: Path, query: str) -> list[GlossaryItem]:
 
 
 # ---------------------------------------------------------------------------
-# US-004 — Auto-surface tokeniser, matcher, renderer.
-# Spec: glossary-us-004
+# Auto-surface tokeniser, matcher, renderer.
 #
 # The ``_normalise_tokens`` / ``_build_lookup`` / ``_scan_runs`` triple is the
 # shared word-boundary matching primitive. ``match_glossary`` consumes it in
-# canonical mode (US-004 auto-surface). US-005's ``find_deprecated_terms``
-# (lore.health) reuses the same primitives in deprecated mode — keep them
-# stable and free of caller-specific logic.
+# canonical mode (auto-surface). Keep these primitives stable and free of
+# caller-specific logic.
 # ---------------------------------------------------------------------------
 
 
 def _normalise_tokens(text: str) -> list[str]:
     """Split ``text`` on non-word runs, casefold, drop empties.
 
-    Shared tokeniser for canonical auto-surface (US-004) and the deprecated-
-    term health scan (US-005). Casefold + Unicode-aware ``\\W`` split — see
-    standards-no-substring-in-prose.
+    Shared tokeniser for canonical auto-surface. Casefold + Unicode-aware
+    ``\\W`` split — see standards-no-substring-in-prose.
     """
     return [t.casefold() for t in _TOKEN_RE.split(text) if t]
 
@@ -123,7 +120,9 @@ def _build_lookup(
 
     ``source="canonical"`` indexes keywords + aliases (FR-17 excludes
     do_not_use) and powers ``match_glossary``. ``source="deprecated"``
-    indexes only do_not_use and powers the US-005 health scan.
+    indexes only do_not_use; retained as a primitive for symmetry with
+    the canonical lookup (no production caller after the deprecated-term
+    scan removal — exercised by unit tests for shape parity).
     Source tags returned in the value: ``"keyword"``, ``"alias"``, or
     ``"do_not_use"`` — callers can reconstruct what triggered the match.
     """
@@ -154,9 +153,8 @@ def _iter_runs(
     Longest-match wins at each position; on a hit the cursor jumps past the
     matched run so a multi-word keyword does not also yield its single-word
     prefix. Yields one tuple per occurrence — callers apply their own
-    deduplication. Empty ``lookup`` → no yields. Shared primitive for both
-    the canonical auto-surface (``_scan_runs``) and the deprecated-term
-    health scan (``find_deprecated_terms``).
+    deduplication. Empty ``lookup`` → no yields. Shared primitive for the
+    canonical auto-surface (``_scan_runs``).
     """
     if not lookup:
         return
@@ -225,44 +223,6 @@ def match_glossary(
         for item, _tag in _scan_runs(tokens, lookup):
             matched[id(item)] = item
     return sorted(matched.values(), key=lambda i: i.keyword.casefold())
-
-
-def find_deprecated_terms(
-    bodies: dict[str, str],
-    *,
-    items: list[GlossaryItem] | None = None,
-    root: Path | None = None,
-) -> list[tuple[GlossaryItem, str, str]]:
-    """Return ``(item, doc_id, matched_term)`` for each deprecated-term hit per body.
-
-    Only ``do_not_use`` entries surface (FR-17). Reuses the shared tokeniser
-    and lookup primitives. Sorted by ``(doc_id, matched_term)`` (FR-21).
-    Missing glossary file → []. Empty bodies dict → [].
-    """
-    if items is None:
-        if root is None:
-            return []
-        items = scan_glossary(root)
-    if not items or not bodies:
-        return []
-    lookup = _build_lookup(items, source="deprecated")
-    if not lookup:
-        return []
-    # Reverse-map the token-tuple keys to the original do_not_use string so
-    # callers see the matched term in its source form (lowercase per fixture).
-    term_by_tokens: dict[tuple[str, ...], str] = {}
-    for item in items:
-        for term in item.do_not_use:
-            tokens = tuple(_normalise_tokens(term))
-            if tokens and tokens not in term_by_tokens:
-                term_by_tokens[tokens] = term
-    out: list[tuple[GlossaryItem, str, str]] = [
-        (item, doc_id, term_by_tokens[key])
-        for doc_id, body in bodies.items()
-        for key, item, _tag in _iter_runs(_normalise_tokens(body), lookup)
-    ]
-    out.sort(key=lambda t: (t[1], t[2]))
-    return out
 
 
 def _render_glossary_block(items: list[GlossaryItem]) -> str:

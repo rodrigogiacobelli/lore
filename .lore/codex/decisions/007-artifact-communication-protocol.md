@@ -9,6 +9,8 @@ summary: 'ADR recording the decision that official communication between steps i
   step to produce something concrete before the next step can start.
 
   '
+binds:
+- src/lore/artifact.py
 related:
 - decisions-009-mission-self-containment
 - ref-lore_db-core

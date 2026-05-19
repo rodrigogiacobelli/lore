@@ -3,6 +3,8 @@ id: example-persona-{role-slug}
 title: Persona — {Role Name}
 summary: _One to three sentences. Who this persona is, what their primary goal is,
   and what distinguishes them from other personas in this system._
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Persona — {Role Name}

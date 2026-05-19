@@ -1,10 +1,7 @@
 ---
 id: codex
 title: Codex
-summary: 'What this documentation system is, how it is structured, and how to use
-  it. Read this before reading or writing any other file in this repository.
-
-  '
+summary: What this documentation system is, how it is structured, and how to use it. Read this before reading or writing any other file in this repository.
 related:
   - conceptual-entities-glossary
   - conceptual-workflows-glossary
@@ -30,6 +27,9 @@ Documentation is divided into layers. Each layer has one job.
 | Decisions | `decisions/` | Why was this architectural choice made and what alternatives were rejected? |
 | Standards | `standards/` | How do we write code and design this system? Conventions, principles, and rules. |
 | Operations | `operations/` | How is this developed, deployed, and maintained? |
+| Transient | `transient/` | In-flight working documents for the current feature cycle. Deleted when the feature ships. |
+
+The glossary lives as a single YAML file at `.lore/codex/glossary.yaml`, — see conceptual-entities-glossary`.
 
 **Conceptual docs describe the system from the outside.** No file paths, no schema columns, no API endpoints. If a business analyst can read it and understand it without knowing the tech stack, it belongs in conceptual.
 
@@ -41,20 +41,46 @@ These two trees link to each other but never duplicate. If a fact exists in a sc
 
 Workflows describe processes. The subject determines the framing:
 
-- **System workflow** — the system is the subject. What the system does when triggered. Steps through internal logic, validations, and state changes. No `persona` field.
-- **User-facing workflow** — a user is the subject. What a person does to accomplish a goal. Set the `persona` frontmatter field to identify the role performing it.
+- **System workflow** — the system is the subject. What the system does when triggered. Steps through internal logic, validations, and state changes.
+- **User-facing workflow** — a user is the subject. What a person does to accomplish a goal. Indicate the role performing it in the document body.
 
-A background job has a system workflow. A CLI command may have a user-facing workflow. A command that the user runs while the system validates and persists state may warrant both perspectives in the same document.
+A background job has a system workflow. A settings command may have a user-facing workflow. Creating and assigning a record has both.
 
-## Stable vs In-Flight
+## The Three Content Classes
 
-Documentation is either stable or in-flight.
+Every file in the codex belongs to exactly one of three classes, defined by its top-level directory and by one question: **what happens when you delete it?**
 
-**Stable** — `conceptual/`, `technical/`, `decisions/`, `standards/`, `operations/`. Describes the system as it exists today. The single source of truth. Never contains future intentions or work in progress.
+| Class    | Directory                  | Deletion test |
+|----------|----------------------------|---------------|
+| Stable   | `vision/`, `conceptual/`, `technical/`, `decisions/`, `standards/`, `operations/` | Deleting any file LOSES information. Never safe. |
+| In-Flight | `transient/` | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. |
+| Sources  | `sources/<system>/<id>.md` | Safe to delete **at any time**. Every fact worth keeping already lives in a stable doc. |
 
-**In-flight** — `specs/`, `user-stories/`, `transient/`. Describes work being planned or developed. These files are deleted when the feature ships.
+**Stable** describes the system as it exists today. Never future intentions, never work in progress.
 
-**The deletion test:** when a feature ships, its spec and user stories can be deleted. If deleting them causes any information to be lost, the stable documentation was not properly updated. A complete documentation update is part of the definition of done.
+**In-flight** (`transient/`) holds work being planned or developed — PRDs, tech specs, maps, reports. Deleted when the feature ships.
+
+**Sources** (`sources/<system>/<id>.md`) hold raw upstream material — Jira tickets, meeting transcripts, chat threads, pasted documents — captured verbatim as point-in-time snapshots. They are never canonical. Every fact that matters must be propagated into a stable doc before the source becomes deletable; after that, the source is disposable.
+
+### Sources layout
+
+Files live at `sources/<system>/<id>.md` where `<system>` is a free-form slug (e.g. `jira`, `slack`, `meetings`) and `<id>` is unique within that system.
+
+### Sources frontmatter rule
+
+Source files carry exactly four frontmatter fields: `id`, `title`, `summary`, and `related`. All four are required. `related` is a non-empty array of canonical codex IDs — the canonical docs this source caused to change. `lore health` rejects any source file with missing fields, empty `related`, or any extra field.
+
+### Verbatim rule
+  
+Source bodies are preserved verbatim from upstream. Light reformatting is permitted only when the upstream format is structurally unreadable (e.g. Atlassian ADF → markdown). Semantic content must not be altered.
+
+### One-way linking
+
+Sources MUST link outward. Every source's `related` list names every canonical doc it caused to change — `lore codex map <source-id> --depth-out 1` returns exactly those docs. Canonical docs MUST NOT link back: no canonical doc may include a source ID in its `related` list. `lore health` enforces both directions — empty/missing `related` on a source is a schema error; a source ID appearing in any canonical doc's `related` is a `canonical_links_to_source` error.
+
+### Refresh rule
+
+Re-ingestion of an existing source (via `/refresh-source`) **overwrites** the snapshot file. There is no history file. Previous content is retained only in git history.
 
 ## Reference Docs
 
@@ -70,23 +96,7 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 
 **Granularity.** One doc per logical cluster, not per entity. Intent is usually a cluster property — splitting it across siblings duplicates or fragments the why. Go finer only when one entity carries intent that does not belong to its cluster (noisy gotcha, deprecation timeline, different owner). A boring CRUD entity with no surprising history needs no reference doc at all.
 
-**Body shape.**
-
-```markdown
-**Covers:** `orders`, `line_items`, `shipments`
-**Source of truth:** `db/orders/migrations/`
-
-## Why this exists
-...
-
-## Gotchas
-...
-
-## Shape
-~10 columns. Full schema in source file above.
-```
-
-No schema dump. The reader who wants column types reads the migration. The reader who wants to know *why `order_id` has no FK constraint* reads this.
+**Body content.** Intent-only: history, non-enforced constraints, gotchas, ownership, lifecycle, and a pointer to the source of truth. No schema dump — the reader who wants column types reads the migration. The reader who wants to know *why `order_id` has no FK constraint* reads this. Browse existing `ref-*` docs in the codex (`lore codex search ref-`) for shape examples.
 
 **Discoverability rule (enforced).** Cluster docs MUST name every covered entity verbatim in the body — the `**Covers:**` line is the canonical place — so `lore codex search <table_name>` lands on the cluster doc. Without this, granularity flexibility breaks search.
 
@@ -96,16 +106,24 @@ No schema dump. The reader who wants column types reads the migration. The reade
 
 `decisions/` contains Architecture Decision Records. Write an ADR when a significant architectural choice is made — one that future contributors should not unknowingly reverse. Each ADR records context, the decision, why it was made, and what alternatives were rejected. The alternatives section is particularly valuable: it tells an AI agent what not to suggest.
 
-## The Development Pipeline
+## Standards
 
-New features follow this sequence:
+`standards/` contains the project's coding conventions, design principles, and framework usage rules. Standards are ongoing, enforced guidelines — not one-time decisions. A decision in `decisions/` may produce a standard in `standards/`. Decisions explain *why*; standards explain *how to comply*.
 
-1. **Business spec** (`specs/`) — written in business language. What is broken or missing, what success looks like, proposed solutions. No implementation details.
-2. **Architecture review** — the stable documentation is updated to reflect the new design. Entities, schemas, API endpoints, ADRs — all updated before any code is written.
-3. **Full spec** (`specs/`) — technical design added to the business spec. Files to modify, schema changes, edge cases, error handling.
-4. **User stories** (`user-stories/`) — written after the docs are updated. Each story references stable documentation as the source of truth and adds acceptance criteria and tech notes.
-5. **Development** — agents implement against the user stories, consulting stable documentation for the source of truth.
-6. **Cleanup** — specs and user stories are deleted. Stable docs already reflect the new reality.
+## What NOT to Put in the Codex
+
+- Git history, commit messages, or who changed what — use `git log`
+- Debugging notes or fix recipes — put the fix in code, context in the commit message
+- PR summaries or activity logs — these are ephemeral
+- In-progress task state or mission notes — use the task manager
+- Anything already captured in `AGENTS.md` or `CLAUDE.md`
+- Duplicate facts — if a fact exists in one file, link to it; do not repeat it
+
+## Cross-References
+
+Cross-references between documents belong exclusively in the `related` frontmatter field. Do not add "Related Documentation" sections to document bodies. One mechanism, one place.
+
+Use `lore codex map <id>` to list neighbours of any document. Default output is a list table — same columns as `lore codex list` — and traversal is bidirectional at depth 1 (outbound `related` plus inbound backlinks). Use `--depth N` for symmetric deeper walks, `--depth-out N` / `--depth-in N` for one-direction-only walks, and `--full` to print bodies instead of the list.
 
 ## Naming Conventions
 
@@ -115,26 +133,31 @@ New features follow this sequence:
 
 ## Frontmatter
 
-Every file has YAML frontmatter with at minimum: `id`, `title`, `summary`, `related`, and `stability`.
+Every file has frontmatter with the fields below. The `summary` field is written for scanning — an AI agent reads summaries to decide whether a file is relevant before reading the body.
 
-The `summary` field is written for scanning — an AI agent reads summaries to decide whether a file is relevant before reading the body. Write summaries that answer: *would someone looking for X find what they need here?*
+### Required Fields (all files)
 
-The `related` field is a list of codex IDs that this document links to. Cross-references belong exclusively here — do not add "Related Documentation" sections to document bodies.
+| Field | Description |
+|-------|-------------|
+| `id` | Unique identifier. Must be globally unique across the codex. |
+| `title` | Human-readable document title. |
+| `summary` | 1-3 sentences written for scanning. Answers: would someone looking for X find what they need here? |
 
-`related` links are **directed**: declaring B in document A's `related` field means A
-references B, but it does not mean B references A. There is no automatic bidirectional
-linking. Cycles are possible (A → B → A) and are handled safely by every traversal
-command via a visited set — each document appears at most once in any output.
+### Optional Fields
 
-`lore codex map <id>` walks this field in both directions by default — outbound
-`related` edges and inbound backlinks at depth 1 each. The default output is a
-list-shape table of neighbours (ID, GROUP, TITLE, SUMMARY) — the same shape as
-`lore codex list`. Use `--depth-out N`, `--depth-in N`, or `--depth N` (symmetric)
-to widen the walk; use `--full` to retrieve full document bodies. The seed itself
-is never included in the output — map is a discovery primitive that hands the agent
-a list of IDs to inspect with `lore codex show`. `lore codex chaos <id> --threshold <int>`
-is the non-deterministic sibling: a random walk over the same adjacency that
-terminates when the fraction of the reachable subgraph discovered exceeds the
-threshold percentage.
+| Field | Description |
+|-------|-------------|
+| `related` | YAML array of related codex IDs. Followed outbound by `lore codex map` and surfaced inbound as backlinks. Omit or use `[]` if none. |
+| `binds` | YAML array of repo-root-relative paths or globs naming the code files this doc governs. The codex↔code edge described below. Omit or use `[]` if none. |
 
-The `stability` field is either `stable` (production documentation) or `experimental` (provisional, subject to change).
+The `binds` field is an **optional** list of repo-root-relative paths or globs
+naming the code files this codex entry governs. Each entry is either a literal
+path or a glob (recursive `**` supported). Missing field and empty list
+(`binds: []`) behave identically — both mean "this document governs no specific
+code files." Absolute paths, paths containing `..`, and empty strings are
+rejected by the schema and surfaced by `lore health --scope schemas`. The
+`binds` graph is queried with `lore impacts <token>`: pass a codex id to list
+the bound paths; pass a file path to list the codex entries whose `binds`
+match it (exact-or-glob). See `conceptual-workflows-impacts`.
+
+No other frontmatter fields are permitted. `lore health` enforces this — any extra field fails validation.

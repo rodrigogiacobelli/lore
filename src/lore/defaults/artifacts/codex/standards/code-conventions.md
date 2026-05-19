@@ -3,6 +3,8 @@ id: example-standards-code-conventions
 title: Code Conventions
 summary: Language style guide, naming conventions, file organisation, import order,
   and comment policy for this project. All agents and contributors must follow these.
+# related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
 ---
 
 # Code Conventions

@@ -7,6 +7,12 @@ summary: >
   `--skip-glossary` overrides per call. Covers the shared tokeniser, the
   fail-soft policy on `lore codex show`, the fail-loud policy on `lore glossary`
   and `lore health`, the JSON envelope shape, and the `.lore/config.toml` toggle.
+binds:
+- src/lore/glossary.py
+- src/lore/cli.py
+- tests/e2e/test_glossary.py
+- tests/unit/test_glossary.py
+- tests/unit/test_cli_glossary.py
 related:
   - conceptual-entities-glossary
   - conceptual-workflows-codex
@@ -23,9 +29,9 @@ related:
 
 # Glossary Commands — `lore glossary` and auto-surface
 
-The Glossary entity (lore codex show conceptual-entities-glossary) has three operating surfaces: the read-only `lore glossary` CLI group, the auto-surface block appended by `lore codex show`, and the schema/collision/deprecated-term audit run by `lore health` (lore codex show conceptual-workflows-health). This document covers the first two; the health surface is documented inside `conceptual-workflows-health`.
+The Glossary entity (lore codex show conceptual-entities-glossary) has three operating surfaces: the read-only `lore glossary` CLI group, the auto-surface block appended by `lore codex show`, and the schema + intra-file collision audit run by `lore health` (lore codex show conceptual-workflows-health). This document covers the first two; the health surface is documented inside `conceptual-workflows-health`.
 
-All three surfaces share a single normaliser implemented in `lore.glossary` — `_normalise_tokens(text)` and `_build_lookup(items)`. Auto-surface and the deprecated-term scan are two presentation policies over one matcher.
+The read commands and the auto-surface share a single normaliser implemented in `lore.glossary` — `_normalise_tokens(text)` and `_build_lookup(items)`. Auto-surface is the only presentation policy over that matcher.
 
 ## Preconditions
 
@@ -77,7 +83,7 @@ JSON mode emits `{"glossary": [<items>]}` with all four item fields always prese
 
 ### 1. Load and filter
 
-`search_glossary(root, query)` calls `scan_glossary(root)` and returns every item whose `casefold(query)` appears as a substring in any of: `keyword`, any `alias`, any `do_not_use` term, or `definition`. Substring match — NOT the tokenised contiguous-run match used by auto-surface. Substring match makes `search` a discovery tool for partial fragments; the matcher is reserved for auto-surface and the deprecated-term scan.
+`search_glossary(root, query)` calls `scan_glossary(root)` and returns every item whose `casefold(query)` appears as a substring in any of: `keyword`, any `alias`, any `do_not_use` term, or `definition`. Substring match — NOT the tokenised contiguous-run match used by auto-surface. Substring match makes `search` a discovery tool for partial fragments; the matcher is reserved for auto-surface.
 
 ### 2. Sort and render
 
@@ -179,7 +185,7 @@ If `scan_glossary` raises `GlossaryError` (parse failure or schema violation) or
 - Does NOT propagate the error to the user.
 - Exits 0 (or whatever exit the rest of `lore codex show` would have used).
 
-This is the reliability bar from PRD NFR-Reliability: a malformed glossary MUST NOT break `lore codex show`. The same `GlossaryError` is treated fail-loud in `lore glossary list/search/show` and in `lore health`.
+This is the reliability bar: a malformed glossary MUST NOT break `lore codex show`. The same `GlossaryError` is treated fail-loud in `lore glossary list/search/show` and in `lore health`.
 
 ## Failure Modes
 
@@ -215,7 +221,6 @@ from lore.glossary import (
     read_glossary_item,
     search_glossary,
     match_glossary,
-    find_deprecated_terms,
     GlossaryError,
 )
 
@@ -223,8 +228,6 @@ items = scan_glossary(project_root)                      # list[GlossaryItem]; [
 item  = read_glossary_item(project_root, "Constable")    # GlossaryItem | None
 hits  = search_glossary(project_root, "mission")          # list[GlossaryItem]
 matched = match_glossary([doc1_body, doc2_body], root=project_root)  # list[GlossaryItem] (canonical-only)
-deprecated = find_deprecated_terms({"doc-id-1": body1}, root=project_root)
-                                                          # list[tuple[GlossaryItem, doc_id, matched_term]]
 ```
 
 `GlossaryItem` is in `lore.models.__all__` (FR-30, ADR-010). `Config` is internal — not exported (FR-14, deferred until Realm asks). `scan_glossary` returns `[]` on missing file; raises `GlossaryError` on parse failure or schema violation.
@@ -233,7 +236,7 @@ deprecated = find_deprecated_terms({"doc-id-1": body1}, root=project_root)
 
 - conceptual-entities-glossary (lore codex show conceptual-entities-glossary) — what the entity is.
 - conceptual-workflows-codex (lore codex show conceptual-workflows-codex) — the `lore codex show` host pipeline.
-- conceptual-workflows-health (lore codex show conceptual-workflows-health) — schema, collision, and deprecated-term audit.
+- conceptual-workflows-health (lore codex show conceptual-workflows-health) — schema and intra-file collision audit.
 - conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) — how the skeleton is seeded.
 - conceptual-workflows-error-handling (lore codex show conceptual-workflows-error-handling) — exit codes and stderr routing.
 - conceptual-workflows-json-output (lore codex show conceptual-workflows-json-output) — JSON envelope contract.

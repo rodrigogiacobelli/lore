@@ -5,8 +5,17 @@ summary: 'What the system does internally when schema migrations run — version
   sequential application, rollback on failure, and specific migration contracts.
 
   '
+binds:
+- src/lore/migrations/__init__.py
+- src/lore/migrations/v1_to_v2.py
+- src/lore/migrations/v2_to_v3.py
+- src/lore/migrations/v3_to_v4.py
+- src/lore/migrations/v4_to_v5.py
+- src/lore/migrations/v5_to_v6.py
+- src/lore/db.py
 related:
 - ref-lore_db-core
+- tech-arch-source-layout
 ---
 
 # Schema Migrations

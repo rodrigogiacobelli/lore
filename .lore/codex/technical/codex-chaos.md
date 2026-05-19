@@ -7,6 +7,13 @@ summary: 'Internal implementation of chaos_documents in codex.py: bidirectional 
   Sibling to tech-arch-codex-map.
 
   '
+binds:
+- src/lore/codex.py
+- src/lore/validators.py
+- src/lore/cli.py
+- tests/e2e/test_codex_chaos.py
+- tests/unit/test_codex.py
+- tests/unit/test_codex_build_adjacency.py
 related:
 - tech-arch-codex-map
 - tech-arch-source-layout

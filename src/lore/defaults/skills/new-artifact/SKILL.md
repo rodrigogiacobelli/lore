@@ -48,6 +48,7 @@ Rules:
 - `id` must be unique across all artifacts — check `lore artifact list` first
 - `id` should be a stable slug that won't need to change (e.g. `pr-review-checklist`, not `checklist-v2`)
 - Keep content focused — agents load this in full, so every line costs context
+- If the artifact is a codex-doc skeleton (template for a doc that will govern specific code files), include a commented `# binds: []` placeholder in the frontmatter so authors fill it in — see `conceptual-workflows-impacts`
 
 ### 4. Write to `.lore/artifacts/`
 

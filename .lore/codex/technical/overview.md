@@ -44,6 +44,7 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    ├──→  watcher.py   ──→  schemas.py
    ├──→  artifact.py  ──→  frontmatter.py, schemas.py
    ├──→  codex.py     ──→  frontmatter.py
+   ├──→  impacts.py   ──→  frontmatter.py, codex.py, paths.py, validators.py  (codex<->code surfacing for `lore impacts`)
    ├──→  schemas.py   ──→  frontmatter.py   (loads packaged YAML schemas; no lore.* entity imports)
    └──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, knight.py, watcher.py, artifact.py, codex.py
 ```

@@ -6,6 +6,9 @@ summary: 'Technical reference for src/lore/graph.py. Documents topological_sort_
   order for display.
 
   '
+binds:
+- src/lore/graph.py
+- tests/unit/test_graph.py
 related:
 - tech-arch-source-layout
 - conceptual-workflows-show

@@ -2,6 +2,11 @@
 id: conceptual-workflows-artifact-list
 title: lore artifact list Behaviour
 summary: What the system does internally when `lore artifact list` runs — recursive discovery of `.md` files under `.lore/artifacts/`, strict frontmatter validation (files missing required fields are silently skipped), group derivation, and table or JSON output.
+binds:
+- src/lore/artifact.py
+- src/lore/cli.py
+- tests/e2e/test_artifact_list.py
+- tests/unit/test_artifact.py
 related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "ref-lore_cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 

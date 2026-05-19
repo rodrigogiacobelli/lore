@@ -5,6 +5,9 @@ summary: Technical reference for src/lore/oracle.py. Documents the generate_repo
   entry point, the wipe-and-recreate behaviour (shutil.rmtree on every run — a destructive
   operation), per-quest and per-mission file generation, and the make_entity_slug()
   naming scheme.
+binds:
+- src/lore/oracle.py
+- tests/e2e/test_oracle.py
 related:
 - tech-cli-oracle-slugification
 - ref-lore_cli-commands

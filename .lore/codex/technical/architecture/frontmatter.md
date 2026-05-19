@@ -6,7 +6,11 @@ summary: >
   (metadata-only, for scan functions) and parse_frontmatter_doc_full (includes body,
   for show functions), the required-fields contract, and the extra_fields parameter
   used by _read_related to extract the related frontmatter field for BFS traversal.
-related: ["tech-arch-source-layout", "tech-arch-knight-module", "tech-arch-validators", "tech-arch-codex-map", "tech-arch-schemas"]
+binds:
+- src/lore/frontmatter.py
+- tests/unit/test_frontmatter.py
+- tests/unit/test_frontmatter_raw.py
+related: ["tech-arch-source-layout", "tech-arch-knight-module", "tech-arch-validators", "tech-arch-codex-map", "tech-arch-schemas", "conceptual-workflows-impacts"]
 ---
 
 # Frontmatter Module Internals
@@ -58,6 +62,15 @@ doc = parse_frontmatter_doc(filepath, extra_fields=("related",))
 raw_related = doc.get("related")  # list[str] | None
 ```
 
+The same parameter is used by `_load_codex_binds_index` in `impacts.py` to extract the optional `binds:` codex frontmatter field for `lore impacts` (conceptual-workflows-impacts):
+
+```python
+doc = parse_frontmatter_doc(filepath, extra_fields=("binds",))
+raw_binds = doc.get("binds")  # list[str] | None
+```
+
+Adding new edge types to the codex frontmatter is always shaped the same way: add the field to the `codex-frontmatter` JSON Schema, then read it through `extra_fields=(...)`. No new parse helpers needed.
+
 ### `parse_frontmatter_doc_full(filepath, required_fields=("id","title","summary"), extra_fields=()) -> dict | None`
 
 Reads frontmatter metadata and the document body. Used by retrieval functions where
@@ -99,6 +112,7 @@ The helper is deliberately surgical: it does not filter, rename, or inject any f
 | `search_documents` | `codex.py` | `parse_frontmatter_doc` (metadata-only) |
 | `read_document` | `codex.py` | `parse_frontmatter_doc_full` (includes body) |
 | `_read_related` | `codex.py` | `parse_frontmatter_doc` (metadata-only, `extra_fields=("related",)`) |
+| `_load_codex_binds_index` | `impacts.py` | `parse_frontmatter_doc` (metadata-only, `extra_fields=("binds",)`) |
 | `scan_artifacts` | `artifact.py` | `parse_frontmatter_doc` (metadata-only) |
 | `read_artifact` | `artifact.py` | `parse_frontmatter_doc_full` (includes body) |
 | `list_knights` | `knight.py` | `parse_frontmatter_doc` (metadata-only, `required_fields=("id","title","summary")`) |

@@ -5,6 +5,10 @@ summary: Reference doc for the Lore SQLite database — the intent, history, and
   rules around the five tables (quests, missions, dependencies, board_messages, lore_meta).
   Schema source of truth is `src/lore/defaults/schema.sql`; algorithms live in `src/lore/db.py`
   and `src/lore/migrations/`.
+binds:
+- src/lore/db.py
+- tests/e2e/test_schema_migrations.py
+- tests/e2e/test_concurrent_access.py
 related:
 - decisions-003-soft-delete-semantics
 - decisions-005-auto-close-toggle
