@@ -108,3 +108,4 @@ Primitives for reading project state before you act:
 | `update-codex`   | Edit codex docs directly outside the feature-implementation flow   |
 | `ingest-source`  | Capture an upstream source under `codex/sources/`                  |
 | `refresh-source` | Re-ingest a stored source and propagate diffs into canonical docs  |
+| `inquest`        | Audit finished work, trace a missed requirement to its culprit link|
