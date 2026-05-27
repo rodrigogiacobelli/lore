@@ -8,7 +8,7 @@ from lore.db import init_database
 
 
 _GLOSSARY_SKELETON = (
-    "# Project glossary — see `lore codex show conceptual-entities-glossary`.\n"
+    "# Project glossary — see the Glossary section of .lore/codex/codex.md.\n"
     "# Before adding a term, run: `lore artifact show glossary-design`.\n"
     "# Auto-surfaced on `lore codex show`. Toggle via .lore/config.toml.\n"
     "items: []\n"
@@ -37,22 +37,22 @@ def _seed_skeleton_if_absent(target: Path, content: str, label: str) -> list[str
 
 
 def _seed_codex_md(project_root: Path) -> list[str]:
-    """Seed `.lore/codex/CODEX.md` from the packaged artifact if absent.
+    """Seed `.lore/codex/codex.md` from the packaged artifact if absent.
 
-    Reads `src/lore/defaults/artifacts/codex/CODEX.md`, rewrites the
+    Reads `src/lore/defaults/artifacts/codex/codex.md`, rewrites the
     frontmatter `id: example-codex` line to `id: codex`, and writes it
     via the idempotent `_seed_skeleton_if_absent` helper.
     """
     content = (
         resources.files("lore.defaults")
-        .joinpath("artifacts/codex/CODEX.md")
+        .joinpath("artifacts/codex/codex.md")
         .read_text(encoding="utf-8")
     )
     rewritten = content.replace("id: example-codex", "id: codex", 1)
     return _seed_skeleton_if_absent(
         paths.codex_md_path(project_root),
         rewritten,
-        "codex/CODEX.md",
+        "codex/codex.md",
     )
 
 
@@ -78,10 +78,10 @@ def _seed_glossary(project_root: Path) -> list[str]:
 
 
 def _seed_user_tracked(project_root: Path) -> list[str]:
-    """Seed all user-tracked files (CODEX.md, glossary.yaml, config.toml).
+    """Seed all user-tracked files (codex.md, glossary.yaml, config.toml).
 
     Idempotent: existing files are left byte-for-byte untouched.  Emits
-    `Created` messages in the order CODEX.md, glossary.yaml, config.toml.
+    `Created` messages in the order codex.md, glossary.yaml, config.toml.
     """
     messages = _seed_codex_md(project_root)
     messages.extend(_seed_glossary(project_root))
@@ -170,7 +170,7 @@ def run_init() -> list[str]:
         )
     )
 
-    # Seed flat docs (LORE-AGENT.md, GETTING-STARTED.md, CODEX.md) into .lore/.
+    # Seed flat docs (LORE-AGENT.md, GETTING-STARTED.md, codex.md) into .lore/.
     # Must precede the user-tracked skeletons so docs appear first in stdout
     # (Scenario 8 ordering invariant).
     messages.extend(_copy_defaults_tree("docs", lore_dir, label="docs"))

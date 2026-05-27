@@ -10,7 +10,7 @@ import types
 import pytest
 
 import lore.db as lore_db
-from lore.db import add_board_message, get_board_messages, get_connection
+from lore.db import add_board_message, get_connection, list_board_messages
 from tests.conftest import db_conn
 
 
@@ -235,9 +235,11 @@ class TestV5ToV6Migration:
 
         _insert_quest_direct(project_dir)
         result = add_board_message(project_dir, "q-ab01", "Hello board")
-        assert result.get("ok") is True, f"add_board_message failed: {result}"
+        # G17: positive envelope on success — no `ok` wrapper.
+        assert "ok" not in result
+        assert result["entity_id"] == "q-ab01"
 
-        messages = get_board_messages(project_dir, "q-ab01")
+        messages = list_board_messages(project_dir, "q-ab01")
         assert len(messages) == 1
         assert messages[0]["message"] == "Hello board"
 

@@ -5,7 +5,7 @@ summary: Reference doc for the tasks/users cluster — the intent, history, and 
   rules that schema cannot express. Points at the migration source of truth; does not
   mirror columns.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Tasks cluster

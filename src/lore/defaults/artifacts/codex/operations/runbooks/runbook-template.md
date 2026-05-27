@@ -4,7 +4,7 @@ title: Runbook — {Operation Name}
 summary: Step-by-step procedure for {operation}. When to run it, prerequisites, exact
   commands, checkpoints, and rollback steps.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Runbook — {Operation Name}

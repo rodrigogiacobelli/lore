@@ -49,9 +49,9 @@ def make_entity_slug(entity_id: str, title: str) -> str:
 def generate_reports(project_root: Path) -> None:
     """Generate markdown reports in .lore/reports/."""
     from lore.db import (
+        _mission_blocks_ids,
+        _mission_depends_on_ids,
         get_aggregate_stats,
-        get_mission_blocks,
-        get_mission_depends_on,
         get_missions_for_quest,
         list_missions,
         list_quests,
@@ -89,8 +89,8 @@ def generate_reports(project_root: Path) -> None:
             mission_id = mission["id"]
             m_part = mission_id.split("/")[-1]
             filename = make_entity_slug(m_part, mission["title"]) + ".md"
-            depends_on = get_mission_depends_on(project_root, mission_id)
-            blocks = get_mission_blocks(project_root, mission_id)
+            depends_on = _mission_depends_on_ids(project_root, mission_id)
+            blocks = _mission_blocks_ids(project_root, mission_id)
             _write_mission_file(quest_dir / filename, mission, depends_on, blocks)
 
     # Generate standalone mission reports (quest_id is None)
@@ -104,8 +104,8 @@ def generate_reports(project_root: Path) -> None:
         for mission in standalone_missions:
             mission_id = mission["id"]
             filename = make_entity_slug(mission_id, mission["title"]) + ".md"
-            depends_on = get_mission_depends_on(project_root, mission_id)
-            blocks = get_mission_blocks(project_root, mission_id)
+            depends_on = _mission_depends_on_ids(project_root, mission_id)
+            blocks = _mission_blocks_ids(project_root, mission_id)
             _write_mission_file(missions_dir / filename, mission, depends_on, blocks)
 
 

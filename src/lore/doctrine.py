@@ -4,23 +4,12 @@ import shutil
 import textwrap
 from pathlib import Path
 
-import click
 import yaml
 
 from lore.frontmatter import parse_frontmatter_doc
-from lore.paths import derive_group, group_matches_filter
+from lore.paths import derive_group, entity_location, group_matches_filter
 from lore.schemas import validate_entity
 from lore.validators import validate_group, validate_name
-
-
-class DoctrineError(click.ClickException):
-    """Raised when a doctrine fails validation.
-
-    Subclasses ``click.ClickException`` so both exception types catch it.
-    """
-
-    def __str__(self) -> str:
-        return self.message
 
 
 def scaffold_doctrine(name: str) -> str:
@@ -36,26 +25,19 @@ def scaffold_doctrine(name: str) -> str:
         """)
 
 
-def _raise_click_from_issues(issues: list) -> None:
-    """Raise ``DoctrineError`` whose message contains every issue message."""
-    if not issues:
-        return
-    raise DoctrineError("\n".join(i.message for i in issues))
-
-
 def _validate_yaml_schema(data: dict, name: str) -> None:
     """Validate the top-level YAML schema for a doctrine.
 
     Delegates to ``lore.schemas.validate_entity('doctrine-yaml', data)`` and
-    raises ``click.ClickException`` on any returned issue. Additionally checks
+    raises ``ValueError`` on any returned issue. Additionally checks
     that the doctrine id matches the ``name`` argument.
     """
     issues = validate_entity("doctrine-yaml", data)
     if issues:
-        raise DoctrineError("\n".join(i.message for i in issues))
+        raise ValueError("\n".join(i.message for i in issues))
 
     if str(data["id"]) != name:
-        raise DoctrineError(
+        raise ValueError(
             f'Doctrine id "{data["id"]}" does not match command argument "{name}"'
         )
 
@@ -64,7 +46,7 @@ def _validate_design_frontmatter(meta: dict | None, name: str) -> None:
     """Validate design file frontmatter.
 
     Delegates to ``lore.schemas.validate_entity('doctrine-design-frontmatter', data)``
-    and raises ``click.ClickException`` on any returned issue. Additionally checks
+    and raises ``ValueError`` on any returned issue. Additionally checks
     that the id matches the ``name`` argument.
     """
     data = meta if meta is not None else {}
@@ -74,27 +56,27 @@ def _validate_design_frontmatter(meta: dict | None, name: str) -> None:
     if "id" not in data:
         issues = validate_entity("doctrine-design-frontmatter", data)
         id_issues = [i for i in issues if "'id'" in i.message]
-        raise DoctrineError(
+        raise ValueError(
             "\n".join(i.message for i in (id_issues or issues))
         )
     if str(data["id"]) != name:
-        raise DoctrineError(
+        raise ValueError(
             f'Design file id "{data["id"]}" does not match command argument "{name}"'
         )
 
     issues = validate_entity("doctrine-design-frontmatter", data)
     if issues:
-        raise DoctrineError("\n".join(i.message for i in issues))
+        raise ValueError("\n".join(i.message for i in issues))
 
 
 def _check_duplicate_in_subtree(name: str, doctrines_dir: Path) -> None:
-    """Raise DoctrineError if a doctrine with the given name exists anywhere under doctrines_dir."""
+    """Raise ValueError if a doctrine with the given name exists anywhere under doctrines_dir."""
     if not doctrines_dir.exists():
         return
     for suffix in (".yaml", ".design.md"):
         existing = next(iter(doctrines_dir.rglob(f"{name}{suffix}")), None)
         if existing is not None:
-            raise DoctrineError(
+            raise ValueError(
                 f"Error: doctrine '{name}' already exists at {existing}"
             )
 
@@ -116,16 +98,16 @@ def _validate_source_files(
 ) -> None:
     """Validate both source files exist and contain well-formed, name-matching content."""
     if not yaml_source_path.exists():
-        raise DoctrineError(f"File not found: {yaml_source_path}")
+        raise ValueError(f"File not found: {yaml_source_path}")
     if not design_source_path.exists():
-        raise DoctrineError(f"File not found: {design_source_path}")
+        raise ValueError(f"File not found: {design_source_path}")
 
     try:
         yaml_data = yaml.safe_load(yaml_source_path.read_text())
     except yaml.YAMLError as e:
-        raise DoctrineError(f"YAML parsing error: {e}") from e
+        raise ValueError(f"YAML parsing error: {e}") from e
     if not isinstance(yaml_data, dict):
-        raise DoctrineError("Doctrine must be a YAML mapping")
+        raise ValueError("Doctrine must be a YAML mapping")
     _validate_yaml_schema(yaml_data, name)
 
     meta = _parse_design_frontmatter(design_source_path.read_text())
@@ -133,14 +115,14 @@ def _validate_source_files(
 
 
 def create_doctrine(
+    project_root: Path,
     name: str,
     yaml_source_path: Path,
     design_source_path: Path,
-    doctrines_dir: Path,
     *,
     group: str | None = None,
 ) -> dict:
-    """Register both source files as a new doctrine in doctrines_dir.
+    """Register both source files as a new doctrine under ``project_root/.lore/doctrines/``.
 
     Validation order:
     1. Name format
@@ -149,24 +131,22 @@ def create_doctrine(
     4. Source files exist and contain valid content
     5. Write both files (atomic — no partial writes)
 
-    When ``group`` is provided, files are placed in ``doctrines_dir / group``
-    with intermediate directories created as needed. When ``group`` is None,
-    files land directly in ``doctrines_dir``.
-
-    Raises DoctrineError on any validation failure.
+    Returns ``{id, filename, group, design_filename}`` per amendment B
+    Doctrine row (renames ``name``→``id``; drops ``path`` + ``yaml_filename``).
     """
     name_err = validate_name(name)
     if name_err:
-        raise DoctrineError(name_err)
+        raise ValueError(name_err)
 
     group_err = validate_group(group)
     if group_err:
-        raise DoctrineError(group_err)
+        raise ValueError(group_err)
 
+    doctrines_dir = entity_location(project_root, "doctrine")
     _check_duplicate_in_subtree(name, doctrines_dir)
     _validate_source_files(name, yaml_source_path, design_source_path)
 
-    target_dir = doctrines_dir if group is None else doctrines_dir / group
+    target_dir = entity_location(project_root, "doctrine", group=group)
     yaml_dest = target_dir / f"{name}.yaml"
     design_dest = target_dir / f"{name}.design.md"
 
@@ -175,11 +155,10 @@ def create_doctrine(
     shutil.copy2(design_source_path, design_dest)
 
     return {
-        "name": name,
+        "id": name,
+        "filename": f"{name}.yaml",
         "group": group,
-        "yaml_filename": f"{name}.yaml",
         "design_filename": f"{name}.design.md",
-        "path": str(yaml_dest),
     }
 
 
@@ -187,7 +166,7 @@ def load_doctrine(filepath: Path) -> dict:
     """Load and validate a doctrine YAML file.
 
     Returns the parsed doctrine dict on success.
-    Raises DoctrineError on validation failure.
+    Raises ValueError on validation failure.
     """
     text = filepath.read_text()
     data = _parse_yaml(text)
@@ -198,15 +177,15 @@ def load_doctrine(filepath: Path) -> dict:
 def _parse_yaml(text: str) -> dict:
     """Parse YAML text and ensure it is a mapping.
 
-    Raises DoctrineError on parse failure or non-dict content.
+    Raises ValueError on parse failure or non-dict content.
     """
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as e:
-        raise DoctrineError(f"YAML parsing error: {e}") from e
+        raise ValueError(f"YAML parsing error: {e}") from e
 
     if not isinstance(data, dict):
-        raise DoctrineError("Doctrine must be a YAML mapping")
+        raise ValueError("Doctrine must be a YAML mapping")
 
     return data
 
@@ -219,7 +198,7 @@ def _validate(data: dict, filename: str) -> None:
     doctrine_name = data.get("name") or data.get("id")
     expected_name = filename.removesuffix(".yaml")
     if doctrine_name != expected_name:
-        raise DoctrineError(
+        raise ValueError(
             f'Doctrine name "{doctrine_name}" does not match filename "{filename}"'
         )
 
@@ -230,46 +209,45 @@ def _validate_required_fields(data: dict) -> None:
     """Check that required top-level fields are present."""
     # Accept id as fallback for name
     if "name" not in data and "id" not in data:
-        raise DoctrineError("Missing required property 'name'.")
-    for field in ("description", "steps"):
-        if field not in data:
-            raise DoctrineError(f"Missing required property '{field}'.")
+        raise ValueError("Missing required property 'name'.")
+    if "steps" not in data:
+        raise ValueError("Missing required property 'steps'.")
 
 
 def _validate_steps(steps) -> None:
     """Validate the steps list: structure, fields, deps, and cycles."""
     if not isinstance(steps, list) or len(steps) == 0:
-        raise DoctrineError("Steps must be a non-empty list")
+        raise ValueError("Steps must be a non-empty list")
 
     seen_ids = set()
     for i, step in enumerate(steps):
         if not isinstance(step, dict):
-            raise DoctrineError(f"Step {i} must be a mapping")
+            raise ValueError(f"Step {i} must be a mapping")
 
         if "id" not in step:
-            raise DoctrineError(f"Step {i} missing required field: id")
+            raise ValueError(f"Step {i} missing required field: id")
         if "title" not in step:
-            raise DoctrineError(f'Step "{step["id"]}" missing required field: title')
+            raise ValueError(f'Step "{step["id"]}" missing required field: title')
 
         step_id = step["id"]
         if step_id in seen_ids:
-            raise DoctrineError(f'Duplicate step id: "{step_id}"')
+            raise ValueError(f'Duplicate step id: "{step_id}"')
         seen_ids.add(step_id)
 
         if "priority" in step:
             pri = step["priority"]
             if not isinstance(pri, int) or pri < 0 or pri > 4:
-                raise DoctrineError(
+                raise ValueError(
                     f'Step "{step_id}" has invalid priority: {pri} (must be 0-4)'
                 )
 
         if "type" in step and not isinstance(step["type"], str):
-            raise DoctrineError(f'Step "{step_id}" type must be a string')
+            raise ValueError(f'Step "{step_id}" type must be a string')
 
     for step in steps:
         for dep in step.get("needs", []):
             if dep not in seen_ids:
-                raise DoctrineError(
+                raise ValueError(
                     f'Step "{step["id"]}" references unknown dependency "{dep}"'
                 )
 
@@ -290,7 +268,7 @@ def _check_cycles(steps: list[dict]) -> None:
         color[node] = GRAY
         for neighbor in graph.get(node, []):
             if color[neighbor] == GRAY:
-                raise DoctrineError(
+                raise ValueError(
                     f'Dependency cycle detected involving step "{node}"'
                 )
             if color[neighbor] == WHITE:
@@ -319,7 +297,7 @@ def _normalize(data: dict) -> dict:
         )
     result = {
         "name": data.get("name") or data.get("id"),
-        "description": data["description"],
+        "description": data.get("description", ""),
         "steps": steps,
     }
     for key in ("id", "title", "summary"):
@@ -332,7 +310,7 @@ def validate_doctrine_content(text: str, expected_name: str) -> dict:
     """Validate raw doctrine YAML text against schema rules.
 
     Returns the parsed data dict on success.
-    Raises DoctrineError on validation failure.
+    Raises ValueError on validation failure.
     """
     data = _parse_yaml(text)
 
@@ -341,19 +319,111 @@ def validate_doctrine_content(text: str, expected_name: str) -> dict:
     # Name must match command argument
     doctrine_name = data.get("name") or data.get("id")
     if str(doctrine_name) != expected_name:
-        raise DoctrineError(
+        raise ValueError(
             f'Doctrine name "{doctrine_name}" does not match command argument "{expected_name}"'
         )
 
     # If id field is present, it must match the command argument
     if "id" in data and str(data["id"]) != expected_name:
-        raise DoctrineError(
+        raise ValueError(
             f'Doctrine id "{data["id"]}" does not match command argument "{expected_name}"'
         )
 
     _validate_steps(data["steps"])
 
     return data
+
+
+def update_doctrine(project_root: Path, name: str, content: str) -> dict:
+    """Overwrite an existing doctrine YAML file with merged content.
+
+    Returns ``{"id": name, "filename": f"{name}.yaml"}`` — EXACT key set.
+    Raises ``ValueError`` on missing target, missing dir, name format
+    failure, or schema/name-match failure on incoming content.
+    """
+    name_err = validate_name(name)
+    if name_err:
+        raise ValueError(name_err)
+
+    doctrines_dir = entity_location(project_root, "doctrine")
+    doctrine_path = doctrines_dir / f"{name}.yaml"
+    if not doctrine_path.exists():
+        raise ValueError(f'Doctrine "{name}" not found.')
+
+    # Parse the new content as YAML first so the field-preservation merge
+    # can run BEFORE validation — callers may omit id/title/summary in the
+    # new content and rely on the existing file values to satisfy schema.
+    try:
+        new_data = yaml.safe_load(content)
+    except yaml.YAMLError as e:
+        raise ValueError(f"YAML parsing error: {e}") from e
+    if not isinstance(new_data, dict):
+        # Defer to validate_doctrine_content for the canonical error.
+        validate_doctrine_content(content, name)
+        return {"id": name, "filename": f"{name}.yaml", "updated_at": None}
+
+    # Field-preservation merge of id/title/summary from existing on-disk YAML.
+    try:
+        existing_raw = yaml.safe_load(doctrine_path.read_text()) or {}
+    except Exception:
+        existing_raw = {}
+    if not isinstance(existing_raw, dict):
+        existing_raw = {}
+
+    for field in ("id", "title", "summary"):
+        if field in existing_raw and field not in new_data:
+            new_data[field] = existing_raw[field]
+
+    merged_content = yaml.dump(
+        new_data, default_flow_style=False, allow_unicode=True, sort_keys=False
+    )
+
+    # Validate the merged content BEFORE writing — preserves
+    # "no-modify-on-failure" guarantee while letting partial content pass
+    # when existing file supplies the omitted id/title/summary.
+    validate_doctrine_content(merged_content, name)
+
+    doctrine_path.write_text(merged_content)
+
+    return {"id": name, "filename": f"{name}.yaml", "updated_at": None}
+
+
+def delete_doctrine(project_root: Path, name: str) -> dict:
+    """Soft-delete a doctrine by renaming BOTH partner files to ``.deleted``.
+
+    Atomically renames ``{name}.yaml`` → ``{name}.yaml.deleted`` AND
+    ``{name}.design.md`` → ``{name}.design.md.deleted`` (amendment Review
+    Ledger CHANGED row "B Doctrine row — both-file behaviour").
+
+    Returns ``{"id": name, "deleted": True, "deleted_at": None}`` per A2.
+    Raises ``ValueError`` on missing target.
+    """
+    name_err = validate_name(name)
+    if name_err:
+        raise ValueError(name_err)
+
+    doctrines_dir = entity_location(project_root, "doctrine")
+    yaml_path = doctrines_dir / f"{name}.yaml"
+    design_path = doctrines_dir / f"{name}.design.md"
+
+    if not yaml_path.exists() and not design_path.exists():
+        # Search the subtree for a deeper match before giving up.
+        if doctrines_dir.exists():
+            nested_yaml = next(iter(doctrines_dir.rglob(f"{name}.yaml")), None)
+            nested_design = next(iter(doctrines_dir.rglob(f"{name}.design.md")), None)
+            if nested_yaml is not None:
+                yaml_path = nested_yaml
+            if nested_design is not None:
+                design_path = nested_design
+
+    if not yaml_path.exists() and not design_path.exists():
+        raise ValueError(f'Doctrine "{name}" not found')
+
+    if yaml_path.exists():
+        yaml_path.rename(yaml_path.with_name(yaml_path.name + ".deleted"))
+    if design_path.exists():
+        design_path.rename(design_path.with_name(design_path.name + ".deleted"))
+    return {"id": name, "deleted": True, "deleted_at": None}
 
 
 def _truncate_description(text: str, width: int = 80) -> str:
@@ -432,21 +502,19 @@ def _find_doctrine_files(doctrine_id: str, doctrines_dir: Path) -> tuple[Path | 
     return None, primary_yaml
 
 
-def show_doctrine(doctrine_id: str, doctrines_dir: Path) -> dict:
-    """Load and return a doctrine by ID for display.
+def read_doctrine(project_root: Path, doctrine_id: str) -> dict | None:
+    """Load and return a doctrine by ID for display, or ``None`` on miss.
 
-    Searches recursively for <id>.design.md and <id>.yaml under doctrines_dir.
-    Returns a dict with keys: id, title, summary, design, raw_yaml, steps.
-    Raises DoctrineError with specific messages when files are missing or invalid.
+    Searches recursively for <id>.design.md and <id>.yaml under the doctrines
+    directory derived from ``project_root``. Returns a dict with keys: id,
+    title, summary, design, raw_yaml, steps. Returns ``None`` per amendment
+    A2 read-shape rule when files are missing (F-READ-DOCTRINE-RAISE-TO-NONE).
     """
+    doctrines_dir = entity_location(project_root, "doctrine")
     design_file, yaml_file = _find_doctrine_files(doctrine_id, doctrines_dir)
 
-    if design_file is None and yaml_file is None:
-        raise DoctrineError(f"Doctrine '{doctrine_id}' not found")
-    if design_file is None:
-        raise DoctrineError(f"Doctrine '{doctrine_id}' not found: design file missing")
-    if yaml_file is None:
-        raise DoctrineError(f"Doctrine '{doctrine_id}' not found: YAML file missing")
+    if design_file is None or yaml_file is None:
+        return None
 
     design_text = design_file.read_text()
     yaml_text = yaml_file.read_text()
@@ -483,8 +551,8 @@ def show_doctrine(doctrine_id: str, doctrines_dir: Path) -> dict:
     }
 
 
-def list_doctrines(doctrines_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
-    """List all valid doctrine pairs (design + yaml).
+def list_doctrines(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]:
+    """List all valid doctrine pairs (design + yaml) under ``project_root/.lore/doctrines/``.
 
     Scans for ``*.design.md`` files; for each, checks a matching ``*.yaml``
     exists in the same directory. Parses frontmatter from the design file.
@@ -493,6 +561,7 @@ def list_doctrines(doctrines_dir: Path, filter_groups: list[str] | None = None) 
 
     Returns a list of dicts with keys: id, group, title, summary, valid, filename.
     """
+    doctrines_dir = entity_location(project_root, "doctrine")
     if not doctrines_dir.exists():
         return []
 

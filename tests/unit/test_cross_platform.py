@@ -117,11 +117,11 @@ class TestDoctrineAndKnightFileAccess:
         assert param.annotation is Path
 
     def test_list_doctrines_takes_pathlib_path(self):
-        """list_doctrines signature should accept Path."""
+        """list_doctrines signature should accept Path (post-G16: project_root)."""
         from lore.doctrine import list_doctrines
 
         sig = inspect.signature(list_doctrines)
-        param = sig.parameters["doctrines_dir"]
+        param = sig.parameters["project_root"]
         assert param.annotation is Path
 
     def test_init_uses_pathlib_for_knights_dir(self):
@@ -223,21 +223,24 @@ class TestHierarchicalIDsNotFilePaths:
 
     def test_mission_id_with_slash_stored_in_db(self, tmp_path):
         """A hierarchical mission ID with `/` can be stored and retrieved."""
-        from lore.db import create_quest, create_mission, get_mission, init_database
+        from lore.db import create_quest, create_mission, read_mission, init_database
 
         lore_dir = tmp_path / ".lore"
         lore_dir.mkdir()
         init_database(lore_dir / "lore.db")
 
-        quest_id = create_quest(tmp_path, "Test Quest")
-        mission_id = create_mission(tmp_path, "Test Mission", quest_id=quest_id)
+        # G17: create_* now returns dict envelope; extract `id`.
+        quest_id = create_quest(tmp_path, "Test Quest")["id"]
+        mission_id = create_mission(
+            tmp_path, "Test Mission", quest_id=quest_id
+        )["id"]
 
         # ID should contain a slash
         assert "/" in mission_id
         assert mission_id.startswith(quest_id + "/")
 
         # Retrievable by exact ID
-        mission = get_mission(tmp_path, mission_id)
+        mission = read_mission(tmp_path, mission_id)
         assert mission is not None
         assert mission["id"] == mission_id
 
@@ -310,14 +313,15 @@ class TestTimestampConsistency:
 
     def test_timestamps_in_database_are_utc(self, tmp_path):
         """Timestamps stored in the database should be ISO 8601 UTC with Z suffix."""
-        from lore.db import create_quest, get_quest, init_database
+        from lore.db import create_quest, read_quest, init_database
 
         lore_dir = tmp_path / ".lore"
         lore_dir.mkdir()
         init_database(lore_dir / "lore.db")
 
-        quest_id = create_quest(tmp_path, "Test Quest")
-        quest = get_quest(tmp_path, quest_id)
+        # G17: create_quest now returns dict envelope; extract `id`.
+        quest_id = create_quest(tmp_path, "Test Quest")["id"]
+        quest = read_quest(tmp_path, quest_id)
 
         created_at = quest["created_at"]
         updated_at = quest["updated_at"]

@@ -9,7 +9,6 @@ Source: codex-list-group-us-1 (Unit Test Scenarios section)
 
 import pytest
 from click.testing import CliRunner
-from pathlib import Path
 
 from lore.cli import main, _format_table
 
@@ -61,7 +60,7 @@ def test_codex_list_header_contains_group(runner, project_dir):
     """The header line produced by codex list must contain the column label GROUP."""
     result = runner.invoke(main, ["codex", "list"])
     assert result.exit_code == 0
-    non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+    non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
     assert len(non_empty_lines) >= 1, "Expected at least a header line"
     header = non_empty_lines[0]
     assert "GROUP" in header, f"Expected 'GROUP' in header, got: {header!r}"
@@ -77,7 +76,7 @@ def test_codex_list_header_does_not_contain_type(runner, project_dir):
     """The header line must NOT contain the old TYPE column label."""
     result = runner.invoke(main, ["codex", "list"])
     assert result.exit_code == 0
-    non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+    non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
     assert len(non_empty_lines) >= 1, "Expected at least a header line"
     header = non_empty_lines[0]
     assert "TYPE" not in header, f"Expected 'TYPE' to be absent from header, got: {header!r}"
@@ -117,7 +116,7 @@ def test_codex_list_group_is_empty_string_for_root_level_doc(runner, project_dir
     # Build the expected output using _format_table with an empty GROUP for root-doc.
     # The actual output must match this structure — specifically the root-doc row
     # must not contain a non-empty GROUP value in the second column.
-    lines = [l for l in result.output.split("\n") if "root-doc" in l]
+    lines = [ln for ln in result.output.split("\n") if "root-doc" in ln]
     assert len(lines) == 1, f"Expected exactly one line for root-doc, got: {lines}"
     root_doc_line = lines[0]
 

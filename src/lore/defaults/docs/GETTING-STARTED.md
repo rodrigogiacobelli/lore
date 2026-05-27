@@ -32,7 +32,7 @@ The full skills table lives in `.lore/LORE-AGENT.md` — single source of truth 
 
 `lore init` seeded three user-tracked files you should review and edit:
 
-- **`.lore/codex/CODEX.md`** — project-wide rules and conventions. Agents read this first.
+- **`.lore/codex/codex.md`** — project-wide rules and conventions. Agents read this first.
 - **`.lore/codex/glossary.yaml`** — controlled vocabulary. Run `lore artifact show glossary-design` before adding entries.
 - **`.lore/config.toml`** — generic project config (e.g. glossary auto-surface toggle).
 

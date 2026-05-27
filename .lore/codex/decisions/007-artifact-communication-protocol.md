@@ -101,3 +101,11 @@ ephemeral, the artifact instance is not.
 **Freeform file conventions.** Steps could write to any file by convention
 without a template. This was rejected because it produces inconsistent output
 and gives human steps no structure to follow.
+
+## Amendment — Artifact mutation via `lore.api`
+
+The communication protocol above describes how pipeline steps consume and produce artifact instances. It does **not** restrict how artifact files themselves are managed.
+
+Artifact instances and artifact templates may be created, updated, and deleted through `lore.api` like any other file-backed entity (knight, doctrine, watcher). This brings artifacts to full CRUD parity with the other file-backed entity types and removes the prior implicit constraint — recorded as "mutation is on-disk" in earlier reference docs — that artifacts could only be edited directly on the filesystem.
+
+The communication protocol is unaffected: a downstream step still reads the artifact instance produced by its upstream step. Whether that instance was written by hand, by an agent, or by a `lore.api` call is immaterial to the protocol.

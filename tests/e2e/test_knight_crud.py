@@ -38,17 +38,16 @@ class TestKnightNewRootJson:
         payload = json.loads(result.output)
         assert payload["group"] is None
 
-    def test_root_json_contains_path_and_name(self, runner, project_dir):
-        # Spec: group-param-us-002 Tech Notes — JSON envelope returns full dict (group + path)
+    def test_root_json_contains_id_and_filename(self, runner, project_dir):
+        # Post-G16: knight new --json envelope is {id, filename, group}; 'path' dropped.
         (project_dir / "reviewer.md").write_text(PERSONA_MD.format(name="reviewer"))
         result = runner.invoke(
             main,
             ["knight", "new", "reviewer", "--from", "reviewer.md", "--json"],
         )
         payload = json.loads(result.output)
-        assert payload["name"] == "reviewer"
-        assert "path" in payload
-        assert payload["path"].endswith(".lore/knights/reviewer.md")
+        assert payload["id"] == "reviewer"
+        assert payload["filename"] == "reviewer.md"
 
 
 # ---------------------------------------------------------------------------
@@ -133,11 +132,10 @@ class TestKnightNewNestedHappyPath:
         )
         assert result.exit_code == 0
         payload = json.loads(result.output)
+        # Post-G16: knight new envelope is {id, filename, group}; 'path' dropped.
         assert payload["group"] == "feature-implementation"
-        assert payload["name"] == "on-prd-ready"
-        assert payload["path"].endswith(
-            ".lore/knights/feature-implementation/on-prd-ready.md"
-        )
+        assert payload["id"] == "on-prd-ready"
+        assert payload["filename"] == "on-prd-ready.md"
 
 
 # ---------------------------------------------------------------------------
@@ -233,3 +231,52 @@ def test_us010_knight_new_rejects_extra_stability_field(runner, project_dir):
     combined = (result.output or "") + (result.stderr or "")
     assert ("additionalProperties" in combined) or ("stability" in combined)
     assert not (project_dir / ".lore" / "knights" / "pm-extra.md").exists()
+
+
+# ---------------------------------------------------------------------------
+# G2 — CLI parity: bad-frontmatter stderr + exit code unchanged after raise flip
+# Plan: transient-public-api-facade-plan §G2.
+# Anchor: decisions-011-public-api-stability (ADR-011 — CLI translates internal
+# raises to existing user-visible message; refactor flips internal raise type
+# only, so stdout/stderr/exit must stay bit-stable.)
+# ---------------------------------------------------------------------------
+
+
+def test_g2_knight_new_missing_summary_exit_code_is_one(runner, project_dir):
+    """`knight new` with missing summary exits 1 (must stay 1 after raise flip)."""
+    (project_dir / "p.md").write_text(_KNIGHT_NO_SUMMARY_MD)
+    result = runner.invoke(main, ["knight", "new", "pm", "--from", "p.md"])
+    assert result.exit_code == 1
+
+
+def test_g2_knight_new_missing_summary_stderr_contains_golden_text(
+    runner, project_dir
+):
+    """`knight new` missing summary stderr contains golden schema text."""
+    (project_dir / "p.md").write_text(_KNIGHT_NO_SUMMARY_MD)
+    result = runner.invoke(main, ["knight", "new", "pm", "--from", "p.md"])
+    stderr = result.stderr if hasattr(result, "stderr") else ""
+    combined = (result.output or "") + (stderr or "")
+    assert "Missing required property 'summary'" in combined
+
+
+def test_g2_knight_new_missing_summary_no_file_written(runner, project_dir):
+    """`knight new` missing summary leaves no file on disk."""
+    (project_dir / "p.md").write_text(_KNIGHT_NO_SUMMARY_MD)
+    runner.invoke(main, ["knight", "new", "pm", "--from", "p.md"])
+    assert not (project_dir / ".lore" / "knights" / "pm.md").exists()
+
+
+def test_g2_knight_new_missing_summary_json_envelope_unchanged(
+    runner, project_dir
+):
+    """`knight new --json` missing summary returns `{"error": "..."}` on stderr."""
+    (project_dir / "p.md").write_text(_KNIGHT_NO_SUMMARY_MD)
+    result = runner.invoke(
+        main, ["knight", "new", "pm", "--from", "p.md", "--json"]
+    )
+    assert result.exit_code == 1
+    stderr = result.stderr if hasattr(result, "stderr") else ""
+    payload = json.loads(stderr or result.output)
+    assert set(payload.keys()) == {"error"}
+    assert "summary" in payload["error"]

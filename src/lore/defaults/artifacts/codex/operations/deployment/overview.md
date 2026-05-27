@@ -4,7 +4,7 @@ title: Deployment Overview
 summary: Deployment architecture, environment inventory, technology choices, and entry
   point for all environment-specific deployment documentation.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Deployment Overview

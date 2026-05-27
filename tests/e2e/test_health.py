@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from lore.cli import main
 from lore.health import health_check
-from lore.models import HealthReport
+from lore.api import HealthReport
 
 
 # ---------------------------------------------------------------------------
@@ -2178,34 +2178,34 @@ class TestHealthTypesDefinedInHealthModule:
 
 
 # ---------------------------------------------------------------------------
-# US-018: health_check and HealthReport importable from lore.models (E2E)
+# US-018: health_check and HealthReport importable from lore.api (E2E)
 # Exercises: lore codex show conceptual-workflows-health
 # ---------------------------------------------------------------------------
 
 
 class TestHealthCheckPublicAPI:
-    """health_check is accessible via the stable lore.models public API."""
+    """health_check is accessible via the stable lore.api public API."""
 
-    def test_health_check_importable_from_lore_models(self):
-        """from lore.models import health_check succeeds without error."""
+    def test_health_check_importable_from_lore_api(self):
+        """from lore.api import health_check succeeds without error."""
         # Exercises: lore codex show conceptual-workflows-health
-        from lore.models import health_check  # noqa: F401
+        from lore.api import health_check  # noqa: F401
         assert health_check is not None
 
     def test_health_check_is_callable(self):
-        """health_check imported from lore.models is callable."""
+        """health_check imported from lore.api is callable."""
         # Exercises: lore codex show conceptual-workflows-health
-        from lore.models import health_check
+        from lore.api import health_check
         assert callable(health_check), (
-            f"health_check from lore.models is not callable: {health_check!r}"
+            f"health_check from lore.api is not callable: {health_check!r}"
         )
 
-    def test_health_check_in_lore_models_all(self):
-        """'health_check' appears in lore.models.__all__."""
+    def test_health_check_in_lore_api_all(self):
+        """'health_check' appears in lore.api.__all__."""
         # Exercises: lore codex show conceptual-workflows-health
-        import lore.models
-        assert "health_check" in lore.models.__all__, (
-            f"'health_check' missing from lore.models.__all__: {lore.models.__all__!r}"
+        import lore.api
+        assert "health_check" in lore.api.__all__, (
+            f"'health_check' missing from lore.api.__all__: {lore.api.__all__!r}"
         )
 
 

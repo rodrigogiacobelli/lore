@@ -19,7 +19,7 @@ Before designing anything, read the existing codebase and relevant codex documen
 
 **Output formats must show exact examples**, not descriptions. If a command returns JSON, show the exact JSON shape.
 
-**Define project structure to the file-name level** for every file that will change or be created. For every existing file you plan to modify, run `lore impacts <path>` to surface prior ADRs, standards, and technical docs that govern it. Read each returned doc before finalizing decisions on that file. See `conceptual-workflows-impacts`.
+**Define project structure to the file-name level** for every file that will change or be created. For every existing file you plan to modify, run `lore impacts <path>` to surface prior ADRs, standards, and technical docs that govern it. Read each returned doc before finalizing decisions on that file. See the impacts engine section of `.lore/codex/codex.md`.
 
 ## Rules
 

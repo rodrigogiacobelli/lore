@@ -5,7 +5,7 @@ summary: 'Hard limits that must never be violated: runtime requirements, legal/c
   performance budgets, compatibility rules, and explicit "never do" rules. Agents
   must check this before proposing changes that touch system boundaries.'
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Constraints

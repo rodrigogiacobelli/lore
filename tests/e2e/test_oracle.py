@@ -9,8 +9,6 @@ from lore.cli import main
 from tests.conftest import (
     assert_exit_ok,
     db_conn,
-    insert_mission,
-    insert_quest,
 )
 
 
@@ -180,7 +178,7 @@ class TestOracleWipeAndRecreate:
 
     def test_exit_code_zero_second_run(self, runner, project_dir):
         r = runner.invoke(main, ["--json", "new", "quest", "Q"])
-        quest_id = json.loads(r.output)["id"]
+        _quest_id = json.loads(r.output)["id"]
         runner.invoke(main, ["oracle"])
         result = runner.invoke(main, ["oracle"])
         assert_exit_ok(result)
@@ -251,6 +249,30 @@ class TestOracleSlugification:
         quest_dirs = list((project_dir / ".lore" / "reports" / "quests").iterdir())
         dir_name = quest_dirs[0].name
         assert "-my-quest-title" in dir_name or "my-quest-title" in dir_name
+
+
+class TestOracleRejectsJsonFlag:
+    """`lore --json oracle` exits non-zero with a clear stderr error.
+
+    The oracle command produces markdown reports and explicitly does not
+    support JSON output. Silently ignoring `--json` hides the mismatch from
+    callers; the CLI must fail loudly instead.
+    """
+
+    def test_json_flag_exits_non_zero(self, runner, project_dir):
+        result = runner.invoke(main, ["--json", "oracle"])
+        assert result.exit_code != 0
+
+    def test_json_flag_mentions_unsupported_in_stderr(self, runner, project_dir):
+        result = runner.invoke(main, ["--json", "oracle"])
+        combined = (result.stderr or "") + (result.output or "")
+        lowered = combined.lower()
+        assert "json" in lowered
+        assert "not supported" in lowered or "unsupported" in lowered
+
+    def test_json_flag_does_not_generate_reports(self, runner, project_dir):
+        runner.invoke(main, ["--json", "oracle"])
+        assert not (project_dir / ".lore" / "reports").exists()
 
 
 class TestOracleMissionTypeInReports:

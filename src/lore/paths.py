@@ -46,11 +46,51 @@ def glossary_path(root: Path) -> Path:
 
 
 def codex_md_path(root: Path) -> Path:
-    return root / ".lore" / "codex" / "CODEX.md"
+    return root / ".lore" / "codex" / "codex.md"
 
 
 def config_path(root: Path) -> Path:
     return root / ".lore" / "config.toml"
+
+
+_ENTITY_LOCATION_BASES: dict[str, tuple[str, ...]] = {
+    "knight": (".lore", "knights"),
+    "doctrine": (".lore", "doctrines"),
+    "artifact": (".lore", "artifacts"),
+    "watcher": (".lore", "watchers"),
+    "codex": (".lore", "codex"),
+}
+
+
+def entity_location(
+    project_root: Path,
+    kind: str,
+    name: str | None = None,
+    *,
+    group: str | None = None,
+    suffix: str | None = None,
+) -> Path:
+    """Return the on-disk location for a file-backed entity.
+
+    Supported ``kind`` values: ``"knight"``, ``"doctrine"``, ``"artifact"``,
+    ``"watcher"``, ``"codex"``. An unknown kind raises ``ValueError``.
+
+    With ``name=None`` and ``suffix=None`` the (group-scoped) directory is
+    returned. With ``name`` and ``suffix`` the full file path
+    ``base/[group/]name+suffix`` is returned. Does NOT create any directory.
+    """
+    if kind not in _ENTITY_LOCATION_BASES:
+        raise ValueError(
+            f"Unknown entity kind: {kind!r}. "
+            f"Expected one of: {', '.join(sorted(_ENTITY_LOCATION_BASES))}."
+        )
+    base = project_root.joinpath(*_ENTITY_LOCATION_BASES[kind])
+    if group:
+        base = base.joinpath(*group.split("/"))
+    if name is None and suffix is None:
+        return base
+    filename = f"{name or ''}{suffix or ''}"
+    return base / filename
 
 
 def derive_group(filepath: Path, base_dir: Path) -> str:

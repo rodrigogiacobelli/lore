@@ -31,7 +31,6 @@ try:
         ImpactsError,
         ImpactsResult,
         _load_codex_binds_index,
-        _render_impacts_json,
         classify_token,
         impacts,
     )
@@ -40,9 +39,17 @@ except ImportError:  # pragma: no cover — red phase, module not implemented ye
     ImpactsError = None  # type: ignore[assignment,misc]
     ImpactsResult = None  # type: ignore[assignment,misc]
     _load_codex_binds_index = None  # type: ignore[assignment]
-    _render_impacts_json = None  # type: ignore[assignment]
     classify_token = None  # type: ignore[assignment]
     impacts = None  # type: ignore[assignment]
+
+# `_render_impacts_json` was hoisted to `lore.cli` in G3
+# (transient-public-api-facade-plan). The few legacy assertions that remain
+# below carry unique contracts not covered by the new
+# tests/unit/test_cli_impacts_render.py goldens; the rest were deleted.
+try:
+    from lore.cli import _render_impacts_json  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover — defensive, lore.cli always present
+    _render_impacts_json = None  # type: ignore[assignment]
 
 # Cluster C (US-005 / US-006 / US-007) — path-seed symbols. These names do
 # not exist in `lore.impacts` yet; same try/except None-fallback pattern as
@@ -288,42 +295,12 @@ def test_unknown_codex_id_does_not_raise_generic_keyerror(tmp_project):
 
 # ===========================================================================
 # US-004 — `_render_impacts_json` codex branch
+# Note: declaration-order, empty-envelope, and return-type assertions were
+# migrated to tests/unit/test_cli_impacts_render.py during G3. Only the
+# kind-respects-producer contract remains here — it pins behavioural
+# single-source-of-truth, not output shape, so it lives with the impacts
+# producer rather than the renderer goldens.
 # ===========================================================================
-
-
-def test_render_impacts_json_codex_branch_declaration_order():
-    """conceptual-workflows-impacts — Step 3 codex-seed JSON shape.
-
-    Items must be in declaration order and carry `kind` set via
-    `is_glob_pattern`. No additional keys.
-    """
-    result = ImpactsResult(
-        kind="codex",
-        codex_items=(
-            CodexBinding(path="src/lore/cli.py", kind="exact"),
-            CodexBinding(path="src/lore/**/*.py", kind="glob"),
-        ),
-    )
-    payload = json.loads(_render_impacts_json(result))
-    assert payload == {
-        "impacts": [
-            {"path": "src/lore/cli.py", "kind": "exact"},
-            {"path": "src/lore/**/*.py", "kind": "glob"},
-        ]
-    }
-
-
-def test_render_impacts_json_emits_envelope_for_empty():
-    """conceptual-workflows-impacts — Empty: `{"impacts": []}` not the bare empty string."""
-    result = ImpactsResult(kind="codex", codex_items=())
-    payload = json.loads(_render_impacts_json(result))
-    assert payload == {"impacts": []}
-
-
-def test_render_impacts_json_returns_str():
-    """The renderer returns a str (the CLI handler echoes it directly)."""
-    result = ImpactsResult(kind="codex", codex_items=())
-    assert isinstance(_render_impacts_json(result), str)
 
 
 def test_render_impacts_json_uses_kind_from_codex_binding():
@@ -680,56 +657,12 @@ def test_normalize_path_input_normalises_backslashes(tmp_project):
 
 # ===========================================================================
 # US-006 — `_render_impacts_json` code-seed branch
+# All four legacy rows (exact-omits-pattern, glob-includes-pattern,
+# empty-envelope, preserves-order) were migrated to
+# tests/unit/test_cli_impacts_render.py during G3 (renderer hoisted to
+# `lore.cli`). The new goldens cover byte-identical output for the same
+# scenarios.
 # ===========================================================================
-
-
-def test_render_impacts_json_code_branch_exact_omits_pattern_key():
-    """conceptual-workflows-impacts — Step 4 JSON: pattern KEY absent on exact.
-
-    Exact rows must NOT carry a `"pattern": null` key — the key is absent.
-    """
-    result = ImpactsResult(
-        kind="code",
-        code_items=(
-            CodeBinding(id="x", match="exact", pattern=None),
-        ),
-    )
-    payload = json.loads(_render_impacts_json(result))
-    assert payload == {"impacts": [{"id": "x", "match": "exact"}]}
-    assert "pattern" not in payload["impacts"][0]
-
-
-def test_render_impacts_json_code_branch_glob_includes_pattern():
-    """conceptual-workflows-impacts — Step 4 JSON: glob carries pattern verbatim."""
-    result = ImpactsResult(
-        kind="code",
-        code_items=(
-            CodeBinding(id="x", match="glob", pattern="a/*.py"),
-        ),
-    )
-    payload = json.loads(_render_impacts_json(result))
-    assert payload == {
-        "impacts": [{"id": "x", "match": "glob", "pattern": "a/*.py"}]
-    }
-
-
-def test_render_impacts_json_code_branch_empty_envelope():
-    """conceptual-workflows-impacts — Empty Result Behaviour: `{"impacts": []}`."""
-    result = ImpactsResult(kind="code", code_items=())
-    assert json.loads(_render_impacts_json(result)) == {"impacts": []}
-
-
-def test_render_impacts_json_code_branch_preserves_order():
-    """conceptual-workflows-impacts — Step 4: JSON honours producer's sort order."""
-    result = ImpactsResult(
-        kind="code",
-        code_items=(
-            CodeBinding(id="alpha", match="exact", pattern=None),
-            CodeBinding(id="beta", match="glob", pattern="x/**/*.py"),
-        ),
-    )
-    payload = json.loads(_render_impacts_json(result))
-    assert [item["id"] for item in payload["impacts"]] == ["alpha", "beta"]
 
 
 # ===========================================================================

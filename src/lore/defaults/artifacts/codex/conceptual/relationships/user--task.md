@@ -4,7 +4,7 @@ title: '{Entity A} to {Entity B}'
 summary: _One to three sentences. What are the two named roles in this relationship?
   What is the cardinality? What is mutable vs immutable?_
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # {Entity A} to {Entity B}

@@ -366,8 +366,9 @@ def test_doctrine_new_json_mode_success(runner, project_dir, tmp_path):
     )
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert data["name"] == "my-workflow"
-    assert data["yaml_filename"] == "my-workflow.yaml"
+    # Post-G16 envelope: {id, filename, group, design_filename}.
+    assert data["id"] == "my-workflow"
+    assert data["filename"] == "my-workflow.yaml"
     assert data["design_filename"] == "my-workflow.design.md"
     assert data["group"] is None
 
@@ -476,12 +477,12 @@ def test_doctrine_new_nested_json_envelope(runner, project_dir, tmp_path):
     )
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    # Post-G16 envelope: {id, filename, group, design_filename}.
     assert payload == {
-        "name": "keyword-ranker",
+        "id": "keyword-ranker",
         "group": "seo-analysis/keyword-analysers",
-        "yaml_filename": "keyword-ranker.yaml",
+        "filename": "keyword-ranker.yaml",
         "design_filename": "keyword-ranker.design.md",
-        "path": ".lore/doctrines/seo-analysis/keyword-analysers/keyword-ranker.yaml",
     }
 
 

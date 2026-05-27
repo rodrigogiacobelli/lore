@@ -1,11 +1,12 @@
 ---
 id: decisions-011-api-parity-with-cli
 title: 'ADR-011: Python API must be safe and behaviourally equivalent to the CLI'
-summary: Establishes that every lore.db function exposed in the public API must be
-  self-contained and safe to call directly — no pre-validation, post-processing, or
-  business logic may live exclusively in the CLI layer. The CLI becomes a thin formatting
-  wrapper. Any gap is a bug.
+summary: Establishes that every function exposed through lore.api must be self-contained
+  and safe to call directly — no pre-validation, post-processing, or business logic may
+  live exclusively in the CLI layer. The CLI becomes a thin formatting wrapper over
+  lore.api. Any gap is a bug.
 binds:
+- src/lore/api.py
 - src/lore/validators.py
 - src/lore/db.py
 related:
@@ -22,39 +23,41 @@ related:
 
 ## Context
 
-`lore.db` is now a public API (ADR-010). External consumers — Realm, user scripts, future integrations — import and call these functions directly, bypassing the CLI entirely.
+The public API surface is `lore.api.__all__` (ADR-010). External consumers — Realm, user scripts, the future Lore Server — import and call these functions directly, bypassing the CLI entirely. `lore.api` is a facade; the names it re-exports are sourced from internal operational modules (`lore.db`, `lore.codex`, `lore.validators`, …).
 
-An audit of the CLI layer against `lore.db` found three classes of gap where the CLI adds logic that `lore.db` does not replicate:
+An audit of the CLI layer against those operational modules found three classes of gap where the CLI adds logic that the underlying functions do not replicate:
 
 1. **Input validation in the CLI only** — e.g. `add_board_message` rejects empty messages in the CLI but the DB function accepts them silently.
 2. **Return value gaps** — e.g. `close_mission` returns `quest_closed: bool` but not which quest was closed. The CLI re-queries to recover this. An API caller cannot.
 3. **Status change detection** — e.g. `claim_mission` does not return the new quest status. The CLI re-queries before and after to detect the change.
 
-These gaps mean that a Python script calling `lore.db` directly does not get the same guarantees as a user running the CLI. This is unacceptable for a public API.
+These gaps mean that a Python script calling `lore.api` directly does not get the same guarantees as a user running the CLI. This is unacceptable for a public API.
 
 ## Decision
 
-**Every function in `lore.db` that is part of the public API must be self-contained and safe to call directly.**
+**Every function exposed through `lore.api` must be self-contained and safe to call directly.**
 
 Specifically:
 
-1. **All input validation moves into `lore.validators`.** Business rules live in `src/lore/validators.py` — a dedicated, import-safe module with no dependencies on the rest of `lore`. Both `lore.db` and `cli.py` import from `validators` and call the same functions. The CLI may keep its own validation calls for UX (early exit, click-formatted errors) but must not be the *only* place a rule is enforced — and must never duplicate logic that already exists in `validators`.
+1. **All input validation moves into `lore.validators`.** Business rules live in `src/lore/validators.py` — a dedicated, import-safe module with no dependencies on the rest of `lore`. The operational modules behind `lore.api` (`lore.db`, `lore.codex`, …) and `cli.py` all import from `validators` and call the same functions. The CLI may keep its own validation calls for UX (early exit, click-formatted errors) but must not be the *only* place a rule is enforced — and must never duplicate logic that already exists in `validators`.
 
 2. **All relevant state changes are reflected in the return value.** If an operation has side effects (quest status derived, quest auto-closed, block reason cleared), the return dict must include enough information for the caller to know what happened without issuing follow-up queries.
 
-3. **The CLI becomes a thin formatting wrapper.** It calls db functions, formats results for human or JSON output, and exits. It adds no business logic that a Python caller would need to replicate.
+3. **The CLI becomes a thin formatting wrapper over `lore.api`.** It calls api functions, formats results for human or JSON output, and exits. It adds no business logic that a Python caller would need to replicate.
 
 **Validation ownership is now locked (ADR-012 refactor, Decision 1):**
 
 - `validators.py` is the foundation utility. It has no imports from any `lore.*` module
   and is callable by any layer.
-- `db.py` is the authoritative enforcement layer. Write operations that are Realm-callable
-  retain their `validators.*` calls (e.g., `add_board_message`, `claim_mission`,
-  `create_quest`, `create_mission`).
-- `cli.py` pre-checks are the redundant layer. Where `db.py` already enforces a rule,
-  the `cli.py` pre-check is removed rather than kept in sync. `cli.py` validation
-  helpers (`_validate_mission_id`, `_validate_entity_id`, etc.) are thin UX translators
-  that delegate entirely to `validators.*` — they contain no local regex logic.
+- The operational modules behind `lore.api` (`lore.db`, `lore.codex`, …) are the
+  authoritative enforcement layer. Write operations that are externally callable retain
+  their `validators.*` calls (e.g., `add_board_message`, `claim_mission`, `create_quest`,
+  `create_mission`).
+- `cli.py` pre-checks are the redundant layer. Where the operational layer already
+  enforces a rule, the `cli.py` pre-check is removed rather than kept in sync. `cli.py`
+  validation helpers (`_validate_mission_id`, `_validate_entity_id`, etc.) are thin UX
+  translators that delegate entirely to `validators.*` — they contain no local regex
+  logic.
 
 **Exception:** `remove_dependency` does not retain a format check in `db.py`. Its
 contract is existence-based: a malformed ID produces a "not found" response, which is
@@ -64,17 +67,19 @@ acceptable for a delete-by-existence operation. This is explicitly documented in
 ## Consequences
 
 - `lore.validators` is the single source of truth for all business rules.
-- `lore.db` enforces rules by calling validators — it contains no inline validation logic.
+- The operational modules behind `lore.api` enforce rules by calling validators — they contain no inline validation logic.
 - `cli.py` calls the same validators for UX purposes — it never owns a rule.
-- The CLI is guaranteed to produce identical outcomes to equivalent direct API calls.
+- The CLI is guaranteed to produce identical outcomes to equivalent direct `lore.api` calls.
 - As new API functions are added, their validation goes into `lore.validators` first. Any rule that exists only in the CLI is a bug.
 - Existing gaps are bugs and must be fixed before the API is considered stable. See `spec-api-parity-gap-analysis` for the fix plan.
 - CLI helpers (`_validate_mission_id`, `_validate_entity_id`, `_validate_sender_id`,
   `_validate_name`) contain no inline regex. Each delegates to the corresponding
   `validators.*` function and translates the result into a Click-formatted error.
-- `validators.py` exports: `validate_message`, `validate_entity_id`,
+- `validators.py` exports include: `validate_message`, `validate_entity_id`,
   `validate_mission_id`, `validate_priority`, `validate_name`,
-  `validate_quest_id_loose`, `route_entity`.
+  `validate_group`, `validate_binds_entry`, `validate_quest_id_loose`,
+  `validate_chaos_threshold`, `is_glob_pattern`, `route_entity`. The source
+  module is authoritative — see `src/lore/validators.py` for the current set.
 - `validate_quest_id_loose` uses the pattern `^q-[a-z0-9]{4,8}$` and is documented for
   test-DB-inserted IDs only. It must not be used for new ID creation.
 

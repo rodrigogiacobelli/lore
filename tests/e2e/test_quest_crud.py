@@ -5,7 +5,6 @@ Spec: conceptual-workflows-quest-crud (lore codex show conceptual-workflows-ques
 
 import json
 import re
-import sqlite3
 from datetime import datetime, timezone
 
 from lore.cli import main
@@ -873,7 +872,7 @@ class TestDashboardWithMissionCounts:
 
         runner.invoke(main, ["new", "mission", "Open M1", "-q", quest_id])
         r2 = runner.invoke(main, ["--json", "new", "mission", "Open M2", "-q", quest_id])
-        m2_id = json.loads(r2.output)["id"]
+        _m2_id = json.loads(r2.output)["id"]
 
         r3 = runner.invoke(main, ["--json", "new", "mission", "In Progress M", "-q", quest_id])
         m3_id = json.loads(r3.output)["id"]

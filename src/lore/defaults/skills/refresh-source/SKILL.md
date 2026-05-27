@@ -7,11 +7,11 @@ description: Pull a fresh version of an existing source, diff it against the sto
 
 Re-ingest a source that was captured previously. Produces a diff summary, walks canonical-doc updates driven by the diff, and overwrites the snapshot on disk. Use this when the upstream item has changed since it was first captured. For first-time capture, use `/ingest-source`.
 
-## CODEX.md is your primary input — and a candidate canonical doc
+## codex.md is your primary input — and a candidate canonical doc
 
-`.lore/codex/CODEX.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it carries project-specific guidance that shapes which parts of the diff are codex-worthy and where they land.
+`.lore/codex/codex.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it carries project-specific guidance that shapes which parts of the diff are codex-worthy and where they land.
 
-When the diff introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule, propose updating `CODEX.md` in step 8 like any other canonical doc. **CODEX.md is lean by design** — do not propose appending per-feature notes or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit.
+When the diff introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule, propose updating `codex.md` in step 8 like any other canonical doc. **codex.md is lean by design** — do not propose appending per-feature notes or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit.
 
 ## Steps
 
@@ -50,7 +50,14 @@ Ask the user which parts of the diff should drive canonical-doc updates. The use
 
 ### 8. Propose and apply canonical updates
 
-For each codex-worthy change, name the specific canonical doc to update and the proposed edit. Apply after approval. When the distilled canonical doc maps to specific code files in the target repo, populate its `binds:` field so `lore impacts` surfaces the doc when those files are edited.
+For each codex-worthy change, name the specific canonical doc to update and the proposed edit. Apply after approval — drive every canonical-doc change through the CLI, never by hand:
+
+- **Body change** — draft to a temp file, then `lore codex edit <id> -f <patched-body>.md`.
+- **Add a cross-link** — `lore codex edit <id> --add related=<other-id>`.
+- **Drop an obsolete cross-link** — `lore codex edit <id> --remove related=<other-id>`.
+- **Update title / summary** — `lore codex edit <id> --set summary="..."`.
+- **Populate `binds:`** — when the distilled doc maps to specific code files in the target repo, `lore codex edit <id> --add binds=<path-or-glob>` so `lore impacts` surfaces the doc when those files are edited.
+- **Create a missing canonical doc** — `lore codex new <id> --group <subdir> -f <draft>.md`.
 
 If any proposed edit adds or modifies a `.lore/codex/glossary.yaml` entry, gate it through the design checklist before proposing:
 
@@ -62,7 +69,26 @@ The Glossary is for small, project-specific terms only. Entities, named workflow
 
 ### 9. Overwrite the snapshot (rewriting `related` from scratch)
 
-Write `.lore/codex/sources/<system>/<id>.md` with the fresh content, using the same structure as `/ingest-source` step 7 — frontmatter has `id`, `title`, `summary`, and `related`. Update `title` and `summary` if the upstream headline changed.
+Drive the snapshot rewrite through the CLI. Two paths, pick the cleaner one:
+
+**Path A — body-file rewrite.** Draft the full refreshed snapshot to a temp file (frontmatter block plus body, same four-field shape as `/ingest-source` step 7) and replace via:
+
+```
+lore codex edit <id> -f <refreshed-body>.md
+```
+
+This is the cleanest path when the upstream body changed substantially or `related` needs many edits — the frontmatter block in the file is authoritative.
+
+**Path B — field-edit flags.** Use this when only a handful of frontmatter fields change and the body is small enough to inline:
+
+```
+lore codex edit <id> --set title="<new title>"        # if headline changed
+lore codex edit <id> --set summary="<new summary>"    # if scope changed
+lore codex edit <id> --unset related                  # drop the prior list entirely
+lore codex edit <id> --add related=<canonical-id>     # rebuild, one entry at a time
+```
+
+`--unset related` followed by `--add related=...` per entry is the explicit "rewrite from scratch" sequence. For body changes, use `-f` (Path A).
 
 Rewrite `related` from scratch on every refresh — do NOT merge with the prior list. Include exactly the canonical docs edited in step 8, plus any canonical docs from the prior run that are still accurate for the refreshed content. Drop canonical docs that are no longer relevant.
 

@@ -38,6 +38,15 @@ Write the watcher definition to a temporary file. Use the existing watcher forma
 lore watcher new <name> --from <temp-file>
 ```
 
+`-f` is the short form of `--from`.
+
+To nest watchers under a subdirectory, pass `--group <subdir>` (example: `lore watcher new nightly-check --group team-a/nightly -f <temp-file>` lands the file under `.lore/watchers/team-a/nightly/`).
+
+To update an existing watcher:
+
+- Whole-file replace: `lore watcher edit <name> -f <file>`
+- Single-field tweak (cheaper for agents): `lore watcher edit <name> --set KEY=VALUE` (or `--unset KEY`, `--add KEY=VALUE`, `--remove KEY=VALUE` for list fields)
+
 ### 5. Verify
 
 ```

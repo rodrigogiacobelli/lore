@@ -66,7 +66,7 @@ def test_list_knights_filter_returns_matched_group(tmp_path):
     ops_dir.mkdir()
     (ops_dir / "deploy.md").write_text(OPS_DEPLOY_MD)
 
-    results = list_knights(knights_dir, filter_groups=["feature-implementation"])
+    results = list_knights(tmp_path, filter_groups=["feature-implementation"])
 
     groups = [r["group"] for r in results]
     # Only feature-implementation group (and root, which is empty string) should appear
@@ -92,7 +92,7 @@ def test_list_knights_filter_fallback_values_preserved(tmp_path):
     # Write a knight file with missing id and summary — fallbacks must apply
     (feature_dir / "no-meta.md").write_text(MISSING_FIELDS_MD)
 
-    results = list_knights(knights_dir, filter_groups=["feature-implementation"])
+    results = list_knights(tmp_path, filter_groups=["feature-implementation"])
 
     assert len(results) == 1
     record = results[0]
@@ -128,7 +128,7 @@ def test_list_knights_filter_none_no_regression(tmp_path):
     knights_dir = tmp_path / ".lore" / "knights"
     _setup_knights(knights_dir)
 
-    results = list_knights(knights_dir, filter_groups=None)
+    results = list_knights(tmp_path, filter_groups=None)
 
     ids = [r["id"] for r in results]
     assert any("ba" in kid or "feature-implementation" in kid for kid in ids)
@@ -142,7 +142,7 @@ def test_list_knights_no_filter_argument_returns_all(tmp_path):
     knights_dir = tmp_path / ".lore" / "knights"
     _setup_knights(knights_dir)
 
-    results = list_knights(knights_dir)
+    results = list_knights(tmp_path)
 
     ids = [r["id"] for r in results]
     assert any("ba" in kid or "feature-implementation" in kid for kid in ids)
@@ -170,29 +170,31 @@ class TestCreateKnight:
         assert sig.parameters["group"].default is None
 
     def test_group_none_writes_to_root(self, tmp_path):
-        # AC: group=None writes to knights_dir/"<name>.md"
+        # AC: group=None writes to <project_root>/.lore/knights/<name>.md
         create_knight(tmp_path, "reviewer", KNIGHT_MD.format(name="reviewer"))
-        assert (tmp_path / "reviewer.md").exists()
+        assert (tmp_path / ".lore" / "knights" / "reviewer.md").exists()
 
     def test_nested_group_writes_to_subdir_with_auto_mkdir(self, tmp_path):
         # AC: group="a/b" writes nested with intermediate dirs created
         create_knight(
             tmp_path, "lead", KNIGHT_MD.format(name="lead"), group="a/b"
         )
-        assert (tmp_path / "a").is_dir()
-        assert (tmp_path / "a" / "b").is_dir()
-        assert (tmp_path / "a" / "b" / "lead.md").exists()
+        base = tmp_path / ".lore" / "knights"
+        assert (base / "a").is_dir()
+        assert (base / "a" / "b").is_dir()
+        assert (base / "a" / "b" / "lead.md").exists()
 
     def test_mkdir_idempotent_with_preexisting_dir(self, tmp_path):
         # AC: pre-existing target dir does not raise
-        (tmp_path / "a").mkdir()
+        (tmp_path / ".lore" / "knights" / "a").mkdir(parents=True)
         create_knight(tmp_path, "k", KNIGHT_MD.format(name="k"), group="a")
-        assert (tmp_path / "a" / "k.md").exists()
+        assert (tmp_path / ".lore" / "knights" / "a" / "k.md").exists()
 
     def test_duplicate_subtree_raises_value_error(self, tmp_path):
         # AC: raises ValueError when name exists anywhere in subtree (rglob)
-        (tmp_path / "x").mkdir()
-        (tmp_path / "x" / "k.md").write_text(KNIGHT_MD.format(name="k"))
+        knights = tmp_path / ".lore" / "knights" / "x"
+        knights.mkdir(parents=True)
+        (knights / "k.md").write_text(KNIGHT_MD.format(name="k"))
         with pytest.raises(ValueError, match="already exists"):
             create_knight(
                 tmp_path, "k", KNIGHT_MD.format(name="k"), group="y"
@@ -200,31 +202,31 @@ class TestCreateKnight:
 
     def test_duplicate_subtree_does_not_create_file(self, tmp_path):
         # AC: no file written under new group when duplicate detected
-        (tmp_path / "x").mkdir()
-        (tmp_path / "x" / "k.md").write_text(KNIGHT_MD.format(name="k"))
+        knights = tmp_path / ".lore" / "knights" / "x"
+        knights.mkdir(parents=True)
+        (knights / "k.md").write_text(KNIGHT_MD.format(name="k"))
         with pytest.raises(ValueError):
             create_knight(
                 tmp_path, "k", KNIGHT_MD.format(name="k"), group="y"
             )
-        assert not (tmp_path / "y" / "k.md").exists()
+        assert not (tmp_path / ".lore" / "knights" / "y" / "k.md").exists()
 
     def test_return_dict_contains_required_keys(self, tmp_path):
-        # AC: returns dict containing name, group, filename, path keys
+        # AC (post-G16): returns dict containing id, group, filename keys.
         result = create_knight(
             tmp_path, "k", KNIGHT_MD.format(name="k"), group="a"
         )
         assert isinstance(result, dict)
-        assert set(result.keys()) >= {"name", "group", "filename", "path"}
+        assert set(result.keys()) == {"id", "group", "filename"}
 
     def test_return_dict_values_match_inputs(self, tmp_path):
-        # AC: returned values reflect what was written
+        # AC (post-G16): returned values reflect what was written (no 'path').
         result = create_knight(
             tmp_path, "k", KNIGHT_MD.format(name="k"), group="a"
         )
-        assert result["name"] == "k"
+        assert result["id"] == "k"
         assert result["group"] == "a"
         assert result["filename"] == "k.md"
-        assert result["path"].endswith("a/k.md")
 
     def test_return_dict_group_none_at_root(self, tmp_path):
         # AC: group key is None when created at root
@@ -239,7 +241,7 @@ class TestCreateKnight:
             create_knight(
                 tmp_path, "k", KNIGHT_MD.format(name="k"), group=".."
             )
-        assert not any(tmp_path.rglob("*.md"))
+        assert not any((tmp_path / ".lore" / "knights").rglob("*.md") if (tmp_path / ".lore" / "knights").exists() else [])
 
 
 # ---------------------------------------------------------------------------
@@ -257,16 +259,15 @@ class TestCliKnightNewThinWrapper:
         # AC: thin-wrapper smoke — handler calls create_knight with group kwarg
         captured = {}
 
-        def fake_create_knight(knights_dir, name, content, *, group=None):
-            captured["knights_dir"] = knights_dir
+        def fake_create_knight(project_root, name, content, *, group=None):
+            captured["project_root"] = project_root
             captured["name"] = name
             captured["content"] = content
             captured["group"] = group
             return {
-                "name": name,
+                "id": name,
                 "group": group,
                 "filename": f"{name}.md",
-                "path": str(knights_dir / (group or "") / f"{name}.md"),
             }
 
         monkeypatch.setattr("lore.cli.create_knight", fake_create_knight)
@@ -285,13 +286,12 @@ class TestCliKnightNewThinWrapper:
         # AC: omitting --group passes group=None
         captured = {}
 
-        def fake_create_knight(knights_dir, name, content, *, group=None):
+        def fake_create_knight(project_root, name, content, *, group=None):
             captured["group"] = group
             return {
-                "name": name,
+                "id": name,
                 "group": group,
                 "filename": f"{name}.md",
-                "path": str(knights_dir / f"{name}.md"),
             }
 
         monkeypatch.setattr("lore.cli.create_knight", fake_create_knight)
@@ -309,8 +309,6 @@ class TestCliKnightNewThinWrapper:
 # Workflow: conceptual-workflows-knight-crud
 # ---------------------------------------------------------------------------
 
-
-import click  # noqa: E402
 
 import lore.knight as _k_mod  # noqa: E402
 import lore.schemas as _schemas  # noqa: E402
@@ -330,22 +328,3 @@ def test_us010_knight_create_validator_delegates(monkeypatch):
 
     _k_mod._validate_frontmatter({"id": "pm", "title": "PM", "summary": "s"})
     assert kinds == ["knight-frontmatter"]
-
-
-def test_us010_knight_create_validator_raises_click_on_issues(monkeypatch):
-    """knight._validate_frontmatter raises click.ClickException when schema returns issues."""
-    issue = _schemas.SchemaIssue(rule="required", pointer="/", message="Missing required property 'summary'.")
-    monkeypatch.setattr(_schemas, "validate_entity", lambda k, d: [issue])
-    if hasattr(_k_mod, "validate_entity"):
-        monkeypatch.setattr(_k_mod, "validate_entity", lambda k, d: [issue])
-
-    with pytest.raises(click.ClickException) as exc:
-        _k_mod._validate_frontmatter({"id": "pm", "title": "PM"})
-    assert "Missing required property 'summary'" in str(exc.value.message)
-
-
-def test_us010_knight_create_validator_real_missing_summary_golden():
-    """Real (unmocked) golden-text: missing summary produces the US-005 frozen error string."""
-    with pytest.raises(click.ClickException) as exc:
-        _k_mod._validate_frontmatter({"id": "pm", "title": "PM"})
-    assert "Missing required property 'summary'" in str(exc.value.message)

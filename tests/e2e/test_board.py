@@ -9,7 +9,6 @@ import re
 from lore.cli import main
 from tests.conftest import (
     assert_exit_ok,
-    assert_exit_err,
     db_conn,
     insert_board_message,
     insert_mission,
@@ -234,7 +233,7 @@ class TestDeleteBoardMessage:
                 "SELECT id FROM board_messages WHERE entity_id = ?", (m_id,)
             ).fetchone()
         msg_id = row["id"]
-        result = runner.invoke(main, ["board", "delete", str(msg_id)])
+        result = runner.invoke(main, ["board", "delete", m_id, str(msg_id)])
         assert_exit_ok(result)
         with db_conn(project_dir) as conn:
             row = conn.execute(
@@ -253,7 +252,7 @@ class TestDeleteBoardMessage:
                 "SELECT id FROM board_messages WHERE entity_id = ?", (m_id,)
             ).fetchone()
         msg_id = row["id"]
-        runner.invoke(main, ["board", "delete", str(msg_id)])
+        runner.invoke(main, ["board", "delete", m_id, str(msg_id)])
         result = runner.invoke(main, ["show", m_id])
         assert "Deleted note" not in result.output
 
@@ -265,7 +264,9 @@ class TestDeleteBoardMessage:
                 "SELECT id FROM board_messages WHERE entity_id = ?", ("q-aaa1",)
             ).fetchone()
         msg_id = row["id"]
-        result = runner.invoke(main, ["--json", "board", "delete", str(msg_id)])
+        result = runner.invoke(
+            main, ["--json", "board", "delete", "q-aaa1", str(msg_id)]
+        )
         assert_exit_ok(result)
         data = json.loads(result.output)
         assert "id" in data
@@ -274,14 +275,37 @@ class TestDeleteBoardMessage:
         assert isinstance(data["id"], int)
 
     def test_not_found_exits_1(self, runner, project_dir):
-        result = runner.invoke(main, ["board", "delete", "9999"])
+        insert_quest(project_dir, "q-aaa1", "Q")
+        result = runner.invoke(main, ["board", "delete", "q-aaa1", "9999"])
         assert result.exit_code == 1
 
     def test_not_found_error_message(self, runner, project_dir):
-        result = runner.invoke(main, ["board", "delete", "9999"])
+        insert_quest(project_dir, "q-aaa1", "Q")
+        result = runner.invoke(main, ["board", "delete", "q-aaa1", "9999"])
         combined = result.output + (result.stderr or "")
         assert "9999" in combined
         assert "not found" in combined.lower()
+
+    def test_entity_mismatch_exits_1(self, runner, project_dir):
+        """Cross-entity guard: deleting with wrong entity_id rejects."""
+        insert_quest(project_dir, "q-aaa1", "Owner")
+        insert_quest(project_dir, "q-bbb2", "Other")
+        insert_board_message(project_dir, "q-aaa1", "owned by aaa1")
+        with db_conn(project_dir) as conn:
+            row = conn.execute(
+                "SELECT id FROM board_messages WHERE entity_id = ?", ("q-aaa1",)
+            ).fetchone()
+        msg_id = row["id"]
+        result = runner.invoke(main, ["board", "delete", "q-bbb2", str(msg_id)])
+        assert result.exit_code == 1
+        combined = result.output + (result.stderr or "")
+        assert "does not belong" in combined.lower()
+        # And the message remains alive.
+        with db_conn(project_dir) as conn:
+            row = conn.execute(
+                "SELECT deleted_at FROM board_messages WHERE id = ?", (msg_id,)
+            ).fetchone()
+        assert row["deleted_at"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -361,37 +385,49 @@ class TestAddBoardMessageMalformedId:
 
 
 class TestEntityIdFormatValidation:
-    """add_board_message rejects badly-formatted entity IDs before any DB access."""
+    """add_board_message rejects badly-formatted entity IDs before any DB access.
 
-    def test_free_form_string_returns_ok_false(self, project_dir):
-        from lore.db import add_board_message as _add
-        result = _add(project_dir, "notanid", "hello")
-        assert result["ok"] is False
-        assert result.get("error") == 'Invalid entity ID format: "notanid"'
+    G17 (amendment Review Ledger CHANGED row): add_board_message raises
+    ValueError instead of returning ``{ok: False, error}`` dicts.
+    """
 
-    def test_wrong_prefix_returns_ok_false(self, project_dir):
+    def test_free_form_string_raises(self, project_dir):
+        import pytest
         from lore.db import add_board_message as _add
-        result = _add(project_dir, "x-1234", "hello")
-        assert result["ok"] is False
+        with pytest.raises(ValueError) as excinfo:
+            _add(project_dir, "notanid", "hello")
+        assert str(excinfo.value) == 'Invalid entity ID format: "notanid"'
+
+    def test_wrong_prefix_raises(self, project_dir):
+        import pytest
+        from lore.db import add_board_message as _add
+        with pytest.raises(ValueError):
+            _add(project_dir, "x-1234", "hello")
 
     def test_malformed_id_stores_no_row(self, project_dir):
+        import pytest
         from lore.db import add_board_message as _add
-        _add(project_dir, "notanid", "hello")
+        with pytest.raises(ValueError):
+            _add(project_dir, "notanid", "hello")
         with db_conn(project_dir) as conn:
             count = conn.execute("SELECT COUNT(*) FROM board_messages").fetchone()[0]
         assert count == 0
 
     def test_format_check_fires_before_message_check(self, project_dir):
+        import pytest
         from lore.db import add_board_message as _add
-        result = _add(project_dir, "notanid", "")
-        assert result.get("error") == 'Invalid entity ID format: "notanid"'
+        with pytest.raises(ValueError) as excinfo:
+            _add(project_dir, "notanid", "")
+        assert str(excinfo.value) == 'Invalid entity ID format: "notanid"'
 
     def test_message_check_fires_before_existence_check(self, project_dir):
+        import pytest
         from lore.db import add_board_message as _add
-        result = _add(project_dir, "q-a1b2", "")
-        assert result["ok"] is False
-        assert result.get("error") == "Message cannot be empty."
-        assert "not found" not in result.get("error", "").lower()
+        with pytest.raises(ValueError) as excinfo:
+            _add(project_dir, "q-a1b2", "")
+        msg = str(excinfo.value)
+        assert msg == "Message cannot be empty."
+        assert "not found" not in msg.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -402,16 +438,19 @@ class TestEntityIdFormatValidation:
 class TestStandaloneMissionRouting:
     """add_board_message routes m-xxxx to the missions table, not the quests table."""
 
-    def test_post_to_standalone_mission_returns_ok_true(self, project_dir):
+    def test_post_to_standalone_mission_returns_positive_envelope(self, project_dir):
         from lore.db import add_board_message as _add
         insert_mission(project_dir, "m-a1b2", None, "Standalone Mission")
         result = _add(project_dir, "m-a1b2", "standalone note")
-        assert result["ok"] is True
+        # G17: positive envelope (no `ok` wrapper).
+        assert "ok" not in result
+        assert result["entity_id"] == "m-a1b2"
 
     def test_nonexistent_standalone_mission_error_mentions_mission(self, project_dir):
+        import pytest
         from lore.db import add_board_message as _add
-        result = _add(project_dir, "m-0000", "a note")
-        assert result["ok"] is False
-        error = result.get("error", "")
+        with pytest.raises(ValueError) as excinfo:
+            _add(project_dir, "m-0000", "a note")
+        error = str(excinfo.value)
         assert "Mission" in error
         assert "Quest" not in error

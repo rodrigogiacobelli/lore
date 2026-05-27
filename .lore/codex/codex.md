@@ -1,8 +1,10 @@
 ---
-id: example-codex
+id: codex
 title: Codex
-summary: What this documentation system is, how it is structured, and how to use it.
-  Read this before reading or writing any other file in this repository.
+summary: What this documentation system is, how it is structured, and how to use it. Read this before reading or writing any other file in this repository.
+related:
+  - conceptual-entities-glossary
+  - conceptual-workflows-glossary
 ---
 
 # Codex
@@ -17,23 +19,22 @@ Documentation is divided into layers. Each layer has one job.
 
 | Layer | Directory | Question it answers |
 |-------|-----------|-------------------|
+| Vision | `vision/` | Product and executive documents — what the system is, why it exists, and how it fits into the broader landscape. |
 | Conceptual — Entities | `conceptual/entities/` | What is this thing and how does it behave? |
 | Conceptual — Relationships | `conceptual/relationships/` | How do two entities connect and what rules govern that connection? |
 | Conceptual — Workflows | `conceptual/workflows/` | What does the system do internally, or how does a user accomplish a goal? |
 | Technical | `technical/` | How is this built, stored, and served? |
+| API | `api/` | The public Python API surface — `api-guide` for narrative, `api-reference` for exhaustive lookup. Lore-specific layer covering `lore.api.__all__`. |
 | Decisions | `decisions/` | Why was this architectural choice made and what alternatives were rejected? |
 | Standards | `standards/` | How do we write code and design this system? Conventions, principles, and rules. |
-| Glossary | `glossary/` | What do our terms mean? Canonical vocabulary for agents and humans. |
-| Constraints | `constraints/` | What are the hard limits we must never violate? |
-| Personas | `personas/` | Who uses this system and what do they need? |
-| Integrations | `integrations/` | What external systems do we touch and how? |
-| Security | `security/` | What is our security and trust model? |
 | Operations | `operations/` | How is this developed, deployed, and maintained? |
 | Transient | `transient/` | In-flight working documents for the current feature cycle. Deleted when the feature ships. |
 
+The glossary lives as a single YAML file at `.lore/codex/glossary.yaml`, — see conceptual-entities-glossary`.
+
 **Conceptual docs describe the system from the outside.** No file paths, no schema columns, no API endpoints. If a business analyst can read it and understand it without knowing the tech stack, it belongs in conceptual.
 
-**Technical docs describe the system from the inside.** Database schemas, CLI command specs, frontend structure, infrastructure. Each component of the software gets its own subdirectory. For concrete artifacts (DB tables, API endpoints, models, events, jobs), prefer **Reference Docs** under `<technical-domain>/ref/` over schema dumps — see "Reference Docs" below.
+**Technical docs describe the system from the inside.** Database schemas, CLI command specs, source layout, infrastructure. Each component of the software gets its own subdirectory. For concrete artifacts (DB tables, API endpoints, models, events, jobs), prefer **Reference Docs** under `<technical-domain>/ref/` over schema dumps — see "Reference Docs" below.
 
 These two trees link to each other but never duplicate. If a fact exists in a schema file, the entity file links to it — it does not repeat it. One fact, one file.
 
@@ -52,7 +53,7 @@ Every file in the codex belongs to exactly one of three classes, defined by its 
 
 | Class    | Directory                  | Deletion test |
 |----------|----------------------------|---------------|
-| Stable   | `conceptual/`, `technical/`, `decisions/`, `standards/`, `glossary/`, `constraints/`, `personas/`, `integrations/`, `security/`, `operations/` | Deleting any file LOSES information. Never safe. |
+| Stable   | `vision/`, `conceptual/`, `technical/`, `api/`, `decisions/`, `standards/`, `operations/` | Deleting any file LOSES information. Never safe. |
 | In-Flight | `transient/` | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. |
 | Sources  | `sources/<system>/<id>.md` | Safe to delete **at any time**. Every fact worth keeping already lives in a stable doc. |
 
@@ -98,9 +99,9 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 
 **Body content.** Intent-only: history, non-enforced constraints, gotchas, ownership, lifecycle, and a pointer to the source of truth. No schema dump — the reader who wants column types reads the migration. The reader who wants to know *why `order_id` has no FK constraint* reads this. Browse existing `ref-*` docs in the codex (`lore codex search ref-`) for shape examples.
 
-**Discoverability rule (enforced).** Cluster docs MUST name every covered entity verbatim in the body — the conventional `**Covers:**` line is the canonical place — so `lore codex search <table_name>` lands on the cluster doc. Without this, granularity flexibility breaks search.
+**Discoverability rule (enforced).** Cluster docs MUST name every covered entity verbatim in the body — the `**Covers:**` line is the canonical place — so `lore codex search <table_name>` lands on the cluster doc. Without this, granularity flexibility breaks search.
 
-**No new frontmatter.** Reference docs use the standard three fields (`id`, `title`, `summary`) plus optional `related`. There is no `kind`, no `system`, no `source_of_truth` field — the source-of-truth pointer lives in the body.
+**No new frontmatter.** Reference docs use the standard codex frontmatter — no `kind`, no `system`, no `source_of_truth` field. The source-of-truth pointer lives in the body.
 
 ## Decisions
 
@@ -125,23 +126,11 @@ Cross-references between documents belong exclusively in the `related` frontmatt
 
 Use `lore codex map <id>` to list neighbours of any document. Default output is a list table — same columns as `lore codex list` — and traversal is bidirectional at depth 1 (outbound `related` plus inbound backlinks). Use `--depth N` for symmetric deeper walks, `--depth-out N` / `--depth-in N` for one-direction-only walks, and `--full` to print bodies instead of the list.
 
-## The Development Pipeline
-
-New features follow this sequence:
-
-1. **Scouts map the codex** — two Scout agents run in parallel, producing a business context map and a technical context map in `transient/`. These maps are the mandatory input for all planning agents.
-2. **PRD** (`transient/`) — written in business language. What is broken or missing, what success looks like, user workflows, functional and non-functional requirements.
-3. **Architecture review** — the stable documentation is updated to reflect the new design. Entities, schemas, CLI command specs, ADRs — all updated before any code is written.
-4. **Tech Spec** (`transient/`) — technical design. Files to modify, schema changes, edge cases, error handling. Every user workflow in the PRD maps to an E2E test scenario.
-5. **User stories** (`transient/`) — written after the docs are updated. Each story references stable documentation as the source of truth and adds acceptance criteria and test stubs.
-6. **Development** — agents implement against user stories, consulting stable documentation for context.
-7. **Cleanup** — transient files are deleted. Stable docs already reflect the new reality.
-
 ## Naming Conventions
 
-- Relationship files: both entities in alphabetical order separated by double-dash: `user--task.md`, not `task--user.md`.
-- Technical subdirectories: named after the actual software component: `backend/`, `frontend/`, `database/`. If a project has two backends, use `backend-api/` and `backend-worker/`. If there is no frontend, there is no `frontend/` directory.
-- ADRs: numbered sequentially: `001-title.md`, `002-title.md`.
+- Relationship files are named with both entities in alphabetical order separated by double-dash: `attendee--event.md`, not `event--attendee.md`.
+- Technical subdirectories are named after the actual software component: `backend/`, `frontend/`, `database/`. If a project has two backends, use `backend-api/` and `backend-worker/`. If there is no frontend, there is no `frontend/` directory.
+- ADRs are numbered sequentially: `001-title.md`, `002-title.md`.
 
 ## Frontmatter
 

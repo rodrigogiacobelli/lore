@@ -1,35 +1,46 @@
-"""Watcher module — reads watcher definitions from .lore/watchers/."""
+"""Watcher module — reads watcher definitions from .lore/watchers/.
 
-import re
+Post-G16: every operational callable takes ``project_root: Path`` first
+per amendment Section A1; subdir derivation goes through
+``lore.paths.entity_location``. Inline name regex replaced by
+``validators.validate_name`` (patterns byte-identical). ``_validate_yaml``
+raises ``ValueError`` (no Click leak).
+"""
+
 from pathlib import Path
 
-import click
 import yaml
 
-from lore.paths import derive_group, group_matches_filter
+from lore.paths import derive_group, entity_location, group_matches_filter
 from lore.schemas import validate_entity
-from lore.validators import validate_group
+from lore.validators import (
+    _validate_content_nonempty,
+    validate_group,
+    validate_name,
+)
 
 
 def _validate_yaml(data: dict) -> None:
     """Validate watcher YAML dict by delegating to ``lore.schemas.validate_entity``.
 
-    Raises ``click.ClickException`` whose ``.message`` contains every issue's
-    human-readable text on any returned issue.
+    Raises ``ValueError`` whose message contains every issue's human-readable
+    text joined by newlines on any returned issue.
     """
     issues = validate_entity("watcher-yaml", data)
     if issues:
         lines = [f"{i.pointer}: {i.message} ({i.rule})" for i in issues]
-        raise click.ClickException("\n".join(lines))
+        raise ValueError("\n".join(lines))
 
 
-def find_watcher(watchers_dir: Path, name: str) -> Path | None:
+def _find_watcher(project_root: Path, name: str) -> Path | None:
     """Return the Path to the watcher YAML file whose stem matches name, or None.
 
     Raises ValueError if name contains / or \\ (path-traversal guard).
+    Internal — amendment C4 reclassification.
     """
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid watcher name: {name!r}")
+    watchers_dir = entity_location(project_root, "watcher")
     if not watchers_dir.exists():
         return None
     for filepath in watchers_dir.rglob("*.yaml"):
@@ -38,13 +49,12 @@ def find_watcher(watchers_dir: Path, name: str) -> Path | None:
     return None
 
 
-def load_watcher(filepath: Path, watchers_dir: Path | None = None) -> dict:
+def _load_watcher(filepath: Path, watchers_dir: Path | None = None) -> dict:
     """Return a dict with all 8 keys for the watcher at filepath.
 
     Keys: id, group, title, summary, filename, watch_target, interval, action.
     Optional fields (watch_target, interval, action) are None when absent.
-    If watchers_dir is provided, group is derived via derive_group; otherwise
-    group is derived from the parent directory name of the filepath.
+    Internal — amendment C4 reclassification.
     """
     data = yaml.safe_load(filepath.read_text()) or {}
     stem = filepath.stem
@@ -65,37 +75,52 @@ def load_watcher(filepath: Path, watchers_dir: Path | None = None) -> dict:
     }
 
 
+def read_watcher(project_root: Path, name: str) -> dict | None:
+    """Return the full 8-key watcher record dict, or None on miss.
+
+    Shape: ``{id, group, title, summary, filename, watch_target, interval,
+    action}`` per amendment B Watcher row.
+    """
+    filepath = _find_watcher(project_root, name)
+    if filepath is None:
+        return None
+    watchers_dir = entity_location(project_root, "watcher")
+    return _load_watcher(filepath, watchers_dir)
+
+
 def create_watcher(
-    watchers_dir: Path,
+    project_root: Path,
     name: str,
     content: str,
     *,
     group: str | None = None,
 ) -> dict:
-    """Create a new watcher YAML file under watchers_dir, optionally nested in group.
+    """Create a new watcher YAML file under the project's ``.lore/watchers/``.
 
-    Returns dict with keys: id, filename, group, path.
+    Returns ``{id, filename, group}`` (amendment B Watcher row — drops ``path``).
     Raises ValueError for invalid name/group, duplicate, empty content, or invalid YAML.
     """
-    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$", name):
-        raise ValueError(f"Invalid watcher name: {name!r}. Must match ^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+    name_err = validate_name(name)
+    if name_err:
+        raise ValueError(name_err)
 
     group_err = validate_group(group)
     if group_err:
         raise ValueError(group_err)
 
-    if not content or not content.strip():
-        raise ValueError("Content must not be empty.")
+    content_err = _validate_content_nonempty(content)
+    if content_err:
+        raise ValueError(content_err)
 
     try:
         yaml.safe_load(content)
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML content: {exc}") from exc
 
-    if find_watcher(watchers_dir, name) is not None:
+    if _find_watcher(project_root, name) is not None:
         raise ValueError(f'Watcher "{name}" already exists.')
 
-    target_dir = watchers_dir if group is None else watchers_dir / group
+    target_dir = entity_location(project_root, "watcher", group=group)
     target_dir.mkdir(parents=True, exist_ok=True)
     filepath = target_dir / f"{name}.yaml"
     filepath.write_text(content)
@@ -103,68 +128,64 @@ def create_watcher(
         "id": name,
         "filename": f"{name}.yaml",
         "group": group,
-        "path": str(filepath),
     }
 
 
-def update_watcher(watchers_dir: Path, name: str, content: str) -> dict:
+def update_watcher(project_root: Path, name: str, content: str) -> dict:
     """Overwrite an existing watcher YAML file in place.
 
-    Finds the file via rglob (preserves directory/group), validates content,
-    validates YAML, then overwrites the file at its current location.
     Returns {"id": name, "filename": filepath.name} on success.
-
     Raises ValueError for invalid name, not found, empty content, or invalid YAML.
     """
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid watcher name: {name!r}")
 
-    if not content or not content.strip():
-        raise ValueError("Content must not be empty.")
+    content_err = _validate_content_nonempty(content)
+    if content_err:
+        raise ValueError(content_err)
 
     try:
         yaml.safe_load(content)
     except yaml.YAMLError as exc:
         raise ValueError(f"Invalid YAML content: {exc}") from exc
 
-    filepath = find_watcher(watchers_dir, name)
+    filepath = _find_watcher(project_root, name)
     if filepath is None:
         raise ValueError(f'Watcher "{name}" not found.')
 
     filepath.write_text(content)
-    return {"id": name, "filename": filepath.name}
+    return {"id": name, "filename": filepath.name, "updated_at": None}
 
 
-def delete_watcher(watchers_dir: Path, name: str) -> dict:
+def delete_watcher(project_root: Path, name: str) -> dict:
     """Soft-delete a watcher by renaming {name}.yaml to {name}.yaml.deleted in place.
 
-    Uses rglob to find the file (supports group subdirectories).
+    Returns ``{"id": name, "deleted": True, "deleted_at": None}`` (amendment A2).
     Raises ValueError for path-traversal names or if the watcher is not found.
-    Returns {"id": name, "deleted": True} on success.
     """
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid watcher name: {name!r}")
 
-    filepath = find_watcher(watchers_dir, name)
+    filepath = _find_watcher(project_root, name)
     if filepath is None:
         raise ValueError(f'Watcher "{name}" not found in .lore/watchers/')
 
     deleted_path = filepath.parent / f"{name}.yaml.deleted"
     filepath.rename(deleted_path)
-    return {"id": name, "deleted": True}
+    return {"id": name, "deleted": True, "deleted_at": None}
 
 
-def list_watchers(watchers_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
-    """Return a list of watcher dicts read from *.yaml files under watchers_dir.
+def list_watchers(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+) -> list[dict]:
+    """Return a list of watcher dicts under ``project_root/.lore/watchers/``.
 
     Each dict has keys: id, group, title, summary, and optional fields
     watch_target, interval, action when present in the YAML.
     Results are sorted ascending by id.
-    Missing fields fall back to safe defaults.
-
-    If filter_groups is a non-empty list, only watchers whose group is in
-    filter_groups or whose group is root-level (empty string) are returned.
     """
+    watchers_dir = entity_location(project_root, "watcher")
     if not watchers_dir.exists():
         return []
 

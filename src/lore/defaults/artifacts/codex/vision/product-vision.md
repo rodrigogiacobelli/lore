@@ -4,7 +4,7 @@ title: '{Product Name} Vision'
 summary: _One to three sentences. What this product is, the problem it solves, and
   who it is for. State the core value proposition._
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # {Product Name} Vision

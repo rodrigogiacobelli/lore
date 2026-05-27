@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from lore.health import _ALL_SCOPES, _check_schemas, health_check
-from lore.models import HealthIssue
 
 
 # ---------------------------------------------------------------------------

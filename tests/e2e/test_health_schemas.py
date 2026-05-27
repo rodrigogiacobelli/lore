@@ -13,7 +13,6 @@ from __future__ import annotations
 import json as _json
 from pathlib import Path
 
-import pytest
 import yaml as _yaml
 
 from lore.cli import main
@@ -266,7 +265,7 @@ def test_us006_e2e_unparseable_watcher_yaml_scan_continues(runner, project_dir):
     assert "  path: /" in result.output
     # Exactly one schema-block ERROR for the broken watcher — the good one is silent.
     schema_error_lines = [
-        l for l in result.output.splitlines() if l.startswith("ERROR .lore/")
+        ln for ln in result.output.splitlines() if ln.startswith("ERROR .lore/")
     ]
     assert len(schema_error_lines) == 1
     assert "broken.yaml" in schema_error_lines[0]
@@ -352,10 +351,10 @@ def test_us006_e2e_yaml_parse_single_error_block_no_cascade(runner, project_dir)
     result = runner.invoke(main, ["health"])
 
     assert result.exit_code != 0, result.output
-    error_lines = [l for l in result.output.splitlines() if l.startswith("ERROR ")]
+    error_lines = [ln for ln in result.output.splitlines() if ln.startswith("ERROR ")]
     # Only one ERROR block for broken.yaml (may coexist with other kinds on a
     # pristine project — so filter).
-    broken_errors = [l for l in error_lines if "broken.yaml" in l]
+    broken_errors = [ln for ln in error_lines if "broken.yaml" in ln]
     assert len(broken_errors) == 1
     # And only one rule line for that file: yaml-parse. No cascading required
     # or additionalProperties rule lines from a second pass on the same file.

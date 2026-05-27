@@ -163,8 +163,9 @@ class TestWatcherNewInvalidName:
             main, ["watcher", "new", "invalid name with spaces"], input=VALID_YAML
         )
         output = (result.output or "") + (result.stderr if hasattr(result, "stderr") else "")
-        assert "invalid name with spaces" in output
-        assert "invalid" in output.lower() or "^[a-zA-Z0-9]" in output
+        # Post-G16: watcher delegates to validators.validate_name which emits
+        # the canonical "Invalid name: ..." text shared across entities.
+        assert "Invalid name" in output
 
     def test_watcher_new_invalid_name_no_file_created(self, runner, project_dir):
         # Spec: watchers-us-3 Scenario 4 — watchers/ directory is not modified
@@ -475,6 +476,19 @@ class TestWatcherEditFromFile:
             main,
             ["watcher", "edit", "my-watcher", "--from", str(source)],
         )
+        assert watcher_file.read_text() == EDIT_YAML
+
+    def test_watcher_edit_short_flag_f_equivalent_to_from(self, runner, project_dir):
+        # Consistency: `-f` short flag matches `--from`, same as knight/doctrine/artifact edit.
+        watcher_file = _make_existing_watcher(project_dir)
+        source = project_dir / "updated.yaml"
+        source.write_text(EDIT_YAML)
+        result = runner.invoke(
+            main,
+            ["watcher", "edit", "my-watcher", "-f", str(source)],
+        )
+        assert result.exit_code == 0
+        assert "Updated watcher my-watcher" in result.output
         assert watcher_file.read_text() == EDIT_YAML
 
 
@@ -1038,7 +1052,8 @@ class TestWatcherNewGroup:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["group"] == "feature-implementation"
-        assert data["path"] == ".lore/watchers/feature-implementation/on-prd-ready.yaml"
+        # Post-G16: 'path' key dropped; assert 'filename' instead.
+        assert data["filename"] == "on-prd-ready.yaml"
 
     def test_watcher_new_deep_path_auto_mkdir(self, runner, project_dir):
         # Scenario 3 — intermediate dirs auto-created for team-a/triggers

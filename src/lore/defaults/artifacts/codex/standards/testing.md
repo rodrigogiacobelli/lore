@@ -4,7 +4,7 @@ title: Testing Standards
 summary: Test types, scope, file location conventions, fixture and mock policy, and
   coverage requirements. Read before writing any test.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Testing Standards

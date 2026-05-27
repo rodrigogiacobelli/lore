@@ -116,11 +116,11 @@ class TestArtifactNewNestedJsonEnvelope:
             ],
         )
         assert result.exit_code == 0
+        # Post-G16: 'path' key dropped from create envelope.
         assert json.loads(result.output) == {
             "id": "fi-review",
             "group": "codex/templates",
             "filename": "fi-review.md",
-            "path": ".lore/artifacts/codex/templates/fi-review.md",
         }
 
 
@@ -350,3 +350,68 @@ def test_us010_artifact_new_rejects_extra_stability_field(runner, project_dir):
     assert ("additionalProperties" in combined) or ("stability" in combined)
     artifacts_dir = project_dir / ".lore" / "artifacts"
     assert not any(artifacts_dir.rglob("fi-review.md"))
+
+
+# ---------------------------------------------------------------------------
+# G2 — CLI parity: bad-frontmatter stderr + exit code unchanged after raise flip
+# Plan: transient-public-api-facade-plan §G2.
+# Anchor: decisions-011-public-api-stability (ADR-011 — CLI translates internal
+# raises to existing user-visible message; refactor flips internal raise type
+# only, so stdout/stderr/exit must stay bit-stable.)
+# ---------------------------------------------------------------------------
+
+
+_G2_NO_SUMMARY_BODY = (
+    "---\n"
+    "id: fi-review\n"
+    "title: Review\n"
+    "---\n"
+    "body\n"
+)
+
+
+def test_g2_artifact_new_missing_summary_exit_code_is_one(runner, project_dir):
+    """`artifact new` with missing summary exits 1 (was 1 — must stay 1)."""
+    (project_dir / "body.md").write_text(_G2_NO_SUMMARY_BODY)
+    result = runner.invoke(
+        main, ["artifact", "new", "fi-review", "--from", "body.md"]
+    )
+    assert result.exit_code == 1
+
+
+def test_g2_artifact_new_missing_summary_stderr_contains_golden_text(
+    runner, project_dir
+):
+    """`artifact new` missing summary stderr message contains golden schema text."""
+    (project_dir / "body.md").write_text(_G2_NO_SUMMARY_BODY)
+    result = runner.invoke(
+        main, ["artifact", "new", "fi-review", "--from", "body.md"]
+    )
+    stderr = result.stderr if hasattr(result, "stderr") else ""
+    combined = (result.output or "") + (stderr or "")
+    assert "Missing required property 'summary'" in combined
+
+
+def test_g2_artifact_new_missing_summary_no_file_written(runner, project_dir):
+    """`artifact new` missing summary leaves no file on disk."""
+    (project_dir / "body.md").write_text(_G2_NO_SUMMARY_BODY)
+    runner.invoke(main, ["artifact", "new", "fi-review", "--from", "body.md"])
+    artifacts_dir = project_dir / ".lore" / "artifacts"
+    assert not any(artifacts_dir.rglob("fi-review.md"))
+
+
+def test_g2_artifact_new_missing_summary_json_envelope_unchanged(
+    runner, project_dir
+):
+    """`artifact new --json` missing summary returns `{"error": "..."}` on stderr."""
+    (project_dir / "body.md").write_text(_G2_NO_SUMMARY_BODY)
+    result = runner.invoke(
+        main,
+        ["artifact", "new", "fi-review", "--from", "body.md", "--json"],
+    )
+    assert result.exit_code == 1
+    stderr = result.stderr if hasattr(result, "stderr") else ""
+    # JSON envelope shape preserved — single-key {"error": "<message>"}.
+    payload = json.loads(stderr or result.output)
+    assert set(payload.keys()) == {"error"}
+    assert "summary" in payload["error"]

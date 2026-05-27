@@ -23,9 +23,10 @@ lore/
 |      |- __init__.py           # Package marker; exposes __version__ only
 |      |- __main__.py           # Enables `python -m lore` invocation
 |      |- py.typed              # PEP 561 marker — lore ships inline type annotations
+|      |- api.py                # Public API facade — pure re-export module; the only supported import surface for consumers (ADR-010). Zero def/class — every name is re-exported from an internal module. See tech-arch-api-facade.
 |      |- cli.py                # Click command definitions
 |      |- db.py                 # SQLite schema and operations
-|      |- models.py             # Public typed API — all boundary entity dataclasses and enums
+|      |- models.py             # Internal typed-record index — dataclasses and enums sourced by lore.api. No longer the public surface (ADR-010 amendment); lore.api.__all__ is.
 |      |- ids.py                # Hash-based ID generation
 |      |- priority.py           # Ready queue logic
 |      |- root.py               # Project root detection (find_project_root, ProjectNotFoundError)
@@ -111,9 +112,10 @@ The `lore` command is registered as a `console_scripts` entry point in `pyprojec
 
 | Module | Description |
 |--------|-------------|
-| `cli.py` | All Click command definitions. Entry point `main`. Routes every CLI invocation. |
+| `api.py` | Public API facade (ADR-010). Pure re-export module — zero `def` or `class` statements. Every name in `__all__` is imported from an internal module. Three-section layout: types & enums (from `lore.models`), operational callables (from `lore.db`, `lore.knight`, `lore.doctrine`, `lore.artifact`, `lore.watcher`, `lore.codex`, `lore.glossary`, `lore.impacts`, `lore.priority`, `lore.health`, `lore.validators`, `lore.schemas`, `lore.config`, `lore.init`, `lore.oracle`, `lore.root`), and a third block of leading-underscore namespace aliases (`_paths`, `_graph`, `_knight`, `_validators`, `_watcher`, `_glossary`, `_impacts`, `_doctrine`, `_health`, plus `_lore_version` and `_validate_frontmatter`) consumed only by `cli.py` and unit-test monkeypatches. Underscore prefix keeps them out of `dir(lore.api)` so they are not part of the public surface. See tech-arch-api-facade. |
+| `cli.py` | All Click command definitions. Entry point `main`. Routes every CLI invocation. Imports operational helpers via the `lore.api._<name>` underscore aliases — never directly from internal modules — so the facade boundary is honoured by Lore's own CLI. |
 | `db.py` | SQLite connection setup, schema constants (`SCHEMA_VERSION`), and all database operations (CRUD for quests, missions, dependencies, and board messages — `add_board_message()`, `delete_board_message()`, `get_board_messages()`). Return types remain `sqlite3.Row` / `list[sqlite3.Row]` / `dict` — not typed model instances. Does not contain a `get_ready_missions` wrapper; use `lore.priority.get_ready_missions` directly. |
-| `models.py` | The public typed API for Realm. Exports typed `@dataclass(frozen=True)` classes for all boundary entity types, status enums, and a type alias. All names are listed in `__all__`. See [lore.models Public API](#loremodels-public-api) below. |
+| `models.py` | Internal typed-record index. Exports typed `@dataclass(frozen=True)` classes for all boundary entity types, status enums, and a type alias. `lore.api` re-exports the subset of these names that consumers may import. `lore.models.__all__` is no longer the stable public surface (per ADR-010 amendment) — `lore.api.__all__` is. See [lore.models Internal Record Index](#loremodels-public-api) below. |
 | `ids.py` | `generate_id()` — hash-based short ID generation with collision detection. |
 | `priority.py` | `get_ready_missions()` — priority queue SQL and result assembly for `lore ready`. |
 | `root.py` | `find_project_root()` — upward directory traversal to locate `.lore/`. Raises `ProjectNotFoundError` when none is found. See tech-arch-project-root-detection (lore codex show tech-arch-project-root-detection). |

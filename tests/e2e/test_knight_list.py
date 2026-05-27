@@ -60,7 +60,7 @@ class TestKnightListTableHeader:
 
     def test_header_columns_in_correct_order(self, runner, project_dir):
         result = runner.invoke(main, ["knight", "list"])
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         id_pos = header.index("ID")
         group_pos = header.index("GROUP")
@@ -70,14 +70,14 @@ class TestKnightListTableHeader:
 
     def test_header_has_two_space_indent(self, runner, project_dir):
         result = runner.invoke(main, ["knight", "list"])
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         assert header.startswith("  ")
         assert header[2] != " "
 
     def test_data_rows_have_two_space_indent(self, runner, project_dir):
         result = runner.invoke(main, ["knight", "list"])
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         for line in non_empty_lines[1:]:
             assert line.startswith("  ")
 
@@ -95,7 +95,7 @@ class TestKnightListOneRowPerKnight:
         result_json = runner.invoke(main, ["--json", "knight", "list"])
         assert result_list.exit_code == 0
         assert result_json.exit_code == 0
-        non_empty_lines = [l for l in result_list.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result_list.output.split("\n") if ln.strip()]
         data = json.loads(result_json.output)
         knight_count = len(data["knights"])
         expected = knight_count + 1
@@ -110,7 +110,7 @@ class TestKnightListOneRowPerKnight:
         )
         result = runner.invoke(main, ["knight", "list"])
         assert result.exit_code == 0
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         assert len(non_empty_lines) == 2
 
     def test_each_default_knight_appears_exactly_once(self, runner, project_dir):
@@ -140,7 +140,7 @@ class TestKnightListColumnPadding:
         )
         result = runner.invoke(main, ["knight", "list"])
         assert result.exit_code == 0
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         data_rows = non_empty_lines[1:]
         long_id_len = len("very-long-knight-identifier")
         short_row = next(r for r in data_rows if r.strip().startswith("short"))

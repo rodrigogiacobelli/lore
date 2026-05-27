@@ -1,18 +1,16 @@
-"""Red-phase tests for US-008 — Python API surface re-exported from ``lore.models``.
+"""Tests for US-008 — Python API surface exposed via ``lore.api``.
 
 Workflow: conceptual-workflows-impacts.
 Tech Spec: lore-impacts-tech-spec § "Python API (FR-15)".
 Story: lore-impacts-us-008.
-Standards: ref-lore_api-core (``lore.models.__all__`` is the public-API contract;
+Standards: ref-lore_api-core (``lore.api.__all__`` is the public-API contract;
 ``project_root`` is the keyword parameter convention, NOT ``codex_dir``).
 
-Every test here must FAIL until Green wires the five symbols
-(``impacts``, ``ImpactsResult``, ``CodexBinding``, ``CodeBinding``,
-``ImpactsError``) into ``lore.models`` and appends each to ``__all__``.
-
-This file deliberately exercises ``lore.models`` only — NOT ``lore.impacts``
-directly. The point of these tests is the façade re-export (standards-facade,
-ADR-010), not the implementation already covered by ``test_impacts.py``.
+Per ADR-010 the public Python surface is ``lore.api``; ``lore.models`` is now
+a leaf type module and no longer re-exports operational entry points. These
+tests exercise ``lore.api`` only — NOT ``lore.impacts`` directly. The point
+is the façade re-export (standards-facade, ADR-010), not the implementation
+already covered by ``test_impacts.py``.
 """
 
 from __future__ import annotations
@@ -92,54 +90,53 @@ def _clear_binds_index_cache():
 # ===========================================================================
 
 
-def test_lore_models_all_contains_impacts():
+def test_lore_api_all_contains_impacts():
     """ref-lore_api-core — ``__all__`` is the public-API contract.
 
     Scenario 7 / unit-test bullet: ``"impacts"`` is a member of
-    ``lore.models.__all__``.
+    ``lore.api.__all__``.
     """
-    import lore.models as models
+    import lore.api as api
 
-    assert "impacts" in models.__all__
-
-
-def test_lore_models_all_contains_impacts_result():
-    """Scenario 7 — ``"ImpactsResult"`` in ``lore.models.__all__``."""
-    import lore.models as models
-
-    assert "ImpactsResult" in models.__all__
+    assert "impacts" in api.__all__
 
 
-def test_lore_models_all_contains_codex_binding():
-    """Scenario 7 — ``"CodexBinding"`` in ``lore.models.__all__``."""
-    import lore.models as models
+def test_lore_api_all_contains_impacts_result():
+    """Scenario 7 — ``"ImpactsResult"`` in ``lore.api.__all__``."""
+    import lore.api as api
 
-    assert "CodexBinding" in models.__all__
-
-
-def test_lore_models_all_contains_code_binding():
-    """Scenario 7 — ``"CodeBinding"`` in ``lore.models.__all__``."""
-    import lore.models as models
-
-    assert "CodeBinding" in models.__all__
+    assert "ImpactsResult" in api.__all__
 
 
-def test_lore_models_all_contains_impacts_error():
-    """Scenario 7 — ``"ImpactsError"`` in ``lore.models.__all__``."""
-    import lore.models as models
+def test_lore_api_all_contains_codex_binding():
+    """Scenario 7 — ``"CodexBinding"`` in ``lore.api.__all__``."""
+    import lore.api as api
 
-    assert "ImpactsError" in models.__all__
+    assert "CodexBinding" in api.__all__
 
 
-def test_public_reexport_from_lore_models_imports_cleanly():
+def test_lore_api_all_contains_code_binding():
+    """Scenario 7 — ``"CodeBinding"`` in ``lore.api.__all__``."""
+    import lore.api as api
+
+    assert "CodeBinding" in api.__all__
+
+
+def test_lore_api_all_contains_impacts_error():
+    """Scenario 7 — ``"ImpactsError"`` in ``lore.api.__all__``."""
+    import lore.api as api
+
+    assert "ImpactsError" in api.__all__
+
+
+def test_public_reexport_from_lore_api_imports_cleanly():
     """Scenario 7 — façade import statement works as a single line.
 
-    This mirrors the exact line in the story acceptance criteria:
-    ``from lore.models import impacts, ImpactsResult, CodexBinding,
-    CodeBinding, ImpactsError``. Until Green wires them, this import
-    raises ``ImportError`` and the test fails.
+    Mirrors the public API contract:
+    ``from lore.api import impacts, ImpactsResult, CodexBinding,
+    CodeBinding, ImpactsError``.
     """
-    from lore.models import (  # noqa: F401
+    from lore.api import (  # noqa: F401
         CodeBinding,
         CodexBinding,
         ImpactsError,
@@ -153,48 +150,48 @@ def test_public_reexport_from_lore_models_imports_cleanly():
 # ===========================================================================
 
 
-def test_models_impacts_is_same_object_as_lore_impacts_impacts():
+def test_api_impacts_is_same_object_as_lore_impacts_impacts():
     """ref-lore_api-core — façade re-export by reference.
 
-    Story unit-test bullet: ``lore.models.impacts is lore.impacts.impacts``.
-    Catches accidental ``def impacts(...)`` redefinition inside ``models.py``.
+    ``lore.api.impacts is lore.impacts.impacts``. Catches accidental
+    ``def impacts(...)`` redefinition inside ``api.py``.
     """
+    import lore.api as api
     import lore.impacts as impacts_mod
-    import lore.models as models
 
-    assert models.impacts is impacts_mod.impacts
+    assert api.impacts is impacts_mod.impacts
 
 
-def test_models_impacts_result_is_same_class_as_lore_impacts_impacts_result():
+def test_api_impacts_result_is_same_class_as_lore_impacts_impacts_result():
     """Façade by-reference: ``ImpactsResult`` is the same class object."""
+    import lore.api as api
     import lore.impacts as impacts_mod
-    import lore.models as models
 
-    assert models.ImpactsResult is impacts_mod.ImpactsResult
+    assert api.ImpactsResult is impacts_mod.ImpactsResult
 
 
-def test_models_codex_binding_is_same_class_as_lore_impacts_codex_binding():
+def test_api_codex_binding_is_same_class_as_lore_impacts_codex_binding():
     """Façade by-reference: ``CodexBinding`` is the same class object."""
+    import lore.api as api
     import lore.impacts as impacts_mod
-    import lore.models as models
 
-    assert models.CodexBinding is impacts_mod.CodexBinding
+    assert api.CodexBinding is impacts_mod.CodexBinding
 
 
-def test_models_code_binding_is_same_class_as_lore_impacts_code_binding():
+def test_api_code_binding_is_same_class_as_lore_impacts_code_binding():
     """Façade by-reference: ``CodeBinding`` is the same class object."""
+    import lore.api as api
     import lore.impacts as impacts_mod
-    import lore.models as models
 
-    assert models.CodeBinding is impacts_mod.CodeBinding
+    assert api.CodeBinding is impacts_mod.CodeBinding
 
 
-def test_models_impacts_error_is_same_class_as_lore_impacts_impacts_error():
+def test_api_impacts_error_is_same_class_as_lore_impacts_impacts_error():
     """Façade by-reference: ``ImpactsError`` is the same class object."""
+    import lore.api as api
     import lore.impacts as impacts_mod
-    import lore.models as models
 
-    assert models.ImpactsError is impacts_mod.ImpactsError
+    assert api.ImpactsError is impacts_mod.ImpactsError
 
 
 # ===========================================================================
@@ -204,7 +201,7 @@ def test_models_impacts_error_is_same_class_as_lore_impacts_impacts_error():
 
 def test_impacts_signature_token_is_positional():
     """Tech Spec § Python API — first parameter ``token: str`` is positional."""
-    from lore.models import impacts
+    from lore.api import impacts
 
     sig = inspect.signature(impacts)
     params = list(sig.parameters.values())
@@ -219,7 +216,7 @@ def test_impacts_signature_project_root_is_keyword_only():
     """ref-lore_api-core — ``project_root`` (NOT ``codex_dir``) is the
     public keyword parameter convention; must be keyword-only.
     """
-    from lore.models import impacts
+    from lore.api import impacts
 
     sig = inspect.signature(impacts)
     assert "project_root" in sig.parameters
@@ -232,7 +229,7 @@ def test_impacts_signature_has_no_codex_dir_parameter():
     """ref-lore_api-core — ``codex_dir`` is the legacy convention; the
     public Python API must NOT expose it.
     """
-    from lore.models import impacts
+    from lore.api import impacts
 
     sig = inspect.signature(impacts)
     assert "codex_dir" not in sig.parameters
@@ -240,7 +237,7 @@ def test_impacts_signature_has_no_codex_dir_parameter():
 
 def test_impacts_signature_direct_links_is_keyword_only_default_false():
     """Tech Spec — ``direct_links`` is keyword-only with default ``False``."""
-    from lore.models import impacts
+    from lore.api import impacts
 
     sig = inspect.signature(impacts)
     assert "direct_links" in sig.parameters
@@ -259,7 +256,7 @@ def test_impacts_codex_seed_returns_codex_kind_result(tmp_project):
 
     Verified through the ``lore.models`` façade (not ``lore.impacts`` direct).
     """
-    from lore.models import impacts
+    from lore.api import impacts
 
     _write_codex_entry(
         tmp_project,
@@ -273,7 +270,7 @@ def test_impacts_codex_seed_returns_codex_kind_result(tmp_project):
 
 def test_impacts_codex_seed_codex_items_is_tuple_of_codex_binding(tmp_project):
     """Scenario 1 — ``codex_items`` is a tuple of ``CodexBinding`` instances."""
-    from lore.models import CodexBinding, impacts
+    from lore.api import CodexBinding, impacts
 
     _write_codex_entry(
         tmp_project,
@@ -289,7 +286,7 @@ def test_impacts_codex_seed_codex_items_is_tuple_of_codex_binding(tmp_project):
 
 def test_impacts_codex_seed_returns_declaration_order(tmp_project):
     """Scenario 1 — exact value equality matches the story acceptance criteria."""
-    from lore.models import CodexBinding, ImpactsResult, impacts
+    from lore.api import CodexBinding, ImpactsResult, impacts
 
     _write_codex_entry(
         tmp_project,
@@ -314,7 +311,7 @@ def test_impacts_codex_seed_returns_declaration_order(tmp_project):
 
 def test_impacts_code_seed_returns_code_kind_result(tmp_project):
     """Scenario 2 — code-seed lookup returns ``kind == "code"``."""
-    from lore.models import impacts
+    from lore.api import impacts
 
     _write_codex_entry(
         tmp_project, entry_id="dec-006-id-references", binds=["src/lore/cli.py"]
@@ -326,7 +323,7 @@ def test_impacts_code_seed_returns_code_kind_result(tmp_project):
 
 def test_impacts_code_seed_code_items_is_tuple_of_code_binding(tmp_project):
     """Scenario 2 — ``code_items`` is a tuple of ``CodeBinding`` instances."""
-    from lore.models import CodeBinding, impacts
+    from lore.api import CodeBinding, impacts
 
     _write_codex_entry(
         tmp_project,
@@ -347,7 +344,7 @@ def test_impacts_code_seed_code_items_is_tuple_of_code_binding(tmp_project):
 
 def test_impacts_code_seed_returns_sorted_codebindings(tmp_project):
     """Scenario 2 — exact value equality matches story acceptance criteria."""
-    from lore.models import CodeBinding, ImpactsResult, impacts
+    from lore.api import CodeBinding, ImpactsResult, impacts
 
     _write_codex_entry(
         tmp_project,
@@ -381,7 +378,7 @@ def test_impacts_code_seed_returns_sorted_codebindings(tmp_project):
 
 def test_impacts_unknown_codex_id_raises_impacts_error(tmp_project):
     """Scenario 3 — unknown codex id raises ``ImpactsError`` via façade."""
-    from lore.models import ImpactsError, impacts
+    from lore.api import ImpactsError, impacts
 
     with pytest.raises(ImpactsError) as exc:
         impacts("no-such-id", project_root=tmp_project)
@@ -393,7 +390,7 @@ def test_impacts_error_is_subclass_of_value_error():
 
     Catchable as ``ValueError`` per Scenario 3 story note.
     """
-    from lore.models import ImpactsError
+    from lore.api import ImpactsError
 
     assert issubclass(ImpactsError, ValueError)
     assert isinstance(ImpactsError("m"), ValueError)
@@ -401,7 +398,7 @@ def test_impacts_error_is_subclass_of_value_error():
 
 def test_impacts_outside_repo_path_raises_impacts_error(tmp_project):
     """Scenario 4 — outside-repo path raises ``ImpactsError`` with exact msg."""
-    from lore.models import ImpactsError, impacts
+    from lore.api import ImpactsError, impacts
 
     with pytest.raises(ImpactsError) as exc:
         impacts("/etc/passwd", project_root=tmp_project)
@@ -410,7 +407,7 @@ def test_impacts_outside_repo_path_raises_impacts_error(tmp_project):
 
 def test_impacts_traversal_token_raises_impacts_error(tmp_project):
     """Scenario 5 — ``..`` traversal raises ``ImpactsError`` with exact msg."""
-    from lore.models import ImpactsError, impacts
+    from lore.api import ImpactsError, impacts
 
     with pytest.raises(ImpactsError) as exc:
         impacts("../foo", project_root=tmp_project)
@@ -424,7 +421,7 @@ def test_impacts_traversal_token_raises_impacts_error(tmp_project):
 
 def test_impacts_direct_links_drops_glob_matches_on_code_seed(tmp_project):
     """Scenario 6 — ``direct_links=True`` keeps only exact matches."""
-    from lore.models import CodeBinding, impacts
+    from lore.api import CodeBinding, impacts
 
     _write_codex_entry(
         tmp_project,
@@ -446,7 +443,7 @@ def test_impacts_direct_links_drops_glob_matches_on_code_seed(tmp_project):
 
 def test_impacts_direct_links_default_false_keeps_glob_matches(tmp_project):
     """Tech Spec — ``direct_links`` defaults to ``False``; glob rows kept."""
-    from lore.models import impacts
+    from lore.api import impacts
 
     _write_codex_entry(
         tmp_project,
@@ -475,7 +472,7 @@ def test_python_codex_items_match_cli_json_envelope(tmp_project, monkeypatch):
     ``dataclasses.asdict`` against the CLI envelope's ``impacts`` list.
     """
     from lore.cli import main as cli
-    from lore.models import impacts
+    from lore.api import impacts
 
     _write_codex_entry(
         tmp_project,
@@ -504,7 +501,7 @@ def test_python_code_items_match_cli_json_envelope(tmp_project, monkeypatch):
     match the CLI's pruning rule (Tech Spec § Output Formats).
     """
     from lore.cli import main as cli
-    from lore.models import impacts
+    from lore.api import impacts
 
     _write_codex_entry(
         tmp_project,
@@ -541,7 +538,7 @@ def test_python_direct_links_matches_cli_direct_links_flag(
     ``--direct-links`` CLI output (same items, same order).
     """
     from lore.cli import main as cli
-    from lore.models import impacts
+    from lore.api import impacts
 
     _write_codex_entry(
         tmp_project,

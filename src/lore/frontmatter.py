@@ -12,6 +12,46 @@ import yaml
 _REQUIRED_FIELDS = ("id", "title", "summary")
 
 
+def parse_frontmatter_text(
+    text: str,
+    *,
+    required_fields: tuple[str, ...] = _REQUIRED_FIELDS,
+    extra_fields: tuple[str, ...] = (),
+) -> dict | None:
+    """Parse frontmatter metadata from an in-memory markdown string.
+
+    Mirrors :func:`parse_frontmatter_doc` semantics but takes raw text instead
+    of a filepath. Used by ``create_*`` / ``update_*`` paths that receive
+    content from stdin or a source file.
+
+    Returns a record dict with keys for each field in ``required_fields`` if
+    all required fields are present. Returns ``None`` if required fields are
+    missing, YAML is invalid, or the text has fewer than three
+    ``---``-separated parts.
+
+    Unlike :func:`parse_frontmatter_doc`, the result has no ``path`` key —
+    that's filepath-only territory.
+    """
+    try:
+        parts = text.split("---")
+        if len(parts) < 3:
+            return None
+        frontmatter = yaml.safe_load(parts[1])
+    except Exception:
+        return None
+
+    if not isinstance(frontmatter, dict):
+        return None
+    if any(field not in frontmatter or frontmatter[field] is None for field in required_fields):
+        return None
+
+    result = {field: str(frontmatter[field]) for field in required_fields}
+    for field in extra_fields:
+        if field in frontmatter:
+            result[field] = frontmatter[field]
+    return result
+
+
 def parse_frontmatter_doc(
     filepath: Path,
     required_fields: tuple[str, ...] | None = None,
@@ -34,23 +74,15 @@ def parse_frontmatter_doc(
 
     try:
         text = filepath.read_text()
-        parts = text.split("---")
-        if len(parts) < 3:
-            return None
-        frontmatter = yaml.safe_load(parts[1])
     except Exception:
         return None
 
-    if not isinstance(frontmatter, dict):
+    result = parse_frontmatter_text(
+        text, required_fields=effective_required, extra_fields=extra_fields
+    )
+    if result is None:
         return None
-    if any(field not in frontmatter or frontmatter[field] is None for field in effective_required):
-        return None
-
-    result = {field: str(frontmatter[field]) for field in effective_required}
     result["path"] = filepath
-    for field in extra_fields:
-        if field in frontmatter:
-            result[field] = frontmatter[field]
     return result
 
 

@@ -4,7 +4,7 @@ title: Production Deployment
 summary: 'How to publish a production release: prerequisites, deployment process,
   verification, rollback procedure, and day-2 operations (backup, monitoring).'
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Production Deployment

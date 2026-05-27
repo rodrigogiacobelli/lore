@@ -41,7 +41,7 @@ lore artifact list
 
 For each new artifact in the design doc, create it before writing the doctrine (the doctrine's mission notes will reference them).
 
-There is no `lore artifact new` command. Write the file directly to `.lore/artifacts/<slug>.md`:
+Draft the artifact into a temp file:
 
 ```markdown
 ---
@@ -55,6 +55,14 @@ summary: >
 
 <Content — write for an AI agent reader. Be specific and actionable.>
 ```
+
+Then create it via the CLI (validates frontmatter and lands the file under `.lore/artifacts/`):
+
+```
+lore artifact new <slug> -f <temp-file>
+```
+
+To nest under a subdirectory, pass `--group <subdir>`.
 
 Verify: `lore artifact show <id>`
 

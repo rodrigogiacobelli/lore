@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import json
 import re
 from pathlib import Path, PurePosixPath
 from typing import Literal
@@ -292,42 +291,3 @@ def impacts(
     if direct_links:
         code_items = tuple(b for b in code_items if b.match == "exact")
     return ImpactsResult(kind="code", code_items=code_items)
-
-
-# ---------------------------------------------------------------------------
-# Renderers
-# ---------------------------------------------------------------------------
-
-
-def _render_impacts_json(result: ImpactsResult) -> str:
-    """Render *result* as the ``{"impacts": [...]}`` JSON envelope."""
-    if result.kind == "codex":
-        items: list[dict] = [
-            {"path": b.path, "kind": b.kind}
-            for b in result.codex_items
-        ]
-    else:
-        items = []
-        for b in result.code_items:
-            row: dict = {"id": b.id, "match": b.match}
-            if b.match == "glob":
-                row["pattern"] = b.pattern
-            items.append(row)
-    return json.dumps({"impacts": items})
-
-
-def _render_impacts_default(result: ImpactsResult) -> str:
-    """Render *result* as one binding per line.
-
-    Codex seed: bare path. Code seed: bare id for exact, ``id  (glob: pattern)``
-    for glob.
-    """
-    if result.kind == "codex":
-        return "".join(f"{b.path}\n" for b in result.codex_items)
-    lines: list[str] = []
-    for b in result.code_items:
-        if b.match == "exact":
-            lines.append(f"{b.id}\n")
-        else:
-            lines.append(f"{b.id}  (glob: {b.pattern})\n")
-    return "".join(lines)

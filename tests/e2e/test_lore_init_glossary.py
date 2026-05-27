@@ -60,7 +60,7 @@ def initialised_dir(tmp_path, monkeypatch):
 
 
 EXPECTED_GLOSSARY_SKELETON = (
-    "# Project glossary — see `lore codex show conceptual-entities-glossary`.\n"
+    "# Project glossary — see the Glossary section of .lore/codex/codex.md.\n"
     "# Before adding a term, run: `lore artifact show glossary-design`.\n"
     "# Auto-surfaced on `lore codex show`. Toggle via .lore/config.toml.\n"
     "items: []\n"
@@ -330,6 +330,6 @@ def test_init_seeded_config_parses_as_toml_with_known_key(runner, fresh_dir):
 #
 # Removed per ADR-006 (decisions-006-no-seed-content-tests). Every US-007
 # scenario asserted specific substrings or byte-equality on seeded default
-# files (LORE-AGENT.md, CODEX.md, SKILL.md, scout.md). Existence and
+# files (LORE-AGENT.md, codex.md, SKILL.md, scout.md). Existence and
 # schema-clean invariants for those files are covered by the US-006 tests
 # above and by `lore health --scope schemas`.

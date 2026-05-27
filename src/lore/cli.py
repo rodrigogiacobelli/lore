@@ -7,14 +7,17 @@ import yaml
 
 import click
 
-from lore import __version__
-from lore import paths
-from lore import validators
-from lore import knight as knight_module
-from lore.knight import create_knight
-from lore.artifact import create_artifact
-from lore import graph
-from lore.root import find_project_root, ProjectNotFoundError
+from lore.api import (
+    ProjectNotFoundError,
+    create_artifact,
+    create_knight,
+    find_project_root,
+)
+from lore.api import _graph as graph
+from lore.api import _knight as knight_module
+from lore.api import _lore_version as __version__
+from lore.api import _paths as paths
+from lore.api import _validators as validators
 
 
 # ---------------------------------------------------------------------------
@@ -26,14 +29,14 @@ from lore.root import find_project_root, ProjectNotFoundError
 # Shared `--filter` option help for every `list` subcommand that supports
 # slash-delimited group filters (doctrine, knight, watcher, artifact, codex).
 _FILTER_OPT_HELP = (
-    "Filter by slash-delimited group token (e.g. a/b/c). Can be repeated."
+    "Filter by slash-delimited group token (e.g. a/b/c). Space-separated for multiple: --filter a b c."
 )
 
 # Suffix appended to each `list` command's docstring. The `{example}` slot is
 # the only part that differs between resources.
 _LIST_HELP_SUFFIX_TEMPLATE = (
     "\n\n    --filter accepts slash-delimited group tokens, e.g. --filter {example}."
-    "\n\n    See: lore codex show conceptual-workflows-help\n    "
+    "\n\n    See: .lore/codex/codex.md\n    "
 )
 
 
@@ -133,6 +136,46 @@ def _validate_name(name, ctx):
     return True
 
 
+def _emit_format_error(ctx, entity_id):
+    """Emit a uniform 'Invalid quest ID format' error to stderr and exit 1.
+
+    Consolidates the format-error emission previously inline at show/delete
+    dispatchers (Spec §G12 CHANGED #8). JSON mode emits a single-key envelope;
+    text mode emits the bare message.
+    """
+    json_mode = ctx.obj.get("json", False)
+    msg = f'Invalid quest ID format: "{entity_id}"'
+    if json_mode:
+        click.echo(json.dumps({"error": msg}), err=True)
+    else:
+        click.echo(msg, err=True)
+    ctx.exit(1)
+
+
+def _classify_entity_id_with_db_fallback(project_root, entity_id):
+    """Classify *entity_id* as ``"quests"`` / ``"missions"`` / ``None``.
+
+    Strict path: ``validators.route_entity`` returns the table for any ID
+    matching the canonical hex pattern. For loose quest IDs (g–z letters
+    valid in test-DB fixtures) we fall back to a direct DB probe so that
+    synthetic IDs still resolve. Returns ``None`` for unrecognised input
+    (caller emits a format error via ``_emit_format_error``).
+    """
+    if not entity_id:
+        return None
+    try:
+        table, _ = validators.route_entity(entity_id)
+        return table
+    except ValueError:
+        pass
+    # Loose-quest-ID fallback — only legal for quest-shaped IDs (no slash).
+    if validators.validate_quest_id_loose(entity_id) is None:
+        from lore.api import read_quest
+        if read_quest(project_root, entity_id) is not None:
+            return "quests"
+    return None
+
+
 def _write_design_file(design_path: Path, doctrine_id: str, yaml_content: str) -> None:
     """Write a minimal .design.md file alongside a newly created doctrine YAML.
 
@@ -214,7 +257,7 @@ def main(ctx, json_mode):
     Knight   — a reusable agent persona attached to missions.
     Doctrine — workflow templates that guide how missions are executed.
     Codex    — project documentation, searchable and graph-traversable.
-    Artifact — reusable read-only template files referenced by stable ID.
+    Artifact — reusable template files referenced by stable ID.
     Watcher  — definitions for agents that monitor and react to project state.
 
     Run any command group with --help for details on that concept.
@@ -242,8 +285,7 @@ def main(ctx, json_mode):
 
 def _show_dashboard(ctx):
     """Display the dashboard overview of active quests with mission progress."""
-    from lore.db import get_dashboard_quests
-
+    from lore.api import get_dashboard_quests
     project_root = ctx.obj["project_root"]
     quests = get_dashboard_quests(project_root)
     json_mode = ctx.obj.get("json", False)
@@ -280,8 +322,7 @@ def _show_dashboard(ctx):
 @click.pass_context
 def stats(ctx):
     """Show aggregate statistics across all quests and missions."""
-    from lore.db import get_aggregate_stats
-
+    from lore.api import get_aggregate_stats
     project_root = ctx.obj["project_root"]
     data = get_aggregate_stats(project_root)
 
@@ -304,14 +345,18 @@ def stats(ctx):
 
 
 @main.command("oracle")
-@click.option(
-    "--json", "json_flag", is_flag=True, hidden=True, help="Ignored for oracle."
-)
 @click.pass_context
-def oracle(ctx, json_flag):
+def oracle(ctx):
     """Generate human-readable markdown reports in .lore/reports/. Produces one file per quest and mission. Wipes and recreates the reports directory on every run — do not store custom files there. Intended for human stakeholders, not for agent consumption. JSON output is not supported for this command."""
-    from lore.oracle import generate_reports
+    if ctx.obj.get("json", False):
+        click.echo(
+            "Error: JSON output is not supported for 'lore oracle'. "
+            "Oracle generates human-readable markdown reports only.",
+            err=True,
+        )
+        ctx.exit(2)
 
+    from lore.api import generate_reports
     project_root = ctx.obj["project_root"]
     generate_reports(project_root)
     click.echo("Reports generated in .lore/reports/")
@@ -321,8 +366,7 @@ def oracle(ctx, json_flag):
 @click.pass_context
 def init(ctx):
     """Initialize a Lore project in the current directory."""
-    from lore.init import run_init
-
+    from lore.api import run_init
     messages = run_init()
     click.echo("Initialized Lore project:")
     for msg in messages:
@@ -364,14 +408,13 @@ def new_quest(ctx, title, description, priority, auto_close, no_auto_close):
     if err:
         raise click.ClickException(err)
 
-    from lore.db import create_quest
-
+    from lore.api import create_quest
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
     ac_value = 1 if auto_close else 0
     try:
-        quest_id = create_quest(
+        envelope = create_quest(
             project_root, title, description, priority, auto_close=ac_value
         )
     except ValueError as e:
@@ -385,6 +428,7 @@ def new_quest(ctx, title, description, priority, auto_close, no_auto_close):
         ctx.exit(1)
         return
 
+    quest_id = envelope["id"]
     if json_mode:
         click.echo(json.dumps({"id": quest_id}))
         return
@@ -415,23 +459,12 @@ def new_mission(ctx, title, quest_id, description, priority, knight, mission_typ
     if err:
         raise click.ClickException(err)
 
-    from lore.db import create_mission, get_connection
-
+    from lore.api import create_mission
     project_root = ctx.obj["project_root"]
 
-    # Infer quest if not specified and exactly one non-closed quest exists
-    if quest_id is None:
-        conn = get_connection(project_root)
-        try:
-            cursor = conn.execute("SELECT id FROM quests WHERE status != 'closed'")
-            active_quests = cursor.fetchall()
-            if len(active_quests) == 1:
-                quest_id = active_quests[0]["id"]
-        finally:
-            conn.close()
-
+    # Inferred-parent-quest lookup lives in db.create_mission (G12).
     try:
-        mission_id = create_mission(
+        envelope = create_mission(
             project_root,
             title,
             quest_id=quest_id,
@@ -457,6 +490,7 @@ def new_mission(ctx, title, quest_id, description, priority, knight, mission_typ
         ctx.exit(1)
         return
 
+    mission_id = envelope["id"]
     if json_mode:
         click.echo(json.dumps({"id": mission_id}))
         return
@@ -469,59 +503,37 @@ def new_mission(ctx, title, quest_id, description, priority, knight, mission_typ
 @click.pass_context
 def claim(ctx, mission_ids):
     """Claim one or more missions (open -> in_progress)."""
-    from lore.db import claim_mission
-
+    from lore.api import claim_missions
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
+    envelope = claim_missions(project_root, list(mission_ids))
+
     if json_mode:
-        updated = []
-        quest_status_changed = []
-        errors = []
-
-        for mid in mission_ids:
-            mid_err = validators.validate_mission_id(mid)
-            if mid_err:
-                errors.append(mid_err)
-                continue
-            result = claim_mission(project_root, mid)
-            if not result["ok"]:
-                errors.append(result["error"])
-            else:
-                updated.append(mid)
-                if result["quest_status_changed"]:
-                    quest_status_changed.append({"id": result["quest_id"], "status": result["quest_status"]})
-
-        click.echo(
-            json.dumps(
-                {
-                    "updated": updated,
-                    "quest_status_changed": quest_status_changed,
-                    "errors": errors,
-                }
-            )
-        )
-        if errors:
+        click.echo(json.dumps(envelope))
+        if envelope["errors"]:
             ctx.exit(1)
         return
 
-    any_failed = False
-
+    from lore.api import read_mission
+    updated_set = set(envelope["updated"])
+    error_text = "\n".join(envelope["errors"])
     for mid in mission_ids:
-        mid_err = validators.validate_mission_id(mid)
-        if mid_err:
-            click.echo(mid_err, err=True)
-            any_failed = True
+        if mid in updated_set:
+            click.echo(f"{mid}: in_progress")
             continue
-        result = claim_mission(project_root, mid)
+        # Idempotent re-claim (already in_progress) — not in updated, not in
+        # errors. Surface current status from the DB so text output mirrors
+        # the pre-G12 behaviour.
+        if mid in error_text:
+            continue
+        mission = read_mission(project_root, mid)
+        if mission is not None:
+            click.echo(f"{mid}: {mission['status']}")
+    for err in envelope["errors"]:
+        click.echo(err, err=True)
 
-        if not result["ok"]:
-            click.echo(result["error"], err=True)
-            any_failed = True
-        else:
-            click.echo(f"{mid}: {result['status']}")
-
-    if any_failed:
+    if envelope["errors"]:
         ctx.exit(1)
 
 
@@ -536,81 +548,70 @@ def done(ctx, entity_ids):
     For quests: use only if auto_close is disabled; quests with auto_close
     enabled close automatically when all missions are done.
     """
-    from lore.db import close_mission, close_quest
-
+    from lore.api import close_entities
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    def _is_quest_id(eid):
-        return eid.startswith("q-") and "/" not in eid
+    from lore.api import read_quest, read_mission
+    def _is_quest_shaped(eid: str) -> bool:
+        """Quest-shaped ID detection via route_entity (no inline prefix check)."""
+        try:
+            table, _ = validators.route_entity(eid)
+            return table == "quests"
+        except ValueError:
+            # Fall back to loose quest pattern (allows test-DB synthetic IDs).
+            return validators.validate_quest_id_loose(eid) is None
+
+    # Text-mode renders distinct "already closed" vs "closed (closed_at: ...)"
+    # branches for quest IDs. Snapshot pre-call quest status so we can
+    # render the right message without altering the envelope shape.
+    pre_call_quest_status: dict[str, str | None] = {}
+    if not json_mode:
+        for eid in entity_ids:
+            if _is_quest_shaped(eid):
+                q = read_quest(project_root, eid)
+                pre_call_quest_status[eid] = q["status"] if q is not None else None
+
+    envelope = close_entities(project_root, list(entity_ids))
 
     if json_mode:
-        updated = []
-        quest_closed = []
-        errors = []
-        for eid in entity_ids:
-            if _is_quest_id(eid):
-                result = close_quest(project_root, eid)
-                if not result["ok"]:
-                    errors.append(result["error"])
-                else:
-                    updated.append(eid)
-            else:
-                eid_err = validators.validate_mission_id(eid)
-                if eid_err:
-                    errors.append(eid_err)
-                    continue
-                result = close_mission(project_root, eid)
-                if not result["ok"]:
-                    errors.append(result["error"])
-                else:
-                    updated.append(eid)
-                    if result["quest_closed"]:
-                        quest_closed.append(result["quest_id"])
-        click.echo(
-            json.dumps(
-                {
-                    "updated": updated,
-                    "quest_closed": quest_closed,
-                    "errors": errors,
-                }
-            )
-        )
-        if errors:
+        click.echo(json.dumps(envelope))
+        if envelope["errors"]:
             ctx.exit(1)
         return
 
-    any_failed = False
-
+    updated_set = set(envelope["updated"])
+    quest_closed_set = set(envelope["quest_closed"])
     for eid in entity_ids:
-        if _is_quest_id(eid):
-            result = close_quest(project_root, eid)
-            if not result["ok"]:
-                click.echo(result["error"], err=True)
-                any_failed = True
-            else:
-                if result.get("already_closed"):
-                    click.echo(f"{eid}: already closed")
-                else:
-                    click.echo(f"{eid}: closed (closed_at: {result['closed_at']})")
-        else:
-            eid_err = validators.validate_mission_id(eid)
-            if eid_err:
-                click.echo(eid_err, err=True)
-                any_failed = True
+        if eid not in updated_set:
+            continue
+        is_quest = _is_quest_shaped(eid)
+        if is_quest:
+            if pre_call_quest_status.get(eid) == "closed":
+                click.echo(f"{eid}: already closed")
                 continue
-            result = close_mission(project_root, eid)
-
-            if not result["ok"]:
-                click.echo(result["error"], err=True)
-                any_failed = True
+            quest = read_quest(project_root, eid)
+            if quest is not None and quest["closed_at"] is not None:
+                click.echo(
+                    f"{eid}: closed (closed_at: {quest['closed_at']})"
+                )
             else:
-                if result["quest_closed"]:
-                    click.echo(f"{eid}: closed (quest auto-closed)")
-                else:
-                    click.echo(f"{eid}: {result['status']}")
+                click.echo(f"{eid}: closed")
+        else:
+            quest_id = eid.split("/")[0] if "/" in eid else None
+            mission = read_mission(project_root, eid)
+            if (
+                quest_id is not None
+                and quest_id in quest_closed_set
+            ):
+                click.echo(f"{eid}: closed (quest auto-closed)")
+            else:
+                status = mission["status"] if mission is not None else "closed"
+                click.echo(f"{eid}: {status}")
+    for err in envelope["errors"]:
+        click.echo(err, err=True)
 
-    if any_failed:
+    if envelope["errors"]:
         ctx.exit(1)
 
 
@@ -620,8 +621,7 @@ def done(ctx, entity_ids):
 @click.pass_context
 def block(ctx, mission_id, reason):
     """Mark a mission as blocked with a reason."""
-    from lore.db import block_mission
-
+    from lore.api import block_mission
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
@@ -658,8 +658,7 @@ def block(ctx, mission_id, reason):
 @click.pass_context
 def unblock(ctx, mission_id):
     """Unblock a blocked mission, returning it to open status."""
-    from lore.db import unblock_mission
-
+    from lore.api import unblock_mission
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
@@ -699,8 +698,7 @@ def ready(ctx, count):
     Blocked and closed missions are excluded.
 
     Optional COUNT returns multiple missions at once: 'lore ready 5'."""
-    from lore.priority import get_ready_missions
-
+    from lore.api import get_ready_missions
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
     missions = get_ready_missions(project_root, count=count)
@@ -741,72 +739,54 @@ def ready(ctx, count):
 @click.pass_context
 def needs(ctx, pairs):
     """Declare dependencies between missions using colon-pair syntax."""
-    from lore.db import add_dependency
-
+    from lore.api import add_dependencies
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    if json_mode:
-        created = []
-        existing = []
-        errors = []
-        for pair in pairs:
-            parts = pair.split(":")
-            if len(parts) != 2 or not parts[0] or not parts[1]:
-                errors.append(
-                    f'Invalid dependency pair format: "{pair}". Expected "from:to".'
-                )
-                continue
-            from_id, to_id = parts[0], parts[1]
-            result = add_dependency(project_root, from_id, to_id)
-            if not result["ok"]:
-                errors.append(result["error"])
-            elif result["duplicate"]:
-                existing.append({"from": from_id, "to": to_id})
-            else:
-                created.append({"from": from_id, "to": to_id})
-        click.echo(
-            json.dumps(
-                {
-                    "created": created,
-                    "existing": existing,
-                    "errors": errors,
-                }
+    parsed_pairs: list[tuple[str, str]] = []
+    pair_errors: list[str] = []
+    for pair in pairs:
+        parts = pair.split(":")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            pair_errors.append(
+                f'Invalid dependency pair format: "{pair}". Expected "from:to".'
             )
-        )
-        if errors:
+            continue
+        parsed_pairs.append((parts[0], parts[1]))
+
+    db_envelope = add_dependencies(project_root, parsed_pairs)
+    db_errors = db_envelope["errors"]
+    envelope = {
+        "created": db_envelope["created"],
+        "existing": db_envelope["existing"],
+        "errors": pair_errors + db_errors,
+    }
+
+    if json_mode:
+        click.echo(json.dumps(envelope))
+        if envelope["errors"]:
             ctx.exit(1)
         return
 
-    any_failed = False
-
-    for pair in pairs:
-        # Validate pair format: exactly one colon, non-empty sides
-        parts = pair.split(":")
-        if len(parts) != 2 or not parts[0] or not parts[1]:
+    from lore.api import read_mission
+    for err in pair_errors:
+        click.echo(err, err=True)
+    for entry in envelope["existing"]:
+        click.echo(f"Dependency already exists: {entry['from']} -> {entry['to']}")
+    for entry in envelope["created"]:
+        click.echo(f"Dependency created: {entry['from']} -> {entry['to']}")
+        # Re-derive closed_target signal (add_dependencies discards it):
+        # check whether the target mission is closed.
+        target = read_mission(project_root, entry["to"])
+        if target is not None and target["status"] == "closed":
             click.echo(
-                f'Invalid dependency pair format: "{pair}". Expected "from:to".',
-                err=True,
+                f"Note: dependency target {entry['to']} is already closed. "
+                f"Mission {entry['from']} is not blocked."
             )
-            any_failed = True
-            continue
+    for err in db_errors:
+        click.echo(err, err=True)
 
-        from_id, to_id = parts[0], parts[1]
-        result = add_dependency(project_root, from_id, to_id)
-
-        if not result["ok"]:
-            click.echo(result["error"], err=True)
-            any_failed = True
-        elif result["duplicate"]:
-            click.echo(f"Dependency already exists: {from_id} -> {to_id}")
-        else:
-            click.echo(f"Dependency created: {from_id} -> {to_id}")
-            if result["closed_target"]:
-                click.echo(
-                    f"Note: dependency target {to_id} is already closed. Mission {from_id} is not blocked."
-                )
-
-    if any_failed:
+    if envelope["errors"]:
         ctx.exit(1)
 
 
@@ -816,61 +796,48 @@ def needs(ctx, pairs):
 @click.pass_context
 def unneed(ctx, json_flag, pairs):
     """Remove dependencies between missions using colon-pair syntax."""
-    from lore.db import remove_dependency
-
+    from lore.api import remove_dependencies
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
 
-    removed_list = []
-    not_found_list = []
-    errors_list = []
-    any_error = False
+    parsed_pairs: list[tuple[str, str]] = []
+    pair_errors: list[str] = []
+    valid_pairs_for_render: list[tuple[str, str]] = []
 
     for pair in pairs:
         parts = pair.split(":")
         if len(parts) != 2 or not parts[0] or not parts[1]:
-            errors_list.append(f'Invalid pair format: "{pair}"')
-            any_error = True
-            if not json_mode:
-                click.echo(f'Invalid pair format: "{pair}"', err=True)
+            pair_errors.append(f'Invalid pair format: "{pair}"')
             continue
-
         from_id, to_id = parts
-
-        # Validate mission ID format
         from_err = validators.validate_mission_id(from_id)
         to_err = validators.validate_mission_id(to_id)
         if from_err or to_err:
-            msg = from_err if from_err else to_err
-            errors_list.append(msg)
-            any_error = True
-            if not json_mode:
-                click.echo(msg, err=True)
+            pair_errors.append(from_err if from_err else to_err)
             continue
+        parsed_pairs.append((from_id, to_id))
+        valid_pairs_for_render.append((from_id, to_id))
 
-        result = remove_dependency(project_root, from_id, to_id)
+    envelope = remove_dependencies(project_root, parsed_pairs)
+    envelope = {
+        "removed": envelope["removed"],
+        "not_found": envelope["not_found"],
+        "errors": pair_errors + envelope["errors"],
+    }
 
-        if result.get("removed", False):
-            removed_list.append({"from": from_id, "to": to_id})
-            if not json_mode:
+    if not json_mode:
+        for err in pair_errors:
+            click.echo(err, err=True)
+        removed_set = {(e["from"], e["to"]) for e in envelope["removed"]}
+        for from_id, to_id in valid_pairs_for_render:
+            if (from_id, to_id) in removed_set:
                 click.echo(f"Dependency removed: {from_id} -> {to_id}")
-        else:
-            not_found_list.append({"from": from_id, "to": to_id})
-            if not json_mode:
+            else:
                 click.echo(f"Warning: no dependency found: {from_id} -> {to_id}")
+    else:
+        click.echo(json.dumps(envelope))
 
-    if json_mode:
-        click.echo(
-            json.dumps(
-                {
-                    "removed": removed_list,
-                    "not_found": not_found_list,
-                    "errors": errors_list,
-                }
-            )
-        )
-
-    if any_error:
+    if envelope["errors"]:
         ctx.exit(1)
 
 
@@ -879,8 +846,7 @@ def unneed(ctx, json_flag, pairs):
 @click.pass_context
 def list_quests(ctx, show_all):
     """List quests."""
-    from lore.db import list_quests as db_list_quests
-
+    from lore.api import list_quests as db_list_quests
     project_root = ctx.obj["project_root"]
     quests = db_list_quests(project_root, include_closed=show_all)
 
@@ -921,14 +887,13 @@ def missions(ctx, quest_id, show_all):
 
     Use 'lore ready' to find the next mission to dispatch.
     """
-    from lore.db import get_deleted_at, get_quest, list_missions
-
+    from lore.api import read_quest, list_missions_grouped
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
     # Validate quest exists if specified
     if quest_id is not None:
-        quest = get_quest(project_root, quest_id)
+        quest = read_quest(project_root, quest_id)
         if quest is None:
             if json_mode:
                 click.echo(
@@ -940,59 +905,49 @@ def missions(ctx, quest_id, show_all):
             ctx.exit(1)
             return
 
-    grouped = list_missions(project_root, quest_id=quest_id, include_closed=show_all)
+    envelope = list_missions_grouped(
+        project_root, quest_id=quest_id, include_closed=show_all
+    )
 
     if json_mode:
         flat = []
-        for qid, mission_list in grouped.items():
-            for m in mission_list:
-                flat.append(
-                    {
-                        "id": m["id"],
-                        "quest_id": m["quest_id"],
-                        "title": m["title"],
-                        "status": m["status"],
-                        "priority": m["priority"],
-                        "mission_type": m["mission_type"],
-                        "knight": m["knight"],
-                        "created_at": m["created_at"],
-                    }
-                )
+        for group in envelope["groups"]:
+            flat.extend(group["missions"])
         click.echo(json.dumps({"missions": flat}))
         return
 
-    if not grouped:
+    if not envelope["groups"]:
         click.echo("No missions found.")
         return
-
-    # Display quest-bound missions first, then standalone
-    quest_ids = sorted([k for k in grouped if k is not None])
-    has_standalone = None in grouped
 
     def _format_mission_line(m):
         knight_str = f"  [{m['knight']}]" if m["knight"] else ""
         type_str = f"  [{m['mission_type']}]" if m["mission_type"] else ""
         return f"  {m['id']}  P{m['priority']}  [{m['status']}]{type_str}  {m['title']}{knight_str}"
 
-    for qid in quest_ids:
-        # Fetch quest title for display
-        quest = get_quest(project_root, qid)
-        if quest:
-            quest_title = quest["title"]
-            quest_deleted_annotation = ""
-        else:
-            # Quest may be soft-deleted
-            deleted_at = get_deleted_at(project_root, qid)
-            quest_title = qid
-            quest_deleted_annotation = " (quest deleted)" if deleted_at else ""
+    # Display quest-bound groups first (sorted by qid), then standalone.
+    quest_groups = sorted(
+        (g for g in envelope["groups"] if g["quest_id"] is not None),
+        key=lambda g: g["quest_id"],
+    )
+    standalone_group = next(
+        (g for g in envelope["groups"] if g["quest_id"] is None), None
+    )
+
+    for group in quest_groups:
+        qid = group["quest_id"]
+        quest_title = group["quest_title"] if group["quest_title"] is not None else qid
+        quest_deleted_annotation = (
+            " (quest deleted)" if group["quest_deleted_at"] else ""
+        )
         click.echo(f"Quest: {quest_title} ({qid}){quest_deleted_annotation}")
-        for m in grouped[qid]:
+        for m in group["missions"]:
             click.echo(_format_mission_line(m))
         click.echo("")
 
-    if has_standalone:
+    if standalone_group is not None:
         click.echo("Standalone:")
-        for m in grouped[None]:
+        for m in standalone_group["missions"]:
             click.echo(_format_mission_line(m))
 
 
@@ -1009,13 +964,14 @@ def knight(ctx):
 )
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
+@click.argument("extra_filters", nargs=-1)
 @click.pass_context
-def knight_list(ctx, json_flag, filter_groups):
+def knight_list(ctx, json_flag, filter_groups, extra_filters):
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    knights_dir = paths.knights_dir(project_root)
 
-    records = knight_module.list_knights(knights_dir, filter_groups=list(filter_groups) if filter_groups else None)
+    combined_filters = list(filter_groups) + list(extra_filters)
+    records = knight_module.list_knights(project_root, filter_groups=combined_filters if combined_filters else None)
 
     if json_mode:
         filtered = [
@@ -1041,14 +997,13 @@ def knight_show(ctx, name):
     """Show the contents of a knight file."""
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    knights_dir = paths.knights_dir(project_root)
 
     try:
-        knight_path = knight_module.find_knight(knights_dir, name)
+        record = knight_module.read_knight(project_root, name)
     except ValueError:
-        knight_path = None
+        record = None
 
-    if knight_path is None:
+    if record is None:
         if json_mode:
             click.echo(
                 json.dumps(
@@ -1063,18 +1018,15 @@ def knight_show(ctx, name):
         return
 
     if json_mode:
-        click.echo(
-            json.dumps(
-                {
-                    "name": name,
-                    "filename": f"{name}.md",
-                    "contents": knight_path.read_text(),
-                }
-            )
-        )
+        # Section D: JSON mode emits the whole read_knight dict.
+        click.echo(json.dumps(record))
         return
 
-    click.echo(knight_path.read_text())
+    # Text mode emits frontmatter + body (full file shape).
+    fm_lines = "\n".join(
+        f"{k}: {record[k]}" for k in ("id", "title", "summary")
+    )
+    click.echo(f"---\n{fm_lines}\n---\n{record['body']}", nl=False)
 
 
 @knight.command(
@@ -1103,7 +1055,6 @@ def knight_new(ctx, name, from_file, group, json_flag):
         return
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    knights_dir = paths.knights_dir(project_root)
 
     if from_file is not None and from_file != "-":
         source = Path(from_file)
@@ -1127,31 +1078,8 @@ def knight_new(ctx, name, from_file, group, json_flag):
             ctx.exit(1)
             return
 
-    # Frontmatter schema validation (delegates to lore.schemas)
-    from lore.knight import _validate_frontmatter as _k_validate_frontmatter
-    import yaml as _yaml
-    _parts = content.split("---", 2)
-    _meta: dict = {}
-    if len(_parts) >= 3:
-        try:
-            _loaded = _yaml.safe_load(_parts[1])
-            if isinstance(_loaded, dict):
-                _meta = _loaded
-        except _yaml.YAMLError:
-            _meta = {}
     try:
-        _k_validate_frontmatter(_meta)
-    except click.ClickException as e:
-        msg = e.message
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
-        return
-
-    try:
-        result = create_knight(knights_dir, name, content, group=group)
+        result = create_knight(project_root, name, content, group=group)
     except ValueError as e:
         msg = str(e)
         if json_mode:
@@ -1162,10 +1090,6 @@ def knight_new(ctx, name, from_file, group, json_flag):
         return
 
     if json_mode:
-        try:
-            result["path"] = str(Path(result["path"]).relative_to(project_root))
-        except ValueError:
-            pass
         click.echo(json.dumps(result))
         return
 
@@ -1173,27 +1097,146 @@ def knight_new(ctx, name, from_file, group, json_flag):
     click.echo(f"Created knight {name}{suffix}")
 
 
+# ---------------------------------------------------------------------------
+# Field-edit mode shared helpers (spec: transient-frontmatter-field-edit-spec).
+# Mutually exclusive with -f / --from. The four <entity> edit handlers use
+# these to parse KEY=VALUE strings, coerce scalars per schema, and dispatch
+# into ``lore.api.update_frontmatter_fields``.
+# ---------------------------------------------------------------------------
+
+
+def _split_kv(raw: str) -> tuple[str, str]:
+    """Split a CLI KEY=VALUE on the first ``=``. Empty key raises ValueError."""
+    if "=" not in raw:
+        raise ValueError("--set/--add/--remove requires KEY=VALUE")
+    key, value = raw.split("=", 1)
+    if not key:
+        raise ValueError("--set/--add/--remove requires KEY=VALUE")
+    return key, value
+
+
+def _dispatch_field_edit(
+    ctx,
+    kind: str,
+    name: str,
+    set_kvs: tuple[str, ...],
+    unset_keys: tuple[str, ...],
+    add_kvs: tuple[str, ...],
+    remove_kvs: tuple[str, ...],
+) -> dict | None:
+    """Run field-edit mode for one entity. Returns the envelope, or None on
+    error (after emitting stderr + ctx.exit(1)).
+
+    Parses raw CLI KEY=VALUE strings, coerces scalars per schema (rejecting
+    structured-item fields), then calls ``update_frontmatter_fields``.
+    """
+    from lore.api import _frontmatter_edit as _fm_edit_mod
+    from lore.api import update_frontmatter_fields
+
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+    # For coercion only: codex schema_kind is a callable (doc_type dispatcher);
+    # the on-disk field shapes are identical across codex / codex-source, so
+    # use the default schema string for coercion. Final validation uses the
+    # callable inside update_frontmatter_fields.
+    raw_schema_kind = _fm_edit_mod._KINDS[kind].schema_kind
+    schema_kind = (
+        "codex-frontmatter" if kind == "codex" else raw_schema_kind
+    )
+    coerce = _fm_edit_mod._coerce_scalar_for_schema
+
+    try:
+        set_dict: dict = {}
+        for raw in set_kvs:
+            key, value = _split_kv(raw)
+            set_dict[key] = coerce(schema_kind, key, value)
+
+        add_dict: dict = {}
+        for raw in add_kvs:
+            key, value = _split_kv(raw)
+            # Validate field shape: must be a scalar-array; reject structured.
+            coerce(schema_kind, key, value)
+            add_dict.setdefault(key, []).append(value.strip())
+
+        remove_dict: dict = {}
+        for raw in remove_kvs:
+            key, value = _split_kv(raw)
+            coerce(schema_kind, key, value)
+            remove_dict.setdefault(key, []).append(value.strip())
+
+        result = update_frontmatter_fields(
+            project_root,
+            kind,
+            name,
+            set_fields=set_dict or None,
+            unset_fields=list(unset_keys) or None,
+            add_to_list=add_dict or None,
+            remove_from_list=remove_dict or None,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return None
+
+    return result
+
+
+def _reject_mutex(ctx, json_mode: bool, from_file, set_kvs, unset_keys, add_kvs, remove_kvs) -> bool:
+    """If -f conflicts with any field-mode flag, emit error and exit. Returns True if rejected."""
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if from_file is not None and field_mode:
+        msg = "Cannot combine -f/--from with --set/--unset/--add/--remove."
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return True
+    return False
+
+
 @knight.command("edit")
 @click.argument("name")
 @click.option(
     "--from", "-f", "from_file", default=None, help="Source file for knight content."
 )
+@click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
+@click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
+@click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
+@click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
 @click.pass_context
-def knight_edit(ctx, name, from_file):
-    """Edit an existing knight."""
+def knight_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+    """Edit an existing knight.
+
+    Field-edit mode (mutually exclusive with -f / --from):
+      --set    KEY=VALUE   set a frontmatter field
+      --unset  KEY         remove a frontmatter field
+      --add    KEY=VALUE   append to a list-typed field
+      --remove KEY=VALUE   remove a value from a list-typed field
+    """
     if not _validate_name(name, ctx):
         return
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    knight_path = paths.knights_dir(project_root) / f"{name}.md"
 
-    if not knight_path.exists():
-        msg = f'Knight "{name}" not found.'
+    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+        return
+
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if field_mode:
+        result = _dispatch_field_edit(
+            ctx, "knight", name, set_kvs, unset_keys, add_kvs, remove_kvs
+        )
+        if result is None:
+            return
         if json_mode:
-            click.echo(json.dumps({"error": msg}))
-        else:
-            click.echo(msg)
-        ctx.exit(1)
+            click.echo(json.dumps(result))
+            return
+        click.echo(f"Updated knight {name}")
         return
 
     if from_file is not None and from_file != "-":
@@ -1218,10 +1261,19 @@ def knight_edit(ctx, name, from_file):
             ctx.exit(1)
             return
 
-    knight_path.write_text(content)
+    try:
+        result = knight_module.update_knight(project_root, name, content)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
 
     if json_mode:
-        click.echo(json.dumps({"name": name, "filename": f"{name}.md"}))
+        click.echo(json.dumps(result))
         return
     click.echo(f"Updated knight {name}")
 
@@ -1235,10 +1287,11 @@ def knight_delete(ctx, name):
         return
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    knight_path = paths.knights_dir(project_root) / f"{name}.md"
 
-    if not knight_path.exists():
-        msg = f'Knight "{name}" not found in .lore/knights/'
+    try:
+        result = knight_module.delete_knight(project_root, name)
+    except ValueError as e:
+        msg = str(e)
         if json_mode:
             click.echo(json.dumps({"error": msg}), err=True)
         else:
@@ -1246,10 +1299,8 @@ def knight_delete(ctx, name):
         ctx.exit(1)
         return
 
-    knight_path.rename(knight_path.with_suffix(".md.deleted"))
-
     if json_mode:
-        click.echo(json.dumps({"name": name, "deleted": True}))
+        click.echo(json.dumps(result))
         return
     click.echo(f"Deleted knight {name}")
 
@@ -1267,15 +1318,15 @@ def doctrine(ctx):
 )
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
+@click.argument("extra_filters", nargs=-1)
 @click.pass_context
-def doctrine_list(ctx, json_flag, filter_groups):
-    from lore.doctrine import list_doctrines
-
+def doctrine_list(ctx, json_flag, filter_groups, extra_filters):
+    from lore.api import _doctrine as _doctrine_mod
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    doctrines_dir = paths.doctrines_dir(project_root)
 
-    doctrines = list_doctrines(doctrines_dir, filter_groups=list(filter_groups) if filter_groups else None)
+    combined_filters = list(filter_groups) + list(extra_filters)
+    doctrines = _doctrine_mod.list_doctrines(project_root, filter_groups=combined_filters if combined_filters else None)
 
     if json_mode:
         data = {
@@ -1316,21 +1367,19 @@ def doctrine_list(ctx, json_flag, filter_groups):
 @click.pass_context
 def doctrine_show(ctx, name, json_flag):
     """Show a doctrine (design file then YAML)."""
-    from lore.doctrine import show_doctrine, DoctrineError
-
+    from lore.api import _doctrine as _doctrine_mod
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    doctrines_dir = paths.doctrines_dir(project_root)
 
-    try:
-        d = show_doctrine(name, doctrines_dir)
-    except DoctrineError as e:
+    d = _doctrine_mod.read_doctrine(project_root, name)
+    if d is None:
+        msg = f"Doctrine '{name}' not found"
         if json_flag:
-            click.echo(json.dumps({"error": str(e)}))
+            click.echo(json.dumps({"error": msg}))
         elif json_mode:
-            click.echo(json.dumps({"error": str(e)}), err=True)
+            click.echo(json.dumps({"error": msg}), err=True)
         else:
-            click.echo(str(e), err=True)
+            click.echo(msg, err=True)
         ctx.exit(1)
         return
 
@@ -1370,8 +1419,7 @@ def doctrine_show(ctx, name, json_flag):
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
 def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
-    from lore.doctrine import create_doctrine, DoctrineError
-
+    from lore.api import create_doctrine
     json_mode = json_flag or ctx.obj.get("json", False)
 
     # Both flags are required
@@ -1391,13 +1439,12 @@ def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
         return
 
     project_root = ctx.obj["project_root"]
-    doctrines_dir = paths.doctrines_dir(project_root)
 
     try:
         result = create_doctrine(
-            name, Path(from_file), Path(design_file), doctrines_dir, group=group
+            project_root, name, Path(from_file), Path(design_file), group=group
         )
-    except DoctrineError as e:
+    except ValueError as e:
         msg = str(e)
         if json_mode:
             click.echo(json.dumps({"error": msg}), err=True)
@@ -1407,10 +1454,6 @@ def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
         return
 
     if json_mode:
-        try:
-            result["path"] = str(Path(result["path"]).relative_to(project_root))
-        except ValueError:
-            pass
         click.echo(json.dumps(result))
         return
 
@@ -1421,30 +1464,47 @@ def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
 @doctrine.command("edit")
 @click.argument("name")
 @click.option("--from", "-f", "from_file", default=None, help="Source file.")
+@click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
+@click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
+@click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
+@click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
 @click.pass_context
-def doctrine_edit(ctx, name, from_file):
-    """Edit an existing doctrine."""
-    from lore.doctrine import validate_doctrine_content, DoctrineError
+def doctrine_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+    """Edit an existing doctrine.
 
+    Field-edit mode (mutually exclusive with -f / --from) targets the
+    ``<name>.yaml`` file. To edit the ``.design.md`` partner, use ``-f``.
+
+      --set    KEY=VALUE   set a frontmatter field
+      --unset  KEY         remove a frontmatter field
+      --add    KEY=VALUE   append to a list-typed field
+      --remove KEY=VALUE   remove a value from a list-typed field
+    """
+    from lore.api import update_doctrine
     json_mode = ctx.obj.get("json", False)
 
     if not _validate_name(name, ctx):
         return
 
     project_root = ctx.obj["project_root"]
-    doctrine_path = paths.doctrines_dir(project_root) / f"{name}.yaml"
 
-    # Check existence
-    if not doctrine_path.exists():
-        msg = f'Doctrine "{name}" not found.'
-        if json_mode:
-            click.echo(json.dumps({"error": msg}))
-        else:
-            click.echo(msg)
-        ctx.exit(1)
+    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
         return
 
-    # Read content
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if field_mode:
+        result = _dispatch_field_edit(
+            ctx, "doctrine", name, set_kvs, unset_keys, add_kvs, remove_kvs
+        )
+        if result is None:
+            return
+        if json_mode:
+            click.echo(json.dumps(result))
+            return
+        click.echo(f"Updated doctrine {name}")
+        return
+
+    # Read content (CLI-only I/O concerns stay in the CLI).
     if from_file is not None and from_file != "-":
         source = Path(from_file)
         if not source.exists():
@@ -1467,10 +1527,9 @@ def doctrine_edit(ctx, name, from_file):
             ctx.exit(1)
             return
 
-    # Validate content
     try:
-        validate_doctrine_content(content, name)
-    except DoctrineError as e:
+        result = update_doctrine(project_root, name, content)
+    except ValueError as e:
         msg = str(e)
         if json_mode:
             click.echo(json.dumps({"error": msg}))
@@ -1479,22 +1538,8 @@ def doctrine_edit(ctx, name, from_file):
         ctx.exit(1)
         return
 
-    # Preserve existing frontmatter fields (id, title, summary) that the new
-    # content may have omitted.
-    try:
-        existing_raw = yaml.safe_load(doctrine_path.read_text()) or {}
-    except Exception:
-        existing_raw = {}
-    new_data = yaml.safe_load(content) or {}
-    for field in ("id", "title", "summary"):
-        if field in existing_raw and field not in new_data:
-            new_data[field] = existing_raw[field]
-    merged_content = yaml.dump(new_data, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-    doctrine_path.write_text(merged_content)
-
     if json_mode:
-        click.echo(json.dumps({"name": name, "filename": f"{name}.yaml"}))
+        click.echo(json.dumps(result))
         return
     click.echo(f"Updated doctrine {name}")
 
@@ -1504,14 +1549,16 @@ def doctrine_edit(ctx, name, from_file):
 @click.pass_context
 def doctrine_delete(ctx, name):
     """Delete a doctrine."""
+    from lore.api import delete_doctrine
     if not _validate_name(name, ctx):
         return
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    doctrine_path = paths.doctrines_dir(project_root) / f"{name}.yaml"
 
-    if not doctrine_path.exists():
-        msg = f'Doctrine "{name}" not found'
+    try:
+        result = delete_doctrine(project_root, name)
+    except ValueError as e:
+        msg = str(e)
         if json_mode:
             click.echo(json.dumps({"error": msg}), err=True)
         else:
@@ -1519,10 +1566,8 @@ def doctrine_delete(ctx, name):
         ctx.exit(1)
         return
 
-    doctrine_path.rename(doctrine_path.with_suffix(".yaml.deleted"))
-
     if json_mode:
-        click.echo(json.dumps({"name": name, "deleted": True}))
+        click.echo(json.dumps(result))
         return
     click.echo(f"Deleted doctrine {name}")
 
@@ -1595,7 +1640,13 @@ def edit(
     if not _validate_entity_id(entity_id, ctx):
         return
 
-    if entity_id.startswith("q-") and "/" not in entity_id:
+    try:
+        table, _ = validators.route_entity(entity_id)
+    except ValueError:
+        _emit_format_error(ctx, entity_id)
+        return
+
+    if table == "quests":
         ac_value = None
         if auto_close:
             ac_value = 1
@@ -1616,58 +1667,31 @@ def edit(
 
 
 def _edit_quest(ctx, quest_id, title, description, priority, auto_close=None):
-    """Edit a quest's fields."""
-    from lore.db import edit_quest, get_quest, get_missions_for_quest
-
+    """Edit a quest's fields — thin wrapper over update_quest_full."""
+    from lore.api import update_quest_full
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    result = edit_quest(
-        project_root,
-        quest_id,
-        title=title,
-        description=description,
-        priority=priority,
-        auto_close=auto_close,
-    )
-
-    if not result["ok"]:
+    try:
+        envelope = update_quest_full(
+            project_root,
+            quest_id,
+            title=title,
+            description=description,
+            priority=priority,
+            auto_close=auto_close,
+        )
+    except ValueError as exc:
+        msg = str(exc)
         if json_mode:
-            err_data = {"error": result["error"]}
-            if "deleted_at" in result:
-                err_data["deleted_at"] = result["deleted_at"]
-            click.echo(json.dumps(err_data), err=True)
+            click.echo(json.dumps({"error": msg}), err=True)
         else:
-            click.echo(result["error"], err=True)
+            click.echo(msg, err=True)
         ctx.exit(1)
         return
 
     if json_mode:
-        quest = get_quest(project_root, quest_id)
-        missions = get_missions_for_quest(project_root, quest_id)
-        data = {
-            "id": quest["id"],
-            "title": quest["title"],
-            "description": quest["description"],
-            "status": quest["status"],
-            "priority": quest["priority"],
-            "created_at": quest["created_at"],
-            "updated_at": quest["updated_at"],
-            "closed_at": quest["closed_at"],
-            "auto_close": bool(quest["auto_close"]),
-            "missions": [
-                {
-                    "id": m["id"],
-                    "title": m["title"],
-                    "status": m["status"],
-                    "priority": m["priority"],
-                    "mission_type": m["mission_type"],
-                    "knight": m["knight"],
-                }
-                for m in missions
-            ],
-        }
-        click.echo(json.dumps(data))
+        click.echo(json.dumps(envelope))
         return
 
     click.echo(f"Updated quest {quest_id}")
@@ -1676,62 +1700,33 @@ def _edit_quest(ctx, quest_id, title, description, priority, auto_close=None):
 def _edit_mission(
     ctx, mission_id, title, description, priority, knight, no_knight, mission_type=None
 ):
-    """Edit a mission's fields."""
-    from lore.db import (
-        edit_mission,
-        get_mission,
-        get_mission_depends_on,
-        get_mission_blocks,
-    )
-
+    """Edit a mission's fields — thin wrapper over update_mission_full."""
+    from lore.api import update_mission_full
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    result = edit_mission(
-        project_root,
-        mission_id,
-        title=title,
-        description=description,
-        priority=priority,
-        knight=knight,
-        remove_knight=no_knight,
-        mission_type=mission_type,
-    )
-
-    if not result["ok"]:
+    try:
+        envelope = update_mission_full(
+            project_root,
+            mission_id,
+            title=title,
+            description=description,
+            priority=priority,
+            knight=knight,
+            remove_knight=no_knight,
+            mission_type=mission_type,
+        )
+    except ValueError as exc:
+        msg = str(exc)
         if json_mode:
-            err_data = {"error": result["error"]}
-            if "deleted_at" in result:
-                err_data["deleted_at"] = result["deleted_at"]
-            click.echo(json.dumps(err_data), err=True)
+            click.echo(json.dumps({"error": msg}), err=True)
         else:
-            click.echo(result["error"], err=True)
+            click.echo(msg, err=True)
         ctx.exit(1)
         return
 
     if json_mode:
-        mission = get_mission(project_root, mission_id)
-        depends_on = get_mission_depends_on(project_root, mission_id)
-        blocks = get_mission_blocks(project_root, mission_id)
-        data = {
-            "id": mission["id"],
-            "quest_id": mission["quest_id"],
-            "title": mission["title"],
-            "description": mission["description"],
-            "status": mission["status"],
-            "priority": mission["priority"],
-            "knight": mission["knight"],
-            "mission_type": mission["mission_type"],
-            "block_reason": mission["block_reason"],
-            "created_at": mission["created_at"],
-            "updated_at": mission["updated_at"],
-            "closed_at": mission["closed_at"],
-            "dependencies": {
-                "needs": depends_on,
-                "blocks": blocks,
-            },
-        }
-        click.echo(json.dumps(data))
+        click.echo(json.dumps(envelope))
         return
 
     click.echo(f"Updated mission {mission_id}")
@@ -1748,119 +1743,80 @@ def _edit_mission(
 @click.pass_context
 def delete(ctx, entity_id, cascade):
     """Delete a quest or mission."""
+    from lore.api import delete_entity, delete_quest as _delq, get_deleted_at
+    project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    if entity_id.startswith("q-") and "/" not in entity_id:
-        # Use loose validation for delete (allows lookup of any quest-like ID)
-        if validators.validate_quest_id_loose(entity_id) is not None:
-            msg = f'Invalid quest ID format: "{entity_id}"'
+    # Classify via route_entity (strict) first; on failure attempt loose
+    # quest-ID fallback (test fixtures use non-hex chars). Mission-shaped
+    # IDs that fail strict validation are format errors.
+    try:
+        table, _ = validators.route_entity(entity_id)
+    except ValueError:
+        if validators.validate_quest_id_loose(entity_id) is None:
+            table = "quests"
+        else:
+            _emit_format_error(ctx, entity_id)
+            return
+
+    # Snapshot pre-call deleted_at to distinguish idempotent re-delete
+    # (Section D: CLI's "already deleted" message derived from the deleted_at
+    # value — predates the call ⇒ already-deleted branch).
+    pre_deleted_at = get_deleted_at(project_root, entity_id)
+
+    try:
+        envelope = delete_entity(project_root, entity_id, cascade=cascade)
+    except ValueError as exc:
+        # If delete_entity raised because route_entity rejected the ID, try
+        # the loose-quest fallback (test fixtures with non-hex chars). If
+        # that also raises, surface the most specific error message — the
+        # underlying delete_quest "not found" trumps the routing "unrecognised"
+        # message because it pertains to the entity itself.
+        try:
+            envelope = _delq(project_root, entity_id, cascade=cascade)
+        except ValueError as inner_exc:
+            msg = str(inner_exc)
             if json_mode:
                 click.echo(json.dumps({"error": msg}), err=True)
             else:
                 click.echo(msg, err=True)
             ctx.exit(1)
             return
-        _delete_quest(ctx, entity_id, cascade)
-    elif "m-" in entity_id:
-        if not _validate_mission_id(entity_id, ctx):
+        except Exception:
+            msg = str(exc)
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
             return
-        _delete_mission(ctx, entity_id)
+
+    if json_mode:
+        click.echo(json.dumps(envelope))
+        return
+
+    # Text mode — idempotent re-delete: pre-existing deleted_at means
+    # the call was a no-op (amendment Section D — derive from timestamp).
+    if pre_deleted_at is not None:
+        if table == "quests":
+            click.echo(
+                f"Warning: Quest {entity_id} was already deleted on {envelope['deleted_at']}"
+            )
+        else:
+            click.echo(
+                f"Warning: Mission {entity_id} was already deleted on {envelope['deleted_at']}"
+            )
+        return
+
+    if table == "quests":
+        click.echo(f"Deleted quest {entity_id}")
+        cascade_ids = envelope.get("cascade") or []
+        if cascade and cascade_ids:
+            click.echo("Cascade deleted:")
+            for mid in cascade_ids:
+                click.echo(f"  {mid}")
     else:
-        msg = f'Invalid ID format: "{entity_id}"'
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
-
-
-def _delete_quest(ctx, quest_id, cascade):
-    """Soft-delete a quest."""
-    from lore.db import delete_quest
-
-    project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
-
-    result = delete_quest(project_root, quest_id, cascade=cascade)
-
-    if not result["ok"]:
-        if json_mode:
-            click.echo(json.dumps({"error": result["error"]}), err=True)
-        else:
-            click.echo(result["error"], err=True)
-        ctx.exit(1)
-        return
-
-    if result["already_deleted"]:
-        if json_mode:
-            click.echo(
-                json.dumps(
-                    {
-                        "id": quest_id,
-                        "deleted_at": result["deleted_at"],
-                        "warning": "Quest already deleted",
-                    }
-                )
-            )
-        else:
-            click.echo(
-                f"Warning: Quest {quest_id} was already deleted on {result['deleted_at']}"
-            )
-        return
-
-    if json_mode:
-        data = {"id": quest_id, "deleted_at": result["deleted_at"]}
-        if cascade:
-            data["cascade"] = result["cascade"]
-        click.echo(json.dumps(data))
-        return
-
-    click.echo(f"Deleted quest {quest_id}")
-    if cascade and result["cascade"]:
-        click.echo("Cascade deleted:")
-        for mid in result["cascade"]:
-            click.echo(f"  {mid}")
-
-
-def _delete_mission(ctx, mission_id):
-    """Soft-delete a mission."""
-    from lore.db import delete_mission
-
-    project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
-
-    result = delete_mission(project_root, mission_id)
-
-    if not result["ok"]:
-        if json_mode:
-            click.echo(json.dumps({"error": result["error"]}), err=True)
-        else:
-            click.echo(result["error"], err=True)
-        ctx.exit(1)
-        return
-
-    if result["already_deleted"]:
-        if json_mode:
-            click.echo(
-                json.dumps(
-                    {
-                        "id": mission_id,
-                        "deleted_at": result["deleted_at"],
-                        "warning": "Mission already deleted",
-                    }
-                )
-            )
-        else:
-            click.echo(
-                f"Warning: Mission {mission_id} was already deleted on {result['deleted_at']}"
-            )
-        return
-
-    if json_mode:
-        click.echo(json.dumps({"id": mission_id, "deleted_at": result["deleted_at"]}))
-        return
-
-    click.echo(f"Deleted mission {mission_id}")
+        click.echo(f"Deleted mission {entity_id}")
 
 
 @main.command("show")
@@ -1879,55 +1835,24 @@ def _delete_mission(ctx, mission_id):
 @click.pass_context
 def show(ctx, entity_id, no_knight, json_flag):
     """Show details of a quest or mission."""
-    json_mode = ctx.obj.get("json", False)
     if json_flag:
         ctx.obj["json"] = True
-        json_mode = True
-    if entity_id.startswith("q-") and "/" not in entity_id:
-        # Use loose validation to allow test IDs inserted directly into the DB.
-        # If loose validation fails, reject immediately with a format error.
-        # If loose passes but strict fails, we still proceed to DB lookup;
-        # the "not found" path handles missing quests gracefully.
-        loose_err = validators.validate_quest_id_loose(entity_id)
-        if loose_err:
-            msg = f'Invalid quest ID format: "{entity_id}"'
-            if json_mode:
-                click.echo(json.dumps({"error": msg}), err=True)
-            else:
-                click.echo(msg, err=True)
-            ctx.exit(1)
-            return
-        # For IDs that pass loose but not strict validation, only proceed if
-        # the quest actually exists in the DB; otherwise emit a format error.
-        if validators.validate_entity_id(entity_id) is not None:
-            from lore.db import get_quest as _gq
 
-            if _gq(ctx.obj["project_root"], entity_id) is None:
-                msg = f'Invalid quest ID format: "{entity_id}"'
-                if json_mode:
-                    click.echo(json.dumps({"error": msg}), err=True)
-                else:
-                    click.echo(msg, err=True)
-                ctx.exit(1)
-                return
+    project_root = ctx.obj["project_root"]
+    table = _classify_entity_id_with_db_fallback(project_root, entity_id)
+    if table is None:
+        _emit_format_error(ctx, entity_id)
+        return
+
+    if table == "quests":
         _show_quest(ctx, entity_id)
-    elif "m-" in entity_id:
-        if not _validate_mission_id(entity_id, ctx):
-            return
-        _show_mission(ctx, entity_id, no_knight)
     else:
-        msg = f'Invalid ID format: "{entity_id}"'
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
+        _show_mission(ctx, entity_id, no_knight)
 
 
 def _emit_not_found(ctx, entity_id, entity_type):
     """Emit a 'not found' error, annotating with deletion timestamp if soft-deleted."""
-    from lore.db import get_deleted_at
-
+    from lore.api import get_deleted_at
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
     deleted_at = get_deleted_at(project_root, entity_id)
@@ -1981,17 +1906,29 @@ def _dep_to_rich(dep, current_quest_id):
 
 def _show_mission(ctx, mission_id, no_knight):
     """Display mission detail with optional knight contents."""
-    from lore.db import (
-        get_mission,
-        get_mission_depends_on_details,
-        get_mission_blocks_details,
+    from lore.api import (
+        read_mission,
+        list_mission_depends_on,
+        list_mission_blocks,
         get_deleted_at,
-        get_board_messages,
+        list_board_messages,
+        get_mission_detail,
     )
 
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    mission = get_mission(project_root, mission_id)
+
+    if json_mode:
+        envelope = get_mission_detail(
+            project_root, mission_id, include_knight=not no_knight
+        )
+        if envelope is None:
+            _emit_not_found(ctx, mission_id, "mission")
+            return
+        click.echo(json.dumps(envelope))
+        return
+
+    mission = read_mission(project_root, mission_id)
 
     if mission is None:
         _emit_not_found(ctx, mission_id, "mission")
@@ -2004,59 +1941,11 @@ def _show_mission(ctx, mission_id, no_knight):
         if quest_del_at:
             quest_deleted = True
 
-    depends_on_details = get_mission_depends_on_details(project_root, mission_id)
-    blocks_details = get_mission_blocks_details(project_root, mission_id)
-    board_messages = get_board_messages(project_root, mission_id)
+    depends_on_details = list_mission_depends_on(project_root, mission_id)
+    blocks_details = list_mission_blocks(project_root, mission_id)
+    board_messages = list_board_messages(project_root, mission_id)
 
     quest_id = mission["quest_id"] or ""
-
-    if json_mode:
-        knight_contents = None
-        if mission["knight"] and not no_knight:
-            _knights_dir = paths.knights_dir(project_root)
-            knight_name = Path(mission["knight"]).stem
-            knight_path = knight_module.find_knight(_knights_dir, knight_name)
-            if knight_path is not None:
-                knight_contents = knight_path.read_text()
-
-        def _dep_to_json(dep):
-            deleted = dep.get("deleted_at") is not None
-            return {
-                "id": dep["id"],
-                "title": "[unknown]" if deleted else (dep.get("title") or "[unknown]"),
-                "status": None if deleted else dep.get("status"),
-            }
-
-        data = {
-            "id": mission["id"],
-            "quest_id": mission["quest_id"],
-            "title": mission["title"],
-            "description": mission["description"],
-            "status": mission["status"],
-            "priority": mission["priority"],
-            "mission_type": mission["mission_type"],
-            "knight": mission["knight"],
-            "knight_contents": knight_contents,
-            "block_reason": mission["block_reason"],
-            "created_at": mission["created_at"],
-            "updated_at": mission["updated_at"],
-            "closed_at": mission["closed_at"],
-            "dependencies": {
-                "needs": [_dep_to_json(d) for d in depends_on_details],
-                "blocks": [_dep_to_json(d) for d in blocks_details],
-            },
-            "board": [
-                {
-                    "id": m["id"],
-                    "sender": m["sender"],
-                    "message": m["message"],
-                    "created_at": m["created_at"],
-                }
-                for m in board_messages
-            ],
-        }
-        click.echo(json.dumps(data))
-        return
 
     quest_deleted_note = " (quest deleted)" if quest_deleted else ""
     click.echo(f"Mission: {mission['id']}{quest_deleted_note}")
@@ -2104,13 +1993,19 @@ def _show_mission(ctx, mission_id, no_knight):
 
     # Knight contents
     if mission["knight"] and not no_knight:
-        _knights_dir = paths.knights_dir(project_root)
         knight_name = Path(mission["knight"]).stem
-        knight_path = knight_module.find_knight(_knights_dir, knight_name)
-        if knight_path is not None:
+        try:
+            knight_record = knight_module.read_knight(project_root, knight_name)
+        except ValueError:
+            knight_record = None
+        if knight_record is not None:
             click.echo("")
             click.echo("--- Knight Contents ---")
-            click.echo(knight_path.read_text())
+            # Render frontmatter + body to preserve byte-identical output.
+            fm_lines = "\n".join(
+                f"{k}: {knight_record[k]}" for k in ("id", "title", "summary")
+            )
+            click.echo(f"---\n{fm_lines}\n---\n{knight_record['body']}", nl=False)
         else:
             click.echo("")
             click.echo(
@@ -2122,86 +2017,33 @@ def _show_quest(ctx, quest_id):
     """Display quest detail with missions."""
     json_mode = ctx.obj.get("json", False)
 
-    from lore.db import (
-        get_quest,
+    from lore.api import (
+        read_quest,
         get_missions_for_quest,
-        get_board_messages,
+        list_board_messages,
         get_all_dependencies_for_quest,
-        get_mission,
+        get_quest_detail,
     )
 
     project_root = ctx.obj["project_root"]
-    quest = get_quest(project_root, quest_id)
+
+    if json_mode:
+        envelope = get_quest_detail(project_root, quest_id)
+        if envelope is None:
+            _emit_not_found(ctx, quest_id, "quest")
+            return
+        click.echo(json.dumps(envelope))
+        return
+
+    quest = read_quest(project_root, quest_id)
 
     if quest is None:
         _emit_not_found(ctx, quest_id, "quest")
         return
 
     missions = get_missions_for_quest(project_root, quest_id)
-    board_messages = get_board_messages(project_root, quest_id)
+    board_messages = list_board_messages(project_root, quest_id)
     edges = get_all_dependencies_for_quest(project_root, quest_id)
-
-    if json_mode:
-        # Build per-mission dependency index
-        # edges: from_id needs to_id; to_id blocks from_id
-        mission_map = {m["id"]: m for m in missions}
-        needs_map = {}  # mission_id -> list of to_id (what it needs)
-        blocks_map = {}  # mission_id -> list of from_id (what it blocks)
-        for edge in edges:
-            needs_map.setdefault(edge["from_id"], []).append(edge["to_id"])
-            blocks_map.setdefault(edge["to_id"], []).append(edge["from_id"])
-
-        def _mission_ref(mid):
-            m = mission_map.get(mid)
-            if m is None:
-                m = get_mission(project_root, mid)
-            if m is None:
-                return {"id": mid, "title": "[unknown]", "status": None}
-            return {"id": mid, "title": m["title"], "status": m["status"]}
-
-        missions_json = []
-        for m in missions:
-            mid = m["id"]
-            needs_refs = [_mission_ref(tid) for tid in needs_map.get(mid, [])]
-            blocks_refs = [_mission_ref(fid) for fid in blocks_map.get(mid, [])]
-            missions_json.append(
-                {
-                    "id": mid,
-                    "title": m["title"],
-                    "status": m["status"],
-                    "priority": m["priority"],
-                    "mission_type": m["mission_type"],
-                    "knight": m["knight"],
-                    "dependencies": {
-                        "needs": needs_refs,
-                        "blocks": blocks_refs,
-                    },
-                }
-            )
-
-        data = {
-            "id": quest["id"],
-            "title": quest["title"],
-            "description": quest["description"],
-            "status": quest["status"],
-            "priority": quest["priority"],
-            "created_at": quest["created_at"],
-            "updated_at": quest["updated_at"],
-            "closed_at": quest["closed_at"],
-            "auto_close": bool(quest["auto_close"]),
-            "missions": missions_json,
-            "board": [
-                {
-                    "id": msg["id"],
-                    "sender": msg["sender"],
-                    "message": msg["message"],
-                    "created_at": msg["created_at"],
-                }
-                for msg in board_messages
-            ],
-        }
-        click.echo(json.dumps(data))
-        return
 
     click.echo(f"Quest: {quest['id']}")
     click.echo(f"Title: {quest['title']}")
@@ -2289,14 +2131,13 @@ def codex(ctx):
 @click.argument("extra_filters", nargs=-1)
 @click.pass_context
 def codex_list(ctx, json_flag, filter_groups, extra_filters):
-    from lore.codex import scan_codex
-
+    from lore.api import list_codex
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
     codex_dir = paths.codex_dir(project_root)
 
     combined_filters = list(filter_groups) + list(extra_filters)
-    documents = scan_codex(codex_dir, filter_groups=combined_filters if combined_filters else None)
+    documents = list_codex(project_root, filter_groups=combined_filters if combined_filters else None)
 
     if json_mode:
         data = {
@@ -2330,13 +2171,11 @@ def codex_list(ctx, json_flag, filter_groups, extra_filters):
 @click.pass_context
 def codex_search(ctx, keyword):
     """Search codex documents by keyword."""
-    from lore.codex import search_documents
-
+    from lore.api import search_documents
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    codex_dir = paths.codex_dir(project_root)
 
-    documents = search_documents(codex_dir, keyword)
+    documents = search_documents(project_root, keyword)
 
     if json_mode:
         data = {
@@ -2369,22 +2208,16 @@ def codex_search(ctx, keyword):
         )
 
 
-def _collect_codex_glossary(project_root, bodies, *, enabled):
-    """Match the glossary against ``bodies``, fail-soft on read/parse errors.
-
-    Returns ``(items, warning)``. ``warning`` is None on success or when
-    ``enabled`` is False; otherwise a stderr-bound ``glossary unavailable: …``
-    string. The auto-surface is best-effort (NFR-Reliability) — a malformed
-    or unreadable glossary must never prevent codex output.
-    """
-    if not enabled:
-        return [], None
-    from lore import glossary as _glossary
-
-    try:
-        return _glossary.match_glossary(bodies, root=project_root), None
-    except (_glossary.GlossaryError, OSError) as exc:
-        return [], f"glossary unavailable: {exc}"
+def _render_glossary_block(items) -> str:
+    """Render ``## Glossary`` block. Empty list → empty string."""
+    if not items:
+        return ""
+    ordered = sorted(items, key=lambda i: i.keyword.casefold())
+    paragraphs = [
+        f"**{i.keyword}** — {' '.join(i.definition.split())}"
+        for i in ordered
+    ]
+    return "\n## Glossary\n\n" + "\n\n".join(paragraphs) + "\n"
 
 
 @codex.command("show")
@@ -2400,18 +2233,34 @@ def _collect_codex_glossary(project_root, bodies, *, enabled):
 @click.pass_context
 def codex_show(ctx, ids, skip_glossary):
     """Show full content of one or more codex documents."""
-    from lore.codex import read_document
-    from lore import glossary as _glossary
-    from lore.config import load_config
-
+    from lore.api import _glossary as _glossary
+    from lore.api import read_documents_with_glossary
+    from lore.api import load_config
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    codex_dir = paths.codex_dir(project_root)
 
-    results = []
-    for doc_id in dict.fromkeys(ids):
-        doc = read_document(codex_dir, doc_id)
-        if doc is None:
+    config = load_config(project_root)
+    auto_surface = config.show_glossary_on_codex_commands and not skip_glossary
+
+    unique_ids = list(dict.fromkeys(ids))
+    glossary_warning: str | None = None
+    try:
+        envelope = read_documents_with_glossary(
+            project_root, unique_ids, skip_glossary=not auto_surface,
+        )
+    except (_glossary.GlossaryError, OSError) as exc:
+        # Fail-soft: glossary problems must never block doc display
+        # (NFR-Reliability). Re-read documents without glossary surface
+        # and carry a stderr warning.
+        envelope = read_documents_with_glossary(
+            project_root, unique_ids, skip_glossary=True,
+        )
+        glossary_warning = f"glossary unavailable: {exc}"
+
+    # Short-circuit on first missing doc — preserves legacy exit/stderr.
+    for doc in envelope["documents"]:
+        if doc.get("not_found"):
+            doc_id = doc["id"]
             if json_mode:
                 click.echo(
                     json.dumps({"error": f'Document "{doc_id}" not found'}), err=True
@@ -2421,13 +2270,9 @@ def codex_show(ctx, ids, skip_glossary):
             click.echo(f'Document "{doc_id}" not found', err=True)
             ctx.exit(1)
             return
-        results.append(doc)
 
-    config = load_config(project_root)
-    auto_surface = config.show_glossary_on_codex_commands and not skip_glossary
-    glossary_items, glossary_warning = _collect_codex_glossary(
-        project_root, [d["body"] for d in results], enabled=auto_surface
-    )
+    results = envelope["documents"]
+    glossary_items = envelope["glossary"]
 
     if json_mode:
         click.echo(
@@ -2442,7 +2287,7 @@ def codex_show(ctx, ids, skip_glossary):
         for doc in results:
             click.echo(f"=== {doc['id']} ===")
             click.echo(doc["body"])
-        block = _glossary._render_glossary_block(glossary_items)
+        block = _render_glossary_block(glossary_items)
         if block:
             click.echo(block, nl=False)
 
@@ -2454,20 +2299,27 @@ def _resolve_codex_map_depths(
     depth: int | None,
     depth_out: int | None,
     depth_in: int | None,
-) -> tuple[int, int]:
-    """Resolve effective (depth_out, depth_in) from the three CLI flags.
+) -> tuple[int | None, int | None, int | None]:
+    """Resolve pass-through (depth, depth_out, depth_in) for ``map_documents``.
 
     Rules:
-      - --depth sets both directions symmetrically.
-      - When only one of --depth-in/--depth-out is given, the other defaults to 0.
-      - When none of the three are given, both default to 1.
-    Caller must reject the conflict (depth + directional) before calling.
+      - --depth alone → pass ``depth=N``; both directional flags None.
+      - One of --depth-in/--depth-out → the other defaults to 0 (CLI rule —
+        directional flag flips off the implicit-1 in that direction).
+      - When none of the three are given → all three None; ``map_documents``
+        falls back to its 1/1 defaults.
+      - --depth + any directional → pass-through unchanged so the
+        ``ConflictingDepthFlags`` raise fires inside ``map_documents``.
     """
+    if depth is not None and (depth_in is not None or depth_out is not None):
+        return depth, depth_out, depth_in
     if depth is not None:
-        return depth, depth
-    eff_out = depth_out if depth_out is not None else (0 if depth_in is not None else 1)
-    eff_in = depth_in if depth_in is not None else (0 if depth_out is not None else 1)
-    return eff_out, eff_in
+        return depth, None, None
+    if depth_in is None and depth_out is None:
+        return None, None, None
+    eff_out = depth_out if depth_out is not None else 0
+    eff_in = depth_in if depth_in is not None else 0
+    return None, eff_out, eff_in
 
 
 def _render_codex_map_default(documents: list[dict], *, json_mode: bool) -> None:
@@ -2528,8 +2380,20 @@ def _render_codex_map_full(documents: list[dict], *, json_mode: bool) -> None:
 def codex_map(ctx, doc_id, depth, depth_out, depth_in, full):
     """Map a codex document cluster via BFS traversal of 'related' links."""
     json_mode = ctx.obj.get("json", False)
-    # FR-10: conflict-flag check BEFORE any I/O.
-    if depth is not None and (depth_in is not None or depth_out is not None):
+
+    from lore.api import ConflictingDepthFlags, map_documents
+    eff_depth, eff_out, eff_in = _resolve_codex_map_depths(
+        depth, depth_out, depth_in,
+    )
+
+    project_root = ctx.obj["project_root"]
+
+    try:
+        documents = map_documents(
+            project_root, doc_id,
+            depth=eff_depth, depth_out=eff_out, depth_in=eff_in, full=full,
+        )
+    except ConflictingDepthFlags:
         msg = (
             "--depth cannot be combined with --depth-in or --depth-out. "
             "Use --depth for symmetric traversal, or --depth-in and/or "
@@ -2540,17 +2404,6 @@ def codex_map(ctx, doc_id, depth, depth_out, depth_in, full):
             ctx.exit(2)
             return
         raise click.UsageError(msg)
-
-    eff_out, eff_in = _resolve_codex_map_depths(depth, depth_out, depth_in)
-
-    from lore.codex import map_documents
-
-    project_root = ctx.obj["project_root"]
-    codex_dir = paths.codex_dir(project_root)
-
-    documents = map_documents(
-        codex_dir, doc_id, depth_out=eff_out, depth_in=eff_in, full=full,
-    )
 
     if documents is None:
         if json_mode:
@@ -2587,8 +2440,7 @@ def codex_map(ctx, doc_id, depth, depth_out, depth_in, full):
 @click.pass_context
 def codex_chaos(ctx, doc_id, threshold, json_flag):
     """Random-walk traversal of connected codex documents from a seed ID."""
-    from lore.codex import chaos_documents
-
+    from lore.api import chaos_documents
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
 
@@ -2626,9 +2478,241 @@ def codex_chaos(ctx, doc_id, threshold, json_flag):
 
 
 # ---------------------------------------------------------------------------
+# Codex CRUD subcommands — new / edit / delete (codex-CRUD spec §B).
+# ---------------------------------------------------------------------------
+
+
+@codex.command(
+    "new",
+    context_settings={"ignore_unknown_options": True},
+    help=_new_doc(
+        "Create a new codex document.",
+        resource="codex doc",
+        root=".lore/codex/",
+        example="lore codex new my-doc --group decisions -f my-doc.md",
+    ),
+)
+@click.argument("name")
+@click.option(
+    "--from", "-f", "from_file", default=None, help="Source file for doc content."
+)
+@click.option(
+    "--group",
+    default=None,
+    help=_group_opt_help(".lore/codex/", "decisions"),
+)
+@click.option(
+    "--type",
+    "doc_type",
+    type=click.Choice(["codex", "codex-source"]),
+    default=None,
+    help="Override path-derived doc_type (codex / codex-source).",
+)
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def codex_new(ctx, name, from_file, group, doc_type, json_flag):
+    from lore.api import create_document
+
+    if not _validate_name(name, ctx):
+        return
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+
+    if from_file is not None and from_file != "-":
+        source = Path(from_file)
+        if not source.exists():
+            msg = f"File not found: {from_file}"
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+        content = source.read_text()
+    else:
+        content = click.get_text_stream("stdin").read()
+        if not content.strip():
+            msg = "No content provided on stdin."
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+
+    try:
+        result = create_document(
+            project_root, name, content, group=group, doc_type=doc_type
+        )
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+        return
+
+    suffix = f" (group: {group})" if group else ""
+    click.echo(f"Created codex doc {name}{suffix}")
+
+
+@codex.command("edit")
+@click.argument("name")
+@click.option(
+    "--from", "-f", "from_file", default=None, help="Source file for doc content."
+)
+@click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
+@click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
+@click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
+@click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
+@click.pass_context
+def codex_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+    """Edit an existing codex doc.
+
+    Field-edit mode (mutually exclusive with -f / --from):
+      --set    KEY=VALUE   set a frontmatter field
+      --unset  KEY         remove a frontmatter field
+      --add    KEY=VALUE   append to a list-typed field
+      --remove KEY=VALUE   remove a value from a list-typed field
+    """
+    from lore.api import update_document
+
+    if not _validate_name(name, ctx):
+        return
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+
+    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+        return
+
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if field_mode:
+        result = _dispatch_field_edit(
+            ctx, "codex", name, set_kvs, unset_keys, add_kvs, remove_kvs
+        )
+        if result is None:
+            return
+        if json_mode:
+            click.echo(json.dumps(result))
+            return
+        click.echo(f"Updated codex doc {name}")
+        return
+
+    if from_file is not None and from_file != "-":
+        source = Path(from_file)
+        if not source.exists():
+            msg = f"File not found: {from_file}"
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+        content = source.read_text()
+    else:
+        content = click.get_text_stream("stdin").read()
+        if not content.strip():
+            msg = "No content provided on stdin."
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+
+    try:
+        result = update_document(project_root, name, content)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+        return
+    click.echo(f"Updated codex doc {name}")
+
+
+@codex.command("delete")
+@click.argument("name")
+@click.pass_context
+def codex_delete(ctx, name):
+    """Delete a codex doc.
+
+    Seeded docs (e.g. ``codex`` — the .lore/codex/codex.md root index)
+    cannot be deleted. Edit them instead.
+    """
+    from lore.api import delete_document
+
+    if not _validate_name(name, ctx):
+        return
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+
+    try:
+        result = delete_document(project_root, name)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+        return
+    click.echo(f"Deleted codex doc {name}")
+
+
+# ---------------------------------------------------------------------------
 # `lore impacts` — codex<->code binding surfacing (US-003 + US-004).
 # Top-level command, sibling to `lore codex` / `lore artifact`.
 # ---------------------------------------------------------------------------
+
+
+def _render_impacts_json(result) -> str:
+    """Render *result* as the ``{"impacts": [...]}`` JSON envelope."""
+    if result.kind == "codex":
+        items: list[dict] = [
+            {"path": b.path, "kind": b.kind}
+            for b in result.codex_items
+        ]
+    else:
+        items = []
+        for b in result.code_items:
+            row: dict = {"id": b.id, "match": b.match}
+            if b.match == "glob":
+                row["pattern"] = b.pattern
+            items.append(row)
+    return json.dumps({"impacts": items})
+
+
+def _render_impacts_default(result) -> str:
+    """Render *result* as one binding per line.
+
+    Codex seed: bare path. Code seed: bare id for exact, ``id  (glob: pattern)``
+    for glob.
+    """
+    if result.kind == "codex":
+        return "".join(f"{b.path}\n" for b in result.codex_items)
+    lines: list[str] = []
+    for b in result.code_items:
+        if b.match == "exact":
+            lines.append(f"{b.id}\n")
+        else:
+            lines.append(f"{b.id}  (glob: {b.pattern})\n")
+    return "".join(lines)
 
 
 @main.command("impacts")
@@ -2653,7 +2737,7 @@ def impacts_cmd(ctx, token, direct_links, json_flag):
     TOKEN is a codex ID or a repo-relative/absolute file path. Containing
     '/' or '.' classifies it as a path; otherwise as a codex ID.
     """
-    from lore import impacts as _impacts
+    from lore.api import _impacts as _impacts
 
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
@@ -2671,17 +2755,16 @@ def impacts_cmd(ctx, token, direct_links, json_flag):
         return
 
     if json_mode:
-        click.echo(_impacts._render_impacts_json(result))
+        click.echo(_render_impacts_json(result))
         return
 
     # `_render_impacts_default` already includes a trailing newline per binding
     # (and empty string for no bindings), so suppress click's own newline.
-    click.echo(_impacts._render_impacts_default(result), nl=False)
+    click.echo(_render_impacts_default(result), nl=False)
 
 
 # ---------------------------------------------------------------------------
 # Glossary command group (glossary-us-002).
-# Workflow: conceptual-workflows-glossary
 #
 # CLI handlers stay thin — IO + matching live in `lore.glossary`, the data
 # shape lives in `lore.models.GlossaryItem`. This file only formats output
@@ -2775,8 +2858,7 @@ def _emit_no_glossary(ctx) -> None:
 
 def _load_glossary_or_fail(ctx):
     """Scan the glossary; on `GlossaryError` emit the standard error and exit 1."""
-    from lore.glossary import GlossaryError, scan_glossary
-
+    from lore.api import GlossaryError, scan_glossary
     try:
         return scan_glossary(ctx.obj["project_root"])
     except GlossaryError as e:
@@ -2800,8 +2882,10 @@ def glossary(ctx):
     Use 'lore glossary list' to browse all keywords (or just 'lore glossary'),
     'lore glossary search <query>' to find entries by substring across keyword,
     aliases, do_not_use and definition, and 'lore glossary show <keyword>' to
-    read full definitions. The CLI is read-only — maintainers edit the YAML
-    file directly. See: lore codex show conceptual-workflows-glossary.
+    read full definitions. Use 'lore glossary new' / 'edit' / 'delete' to
+    maintain entries — run 'lore artifact show glossary-design' first to
+    confirm the entry belongs in the glossary. See the Glossary section of
+    .lore/codex/codex.md.
     """
     if ctx.invoked_subcommand is None:
         ctx.invoke(glossary_list)
@@ -2836,8 +2920,7 @@ def glossary_search(ctx, query):
     'No glossary entries matching "<query>".' (or {"glossary": []} in --json
     mode) and exits 0. Missing glossary file behaves the same as `list`.
     """
-    from lore.glossary import search_glossary
-
+    from lore.api import search_glossary
     items = _load_glossary_or_fail(ctx)
     if items is None:
         return
@@ -2878,8 +2961,7 @@ def glossary_show(ctx, keywords):
     space-separated args (ADR-012); output is alphabetised regardless of input
     order. Fails fast with no partial stdout if any keyword is missing.
     """
-    from lore.glossary import GlossaryError, read_glossary_item
-
+    from lore.api import GlossaryError, read_glossary_item
     project_root = ctx.obj["project_root"]
 
     resolved = []
@@ -2903,10 +2985,128 @@ def glossary_show(ctx, keywords):
     click.echo("\n\n".join(_render_glossary_show_block(item) for item in resolved))
 
 
+@glossary.command("new")
+@click.argument("keyword")
+@click.option("--definition", "-d", required=True, help="Definition body.")
+@click.option(
+    "--alias", "aliases", multiple=True,
+    help="Repeatable. Auto-surface alias for this keyword.",
+)
+@click.option(
+    "--do-not-use", "do_not_use", multiple=True,
+    help="Repeatable. Deprecated surface form for this keyword.",
+)
+@click.pass_context
+def glossary_new(ctx, keyword, definition, aliases, do_not_use):
+    """Create a new glossary entry — run 'lore artifact show glossary-design' first."""
+    from lore.api import create_glossary_item
+    project_root = ctx.obj["project_root"]
+    try:
+        envelope = create_glossary_item(
+            project_root,
+            keyword,
+            definition,
+            aliases=list(aliases) if aliases else None,
+            do_not_use=list(do_not_use) if do_not_use else None,
+        )
+    except ValueError as e:
+        _emit_glossary_error(ctx, str(e))
+        return
+
+    if ctx.obj.get("json", False):
+        click.echo(json.dumps(envelope))
+    else:
+        click.echo(f'Created glossary item "{envelope["keyword"]}".')
+
+
+@glossary.command("edit")
+@click.argument("keyword")
+@click.option("--definition", "-d", default=None, help="Replace definition.")
+@click.option(
+    "--alias", "aliases", multiple=True,
+    help="Repeatable. Replace alias list with these values.",
+)
+@click.option(
+    "--no-aliases", is_flag=True, default=False,
+    help="Clear the aliases list entirely.",
+)
+@click.option(
+    "--do-not-use", "do_not_use", multiple=True,
+    help="Repeatable. Replace do_not_use list with these values.",
+)
+@click.option(
+    "--no-do-not-use", is_flag=True, default=False,
+    help="Clear the do_not_use list entirely.",
+)
+@click.pass_context
+def glossary_edit(ctx, keyword, definition, aliases, no_aliases, do_not_use, no_do_not_use):
+    """Edit a glossary entry. Keyword is the identity — to rename, delete + new."""
+    if aliases and no_aliases:
+        _emit_glossary_error(ctx, "cannot combine --alias and --no-aliases.")
+        return
+    if do_not_use and no_do_not_use:
+        _emit_glossary_error(ctx, "cannot combine --do-not-use and --no-do-not-use.")
+        return
+
+    aliases_arg: list[str] | None
+    if no_aliases:
+        aliases_arg = []
+    elif aliases:
+        aliases_arg = list(aliases)
+    else:
+        aliases_arg = None
+
+    dnu_arg: list[str] | None
+    if no_do_not_use:
+        dnu_arg = []
+    elif do_not_use:
+        dnu_arg = list(do_not_use)
+    else:
+        dnu_arg = None
+
+    from lore.api import update_glossary_item
+    project_root = ctx.obj["project_root"]
+    try:
+        envelope = update_glossary_item(
+            project_root,
+            keyword,
+            definition=definition,
+            aliases=aliases_arg,
+            do_not_use=dnu_arg,
+        )
+    except ValueError as e:
+        _emit_glossary_error(ctx, str(e))
+        return
+
+    if ctx.obj.get("json", False):
+        click.echo(json.dumps(envelope))
+    else:
+        click.echo(f'Updated glossary item "{envelope["keyword"]}".')
+
+
+@glossary.command("delete")
+@click.argument("keyword")
+@click.pass_context
+def glossary_delete(ctx, keyword):
+    """Hard-delete a glossary entry. Idempotent — missing keyword is not an error."""
+    from lore.api import delete_glossary_item
+    project_root = ctx.obj["project_root"]
+    try:
+        envelope = delete_glossary_item(project_root, keyword)
+    except ValueError as e:
+        _emit_glossary_error(ctx, str(e))
+        return
+
+    if ctx.obj.get("json", False):
+        click.echo(json.dumps(envelope))
+    else:
+        click.echo(f'Deleted glossary item "{envelope["keyword"]}".')
+
+
 @main.group()
 @click.pass_context
 def artifact(ctx):
-    """Access project artifacts — reusable template files stored in .lore/artifacts/ and accessed by stable ID. Use 'lore artifact list' to see available templates and 'lore artifact show <id>' to retrieve content. Always use these commands rather than reading .lore/artifacts/ files directly. Artifacts are read-only via the CLI; maintainers create and update them on disk."""
+    """Access project artifacts — reusable template files stored in .lore/artifacts/ and accessed by stable ID. Use 'lore artifact list' to see available templates and 'lore artifact show <id>' to retrieve content. Always use these commands rather than reading .lore/artifacts/ files directly. Use 'lore artifact new' / 'edit' / 'delete' to maintain entries."""
     pass
 
 
@@ -2916,18 +3116,18 @@ def artifact(ctx):
 )
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
+@click.argument("extra_filters", nargs=-1)
 @click.pass_context
-def artifact_list(ctx, json_flag, filter_groups):
-    from lore.artifact import scan_artifacts
-
+def artifact_list(ctx, json_flag, filter_groups, extra_filters):
+    from lore.api import list_artifacts
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    artifacts_dir = paths.artifacts_dir(project_root)
 
-    if any(not token.strip("/") for token in filter_groups):
+    combined_filters = list(filter_groups) + list(extra_filters)
+    if any(not token.strip("/") for token in combined_filters):
         raise click.ClickException("empty filter token")
 
-    artifacts = scan_artifacts(artifacts_dir, filter_groups=list(filter_groups) if filter_groups else None)
+    artifacts = list_artifacts(project_root, filter_groups=combined_filters if combined_filters else None)
 
     if json_mode:
         data = {
@@ -2958,15 +3158,13 @@ def artifact_list(ctx, json_flag, filter_groups):
 @click.pass_context
 def artifact_show(ctx, ids):
     """Show full content of one or more artifacts."""
-    from lore.artifact import read_artifact
-
+    from lore.api import read_artifact
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    artifacts_dir = paths.artifacts_dir(project_root)
 
     results = []
     for artifact_id in dict.fromkeys(ids):
-        art = read_artifact(artifacts_dir, artifact_id)
+        art = read_artifact(project_root, artifact_id)
         if art is None:
             if json_mode:
                 click.echo(
@@ -2981,7 +3179,12 @@ def artifact_show(ctx, ids):
         results.append(art)
 
     if json_mode:
-        click.echo(json.dumps({"artifacts": results}))
+        # Single-id calls return the record dict directly so callers can
+        # read filename/group keys at the top level (G16 amendment Section D).
+        if len(results) == 1:
+            click.echo(json.dumps(results[0]))
+        else:
+            click.echo(json.dumps({"artifacts": results}))
         return
 
     for art in results:
@@ -3015,7 +3218,6 @@ def artifact_new(ctx, name, from_file, group, json_flag):
         return
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    artifacts_dir = paths.artifacts_dir(project_root)
 
     if from_file is not None and from_file != "-":
         source = Path(from_file)
@@ -3039,21 +3241,10 @@ def artifact_new(ctx, name, from_file, group, json_flag):
             ctx.exit(1)
             return
 
-    # Frontmatter schema validation (delegates to lore.schemas)
-    from lore.artifact import _validate_frontmatter as _a_validate_frontmatter
-    _aparts = content.split("---", 2)
-    _ameta: dict = {}
-    if len(_aparts) >= 3:
-        try:
-            _aloaded = yaml.safe_load(_aparts[1])
-            if isinstance(_aloaded, dict):
-                _ameta = _aloaded
-        except yaml.YAMLError:
-            _ameta = {}
     try:
-        _a_validate_frontmatter(_ameta)
-    except click.ClickException as e:
-        msg = e.message
+        result = create_artifact(project_root, name, content, group=group)
+    except ValueError as e:
+        msg = str(e)
         if json_mode:
             click.echo(json.dumps({"error": msg}), err=True)
         else:
@@ -3061,27 +3252,120 @@ def artifact_new(ctx, name, from_file, group, json_flag):
         ctx.exit(1)
         return
 
-    try:
-        result = create_artifact(artifacts_dir, name, content, group=group)
-    except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(f"Error: {msg}", err=True)
-        ctx.exit(1)
-        return
-
     if json_mode:
-        try:
-            result["path"] = str(Path(result["path"]).relative_to(project_root))
-        except ValueError:
-            pass
         click.echo(json.dumps(result))
         return
 
     suffix = f" (group: {group})" if group else ""
     click.echo(f"Created artifact {name}{suffix}")
+
+
+@artifact.command("edit")
+@click.argument("name")
+@click.option(
+    "--from", "-f", "from_file", default=None, help="Source file for artifact content."
+)
+@click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
+@click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
+@click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
+@click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
+@click.pass_context
+def artifact_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+    """Edit an existing artifact.
+
+    Field-edit mode (mutually exclusive with -f / --from):
+      --set    KEY=VALUE   set a frontmatter field
+      --unset  KEY         remove a frontmatter field
+      --add    KEY=VALUE   append to a list-typed field
+      --remove KEY=VALUE   remove a value from a list-typed field
+    """
+    from lore.api import update_artifact
+    if not _validate_name(name, ctx):
+        return
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+
+    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+        return
+
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if field_mode:
+        result = _dispatch_field_edit(
+            ctx, "artifact", name, set_kvs, unset_keys, add_kvs, remove_kvs
+        )
+        if result is None:
+            return
+        if json_mode:
+            click.echo(json.dumps(result))
+            return
+        click.echo(f"Updated artifact {name}")
+        return
+
+    if from_file is not None and from_file != "-":
+        source = Path(from_file)
+        if not source.exists():
+            msg = f"File not found: {from_file}"
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+        content = source.read_text()
+    else:
+        content = click.get_text_stream("stdin").read()
+        if not content.strip():
+            msg = "No content provided on stdin."
+            if json_mode:
+                click.echo(json.dumps({"error": msg}), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+            return
+
+    try:
+        result = update_artifact(project_root, name, content)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+        return
+    click.echo(f"Updated artifact {name}")
+
+
+@artifact.command("delete")
+@click.argument("name")
+@click.pass_context
+def artifact_delete(ctx, name):
+    """Delete an artifact."""
+    from lore.api import delete_artifact
+    if not _validate_name(name, ctx):
+        return
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+
+    try:
+        result = delete_artifact(project_root, name)
+    except ValueError as e:
+        msg = str(e)
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+        return
+    click.echo(f"Deleted artifact {name}")
 
 
 @main.group()
@@ -3098,23 +3382,23 @@ def board(ctx):
 @click.pass_context
 def board_add(ctx, entity_id, message, sender):
     """Post a message to a quest or mission board."""
-    from lore.db import add_board_message
-
+    from lore.api import add_board_message
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    result = add_board_message(project_root, entity_id, message, sender)
-
-    if not result.get("ok", False):
-        error = result.get("error", "Unknown error")
+    try:
+        result = add_board_message(project_root, entity_id, message, sender)
+    except ValueError as exc:
+        msg = str(exc)
         if json_mode:
-            click.echo(json.dumps({"error": error}), err=True)
+            click.echo(json.dumps({"error": msg}), err=True)
         else:
-            click.echo(error, err=True)
+            click.echo(msg, err=True)
         ctx.exit(1)
         return
 
     if json_mode:
+        # Envelope DROPS the `ok` wrapper (amendment Review Ledger CHANGED row).
         click.echo(
             json.dumps(
                 {
@@ -3131,23 +3415,23 @@ def board_add(ctx, entity_id, message, sender):
 
 
 @board.command("delete")
+@click.argument("entity_id")
 @click.argument("message_id", type=int)
 @click.pass_context
-def board_delete(ctx, message_id):
-    """Delete a board message by its integer ID."""
-    from lore.db import delete_board_message
-
+def board_delete(ctx, entity_id, message_id):
+    """Delete a board message by its integer ID, scoped to ENTITY_ID."""
+    from lore.api import delete_board_message
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    result = delete_board_message(project_root, message_id)
-
-    if not result.get("ok", False):
-        error = result.get("error", "Unknown error")
+    try:
+        result = delete_board_message(project_root, entity_id, message_id)
+    except ValueError as exc:
+        msg = str(exc)
         if json_mode:
-            click.echo(json.dumps({"error": error}), err=True)
+            click.echo(json.dumps({"error": msg}), err=True)
         else:
-            click.echo(error, err=True)
+            click.echo(msg, err=True)
         ctx.exit(1)
         return
 
@@ -3176,16 +3460,17 @@ def watcher(ctx):
 )
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
+@click.argument("extra_filters", nargs=-1)
 @click.pass_context
-def watcher_list(ctx, json_mode, filter_groups):
-    from lore import watcher as watcher_module
+def watcher_list(ctx, json_mode, filter_groups, extra_filters):
+    from lore.api import _watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
     # Honour both the local --json flag and the global --json flag
     json_mode = json_mode or ctx.obj.get("json", False)
-    w_dir = paths.watchers_dir(project_root)
 
-    watchers = watcher_module.list_watchers(w_dir, filter_groups=list(filter_groups) if filter_groups else None)
+    combined_filters = list(filter_groups) + list(extra_filters)
+    watchers = watcher_module.list_watchers(project_root, filter_groups=combined_filters if combined_filters else None)
 
     if json_mode:
         watchers_json = [
@@ -3210,33 +3495,34 @@ def watcher_list(ctx, json_mode, filter_groups):
 @click.pass_context
 def watcher_show(ctx, name, json_mode):
     """Show the full definition of a watcher."""
-    from lore import watcher as watcher_module
+    from lore.api import _watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
     json_mode = json_mode or ctx.obj.get("json", False)
-    w_dir = paths.watchers_dir(project_root)
 
     try:
-        filepath = watcher_module.find_watcher(w_dir, name)
+        data = watcher_module.read_watcher(project_root, name)
     except ValueError as exc:
         if json_mode:
             click.echo(json.dumps({"error": str(exc)}), err=True)
         else:
             click.echo(str(exc), err=True)
         ctx.exit(1)
+        return
 
-    if filepath is None:
+    if data is None:
         msg = f'Watcher "{name}" not found.'
         if json_mode:
             click.echo(json.dumps({"error": msg}), err=True)
         else:
             click.echo(msg, err=True)
         ctx.exit(1)
+        return
 
     if json_mode:
-        data = watcher_module.load_watcher(filepath)
         click.echo(json.dumps(data))
     else:
+        filepath = watcher_module._find_watcher(project_root, name)
         click.echo(filepath.read_text(), nl=False)
 
 
@@ -3259,11 +3545,10 @@ def watcher_show(ctx, name, json_mode):
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
 def watcher_new(ctx, name, from_file, group, json_mode):
-    from lore import watcher as watcher_module
+    from lore.api import _watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
     json_mode = json_mode or ctx.obj.get("json", False)
-    w_dir = paths.watchers_dir(project_root)
 
     # Read content
     if from_file is not None:
@@ -3294,23 +3579,19 @@ def watcher_new(ctx, name, from_file, group, json_mode):
         return
     try:
         watcher_module._validate_yaml(_wdata)
-    except click.ClickException as exc:
-        click.echo(exc.message, err=True)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
         ctx.exit(1)
         return
 
     try:
-        result = watcher_module.create_watcher(w_dir, name, content, group=group)
+        result = watcher_module.create_watcher(project_root, name, content, group=group)
     except ValueError as exc:
         click.echo(str(exc), err=True)
         ctx.exit(1)
         return
 
     if json_mode:
-        try:
-            result["path"] = str(Path(result["path"]).relative_to(project_root))
-        except (ValueError, KeyError):
-            pass
         click.echo(json.dumps(result))
     else:
         suffix = f" (group: {group})" if group else ""
@@ -3319,16 +3600,42 @@ def watcher_new(ctx, name, from_file, group, json_mode):
 
 @watcher.command("edit")
 @click.argument("name")
-@click.option("--from", "from_file", default=None, help="Read content from file instead of stdin.")
+@click.option("--from", "-f", "from_file", default=None, help="Read content from file instead of stdin.")
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
+@click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
+@click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
+@click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
+@click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
 @click.pass_context
-def watcher_edit(ctx, name, from_file, json_mode):
-    """Update an existing watcher definition in place."""
-    from lore import watcher as watcher_module
+def watcher_edit(ctx, name, from_file, json_mode, set_kvs, unset_keys, add_kvs, remove_kvs):
+    """Update an existing watcher definition in place.
+
+    Field-edit mode (mutually exclusive with -f / --from):
+      --set    KEY=VALUE   set a frontmatter field
+      --unset  KEY         remove a frontmatter field
+      --add    KEY=VALUE   append to a list-typed field
+      --remove KEY=VALUE   remove a value from a list-typed field
+    """
+    from lore.api import _watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
     json_mode = json_mode or ctx.obj.get("json", False)
-    w_dir = paths.watchers_dir(project_root)
+
+    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+        return
+
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if field_mode:
+        result = _dispatch_field_edit(
+            ctx, "watcher", name, set_kvs, unset_keys, add_kvs, remove_kvs
+        )
+        if result is None:
+            return
+        if json_mode:
+            click.echo(json.dumps(result))
+            return
+        click.echo(f"Updated watcher {name}")
+        return
 
     # Read content
     if from_file is not None:
@@ -3347,7 +3654,7 @@ def watcher_edit(ctx, name, from_file, json_mode):
         return
 
     try:
-        result = watcher_module.update_watcher(w_dir, name, content)
+        result = watcher_module.update_watcher(project_root, name, content)
     except ValueError as exc:
         if json_mode:
             click.echo(json.dumps({"error": str(exc)}))
@@ -3368,14 +3675,13 @@ def watcher_edit(ctx, name, from_file, json_mode):
 @click.pass_context
 def watcher_delete(ctx, name, json_mode):
     """Soft-delete a watcher definition (renames to .yaml.deleted)."""
-    from lore import watcher as watcher_module
+    from lore.api import _watcher as watcher_module
 
     project_root = ctx.obj["project_root"]
     json_mode = json_mode or ctx.obj.get("json", False)
-    w_dir = paths.watchers_dir(project_root)
 
     try:
-        result = watcher_module.delete_watcher(w_dir, name)
+        result = watcher_module.delete_watcher(project_root, name)
     except ValueError as exc:
         if json_mode:
             click.echo(json.dumps({"error": str(exc)}))
@@ -3408,36 +3714,34 @@ def health_cmd(ctx, scope, extra_scopes, json_mode):
     """Audit all six file-based entity types and report issues."""
     import datetime
 
-    from lore.health import health_check, _write_report
-
+    from lore.api import _health as _health_mod
     project_root = ctx.obj["project_root"]
     json_mode = json_mode or ctx.obj.get("json", False)
 
     combined = list(scope) + list(extra_scopes)
-    invalid = [s for s in combined if s not in _VALID_SCOPES]
-    if invalid:
-        click.echo(
-            f"Invalid scope: '{invalid[0]}'. Valid scopes: "
-            + ", ".join(_VALID_SCOPES)
-            + ".",
-            err=True,
-        )
-        ctx.exit(1)
-
     active_scope = combined if combined else None
-    schemas_ran = (
-        active_scope is None
-        or "schemas" in active_scope
-        or "glossary" in active_scope
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H-%M-%S"
     )
 
-    report = health_check(project_root, scope=active_scope)
+    try:
+        report = _health_mod.health_check(
+            project_root,
+            scope=active_scope,
+            write_report=True,
+            timestamp=timestamp,
+        )
+    except ValueError as exc:
+        # Translate health_check's "Unknown scope: ..." to the historic
+        # CLI-visible "Invalid scope: ..." text.
+        msg = str(exc)
+        if msg.startswith("Unknown scope:"):
+            msg = "Invalid scope:" + msg[len("Unknown scope:"):]
+        click.echo(msg, err=True)
+        ctx.exit(1)
+        return
 
-    # Write report file
-    now = datetime.datetime.now(datetime.timezone.utc)
-    timestamp = now.strftime("%Y-%m-%dT%H-%M-%S")
-    codex_dir = paths.codex_dir(project_root)
-    _write_report(report, codex_dir, timestamp, schemas_ran=schemas_ran)
+    schemas_ran = report.schemas_ran
 
     if json_mode:
         import dataclasses

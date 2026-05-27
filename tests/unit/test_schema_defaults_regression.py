@@ -140,22 +140,22 @@ def test_default_scans_discover_files() -> None:
 
 
 # ---------------------------------------------------------------------------
-# US-004 (codex-sources-us-004) — Default CODEX.md documents three content
+# US-004 (codex-sources-us-004) — Default codex.md documents three content
 # classes (Stable, In-Flight, Sources) and the sources-specific rules.
 # Anchors:
 #   conceptual-workflows-lore-init §Seed artifacts step — the shipped
-#   CODEX.md is seeded verbatim and must validate against codex-frontmatter.
+#   codex.md is seeded verbatim and must validate against codex-frontmatter.
 #   decisions-006-no-seed-content-tests — tests MUST assert structure only
 #   (frontmatter validity, heading/table-row presence), never prose content.
 # Red state (from mission brief): assertions are tight enough that the OLD
-# pre-feature CODEX.md (single "## Stable vs In-Flight" heading, two-class
+# pre-feature codex.md (single "## Stable vs In-Flight" heading, two-class
 # table) would FAIL every US-004 test. A re-appearance of that retired
 # heading MUST also fail the suite.
 # ---------------------------------------------------------------------------
 
 
 CODEX_MD_PATH = (
-    DEFAULTS_ROOT / "artifacts" / "codex" / "CODEX.md"
+    DEFAULTS_ROOT / "artifacts" / "codex" / "codex.md"
 )
 
 
@@ -173,7 +173,7 @@ def _extract_tables(body: str) -> list[list[list[str]]]:
 
     Each table is a list of rows; each row is a list of cell strings (stripped).
     The separator row (``|---|---|``) is dropped. Only pipe-style tables with
-    a leading and trailing ``|`` are recognised — matches the CODEX.md style.
+    a leading and trailing ``|`` are recognised — matches the codex.md style.
     """
     tables: list[list[list[str]]] = []
     current: list[list[str]] = []
@@ -224,13 +224,13 @@ def _extract_three_class_table(body: str) -> dict:
 
 
 def test_updated_codex_md_passes_codex_frontmatter() -> None:
-    # conceptual-workflows-lore-init — seeded CODEX.md must validate against
+    # conceptual-workflows-lore-init — seeded codex.md must validate against
     # codex-frontmatter (AC Scenario 2). Pre-feature file already carried a
     # valid frontmatter block, so this assertion stays true across the edit —
     # but it pins the invariant against future schema-violating edits.
     fm = _load_frontmatter(CODEX_MD_PATH)
     issues = validate_entity("codex-frontmatter", fm)
-    assert issues == [], f"CODEX.md frontmatter schema issues: {issues}"
+    assert issues == [], f"codex.md frontmatter schema issues: {issues}"
 
 
 def test_codex_md_declares_three_content_classes() -> None:

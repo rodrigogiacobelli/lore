@@ -5,10 +5,9 @@ Spec: conceptual-workflows-codex (lore codex show conceptual-workflows-codex)
 
 import json
 
-import pytest
 
 from lore.cli import main
-from lore.codex import scan_codex, read_document, search_documents
+from lore.codex import list_codex as scan_codex, read_document, search_documents
 
 
 # ---------------------------------------------------------------------------
@@ -147,14 +146,14 @@ class TestScanCodexAllDocumentsAppear:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "doc-a.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert isinstance(result, list)
 
     def test_document_has_id_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "doc-a.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "my-doc"
 
@@ -162,21 +161,21 @@ class TestScanCodexAllDocumentsAppear:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "doc-a.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result[0]["title"] == "My Document"
 
     def test_document_has_summary_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "doc-a.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result[0]["summary"] == "A short summary of my document."
 
     def test_document_has_path_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "doc-a.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert "path" in result[0]
 
     def test_walks_subdirectories_recursively(self, tmp_path):
@@ -184,7 +183,7 @@ class TestScanCodexAllDocumentsAppear:
         subdir = codex_dir / "technical" / "cli"
         subdir.mkdir(parents=True)
         (subdir / "nested-doc.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "my-doc"
 
@@ -196,7 +195,7 @@ class TestScanCodexTransientDocumentsIncluded:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "transient.md").write_text(TRANSIENT_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "transient-placeholder"
 
@@ -205,7 +204,7 @@ class TestScanCodexTransientDocumentsIncluded:
         codex_dir.mkdir(parents=True)
         (codex_dir / "transient.md").write_text(TRANSIENT_DOC)
         (codex_dir / "real-doc.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert len(result) == 2
         ids = {d["id"] for d in result}
         assert ids == {"transient-placeholder", "my-doc"}
@@ -215,19 +214,19 @@ class TestScanCodexEmptyOrMissingDirectory:
     """scan_codex() returns empty list when directory is empty or absent."""
 
     def test_missing_codex_dir_returns_empty_list(self, tmp_path):
-        codex_dir = tmp_path / ".lore" / "codex"
-        result = scan_codex(codex_dir)
+        _codex_dir = tmp_path / ".lore" / "codex"
+        result = scan_codex(tmp_path)
         assert result == []
 
     def test_empty_codex_dir_returns_empty_list(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result == []
 
     def test_missing_dir_does_not_raise(self, tmp_path):
-        codex_dir = tmp_path / "nonexistent" / "path"
-        result = scan_codex(codex_dir)
+        _codex_dir = tmp_path / "nonexistent" / "path"
+        result = scan_codex(tmp_path)
         assert result == []
 
 
@@ -238,14 +237,14 @@ class TestScanCodexInvalidFrontmatterSkipped:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "no-fm.md").write_text(NO_FRONTMATTER_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result == []
 
     def test_file_with_invalid_yaml_skipped(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "bad-yaml.md").write_text(INVALID_YAML_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result == []
 
     def test_invalid_file_skipped_valid_still_returned(self, tmp_path):
@@ -253,7 +252,7 @@ class TestScanCodexInvalidFrontmatterSkipped:
         codex_dir.mkdir(parents=True)
         (codex_dir / "no-fm.md").write_text(NO_FRONTMATTER_DOC)
         (codex_dir / "valid.md").write_text(VALID_DOC)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "my-doc"
 
@@ -262,7 +261,7 @@ class TestScanCodexInvalidFrontmatterSkipped:
         codex_dir.mkdir(parents=True)
         content = "---\ntitle: No ID Doc\nsummary: Missing the id field.\n---\n"
         (codex_dir / "no-id.md").write_text(content)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result == []
 
     def test_file_missing_required_title_field_skipped(self, tmp_path):
@@ -270,7 +269,7 @@ class TestScanCodexInvalidFrontmatterSkipped:
         codex_dir.mkdir(parents=True)
         content = "---\nid: no-title-doc\nsummary: Missing the title field.\n---\n"
         (codex_dir / "no-title.md").write_text(content)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         assert result == []
 
 
@@ -286,7 +285,7 @@ class TestScanCodexSortedAlphabetically:
         (codex_dir / "zzz.md").write_text(doc_z)
         (codex_dir / "aaa.md").write_text(doc_a)
         (codex_dir / "mmm.md").write_text(doc_m)
-        result = scan_codex(codex_dir)
+        result = scan_codex(tmp_path)
         ids = [d["id"] for d in result]
         assert ids == ["alpha-doc", "middle-doc", "zebra-doc"]
 
@@ -296,8 +295,8 @@ class TestScanCodexSortedAlphabetically:
         for i in range(5):
             content = f"---\nid: doc-{i:02d}\ntitle: Document {i}\nsummary: Summary {i}.\n---\n"
             (codex_dir / f"file-{i}.md").write_text(content)
-        result1 = scan_codex(codex_dir)
-        result2 = scan_codex(codex_dir)
+        result1 = scan_codex(tmp_path)
+        result2 = scan_codex(tmp_path)
         assert [d["id"] for d in result1] == [d["id"] for d in result2]
 
 
@@ -525,56 +524,56 @@ class TestReadDocumentKnownId:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert isinstance(result, dict)
 
     def test_result_has_id_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert result["id"] == "my-doc"
 
     def test_result_has_title_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert result["title"] == "My Document"
 
     def test_result_has_summary_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert result["summary"] == "A short summary of my document."
 
     def test_result_has_body_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert "body" in result
 
     def test_body_contains_document_content(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert "# My Document" in result["body"]
 
     def test_body_contains_body_text(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert "Body text here." in result["body"]
 
     def test_body_does_not_contain_frontmatter_yaml(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert "id: my-doc" not in result["body"]
         assert "title: My Document" not in result["body"]
         assert "summary: A short summary" not in result["body"]
@@ -583,7 +582,7 @@ class TestReadDocumentKnownId:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "my-doc")
+        result = read_document(tmp_path, "my-doc")
         assert not result["body"].startswith("\n")
 
 
@@ -594,24 +593,24 @@ class TestReadDocumentUnknownId:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "my-doc.md").write_text(VALID_DOC)
-        result = read_document(codex_dir, "nonexistent-id")
+        result = read_document(tmp_path, "nonexistent-id")
         assert result is None
 
     def test_returns_none_when_codex_empty(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
-        result = read_document(codex_dir, "any-id")
+        result = read_document(tmp_path, "any-id")
         assert result is None
 
     def test_returns_none_when_codex_missing(self, tmp_path):
-        codex_dir = tmp_path / ".lore" / "codex"
-        result = read_document(codex_dir, "any-id")
+        _codex_dir = tmp_path / ".lore" / "codex"
+        result = read_document(tmp_path, "any-id")
         assert result is None
 
     def test_does_not_raise_for_unknown_id(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
-        result = read_document(codex_dir, "does-not-exist")
+        result = read_document(tmp_path, "does-not-exist")
         assert result is None
 
 
@@ -812,7 +811,7 @@ class TestSearchDocumentsKeywordInTitle:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "CLI")
+        result = search_documents(tmp_path, "CLI")
         assert len(result) == 1
         assert result[0]["id"] == "cli-reference"
 
@@ -820,7 +819,7 @@ class TestSearchDocumentsKeywordInTitle:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "Command")
+        result = search_documents(tmp_path, "Command")
         assert len(result) == 1
         assert result[0]["id"] == "cli-reference"
 
@@ -828,7 +827,7 @@ class TestSearchDocumentsKeywordInTitle:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "nonexistent-keyword-xyz")
+        result = search_documents(tmp_path, "nonexistent-keyword-xyz")
         assert result == []
 
 
@@ -839,7 +838,7 @@ class TestSearchDocumentsKeywordInSummary:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "arch.md").write_text(SUMMARY_MATCH_DOC)
-        result = search_documents(codex_dir, "database schema")
+        result = search_documents(tmp_path, "database schema")
         assert len(result) == 1
         assert result[0]["id"] == "arch-overview"
 
@@ -847,7 +846,7 @@ class TestSearchDocumentsKeywordInSummary:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "arch.md").write_text(SUMMARY_MATCH_DOC)
-        result = search_documents(codex_dir, "Body text about architecture")
+        result = search_documents(tmp_path, "Body text about architecture")
         assert result == []
 
 
@@ -858,7 +857,7 @@ class TestSearchDocumentsCaseInsensitive:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "cli")
+        result = search_documents(tmp_path, "cli")
         assert len(result) == 1
         assert result[0]["id"] == "cli-reference"
 
@@ -866,7 +865,7 @@ class TestSearchDocumentsCaseInsensitive:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "arch.md").write_text(SUMMARY_MATCH_DOC)
-        result = search_documents(codex_dir, "DATABASE SCHEMA")
+        result = search_documents(tmp_path, "DATABASE SCHEMA")
         assert len(result) == 1
         assert result[0]["id"] == "arch-overview"
 
@@ -874,7 +873,7 @@ class TestSearchDocumentsCaseInsensitive:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "mixed.md").write_text(CASE_SENSITIVITY_DOC)
-        result = search_documents(codex_dir, "MiXeD")
+        result = search_documents(tmp_path, "MiXeD")
         assert len(result) == 1
         assert result[0]["id"] == "mixed-case-doc"
 
@@ -886,18 +885,18 @@ class TestSearchDocumentsNoMatches:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "zzz-no-match-xyz")
+        result = search_documents(tmp_path, "zzz-no-match-xyz")
         assert result == []
 
     def test_empty_codex_dir_returns_empty_list(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
-        result = search_documents(codex_dir, "anything")
+        result = search_documents(tmp_path, "anything")
         assert result == []
 
     def test_missing_codex_dir_returns_empty_list(self, tmp_path):
-        codex_dir = tmp_path / ".lore" / "codex"
-        result = search_documents(codex_dir, "anything")
+        _codex_dir = tmp_path / ".lore" / "codex"
+        result = search_documents(tmp_path, "anything")
         assert result == []
 
 
@@ -908,28 +907,28 @@ class TestSearchDocumentsResultShape:
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "CLI")
+        result = search_documents(tmp_path, "CLI")
         assert "id" in result[0]
 
     def test_result_has_title_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "CLI")
+        result = search_documents(tmp_path, "CLI")
         assert "title" in result[0]
 
     def test_result_does_not_have_path_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "CLI")
+        result = search_documents(tmp_path, "CLI")
         assert "path" not in result[0]
 
     def test_result_does_not_have_body_field(self, tmp_path):
         codex_dir = tmp_path / ".lore" / "codex"
         codex_dir.mkdir(parents=True)
         (codex_dir / "cli-ref.md").write_text(TITLE_MATCH_DOC)
-        result = search_documents(codex_dir, "CLI")
+        result = search_documents(tmp_path, "CLI")
         assert "body" not in result[0]
 
 
@@ -945,7 +944,7 @@ class TestSearchDocumentsOrdering:
         (codex_dir / "zzz.md").write_text(doc_z)
         (codex_dir / "aaa.md").write_text(doc_a)
         (codex_dir / "mmm.md").write_text(doc_m)
-        result = search_documents(codex_dir, "important")
+        result = search_documents(tmp_path, "important")
         ids = [d["id"] for d in result]
         assert ids == ["alpha-guide", "middle-guide", "zebra-guide"]
 

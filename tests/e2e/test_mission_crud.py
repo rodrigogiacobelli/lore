@@ -12,7 +12,6 @@ from lore.cli import main
 from lore.db import list_missions
 from tests.conftest import (
     assert_exit_ok,
-    assert_exit_err,
     db_conn,
     insert_dependency,
     insert_mission,

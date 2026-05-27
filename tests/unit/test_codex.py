@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from lore.codex import map_documents, _read_related
+from lore.codex import _read_related
 from lore.codex import chaos_documents
-from lore.codex import scan_codex
+from lore.codex import list_codex
 
 
 # ---------------------------------------------------------------------------
@@ -916,14 +916,14 @@ class TestScanCodexFilter:
     def test_scan_codex_filter_returns_matched_group_and_root(self, bare_lore_dir):
         """scan_codex with filter_groups=["conceptual"] returns conceptual and root-level docs only."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
         _write_filter_doc(codex_dir, "technical/tech-cli-commands.md", "tech-cli-commands")
 
-        result = scan_codex(codex_dir, filter_groups=["conceptual"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["conceptual"])
 
         ids = {d["id"] for d in result}
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" in ids
         assert "tech-cli-commands" not in ids
 
@@ -932,29 +932,29 @@ class TestScanCodexFilter:
     def test_scan_codex_filter_case_sensitive_no_match(self, bare_lore_dir):
         """scan_codex with filter_groups=["Conceptual"] does not match group "conceptual"."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
 
-        result = scan_codex(codex_dir, filter_groups=["Conceptual"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["Conceptual"])
 
         ids = {d["id"] for d in result}
         assert "conceptual-entities-task" not in ids
-        assert "CODEX.md" in ids
+        assert "codex" in ids
 
     # Unit — filter_groups=["conceptual", "technical/api"] returns union + root
     # Exercises: conceptual-workflows-filter-list step 3 (OR logic)
     def test_scan_codex_multiple_filter_groups_returns_union(self, bare_lore_dir):
         """scan_codex with filter_groups=["conceptual", "technical/api"] returns union plus root-level docs."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
         _write_filter_doc(codex_dir, "technical/api/tech-api-spec.md", "tech-api-spec")
         _write_filter_doc(codex_dir, "technical/tech-overview.md", "tech-overview")
 
-        result = scan_codex(codex_dir, filter_groups=["conceptual", "technical/api"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["conceptual", "technical/api"])
 
         ids = {d["id"] for d in result}
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" in ids
         assert "tech-api-spec" in ids
         assert "tech-overview" not in ids
@@ -964,14 +964,14 @@ class TestScanCodexFilter:
     def test_scan_codex_technical_api_excludes_technical_root(self, bare_lore_dir):
         """scan_codex with filter_groups=["technical/api"] excludes files in technical/ (group "technical")."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "technical/api/tech-api-spec.md", "tech-api-spec")
         _write_filter_doc(codex_dir, "technical/tech-overview.md", "tech-overview")
 
-        result = scan_codex(codex_dir, filter_groups=["technical/api"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["technical/api"])
 
         ids = {d["id"] for d in result}
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "tech-api-spec" in ids
         assert "tech-overview" not in ids
 
@@ -980,13 +980,13 @@ class TestScanCodexFilter:
     def test_scan_codex_unknown_token_returns_root_only(self, bare_lore_dir):
         """scan_codex with filter_groups=["nonexistent"] returns only root-level docs; no exception raised."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
 
-        result = scan_codex(codex_dir, filter_groups=["nonexistent"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["nonexistent"])
 
         ids = {d["id"] for d in result}
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" not in ids
 
     # Unit — scan_codex filter_groups=["nonexistent"] with no root-level files returns empty list
@@ -996,7 +996,7 @@ class TestScanCodexFilter:
         codex_dir = bare_lore_dir / ".lore" / "codex"
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
 
-        result = scan_codex(codex_dir, filter_groups=["nonexistent"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["nonexistent"])
 
         assert result == []
 
@@ -1005,14 +1005,14 @@ class TestScanCodexFilter:
     def test_scan_codex_valid_and_unknown_token_partial_match(self, bare_lore_dir):
         """scan_codex with filter_groups=["conceptual", "nonexistent"] returns conceptual + root docs only."""
         codex_dir = bare_lore_dir / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
         _write_filter_doc(codex_dir, "technical/tech-cli-commands.md", "tech-cli-commands")
 
-        result = scan_codex(codex_dir, filter_groups=["conceptual", "nonexistent"])
+        result = list_codex(codex_dir.parent.parent, filter_groups=["conceptual", "nonexistent"])
 
         ids = {d["id"] for d in result}
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" in ids
         assert "tech-cli-commands" not in ids
 
@@ -1032,14 +1032,14 @@ class TestScanCodexBackwardCompat:
     def test_scan_codex_filter_none_returns_all(self, tmp_path):
         """scan_codex with filter_groups=None returns all documents across all groups."""
         codex_dir = tmp_path / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
         _write_filter_doc(codex_dir, "technical/tech-cli-commands.md", "tech-cli-commands")
 
-        results = scan_codex(codex_dir, filter_groups=None)
+        results = list_codex(codex_dir.parent.parent, filter_groups=None)
 
         ids = [d["id"] for d in results]
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" in ids
         assert "tech-cli-commands" in ids
 
@@ -1048,14 +1048,14 @@ class TestScanCodexBackwardCompat:
     def test_scan_codex_filter_empty_list_returns_all(self, tmp_path):
         """scan_codex with filter_groups=[] returns all documents — empty list is a no-op."""
         codex_dir = tmp_path / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
         _write_filter_doc(codex_dir, "technical/tech-cli-commands.md", "tech-cli-commands")
 
-        results = scan_codex(codex_dir, filter_groups=[])
+        results = list_codex(codex_dir.parent.parent, filter_groups=[])
 
         ids = [d["id"] for d in results]
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" in ids
         assert "tech-cli-commands" in ids
 
@@ -1064,11 +1064,11 @@ class TestScanCodexBackwardCompat:
     def test_scan_codex_no_filter_argument_returns_all(self, tmp_path):
         """scan_codex called without filter_groups (default) returns all documents."""
         codex_dir = tmp_path / ".lore" / "codex"
-        _write_filter_doc(codex_dir, "CODEX.md", "CODEX.md")
+        _write_filter_doc(codex_dir, "codex.md", "codex")
         _write_filter_doc(codex_dir, "conceptual/conceptual-entities-task.md", "conceptual-entities-task")
 
-        results = scan_codex(codex_dir)
+        results = list_codex(codex_dir.parent.parent)
 
         ids = [d["id"] for d in results]
-        assert "CODEX.md" in ids
+        assert "codex" in ids
         assert "conceptual-entities-task" in ids

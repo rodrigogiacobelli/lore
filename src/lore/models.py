@@ -5,21 +5,6 @@ import enum
 import sqlite3
 from typing import Literal
 
-from lore.health import HealthIssue, HealthReport, health_check
-from lore.impacts import (
-    CodeBinding,
-    CodexBinding,
-    ImpactsError,
-    ImpactsResult,
-    impacts,
-)
-from lore.schemas import (
-    SchemaIssue,
-    load_schema,
-    validate_entity,
-    validate_entity_file,
-)
-
 try:
     from enum import StrEnum
 except ImportError:
@@ -358,16 +343,4 @@ __all__ = [
     "DoctrineListEntry",
     "GlossaryItem",
     "Watcher",
-    "HealthIssue",
-    "HealthReport",
-    "health_check",
-    "SchemaIssue",
-    "load_schema",
-    "validate_entity",
-    "validate_entity_file",
-    "CodeBinding",
-    "CodexBinding",
-    "ImpactsError",
-    "ImpactsResult",
-    "impacts",
 ]

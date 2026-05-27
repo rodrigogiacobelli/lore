@@ -51,6 +51,17 @@ def validate_message(message: str) -> str | None:
     return None
 
 
+def _validate_content_nonempty(content: str) -> str | None:
+    """Return error string if *content* is empty / whitespace-only, else None.
+
+    Internal helper (leading underscore) shared by file-backed entity
+    create/update flows. NOT part of the public ``lore.api`` surface.
+    """
+    if not content or not content.strip():
+        return "Content cannot be empty."
+    return None
+
+
 def validate_entity_id(eid: str) -> str | None:
     """Return an error string if *eid* is not a valid quest or mission ID, else None."""
     if not eid or not _ENTITY_RE.match(eid):

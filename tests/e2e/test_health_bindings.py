@@ -635,7 +635,7 @@ def test_us004_empty_glob_only_run_exits_zero(project_dir, runner):
 
 
 # ===========================================================================
-# US-005 — Python API parity over lore.models.health_check
+# US-005 — Python API parity over lore.api.health_check
 # Workflow: conceptual-workflows-health (lore codex show conceptual-workflows-health)
 # ADR-011 — decisions-011-api-parity-with-cli
 # ===========================================================================
@@ -655,7 +655,7 @@ def test_us005_cli_python_api_parity_for_bindings(project_dir, runner):
     """
     import dataclasses
 
-    from lore.models import health_check
+    from lore.api import health_check
 
     _seed_codex_doc(project_dir, "entry-a", binds=["src/missing.py"])
     _seed_codex_doc(project_dir, "entry-b", binds=["src/empty/**/*.py"])
@@ -681,7 +681,7 @@ def test_us005_cli_python_api_parity_for_bindings(project_dir, runner):
 
 def test_us005_health_check_returns_healthreport_with_healthissues(project_dir):
     """US-005 Scenario 3 — public API returns HealthReport[HealthIssue]."""
-    from lore.models import HealthIssue, HealthReport, health_check
+    from lore.api import HealthIssue, HealthReport, health_check
 
     _seed_codex_doc(project_dir, "entry-a", binds=["src/missing.py"])
     report = health_check(project_dir, scope=["bindings"])
@@ -698,7 +698,7 @@ def test_us005_health_check_returns_healthreport_with_healthissues(project_dir):
 
 def test_us005_health_check_python_multi_scope(project_dir):
     """US-005 Scenario 4 — `scope=["bindings", "codex"]` invokes both, no duplicates."""
-    from lore.models import health_check
+    from lore.api import health_check
 
     _seed_codex_doc(project_dir, "entry-a", binds=["src/missing.py"])
     _seed_codex_doc(project_dir, "entry-b", related=["nonexistent"])
@@ -718,7 +718,7 @@ def test_us005_health_check_python_multi_scope(project_dir):
 
 def test_us005_health_check_default_scope_includes_bindings(project_dir):
     """US-005 Scenario 5 — `health_check(project_root)` (no scope) routes through bindings."""
-    from lore.models import health_check
+    from lore.api import health_check
 
     _seed_codex_doc(project_dir, "entry-a", binds=["src/missing.py"])
     report = health_check(project_dir)

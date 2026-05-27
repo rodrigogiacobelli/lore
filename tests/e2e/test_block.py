@@ -6,7 +6,6 @@ Spec: conceptual-workflows-block (lore codex show conceptual-workflows-block)
 from lore.cli import main
 from tests.conftest import (
     assert_exit_ok,
-    assert_exit_err,
     db_conn,
     insert_mission,
     insert_quest,
@@ -70,7 +69,6 @@ class TestBlockMissionInProgress:
     """lore block on in_progress mission sets status to blocked."""
 
     def test_mission_blocked(self, runner, project_dir):
-        from tests.conftest import insert_quest, insert_mission
         import json
         r = runner.invoke(main, ["--json", "new", "quest", "Q"])
         quest_id = json.loads(r.output)["id"]

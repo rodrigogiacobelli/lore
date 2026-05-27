@@ -1051,15 +1051,15 @@ class TestDoctrineListEntryIntegration:
         """Integration: list_doctrines output can be wrapped in DoctrineListEntry."""
         from lore.models import DoctrineListEntry
         from lore.doctrine import list_doctrines
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "test.design.md").write_text(
             "---\nid: test\ntitle: Test Doctrine\nsummary: A test.\n---\n"
         )
         (doctrines_dir / "test.yaml").write_text(
             "id: test\nsteps:\n  - id: s1\n    title: Step 1\n    type: knight\n    knight: k\n"
         )
-        entries = list_doctrines(doctrines_dir)
+        entries = list_doctrines(tmp_path)
         assert len(entries) == 1
         wrapped = [DoctrineListEntry.from_dict(e) for e in entries]
         assert wrapped[0].id == "test"
@@ -1488,7 +1488,7 @@ class TestDoctrineListEntryDataclassFields:
 
 
 # ---------------------------------------------------------------------------
-# US-009: Python API parity for schema validation via lore.models
+# US-009: Python API parity for schema validation via lore.api
 # Exercises: lore codex show schema-validation-us-009
 #            lore codex show conceptual-workflows-python-api
 # ---------------------------------------------------------------------------
@@ -1496,83 +1496,83 @@ class TestDoctrineListEntryDataclassFields:
 
 class TestUS009SchemaValidationReexports:
     """US-009: load_schema, validate_entity, validate_entity_file, SchemaIssue
-    must be re-exported from lore.models (identity, not wrappers) and appear
-    in lore.models.__all__. HealthIssue must still be exported with its
+    must be re-exported from lore.api (identity, not wrappers) and appear
+    in lore.api.__all__. HealthIssue must still be exported with its
     widened (schema_id, rule, pointer) fields.
     """
 
     def test_all_contains_load_schema(self):
-        import lore.models as m
+        import lore.api as m
         assert "load_schema" in m.__all__, (
-            f"'load_schema' not in lore.models.__all__: {m.__all__!r}"
+            f"'load_schema' not in lore.api.__all__: {m.__all__!r}"
         )
 
     def test_all_contains_validate_entity(self):
-        import lore.models as m
+        import lore.api as m
         assert "validate_entity" in m.__all__, (
-            f"'validate_entity' not in lore.models.__all__: {m.__all__!r}"
+            f"'validate_entity' not in lore.api.__all__: {m.__all__!r}"
         )
 
     def test_all_contains_validate_entity_file(self):
-        import lore.models as m
+        import lore.api as m
         assert "validate_entity_file" in m.__all__, (
-            f"'validate_entity_file' not in lore.models.__all__: {m.__all__!r}"
+            f"'validate_entity_file' not in lore.api.__all__: {m.__all__!r}"
         )
 
     def test_all_contains_schema_issue(self):
-        import lore.models as m
+        import lore.api as m
         assert "SchemaIssue" in m.__all__, (
-            f"'SchemaIssue' not in lore.models.__all__: {m.__all__!r}"
+            f"'SchemaIssue' not in lore.api.__all__: {m.__all__!r}"
         )
 
     def test_all_contains_health_issue_regression(self):
         # Regression guard: widening HealthIssue must not drop it from __all__.
-        import lore.models as m
+        import lore.api as m
         assert "HealthIssue" in m.__all__
 
     def test_all_contains_health_check_regression(self):
         # Regression guard: health_check must remain in __all__.
-        import lore.models as m
+        import lore.api as m
         assert "health_check" in m.__all__
 
     def test_load_schema_is_reexport_not_copy(self):
         # conceptual-workflows-python-api — identity, not a wrapper
-        import lore.models as m
+        import lore.api as m
         import lore.schemas as s
         assert m.load_schema is s.load_schema
 
     def test_validate_entity_is_reexport_not_copy(self):
-        import lore.models as m
+        import lore.api as m
         import lore.schemas as s
         assert m.validate_entity is s.validate_entity
 
     def test_validate_entity_file_is_reexport_not_copy(self):
-        import lore.models as m
+        import lore.api as m
         import lore.schemas as s
         assert m.validate_entity_file is s.validate_entity_file
 
     def test_schema_issue_is_reexport_not_copy(self):
-        import lore.models as m
+        import lore.api as m
         import lore.schemas as s
         assert m.SchemaIssue is s.SchemaIssue
 
     def test_schema_issue_has_expected_fields(self):
         # Regression guard on SchemaIssue shape (rule, pointer, message).
         import dataclasses
-        from lore.models import SchemaIssue
+        from lore.api import SchemaIssue
         field_names = {f.name for f in dataclasses.fields(SchemaIssue)}
         assert {"rule", "pointer", "message"}.issubset(field_names)
 
     def test_health_issue_has_schema_fields(self):
         # Widened HealthIssue carries schema_id/rule/pointer (US-007).
         import dataclasses
-        from lore.models import HealthIssue
+        from lore.api import HealthIssue
         field_names = {f.name for f in dataclasses.fields(HealthIssue)}
         assert {"schema_id", "rule", "pointer"}.issubset(field_names)
 
-    def test_validate_entity_file_callable_from_models(self, tmp_path):
-        # Directly via lore.models — returns list of SchemaIssue for a bad knight.
-        from lore.models import validate_entity_file, SchemaIssue
+    def test_validate_entity_file_callable_from_api(self, tmp_path):
+        # Directly via lore.api — returns list of SchemaIssue for a bad knight.
+        from lore.api import validate_entity_file, SchemaIssue
         p = tmp_path / "k.md"
         p.write_text(
             "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n"
@@ -1586,8 +1586,8 @@ class TestUS009SchemaValidationReexports:
             for i in issues
         )
 
-    def test_load_schema_callable_from_models(self):
-        from lore.models import load_schema
+    def test_load_schema_callable_from_api(self):
+        from lore.api import load_schema
         schema = load_schema("knight-frontmatter")
         assert isinstance(schema, dict)
         assert "$id" in schema or "properties" in schema
@@ -1679,31 +1679,23 @@ class TestConfigNotInPublicAPI:
 
 
 # ---------------------------------------------------------------------------
-# US-005 — lore.models.__all__ unchanged for the bindings feature.
+# US-005 — lore.api.__all__ unchanged for the bindings feature.
 # Workflow: conceptual-workflows-health
 # Standards: decisions-010-public-api-stability, decisions-011-api-parity-with-cli
+#
+# Post ADR-010 the public Python surface is `lore.api`; `lore.models` is a leaf
+# type module. The bindings-feature surface guard therefore pins
+# `lore.api.__all__` (the contract that ships health/schema/impacts symbols)
+# rather than `lore.models.__all__` (dataclasses + enums only).
 # ---------------------------------------------------------------------------
 
 
-# Frozen snapshot of `lore.models.__all__` as of the pre-feature commit. The
-# bindings feature MUST NOT grow or shrink this surface (PRD FR-18). Any change
-# to this set fails the test and forces an explicit decision.
-_PRE_FEATURE_LORE_MODELS_ALL = frozenset({
-    "QuestStatus",
-    "MissionStatus",
-    "DependencyType",
-    "Quest",
-    "Mission",
-    "Dependency",
-    "BoardMessage",
-    "Artifact",
-    "CodexDocument",
-    "DoctrineStep",
-    "Doctrine",
-    "Knight",
-    "DoctrineListEntry",
-    "GlossaryItem",
-    "Watcher",
+# Frozen snapshot of names that MUST appear in `lore.api.__all__`. The bindings
+# feature MUST NOT add or remove any of them (PRD FR-18). This is a subset
+# guard: `lore.api.__all__` may include other facade names, but it must always
+# carry every entry below. Any drop fails the test and forces an explicit
+# decision.
+_PRE_FEATURE_LORE_API_REQUIRED = frozenset({
     "HealthIssue",
     "HealthReport",
     "health_check",
@@ -1719,39 +1711,44 @@ _PRE_FEATURE_LORE_MODELS_ALL = frozenset({
 })
 
 
-class TestLoreModelsAllUnchangedForBindings:
-    """`lore.models.__all__` must not gain or lose entries for the bindings feature.
+class TestLoreApiAllUnchangedForBindings:
+    """`lore.api.__all__` must keep its pre-feature contract for the bindings feature.
 
-    Per PRD §"Technical Success" (`lore.models.__all__` surface row: unchanged)
-    and PRD FR-18 (no new public exports for the bindings checks).
+    Per PRD §"Technical Success" (public surface row: unchanged) and PRD FR-18
+    (no new public exports for the bindings checks).
     """
 
-    def test_lore_models_all_set_equals_pre_feature_snapshot(self):
-        """US-005 unit — `set(lore.models.__all__)` equals the frozen pre-feature snapshot."""
-        import lore.models
+    def test_lore_api_all_contains_pre_feature_snapshot(self):
+        """US-005 unit — every pre-feature export still appears in `lore.api.__all__`."""
+        import lore.api
 
-        assert set(lore.models.__all__) == _PRE_FEATURE_LORE_MODELS_ALL
+        missing = _PRE_FEATURE_LORE_API_REQUIRED - set(lore.api.__all__)
+        assert missing == set(), (
+            f"missing pre-feature exports in lore.api.__all__: {missing!r}"
+        )
 
     def test_no_bindings_specific_exports(self):
         """US-005 unit — no new entry whose name implies a bindings-specific public surface."""
-        import lore.models
+        import lore.api
 
-        # CodeBinding / CodexBinding pre-date this feature (the lore-impacts feature
-        # ships them). Any OTHER "bind"-named entry would be new and is forbidden.
+        # CodeBinding / CodexBinding (lore-impacts) and validate_binds_entry
+        # (existing validator) pre-date this feature. Any OTHER "bind"-named
+        # entry would be new and is forbidden.
+        allowed = {"CodeBinding", "CodexBinding", "validate_binds_entry"}
         bind_named = [
-            name for name in lore.models.__all__
-            if "bind" in name.lower() and name not in {"CodeBinding", "CodexBinding"}
+            name for name in lore.api.__all__
+            if "bind" in name.lower() and name not in allowed
         ]
         assert bind_named == [], (
-            f"unexpected bindings-named exports in lore.models.__all__: {bind_named!r}"
+            f"unexpected bindings-named exports in lore.api.__all__: {bind_named!r}"
         )
-        assert "find_dead_bindings" not in lore.models.__all__
-        assert "BindingsIssue" not in lore.models.__all__
+        assert "find_dead_bindings" not in lore.api.__all__
+        assert "BindingsIssue" not in lore.api.__all__
 
     def test_existing_health_exports_retained(self):
         """US-005 unit — `health_check`, `HealthReport`, `HealthIssue` still exported."""
-        import lore.models
+        import lore.api
 
-        assert "health_check" in lore.models.__all__
-        assert "HealthReport" in lore.models.__all__
-        assert "HealthIssue" in lore.models.__all__
+        assert "health_check" in lore.api.__all__
+        assert "HealthReport" in lore.api.__all__
+        assert "HealthIssue" in lore.api.__all__

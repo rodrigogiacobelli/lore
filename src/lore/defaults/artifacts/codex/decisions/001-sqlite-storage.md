@@ -4,7 +4,7 @@ title: 'ADR-001: {Decision Title}'
 summary: _One to three sentences. What was decided and why is this ADR worth reading?
   Mention the key trade-off that was resolved._
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # ADR-001: {Decision Title}

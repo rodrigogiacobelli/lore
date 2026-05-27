@@ -5,7 +5,7 @@ description: Draft and create a new artifact file in `.lore/artifacts/`
 
 # New Artifact
 
-Create a new Lore artifact. Artifacts are reusable, read-only template files stored in `.lore/artifacts/` and accessed by stable ID. They are reference material — templates, checklists, policy documents — that agents retrieve with `lore artifact show <id>`. There is no `artifact new` CLI command; artifacts are created directly on disk.
+Create a new Lore artifact. Artifacts are reusable template files stored in `.lore/artifacts/` and accessed by stable ID. They are reference material — templates, checklists, policy documents — that agents retrieve with `lore artifact show <id>`. Create them with `lore artifact new <id> -f <file>` (or edit/delete with the sibling subcommands).
 
 ## Steps
 
@@ -48,17 +48,21 @@ Rules:
 - `id` must be unique across all artifacts — check `lore artifact list` first
 - `id` should be a stable slug that won't need to change (e.g. `pr-review-checklist`, not `checklist-v2`)
 - Keep content focused — agents load this in full, so every line costs context
-- If the artifact is a codex-doc skeleton (template for a doc that will govern specific code files), include a commented `# binds: []` placeholder in the frontmatter so authors fill it in — see `conceptual-workflows-impacts`
+- If the artifact is a codex-doc skeleton (template for a doc that will govern specific code files), include a commented `# binds: []` placeholder in the frontmatter so authors fill it in — see the impacts engine section of `.lore/codex/codex.md`
 
-### 4. Write to `.lore/artifacts/`
+### 4. Create the artifact
 
-Write the file directly:
+Use the CLI (preferred — validates frontmatter and lands the file under `.lore/artifacts/`):
 
 ```
-.lore/artifacts/<slug>.md
+lore artifact new <slug> -f draft.md
 ```
 
-You may create subdirectories for organisation (e.g. `.lore/artifacts/security/audit-checklist.md`).
+To nest under a subdirectory (e.g. `.lore/artifacts/security/`), pass `--group`:
+
+```
+lore artifact new audit-checklist --group security -f draft.md
+```
 
 ### 5. Verify
 

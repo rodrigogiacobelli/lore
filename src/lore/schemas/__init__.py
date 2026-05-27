@@ -194,7 +194,6 @@ def validate_entity_file(path: str, kind: str) -> list[SchemaIssue]:
 
     issues = validate_entity(kind, data)
     if kind in _RAISE_KINDS and issues:
-        first = issues[0]
         msg_parts = [f"{i.rule} at {i.pointer}: {i.message}" for i in issues]
         raise SchemaValidationError("; ".join(msg_parts), issues=issues)
     return issues

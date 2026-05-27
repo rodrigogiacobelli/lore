@@ -9,7 +9,6 @@ from lore.cli import main
 from lore.db import claim_mission
 from tests.conftest import (
     assert_exit_ok,
-    assert_exit_err,
     db_conn,
     insert_mission,
     insert_quest,

@@ -5,7 +5,7 @@ summary: Policy decision not to write tests that assert content of default templ
   since defaults evolve continuously and content tests create maintenance friction
   without adding safety value.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # ADR: No Content Tests for Default Templates

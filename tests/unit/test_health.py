@@ -25,7 +25,7 @@ from lore.health import (
     _write_report,
     health_check,
 )
-from lore.models import HealthIssue, HealthReport
+from lore.api import HealthIssue, HealthReport
 
 
 # ---------------------------------------------------------------------------
@@ -1980,27 +1980,27 @@ def test_health_report_issues_property_return_type_annotation_is_typed_tuple():
 
 
 # ---------------------------------------------------------------------------
-# US-018: health_check registered in lore.models.__all__
+# US-018: health_check registered in lore.api.__all__
 # Exercises: lore codex show conceptual-workflows-health
 # ---------------------------------------------------------------------------
 
 
 def test_health_check_in_all():
-    """'health_check' must appear in lore.models.__all__."""
+    """'health_check' must appear in lore.api.__all__."""
     # Exercises: lore codex show conceptual-workflows-health
-    import lore.models
-    assert "health_check" in lore.models.__all__, (
-        "'health_check' not found in lore.models.__all__. "
-        f"Current __all__: {lore.models.__all__!r}"
+    import lore.api
+    assert "health_check" in lore.api.__all__, (
+        "'health_check' not found in lore.api.__all__. "
+        f"Current __all__: {lore.api.__all__!r}"
     )
 
 
-def test_health_check_importable_from_lore_models():
-    """from lore.models import health_check must succeed and be callable."""
+def test_health_check_importable_from_lore_api():
+    """from lore.api import health_check must succeed and be callable."""
     # Exercises: lore codex show conceptual-workflows-health
-    from lore.models import health_check  # noqa: F401
+    from lore.api import health_check  # noqa: F401
     assert callable(health_check), (
-        f"health_check imported from lore.models is not callable: {health_check!r}"
+        f"health_check imported from lore.api is not callable: {health_check!r}"
     )
 
 
@@ -2479,7 +2479,7 @@ def test_us009_health_check_callable_without_project_root(lore_dir, monkeypatch)
     """
     monkeypatch.chdir(lore_dir)
     report = health_check()  # No positional project_root.
-    from lore.models import HealthReport as _HR
+    from lore.api import HealthReport as _HR
     assert isinstance(report, _HR)
 
 
@@ -3539,13 +3539,13 @@ class TestCliHealthExitCodeFromHasErrors:
 
 
 class TestHealthCheckBindingsApi:
-    """Unit coverage of `lore.models.health_check` over the bindings scope (US-005)."""
+    """Unit coverage of `lore.api.health_check` over the bindings scope (US-005)."""
 
     def test_health_check_signature_accepts_bindings_scope(self, tmp_path):
         """US-005 unit — signature accepts `scope=["bindings"]`; smoke call on empty project."""
         import inspect
 
-        from lore.models import health_check
+        from lore.api import health_check
 
         sig = inspect.signature(health_check)
         assert "scope" in sig.parameters
@@ -3557,8 +3557,8 @@ class TestHealthCheckBindingsApi:
 
     def test_health_check_thin_pass_through_to_check_bindings(self, tmp_path):
         """US-005 unit — `report.issues` equals `_check_bindings(project_root)` row-for-row."""
+        from lore.api import health_check
         from lore.health import _check_bindings
-        from lore.models import health_check
 
         project = _make_lore_project(tmp_path)
         _seed_codex_doc_for_health(project, "entry-a", binds=["src/missing.py"])
@@ -3572,7 +3572,7 @@ class TestHealthIssueFieldShape:
 
     def test_health_issue_field_set_unchanged(self):
         """US-005 unit — `HealthIssue` field names match the locked set, no additions."""
-        from lore.models import HealthIssue
+        from lore.api import HealthIssue
 
         field_names = {f.name for f in dataclasses.fields(HealthIssue)}
         assert field_names == {

@@ -227,8 +227,10 @@ def test_glossary_error_subclass_of_exception():
 # Workflow: conceptual-workflows-glossary
 #
 # These tests cover the new symbols added to lore.glossary by US-004:
-#   _normalise_tokens, _build_lookup, _scan_runs, match_glossary,
-#   _render_glossary_block.
+#   _normalise_tokens, _build_lookup, _scan_runs, match_glossary.
+# (`_render_glossary_block` was hoisted to `lore.cli` in chunk G3 of the
+# transient-public-api-facade-plan — rendering tests live in
+# tests/unit/test_cli_glossary_render.py.)
 # Import-failure-as-red is expected until G3-Green lands the implementation.
 # ===========================================================================
 
@@ -236,7 +238,6 @@ def test_glossary_error_subclass_of_exception():
 from lore.glossary import (  # noqa: E402  — imports under test
     _build_lookup,
     _normalise_tokens,
-    _render_glossary_block,
     _scan_runs,
     match_glossary,
 )
@@ -439,34 +440,6 @@ def test_match_glossary_malformed_file_raises_glossary_error(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# _render_glossary_block (Unit rows 22–24)
+# _render_glossary_block — MIGRATED to tests/unit/test_cli_glossary_render.py
+# Renderer hoisted to `lore.cli` in G3 (transient-public-api-facade-plan).
 # ---------------------------------------------------------------------------
-
-
-def test_render_glossary_block_empty_returns_empty_string():
-    # conceptual-workflows-glossary — render empty (Unit row 22)
-    assert _render_glossary_block([]) == ""
-
-
-def test_render_glossary_block_one_item_exact_format():
-    # conceptual-workflows-glossary — render one item exact format (Unit row 23a)
-    items = [GlossaryItem(keyword="K", definition="d")]
-    assert _render_glossary_block(items) == "\n## Glossary\n\n**K** — d\n"
-
-
-def test_render_glossary_block_collapses_internal_whitespace():
-    # conceptual-workflows-glossary — internal whitespace collapse (Unit row 23b)
-    items = [GlossaryItem(keyword="K", definition="line one\n  line   two")]
-    out = _render_glossary_block(items)
-    assert "**K** — line one line two\n" in out
-
-
-def test_render_glossary_block_multiple_items_alphabetised_blank_line_separated():
-    # conceptual-workflows-glossary — multi-item alphabetised, blank line separated (Unit row 24)
-    items = [
-        GlossaryItem(keyword="B", definition="b"),
-        GlossaryItem(keyword="A", definition="a"),
-    ]
-    out = _render_glossary_block(items)
-    assert out.index("**A**") < out.index("**B**")
-    assert "\n\n**" in out

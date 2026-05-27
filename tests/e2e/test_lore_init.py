@@ -4,7 +4,6 @@ Spec: conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-
 """
 
 import sqlite3
-from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -832,12 +831,12 @@ class TestInitDoesNotTouchDotClaudeSkills:
 
 
 # ---------------------------------------------------------------------------
-# US-001 — lore init seeds .lore/codex/CODEX.md
+# US-001 — lore init seeds .lore/codex/codex.md
 # Spec anchors: init-seed-codex-md-us-1 (Scenarios 1-4);
 #               conceptual-workflows-lore-init step 7a (user-tracked seeds);
 #               decisions-013-toml-for-config-yaml-for-glossary (idempotency);
 #               decisions-006-no-seed-content-tests (structural-only).
-# Red state: lore init does not yet seed .lore/codex/CODEX.md — fresh-init
+# Red state: lore init does not yet seed .lore/codex/codex.md — fresh-init
 # tests fail on the existence/substring assertions; re-init tests cannot
 # trigger because the file is never seeded; health/list checks fail because
 # id 'codex' does not appear in the codex index.
@@ -845,10 +844,10 @@ class TestInitDoesNotTouchDotClaudeSkills:
 
 
 class TestInitSeedsCodexMd:
-    """init-seed-codex-md-us-1 — lore init seeds .lore/codex/CODEX.md."""
+    """init-seed-codex-md-us-1 — lore init seeds .lore/codex/codex.md."""
 
     def test_fresh_init_writes_codex_md_with_rewritten_id(self, tmp_path, monkeypatch):
-        # conceptual-workflows-lore-init step 7a — Scenario 1 (Fresh init seeds CODEX.md)
+        # conceptual-workflows-lore-init step 7a — Scenario 1 (Fresh init seeds codex.md)
         # ADR-006: assert structural fields + substring only; no body prose pinning.
         import yaml
 
@@ -856,7 +855,7 @@ class TestInitSeedsCodexMd:
         runner = CliRunner()
         result = runner.invoke(main, ["init"])
         assert_exit_ok(result)
-        target = tmp_path / ".lore" / "codex" / "CODEX.md"
+        target = tmp_path / ".lore" / "codex" / "codex.md"
         assert target.is_file()
         # Parse frontmatter — structural assertions only.
         text = target.read_text(encoding="utf-8")
@@ -868,7 +867,7 @@ class TestInitSeedsCodexMd:
         assert front.get("title")               # non-empty title (schema-required)
         assert front.get("summary")             # non-empty summary (schema-required)
         # Status line emitted on first seed.
-        assert "Created codex/CODEX.md" in result.output
+        assert "Created codex/codex.md" in result.output
 
     def test_reinit_leaves_existing_codex_md_byte_for_byte_untouched(
         self, tmp_path, monkeypatch
@@ -881,9 +880,9 @@ class TestInitSeedsCodexMd:
         assert_exit_ok(first)
         # Init #1 must have created the file — this is what makes the
         # idempotency assertion meaningful (and forces this test to fail in
-        # red state, where init never seeds CODEX.md).
-        assert "Created codex/CODEX.md" in first.output
-        target = tmp_path / ".lore" / "codex" / "CODEX.md"
+        # red state, where init never seeds codex.md).
+        assert "Created codex/codex.md" in first.output
+        target = tmp_path / ".lore" / "codex" / "codex.md"
         assert target.is_file()
         sentinel = (
             b"---\nid: codex\ntitle: My Custom\nsummary: edited by user\n---\n"
@@ -896,7 +895,7 @@ class TestInitSeedsCodexMd:
         # not seed content, so ADR-006 does not forbid it.
         assert target.read_bytes() == sentinel
         # Silent skip — no "Created" line for the existing file.
-        assert "Created codex/CODEX.md" not in result.output
+        assert "Created codex/codex.md" not in result.output
 
     def test_fresh_init_then_health_schemas_is_green(self, tmp_path, monkeypatch):
         # conceptual-workflows-lore-init (hard acceptance: schema-green after init)
@@ -905,10 +904,10 @@ class TestInitSeedsCodexMd:
         runner = CliRunner()
         init_result = runner.invoke(main, ["init"])
         assert_exit_ok(init_result)
-        # Pre-condition for this scenario: CODEX.md must actually be seeded
+        # Pre-condition for this scenario: codex.md must actually be seeded
         # so the schema check has something to validate. Without this the
         # assertion below is vacuously true.
-        codex_md = tmp_path / ".lore" / "codex" / "CODEX.md"
+        codex_md = tmp_path / ".lore" / "codex" / "codex.md"
         assert codex_md.is_file()
         result = runner.invoke(main, ["health", "--scope", "schemas"])
         assert_exit_ok(result)

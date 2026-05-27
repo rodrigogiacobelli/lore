@@ -22,6 +22,8 @@ Use the Lore codex to research a question, compare information, or map out a dom
 | List project vocabulary | `lore glossary list` |
 | Search glossary terms | `lore glossary search <query>` |
 | Read one or more glossary entries | `lore glossary show <kw1> <kw2> ...` |
+| List the code files a codex doc governs | `lore impacts <codex-id>` |
+| List the codex docs that govern a code file | `lore impacts <path-or-glob>` |
 
 Searching by the name of a concrete artifact (a table, endpoint, event, job) typically lands on a `ref-<system>-<concept>` cluster doc under `technical/<domain>/ref/`. Those docs hold intent (history, gotchas, non-enforced constraints) — not schema. The schema source of truth is named in the doc body and lives in code (migrations, OpenAPI, ORM).
 
@@ -67,7 +69,17 @@ lore codex chaos <id> --threshold 50
 
 Read any additional documents that look relevant.
 
-### 4. Answer the question
+### 4. Pivot from search to code
+
+When a search lands on a `technical/*` or `standards/*` doc — or any doc with a `binds:` frontmatter field — use the impacts engine to enumerate the bound code files:
+
+```
+lore impacts <codex-id>
+```
+
+This returns the repo-root-relative paths the doc governs. Read those files when the question is about implementation, not just intent. Inversely, when the question starts from a file path, run `lore impacts <path>` first to surface the docs that govern it before reading the code.
+
+### 5. Answer the question
 
 Once you have read enough context, answer what the user asked. Cite codex document IDs when referencing specific information (e.g. "per `lore codex show ops-git-workflow`...").
 

@@ -11,7 +11,6 @@ import dataclasses
 import json
 
 import pytest
-from click.testing import CliRunner
 
 from lore.cli import main
 
@@ -483,33 +482,12 @@ def test_glossary_list_malformed_json_fail_loud(project_dir, runner):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 10 — no new/edit/delete subcommands
+# Scenario 10 (superseded) — glossary CRUD now lives in
+# tests/{unit,e2e}/test_glossary_crud.py. The read-only-CLI invariant from
+# US-002/FR-8 was lifted by the glossary CRUD spec
+# (.lore/codex/transient/glossary-crud-spec.md); `new`/`edit`/`delete`
+# subcommands are part of the supported surface.
 # ---------------------------------------------------------------------------
-
-
-def test_glossary_no_new_subcommand(project_dir, runner):
-    # conceptual-workflows-glossary — Scenario 10 (read-only CLI; FR-8)
-    # Group must exist; only its `new` subcommand must be rejected.
-    assert "glossary" in main.commands
-    res = runner.invoke(main, ["glossary", "new"])
-    assert res.exit_code == 2
-    assert "No such command 'new'" in (res.stderr or res.output)
-
-
-def test_glossary_no_edit_subcommand(project_dir, runner):
-    # conceptual-workflows-glossary — Scenario 10
-    assert "glossary" in main.commands
-    res = runner.invoke(main, ["glossary", "edit"])
-    assert res.exit_code == 2
-    assert "No such command 'edit'" in (res.stderr or res.output)
-
-
-def test_glossary_no_delete_subcommand(project_dir, runner):
-    # conceptual-workflows-glossary — Scenario 10
-    assert "glossary" in main.commands
-    res = runner.invoke(main, ["glossary", "delete"])
-    assert res.exit_code == 2
-    assert "No such command 'delete'" in (res.stderr or res.output)
 
 
 # ---------------------------------------------------------------------------

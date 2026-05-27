@@ -28,7 +28,7 @@ def _write_codex_doc(project_dir, rel_path, content):
 
 ROOT_DOC = """\
 ---
-id: CODEX.md
+id: codex
 title: Codex Root
 summary: Root-level codex index document.
 ---
@@ -75,7 +75,7 @@ Decisions body.
 
 def test_filter_codex_single_group_returns_matched_and_root(project_dir, runner):
     """lore codex list --filter conceptual returns conceptual docs plus root-level docs only."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
@@ -83,7 +83,7 @@ def test_filter_codex_single_group_returns_matched_and_root(project_dir, runner)
     result = runner.invoke(main, ["codex", "list", "--filter", "conceptual"])
 
     assert result.exit_code == 0
-    assert "CODEX.md" in result.output
+    assert "codex" in result.output
     assert "conceptual-entities-task" in result.output
     assert "tech-cli-commands" not in result.output
     assert "decisions-001" not in result.output
@@ -91,7 +91,7 @@ def test_filter_codex_single_group_returns_matched_and_root(project_dir, runner)
 
 def test_filter_codex_single_group_table_has_two_rows(project_dir, runner):
     """lore codex list --filter conceptual table contains exactly the root doc and the conceptual doc."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
@@ -101,7 +101,7 @@ def test_filter_codex_single_group_table_has_two_rows(project_dir, runner):
     assert result.exit_code == 0
     # Root doc has empty GROUP column; conceptual doc has group "conceptual"
     lines = result.output.splitlines()
-    data_lines = [line for line in lines if "CODEX.md" in line or "conceptual-entities-task" in line]
+    data_lines = [line for line in lines if "codex" in line or "conceptual-entities-task" in line]
     assert len(data_lines) == 2
 
 
@@ -113,7 +113,7 @@ def test_filter_codex_single_group_table_has_two_rows(project_dir, runner):
 
 def test_filter_codex_single_group_json_schema_unchanged(project_dir, runner):
     """lore codex list --filter conceptual --json returns valid JSON with correct schema."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
@@ -128,7 +128,7 @@ def test_filter_codex_single_group_json_schema_unchanged(project_dir, runner):
 
 def test_filter_codex_single_group_json_contains_exactly_two_entries(project_dir, runner):
     """JSON output contains exactly root-level doc and conceptual doc — no others."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
@@ -138,7 +138,7 @@ def test_filter_codex_single_group_json_contains_exactly_two_entries(project_dir
     data = json.loads(result.output)
     ids = [entry["id"] for entry in data["codex"]]
     assert len(ids) == 2
-    assert "CODEX.md" in ids
+    assert "codex" in ids
     assert "conceptual-entities-task" in ids
     assert "tech-cli-commands" not in ids
     assert "decisions-001" not in ids
@@ -146,7 +146,7 @@ def test_filter_codex_single_group_json_contains_exactly_two_entries(project_dir
 
 def test_filter_codex_single_group_json_entry_has_required_fields(project_dir, runner):
     """Each entry in JSON output has id, group, title, summary fields."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "--json"])
@@ -161,13 +161,13 @@ def test_filter_codex_single_group_json_entry_has_required_fields(project_dir, r
 
 def test_filter_codex_single_group_json_root_doc_has_null_group(project_dir, runner):
     """Root-level document in JSON output has null as group (US-007)."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "--json"])
 
     data = json.loads(result.output)
-    root_entries = [e for e in data["codex"] if e["id"] == "CODEX.md"]
+    root_entries = [e for e in data["codex"] if e["id"] == "codex"]
     assert len(root_entries) == 1
     assert root_entries[0]["group"] is None
 
@@ -180,7 +180,7 @@ def test_filter_codex_single_group_json_root_doc_has_null_group(project_dir, run
 
 def test_filter_codex_token_case_sensitive(project_dir, runner):
     """lore codex list --filter Conceptual does NOT match group 'conceptual' (case-sensitive)."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "Conceptual"])
@@ -191,13 +191,13 @@ def test_filter_codex_token_case_sensitive(project_dir, runner):
 
 def test_filter_codex_case_sensitive_root_doc_still_present(project_dir, runner):
     """Root-level document is always returned even when filter token matches nothing."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "Conceptual"])
 
     assert result.exit_code == 0
-    assert "CODEX.md" in result.output
+    assert "codex" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +233,7 @@ Tech overview body.
 
 def test_filter_codex_two_groups_space_separated(project_dir, runner):
     """lore codex list --filter conceptual technical-api returns docs from both groups plus root."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/api/tech-api-spec.md", TECHNICAL_API_DOC)
     _write_codex_doc(project_dir, "technical/tech-overview.md", TECHNICAL_OVERVIEW_DOC)
@@ -242,7 +242,7 @@ def test_filter_codex_two_groups_space_separated(project_dir, runner):
     result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "technical/api"])
 
     assert result.exit_code == 0
-    assert "CODEX.md" in result.output
+    assert "codex" in result.output
     assert "conceptual-entities-task" in result.output
     assert "tech-api-spec" in result.output
     assert "tech-overview" not in result.output
@@ -251,7 +251,7 @@ def test_filter_codex_two_groups_space_separated(project_dir, runner):
 
 def test_filter_codex_two_groups_space_separated_exactly_three_rows(project_dir, runner):
     """Table contains exactly three rows: root doc, conceptual doc, and technical-api doc."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/api/tech-api-spec.md", TECHNICAL_API_DOC)
     _write_codex_doc(project_dir, "technical/tech-overview.md", TECHNICAL_OVERVIEW_DOC)
@@ -263,7 +263,7 @@ def test_filter_codex_two_groups_space_separated_exactly_three_rows(project_dir,
     lines = result.output.splitlines()
     data_lines = [
         line for line in lines
-        if "CODEX.md" in line or "conceptual-entities-task" in line or "tech-api-spec" in line
+        if "codex" in line or "conceptual-entities-task" in line or "tech-api-spec" in line
     ]
     assert len(data_lines) == 3
 
@@ -276,7 +276,7 @@ def test_filter_codex_two_groups_space_separated_exactly_three_rows(project_dir,
 
 def test_filter_codex_repeated_flag_same_as_space_separated(project_dir, runner):
     """Both forms (space-separated and repeated flag) yield the same three-entry result set."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/api/tech-api-spec.md", TECHNICAL_API_DOC)
     _write_codex_doc(project_dir, "technical/tech-overview.md", TECHNICAL_OVERVIEW_DOC)
@@ -294,7 +294,7 @@ def test_filter_codex_repeated_flag_same_as_space_separated(project_dir, runner)
     assert result_repeated.exit_code == 0
     # Both forms must include the same three entries
     for result in (result_space, result_repeated):
-        assert "CODEX.md" in result.output
+        assert "codex" in result.output
         assert "conceptual-entities-task" in result.output
         assert "tech-api-spec" in result.output
         assert "tech-overview" not in result.output
@@ -314,7 +314,7 @@ def test_filter_codex_hyphen_token_space_sep_exact_match_not_prefix(project_dir,
     With subtree semantics, 'technical' must match 'technical-api' too.
     This test is intentionally RED against the current exact-match implementation.
     """
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "technical/api/tech-api-spec.md", TECHNICAL_API_DOC)
     _write_codex_doc(project_dir, "technical/tech-overview.md", TECHNICAL_OVERVIEW_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
@@ -324,7 +324,7 @@ def test_filter_codex_hyphen_token_space_sep_exact_match_not_prefix(project_dir,
     assert result.exit_code == 0
     assert "tech-overview" in result.output
     assert "conceptual-entities-task" in result.output
-    assert "CODEX.md" in result.output
+    assert "codex" in result.output
     # technical-api is a subgroup of technical — MUST be matched by "technical" token (subtree)
     assert "tech-api-spec" in result.output, (
         "'tech-api-spec' (group='technical-api') must be matched by token 'technical' "
@@ -598,6 +598,72 @@ def test_filter_watcher_list_single_group(project_dir, runner):
 
 
 # ---------------------------------------------------------------------------
+# ADR-012 — space-separated multi-token --filter on every list command.
+# Pins the convention across knight / doctrine / artifact / watcher.
+# (codex already covered above.)
+# ---------------------------------------------------------------------------
+
+
+def test_filter_knight_list_two_groups_space_separated(project_dir, runner):
+    """`lore knight list --filter a b` accepts two space-separated tokens."""
+    _write_knight(project_dir, "feature-implementation/ba.md", FEATURE_IMPL_KNIGHT)
+    _write_knight(project_dir, "ops/deploy.md", OPS_KNIGHT)
+
+    result = runner.invoke(
+        main, ["knight", "list", "--filter", "feature-implementation", "ops"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "ba" in result.output
+    assert "deploy" in result.output
+
+
+def test_filter_doctrine_list_two_groups_space_separated(project_dir, runner):
+    """`lore doctrine list --filter a b` accepts two space-separated tokens."""
+    _write_doctrine(project_dir, "default/feature-add.yaml", DEFAULT_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "ops/deploy-flow.yaml", OPS_DOCTRINE_YAML)
+
+    result = runner.invoke(
+        main, ["doctrine", "list", "--filter", "default", "ops"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "feature-add" in result.output
+    assert "deploy-flow" in result.output
+
+
+def test_filter_artifact_list_two_groups_space_separated(project_dir, runner):
+    """`lore artifact list --filter a b` accepts two space-separated tokens."""
+    _write_artifact(project_dir, "root-artifact.md", ROOT_ARTIFACT)
+    _write_artifact(project_dir, "default/some-artifact.md", DEFAULT_ARTIFACT)
+    _write_artifact(project_dir, "default/codex/fi-user-story.md", CODEX_ARTIFACT)
+    _write_artifact(project_dir, "default/transient/scratch.md", TRANSIENT_ARTIFACT)
+
+    result = runner.invoke(
+        main, ["artifact", "list", "--filter", "default/codex", "default/transient"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "fi-user-story" in result.output
+    assert "scratch" in result.output
+    assert "some-artifact" not in result.output
+
+
+def test_filter_watcher_list_two_groups_space_separated(project_dir, runner):
+    """`lore watcher list --filter a b` accepts two space-separated tokens."""
+    _write_watcher(project_dir, "default/mission-watcher.yaml", DEFAULT_WATCHER_YAML)
+    _write_watcher(project_dir, "ops/deploy-watcher.yaml", OPS_WATCHER_YAML)
+
+    result = runner.invoke(
+        main, ["watcher", "list", "--filter", "default", "ops"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "mission-watcher" in result.output
+    assert "deploy-watcher" in result.output
+
+
+# ---------------------------------------------------------------------------
 # US-4: Backward compatibility — unfiltered calls return full output unchanged
 # Spec: filter-list-subcommands-us-4 (lore codex show filter-list-subcommands-us-4)
 # Exercises: conceptual-workflows-filter-list step 3 (filter_groups absent → no filter)
@@ -623,7 +689,7 @@ def test_unfiltered_knight_list_returns_all(project_dir, runner):
 def test_unfiltered_codex_list_json_unchanged(project_dir, runner):
     """lore codex list --json without --filter returns valid JSON with all docs and correct schema."""
     import json as _json
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
 
@@ -634,7 +700,7 @@ def test_unfiltered_codex_list_json_unchanged(project_dir, runner):
     assert "codex" in data
     assert isinstance(data["codex"], list)
     ids = [entry["id"] for entry in data["codex"]]
-    assert "CODEX.md" in ids
+    assert "codex" in ids
     assert "conceptual-entities-task" in ids
     assert "tech-cli-commands" in ids
     # Schema unchanged: each entry must have id, group, title, summary
@@ -683,13 +749,13 @@ def test_all_five_list_commands_unfiltered(project_dir, runner):
 # Exercises: conceptual-workflows-filter-list step 3 (unrecognised token → empty match, no error)
 def test_filter_unknown_token_returns_root_only_exit_zero(project_dir, runner):
     """lore codex list --filter nonexistent-group exits 0 and returns only root-level docs."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "nonexistent-group"])
 
     assert result.exit_code == 0
-    assert "CODEX.md" in result.output
+    assert "codex" in result.output
     assert "conceptual-entities-task" not in result.output
     # No error output to stderr
     assert result.exception is None
@@ -700,7 +766,7 @@ def test_filter_unknown_token_returns_root_only_exit_zero(project_dir, runner):
 def test_filter_unknown_token_no_root_files_empty_message(project_dir, runner):
     """lore codex list --filter nonexistent-group with no root-level files prints empty-codex message, exit 0."""
     # scenario premise: no root files — drop the lore init seed
-    (project_dir / ".lore/codex/CODEX.md").unlink()
+    (project_dir / ".lore/codex/codex.md").unlink()
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "nonexistent-group"])
@@ -714,13 +780,13 @@ def test_filter_unknown_token_no_root_files_empty_message(project_dir, runner):
 # Exercises: conceptual-workflows-filter-list step 3 (OR logic; unknown token contributes no results)
 def test_filter_one_valid_one_unknown_token_partial_results(project_dir, runner):
     """lore codex list --filter conceptual nonexistent-group returns root + conceptual docs only, exit 0."""
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
 
     result = runner.invoke(main, ["codex", "list", "--filter", "conceptual", "nonexistent-group"])
 
     assert result.exit_code == 0
-    assert "CODEX.md" in result.output
+    assert "codex" in result.output
     assert "conceptual-entities-task" in result.output
     assert result.exception is None
 
@@ -759,7 +825,7 @@ def test_filter_codex_token_matches_subtree_group(project_dir, runner):
 
     Currently FAILS because the implementation only exact-matches the group name.
     """
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "conceptual/workflows/concept-workflow-one.md", CONCEPTUAL_WORKFLOWS_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
@@ -782,7 +848,7 @@ def test_filter_codex_token_matches_hyphenated_subtree_group(project_dir, runner
 
     Currently FAILS because the implementation only exact-matches the group name.
     """
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_codex_doc(project_dir, "technical/api/tech-api-spec.md", TECHNICAL_API_DOC)
     _write_codex_doc(project_dir, "decisions/decisions-001.md", DECISIONS_DOC)
@@ -805,7 +871,7 @@ def test_filter_codex_subtree_json_contains_child_group_docs(project_dir, runner
 
     Currently FAILS because the implementation only exact-matches the group name.
     """
-    _write_codex_doc(project_dir, "CODEX.md", ROOT_DOC)
+    _write_codex_doc(project_dir, "codex.md", ROOT_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_codex_doc(project_dir, "technical/api/tech-api-spec.md", TECHNICAL_API_DOC)
 

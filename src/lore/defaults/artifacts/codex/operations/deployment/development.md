@@ -4,7 +4,7 @@ title: Development Environment
 summary: Step-by-step guide to running the task app locally from a fresh clone. Prerequisites,
   install, database initialisation, run, and verify.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Development Environment

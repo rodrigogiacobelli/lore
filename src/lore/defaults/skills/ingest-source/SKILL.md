@@ -7,11 +7,11 @@ description: Capture a raw upstream source (Jira ticket, transcript, pasted doc)
 
 Capture a single upstream item as a verbatim snapshot under `.lore/codex/sources/<system>/<id>.md`, then propose any resulting canonical-doc updates. Use this for first-time capture. To update a source that already exists on disk, use `/refresh-source` instead.
 
-## CODEX.md is your primary input — and a candidate canonical doc
+## codex.md is your primary input — and a candidate canonical doc
 
-`.lore/codex/CODEX.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it carries project-specific guidance that shapes where new facts from this source should land.
+`.lore/codex/codex.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it carries project-specific guidance that shapes where new facts from this source should land.
 
-When the ingested source introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule, propose updating `CODEX.md` in step 5 like any other canonical doc. **CODEX.md is lean by design** — do not propose appending per-feature notes or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit.
+When the ingested source introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule, propose updating `codex.md` in step 5 like any other canonical doc. **codex.md is lean by design** — do not propose appending per-feature notes or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit.
 
 ## Steps
 
@@ -53,13 +53,21 @@ The Glossary is for small, project-specific terms only. Entities, named workflow
 
 ### 6. Apply approved edits
 
-For each approved edit, modify the relevant canonical doc. Canonical docs may mention the source ID in prose; they must NEVER list the source ID in `related` — `lore health` will reject that as `canonical_links_to_source`. When the distilled canonical doc maps to specific code files in the target repo, populate its `binds:` field so `lore impacts` surfaces the doc when those files are edited.
+Drive every canonical-doc change through the CLI — do NOT write codex files by hand. The CLI normalises frontmatter and runs schema validation; hand-edits skip both.
+
+- **Body change** — draft the new body to a temp file, then `lore codex edit <id> -f <patched-body>.md`.
+- **Add a cross-link** — `lore codex edit <id> --add related=<source-impacted-doc>`.
+- **Update title / summary** — `lore codex edit <id> --set summary="..."`.
+- **Populate `binds:`** — when the distilled doc maps to specific code files in the target repo, `lore codex edit <id> --add binds=<path-or-glob>` so `lore impacts` surfaces the doc when those files are edited.
+- **Create a missing canonical doc** — `lore codex new <id> --group <subdir> -f <draft>.md`.
+
+Canonical docs may mention the source ID in prose; they must NEVER list the source ID in `related` — `lore health` will reject that as `canonical_links_to_source`.
 
 Track the canonical codex IDs that were actually edited. You will list these in the snapshot's `related` field.
 
 ### 7. Write the snapshot (with the required outbound `related`)
 
-Write `.lore/codex/sources/<system>/<id>.md` with this exact structure:
+Draft the snapshot body to a temp file with this exact frontmatter shape:
 
 ```markdown
 ---
@@ -77,6 +85,14 @@ related:
 
 <verbatim upstream body>
 ```
+
+Then create the snapshot via the CLI:
+
+```
+lore codex new <id> --type codex-source --group sources/<system> -f <draft>.md
+```
+
+`--type codex-source` is the supported override — the schema is stricter than the default `codex` type (exactly four frontmatter fields). `--group sources/<system>` creates the directory if it does not yet exist.
 
 Frontmatter fields are exactly four: `id`, `title`, `summary`, `related`. `related` MUST be non-empty — every ID in it names a canonical doc this source caused to change. `lore health` rejects empty `related`, missing `related`, or any extra field.
 

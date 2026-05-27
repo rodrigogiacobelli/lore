@@ -4,7 +4,7 @@ title: '{Entity Name}'
 summary: _One to three sentences. What this entity is and what it does in the system.
   Mention its key attributes and lifecycle if it has one._
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # {Entity Name}

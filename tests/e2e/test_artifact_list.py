@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from lore.artifact import scan_artifacts
+from lore.artifact import list_artifacts
 from lore.cli import main, _format_table
 from lore.frontmatter import parse_frontmatter_doc
 from lore.doctrine import list_doctrines
@@ -169,127 +169,127 @@ SPEC_KEY_ORDER = ["id", "group", "title", "summary"]
 
 
 # ---------------------------------------------------------------------------
-# Unit tests: scan_artifacts()
+# Unit tests: list_artifacts()
 # ---------------------------------------------------------------------------
 
 
 class TestScanArtifactsReturnsAllArtifacts:
-    """scan_artifacts() returns all valid artifacts."""
+    """list_artifacts() returns all valid artifacts."""
 
     def test_returns_list(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert isinstance(result, list)
 
     def test_artifact_has_id_field(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "transient-business-spec"
 
     def test_artifact_has_title_field(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert result[0]["title"] == "Business Spec Template"
 
     def test_artifact_has_summary_field(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert result[0]["summary"] == "Template for writing a business spec."
 
     def test_artifact_has_path_field(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert "path" in result[0]
 
     def test_walks_subdirectories_recursively(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
         subdir = artifacts_dir / "sub"
         subdir.mkdir(parents=True)
         (subdir / "nested.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "transient-business-spec"
 
 
 class TestScanArtifactsEmptyOrMissingDirectory:
-    """scan_artifacts() returns empty list when directory is absent or empty."""
+    """list_artifacts() returns empty list when directory is absent or empty."""
 
     def test_missing_dir_returns_empty_list(self, tmp_path):
-        artifacts_dir = tmp_path / "nonexistent"
-        result = scan_artifacts(artifacts_dir)
+        _artifacts_dir = tmp_path / ".lore" / "nonexistent"
+        result = list_artifacts(tmp_path)
         assert result == []
 
     def test_empty_dir_returns_empty_list(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
-        result = scan_artifacts(artifacts_dir)
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
+        result = list_artifacts(tmp_path)
         assert result == []
 
     def test_missing_dir_does_not_raise(self, tmp_path):
-        artifacts_dir = tmp_path / "no" / "such" / "path"
-        result = scan_artifacts(artifacts_dir)
+        _artifacts_dir = tmp_path / ".lore" / "no" / "such" / "path"
+        result = list_artifacts(tmp_path)
         assert result == []
 
 
 class TestScanArtifactsInvalidFrontmatterSkipped:
-    """scan_artifacts() silently skips files with missing or invalid frontmatter."""
+    """list_artifacts() silently skips files with missing or invalid frontmatter."""
 
     def test_file_without_frontmatter_skipped(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "no-fm.md").write_text("# No Frontmatter\n")
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert result == []
 
     def test_invalid_file_skipped_valid_still_returned(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "no-fm.md").write_text("# No Frontmatter\n")
         (artifacts_dir / "valid.md").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "transient-business-spec"
 
 class TestScanArtifactsSoftDeletedExcluded:
-    """scan_artifacts() excludes .md.deleted files."""
+    """list_artifacts() excludes .md.deleted files."""
 
     def test_soft_deleted_file_excluded(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md.deleted").write_text(VALID_ARTIFACT)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert result == []
 
     def test_soft_deleted_excluded_valid_still_returned(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "art-a.md.deleted").write_text(VALID_ARTIFACT)
         (artifacts_dir / "valid.md").write_text(VALID_ARTIFACT_B)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         assert len(result) == 1
         assert result[0]["id"] == "transient-full-spec"
 
 
 class TestScanArtifactsSortedAlphabetically:
-    """scan_artifacts() returns artifacts sorted alphabetically by id."""
+    """list_artifacts() returns artifacts sorted alphabetically by id."""
 
     def test_multiple_artifacts_sorted_by_id(self, tmp_path):
-        artifacts_dir = tmp_path / "artifacts"
-        artifacts_dir.mkdir()
+        artifacts_dir = tmp_path / ".lore" / "artifacts"
+        artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "zzz.md").write_text(ARTIFACT_BRAVO)
         (artifacts_dir / "aaa.md").write_text(ARTIFACT_ALPHA)
-        result = scan_artifacts(artifacts_dir)
+        result = list_artifacts(tmp_path)
         ids = [a["id"] for a in result]
         assert ids == sorted(ids)
 
@@ -553,7 +553,12 @@ class TestArtifactShowFailFast:
 
 
 class TestArtifactShowJsonOutput:
-    """lore artifact show --json emits valid JSON with correct schema."""
+    """lore artifact show --json emits valid JSON with correct schema.
+
+    Post-G16: single-id ``artifact show --json`` returns the record dict
+    directly (top-level id/title/summary/body/filename/group keys) per
+    amendment Section D. Multi-id still wraps under ``{"artifacts": [...]}``.
+    """
 
     def test_exit_code_0_for_known_id_with_json_flag(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
@@ -566,61 +571,41 @@ class TestArtifactShowJsonOutput:
         data = json.loads(result.output)
         assert isinstance(data, dict)
 
-    def test_json_output_has_artifacts_key(self, runner, project_dir):
-        _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
-        result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
-        data = json.loads(result.output)
-        assert "artifacts" in data
-
-    def test_json_artifacts_is_a_list(self, runner, project_dir):
-        _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
-        result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
-        data = json.loads(result.output)
-        assert isinstance(data["artifacts"], list)
-
-    def test_json_artifacts_has_one_entry_for_single_id(self, runner, project_dir):
-        _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
-        result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
-        data = json.loads(result.output)
-        assert len(data["artifacts"]) == 1
-
     def test_json_artifact_has_id_field(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
         result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
         data = json.loads(result.output)
-        assert data["artifacts"][0]["id"] == "show-biz-spec"
+        assert data["id"] == "show-biz-spec"
 
     def test_json_artifact_has_title_field(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
         result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
         data = json.loads(result.output)
-        assert data["artifacts"][0]["title"] == "Business Spec Template"
+        assert data["title"] == "Business Spec Template"
 
     def test_json_artifact_has_summary_field(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
         result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
         data = json.loads(result.output)
-        assert (
-            data["artifacts"][0]["summary"] == "Template for writing a business spec."
-        )
+        assert data["summary"] == "Template for writing a business spec."
 
     def test_json_artifact_has_body_field(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
         result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
         data = json.loads(result.output)
-        assert "body" in data["artifacts"][0]
+        assert "body" in data
 
     def test_json_body_contains_template_content(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
         result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
         data = json.loads(result.output)
-        assert "# Business Spec Template" in data["artifacts"][0]["body"]
+        assert "# Business Spec Template" in data["body"]
 
     def test_json_body_does_not_contain_frontmatter(self, runner, project_dir):
         _write_artifact(project_dir, "biz-spec.md", ARTIFACT_WITH_BODY)
         result = runner.invoke(main, ["--json", "artifact", "show", "show-biz-spec"])
         data = json.loads(result.output)
-        body = data["artifacts"][0]["body"]
+        body = data["body"]
         assert "id: show-biz-spec" not in body
         assert "title: Business Spec Template" not in body
 
@@ -756,7 +741,8 @@ class TestArtifactJsonConsistency:
         list_data = json.loads(list_result.output)
         show_data = json.loads(show_result.output)
         assert "body" not in list_data["artifacts"][0]
-        assert "body" in show_data["artifacts"][0]
+        # Post-G16: single-id show returns the record dict directly.
+        assert "body" in show_data
 
 
 # ---------------------------------------------------------------------------
@@ -770,7 +756,7 @@ class TestArtifactListHeaderContainsGroupColumns:
     def test_artifact_list_header_contains_group_column(self, runner, project_dir):
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         assert len(non_empty_lines) >= 1
         header = non_empty_lines[0]
         assert "GROUP" in header
@@ -778,7 +764,7 @@ class TestArtifactListHeaderContainsGroupColumns:
     def test_artifact_list_header_has_four_columns(self, runner, project_dir):
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         for col in ("ID", "GROUP", "TITLE", "SUMMARY"):
             assert col in header
@@ -788,7 +774,7 @@ class TestArtifactListHeaderContainsGroupColumns:
     ):
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         id_pos = header.index("ID")
         group_pos = header.index("GROUP")
@@ -799,7 +785,7 @@ class TestArtifactListHeaderContainsGroupColumns:
     def test_group_column_appears_before_title(self, runner, project_dir):
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         group_pos = header.index("GROUP")
         title_pos = header.index("TITLE")
@@ -858,7 +844,7 @@ class TestArtifactListGroupValuesInTableMatchDerivation:
 
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         assert "GROUP" in header
         assert "codex" in result.output
@@ -875,7 +861,7 @@ class TestArtifactListGroupValuesInTableMatchDerivation:
 
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         header = non_empty_lines[0]
         assert "GROUP" in header
         assert "codex/specs" in result.output
@@ -1001,7 +987,7 @@ class TestArtifactListSortOrderIsAscending:
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
 
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         assert len(non_empty_lines) >= 3
         first_data_row = non_empty_lines[1]
         assert "alpha-artifact" in first_data_row
@@ -1018,7 +1004,7 @@ class TestArtifactListSortOrderIsAscending:
         result = runner.invoke(main, ["artifact", "list"])
         assert result.exit_code == 0, result.output
 
-        non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
         data_rows = non_empty_lines[1:]
         ids_in_table = [row.strip().split()[0] for row in data_rows]
         assert ids_in_table == sorted(ids_in_table)
@@ -1038,7 +1024,7 @@ class TestArtifactListSortOrderIsAscending:
         assert result_table.exit_code == 0
         assert result_json.exit_code == 0
 
-        non_empty_lines = [l for l in result_table.output.split("\n") if l.strip()]
+        non_empty_lines = [ln for ln in result_table.output.split("\n") if ln.strip()]
         table_ids = [row.strip().split()[0] for row in non_empty_lines[1:]]
 
         data = json.loads(result_json.output)
@@ -1057,7 +1043,7 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
     def test_record_keys_match_spec_defined_order(
         self, runner, bare_project_dir
     ):
-        artifacts_dir = bare_project_dir / ".lore" / "artifacts"
+        _artifacts_dir = bare_project_dir / ".lore" / "artifacts"
         _write_artifact(bare_project_dir, "root.md", ARTIFACT_ROOT)
 
         result = runner.invoke(main, ["artifact", "list", "--json"])
@@ -1071,7 +1057,7 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
         self, runner, bare_project_dir
     ):
         # US-007 Scenario 2/7: root-level artifact emits group: null, never ""
-        artifacts_dir = bare_project_dir / ".lore" / "artifacts"
+        _artifacts_dir = bare_project_dir / ".lore" / "artifacts"
         _write_artifact(bare_project_dir, "root.md", ARTIFACT_ROOT)
 
         result = runner.invoke(main, ["artifact", "list", "--json"])
@@ -1085,7 +1071,7 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
     def test_subdirectory_artifact_has_folder_group_in_spec_position(
         self, runner, bare_project_dir
     ):
-        artifacts_dir = bare_project_dir / ".lore" / "artifacts"
+        _artifacts_dir = bare_project_dir / ".lore" / "artifacts"
         _write_artifact(bare_project_dir, "my-team/sub.md", ARTIFACT_IN_SUBDIR)
 
         result = runner.invoke(main, ["artifact", "list", "--json"])
@@ -1100,7 +1086,7 @@ class TestArtifactListJsonGroupKeyPresentInSpecOrder:
         self, runner, bare_project_dir
     ):
         # US-007 Scenario 2/7: deep-nested group is slash-joined, never hyphen-joined
-        artifacts_dir = bare_project_dir / ".lore" / "artifacts"
+        _artifacts_dir = bare_project_dir / ".lore" / "artifacts"
         _write_artifact(bare_project_dir, "alpha/beta/deep.md", ARTIFACT_IN_DEEP_SUBDIR)
 
         result = runner.invoke(main, ["artifact", "list", "--json"])
@@ -1121,8 +1107,24 @@ class TestDefaultArtifactMetadata:
     """After lore init, default artifacts have complete id, title, summary, group fields."""
 
     @pytest.fixture(scope="class")
-    def artifact_records(self):
-        return scan_artifacts(_DEFAULTS_ARTIFACTS_DIR)
+    def artifact_records(self, tmp_path_factory):
+        # Stage the default artifacts under a tmp project root so
+        # list_artifacts(project_root) can resolve them via entity_location.
+        import shutil
+        root = tmp_path_factory.mktemp("default-artifacts-root")
+        target = root / ".lore" / "artifacts"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(_DEFAULTS_ARTIFACTS_DIR, target)
+        records = list_artifacts(root)
+        # Map each record's `path` back to the source defaults path so the
+        # parametrized assertion (which uses the source file) still resolves.
+        for r in records:
+            try:
+                rel = Path(r["path"]).relative_to(target)
+                r["path"] = _DEFAULTS_ARTIFACTS_DIR / rel
+            except ValueError:
+                pass
+        return records
 
     def test_scan_artifacts_returns_expected_count_of_templates(
         self, artifact_records
@@ -1147,7 +1149,7 @@ class TestDefaultArtifactMetadata:
         _TEMPLATE_FILES,
         ids=lambda f: str(f.relative_to(_DEFAULTS_ARTIFACTS_DIR)),
     )
-    def test_template_file_is_returned_by_scan_artifacts(
+    def test_template_file_is_returned_by_list_artifacts(
         self, artifact_file, artifact_records
     ):
         returned_paths = {r["path"] for r in artifact_records}
@@ -1261,7 +1263,7 @@ class TestFormatTableColumnPadding:
         for cmd in [["knight", "list"], ["doctrine", "list"], ["artifact", "list"]]:
             result = runner.invoke(main, cmd)
             assert result.exit_code == 0
-            non_empty_lines = [l for l in result.output.split("\n") if l.strip()]
+            non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
             if non_empty_lines:
                 header = non_empty_lines[0]
                 assert header.startswith("  ")
@@ -1276,50 +1278,50 @@ class TestMissingMetadataFallbackKnight:
     """Knight files missing metadata fields fall back gracefully."""
 
     def test_knight_missing_id_field_uses_filename_stem_as_id(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "my-knight.md").write_text(
             "---\ntitle: My Knight\nsummary: Does knight things\n---\n\n# My Knight\n"
         )
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert len(records) == 1
         assert records[0]["id"] == "my-knight"
 
     def test_knight_with_no_frontmatter_uses_filename_stem_as_id(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "bare-knight.md").write_text("# Bare Knight\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert len(records) == 1
         assert records[0]["id"] == "bare-knight"
 
     def test_knight_missing_title_uses_id_as_title(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "silent-knight.md").write_text(
             "---\nid: silent-knight\nsummary: Stays quiet\n---\n\n# Content\n"
         )
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert len(records) == 1
         assert records[0]["title"] == "silent-knight"
 
     def test_knight_missing_summary_has_empty_string_summary(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "brief-knight.md").write_text(
             "---\nid: brief-knight\ntitle: Brief Knight\n---\n\n# Brief Knight\n"
         )
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert len(records) == 1
         assert records[0]["summary"] == ""
 
     def test_list_knights_does_not_crash_with_malformed_yaml_frontmatter(
         self, tmp_path
     ):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "malformed.md").write_text("---\n: invalid yaml\n---\n\n# Content\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert len(records) == 1
         record = records[0]
         assert "id" in record
@@ -1328,10 +1330,10 @@ class TestMissingMetadataFallbackKnight:
         assert "summary" in record
 
     def test_list_knights_malformed_yaml_returns_stem_based_fallback(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "malformed-knight.md").write_text("---\n: invalid yaml\n---\n\n# Content\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert len(records) == 1
         record = records[0]
         assert record["id"] == "malformed-knight"
@@ -1363,49 +1365,49 @@ class TestMissingMetadataFallbackDoctrine:
     """Doctrine design files missing optional fields fall back gracefully."""
 
     def test_doctrine_id_comes_from_design_frontmatter(self, tmp_path):
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "my-workflow.design.md").write_text(
             "---\nid: my-workflow\ntitle: My Workflow\nsummary: A workflow.\n---\n"
         )
         (doctrines_dir / "my-workflow.yaml").write_text(
             "id: my-workflow\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["id"] == "my-workflow"
 
     def test_doctrine_missing_title_uses_id_as_title(self, tmp_path):
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "no-title-doc.design.md").write_text(
             "---\nid: no-title-doc\n---\n"
         )
         (doctrines_dir / "no-title-doc.yaml").write_text(
             "id: no-title-doc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["title"] == "no-title-doc"
 
     def test_doctrine_missing_summary_has_empty_string_summary(self, tmp_path):
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "no-summary.design.md").write_text(
             "---\nid: no-summary\ntitle: No Summary Doctrine\n---\n"
         )
         (doctrines_dir / "no-summary.yaml").write_text(
             "id: no-summary\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["summary"] == ""
         assert isinstance(records[0]["summary"], str)
 
     def test_long_description_is_used_as_summary_when_summary_missing(self, tmp_path):
         """summary comes from design frontmatter only; YAML description is not used."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         long_summary = (
             "This is a very long summary that goes well beyond eighty characters "
             "and should appear in full without truncation"
@@ -1416,14 +1418,14 @@ class TestMissingMetadataFallbackDoctrine:
         (doctrines_dir / "long-desc.yaml").write_text(
             "id: long-desc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["summary"] == long_summary
 
     def test_short_description_is_used_whole_without_ellipsis(self, tmp_path):
         """summary from design frontmatter is returned as-is."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         short_summary = "Short description."
         (doctrines_dir / "short-desc.design.md").write_text(
             f"---\nid: short-desc\ntitle: Short Desc\nsummary: {short_summary}\n---\n"
@@ -1431,42 +1433,42 @@ class TestMissingMetadataFallbackDoctrine:
         (doctrines_dir / "short-desc.yaml").write_text(
             "id: short-desc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["summary"] == short_summary
 
     def test_summary_field_from_design_frontmatter(self, tmp_path):
         """summary comes exclusively from design frontmatter."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "has-both.design.md").write_text(
             "---\nid: has-both\ntitle: Has Both\nsummary: This is the explicit summary.\n---\n"
         )
         (doctrines_dir / "has-both.yaml").write_text(
             "id: has-both\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["summary"] == "This is the explicit summary."
 
     def test_list_doctrines_skips_yaml_only_file_gracefully(self, tmp_path):
         """A YAML-only file (no .design.md) returns empty list without crashing."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "empty.yaml").write_text("")
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert records == []
 
     def test_list_doctrines_record_has_valid_key_and_new_fields_together(self, tmp_path):
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "my-doctrine.design.md").write_text(
             "---\nid: my-doctrine\ntitle: My Doctrine\nsummary: X.\n---\n"
         )
         (doctrines_dir / "my-doctrine.yaml").write_text(
             "id: my-doctrine\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert "valid" in records[0]
         assert "id" in records[0]
         assert "group" in records[0]
@@ -1478,72 +1480,72 @@ class TestMissingMetadataFallbackReturnShape:
     """list_knights() and list_doctrines() emit required field shapes."""
 
     def test_list_knights_record_has_id_key(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert "id" in records[0]
 
     def test_list_knights_record_has_group_key(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert "group" in records[0]
 
     def test_list_knights_record_has_title_key(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert "title" in records[0]
 
     def test_list_knights_record_has_summary_key(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert "summary" in records[0]
 
     def test_list_knights_sorted_by_id(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "zebra.md").write_text("# Zebra\n")
         (knights_dir / "alpha.md").write_text("# Alpha\n")
         (knights_dir / "mango.md").write_text("# Mango\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         ids = [r["id"] for r in records]
         assert ids == sorted(ids)
 
     def test_list_knights_group_is_empty_string_for_root_level_file(self, tmp_path):
-        knights_dir = tmp_path / "knights"
-        knights_dir.mkdir()
+        knights_dir = tmp_path / ".lore" / "knights"
+        knights_dir.mkdir(parents=True)
         (knights_dir / "root-knight.md").write_text("# Root\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert records[0]["group"] == ""
 
     def test_list_knights_group_is_subdirectory_name_for_nested_file(self, tmp_path):
-        knights_dir = tmp_path / "knights"
+        knights_dir = tmp_path / ".lore" / "knights"
         subdir = knights_dir / "special"
         subdir.mkdir(parents=True)
         (subdir / "special-knight.md").write_text("# Special\n")
-        records = list_knights(knights_dir)
+        records = list_knights(tmp_path)
         assert records[0]["group"] == "special"
 
     def test_list_doctrines_group_is_empty_string_for_root_level_file(self, tmp_path):
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "root-doc.design.md").write_text(
             "---\nid: root-doc\ntitle: Root Doc\nsummary: X.\n---\n"
         )
         (doctrines_dir / "root-doc.yaml").write_text(
             "id: root-doc\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert records[0]["group"] == ""
 
     def test_list_doctrines_group_is_subdirectory_name_for_nested_file(self, tmp_path):
-        doctrines_dir = tmp_path / "doctrines"
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
         subdir = doctrines_dir / "workflow"
         subdir.mkdir(parents=True)
         (subdir / "nested-doc.design.md").write_text(
@@ -1552,7 +1554,7 @@ class TestMissingMetadataFallbackReturnShape:
         (subdir / "nested-doc.yaml").write_text(
             "id: nested-doc\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
-        records = list_doctrines(doctrines_dir)
+        records = list_doctrines(tmp_path)
         assert records[0]["group"] == "workflow"
 
 

@@ -5,7 +5,7 @@ summary: Branching model, commit conventions, PR process, review process, merge 
   and release process for this project. AI agents must follow these conventions on
   every commit and every PR.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Git Workflow

@@ -19,7 +19,7 @@ import textwrap
 from pathlib import Path
 
 # Imports the NEW helper — does not yet exist.
-from lore.codex import _build_adjacency, scan_codex
+from lore.codex import _build_adjacency, list_codex
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def _make_codex_dir(tmp_path: Path) -> Path:
 
 def _index_and_docs(codex_dir: Path) -> tuple[dict, list[dict]]:
     """Build (index, docs) the same way `map_documents` does internally."""
-    docs = scan_codex(codex_dir)
+    docs = list_codex(codex_dir.parent.parent)
     index = {d["id"]: d for d in docs}
     return index, docs
 

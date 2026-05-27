@@ -1,16 +1,16 @@
 ---
 name: lore-update
-description: After the lore package is upgraded, reconcile this project's customized .lore/codex/CODEX.md and agent instruction file (CLAUDE.md / AGENTS.md / ...) against the freshly seeded templates — merge in new mechanics (new frontmatter fields, commands, layers) without clobbering project-specific customization.
+description: After the lore package is upgraded, reconcile this project's customized .lore/codex/codex.md and agent instruction file (CLAUDE.md / AGENTS.md / ...) against the freshly seeded templates — merge in new mechanics (new frontmatter fields, commands, layers) without clobbering project-specific customization.
 ---
 
 # Lore Update
 
 When the `lore` package is upgraded, new releases add mechanics — new codex frontmatter fields, new commands, new layers, new rules. Two project files carry generic "how Lore works" guidance that silently drifts out of date when this happens:
 
-- **`.lore/codex/CODEX.md`** — the project-wide codex guide. Heavily customized per project, but large parts describe how Lore and the codex work (layers, content classes, frontmatter fields, commands).
+- **`.lore/codex/codex.md`** — the project-wide codex guide. Heavily customized per project, but large parts describe how Lore and the codex work (layers, content classes, frontmatter fields, commands).
 - **The agent instruction file** (`CLAUDE.md`, `AGENTS.md`, ...) — carries Lore usage guidance derived from `.lore/LORE-AGENT.md`.
 
-`lore init` refreshes the *seed* copies of both on every run but **never** overwrites the project's customized versions. The result: the project's files fall behind the installed package. When v0.6 added the `binds:` field, projects whose CODEX.md predated it had no mention of `binds` — or worse, stale wording that conflicted with the new seed.
+`lore init` refreshes the *seed* copies of both on every run but **never** overwrites the project's customized versions. The result: the project's files fall behind the installed package. When v0.6 added the `binds:` field, projects whose codex.md predated it had no mention of `binds` — or worse, stale wording that conflicted with the new seed.
 
 This skill closes that gap. It reconciles the two project files against the fresh seeds, adopting new generic mechanics while preserving every project-specific customization.
 
@@ -24,8 +24,8 @@ This is **not** the skill for editing codex content — to add or change a fact 
 
 | File | What `lore init` does | Role here |
 |------|-----------------------|-----------|
-| `.lore/artifacts/default/codex/CODEX.md` | Overwritten from the installed package | **Fresh seed** — the target |
-| `.lore/codex/CODEX.md` | Never touched once it exists | **Project file** — what we update |
+| `.lore/artifacts/default/codex/codex.md` | Overwritten from the installed package | **Fresh seed** — the target |
+| `.lore/codex/codex.md` | Never touched once it exists | **Project file** — what we update |
 | `.lore/LORE-AGENT.md` | Overwritten from the installed package | **Fresh seed** — the target |
 | `CLAUDE.md` / `AGENTS.md` / ... | Not managed by Lore at all | **Project file** — what we update |
 
@@ -58,14 +58,14 @@ Confirm with the user that they upgraded `lore` before invoking this skill. If t
 lore init
 ```
 
-Idempotent and safe: it overwrites only Lore-owned seed files (`.lore/artifacts/default/...`, `.lore/LORE-AGENT.md`, default doctrines/knights/skills/watchers). It never touches `.lore/codex/CODEX.md`, `.lore/codex/glossary.yaml`, `.lore/config.toml`, or the agent instruction file.
+Idempotent and safe: it overwrites only Lore-owned seed files (`.lore/artifacts/default/...`, `.lore/LORE-AGENT.md`, default doctrines/knights/skills/watchers). It never touches `.lore/codex/codex.md`, `.lore/codex/glossary.yaml`, `.lore/config.toml`, or the agent instruction file.
 
-### 3. Part 1 — reconcile `.lore/codex/CODEX.md`
+### 3. Part 1 — reconcile `.lore/codex/codex.md`
 
 Compare the fresh seed against the project file:
 
-- Seed: `.lore/artifacts/default/codex/CODEX.md`
-- Project: `.lore/codex/CODEX.md`
+- Seed: `.lore/artifacts/default/codex/codex.md`
+- Project: `.lore/codex/codex.md`
 
 A raw `diff` locates changed regions but is noisy against a customized file — reconcile **semantically**, section by section. Read both files in full, then for each difference apply the generic-vs-project rule:
 
@@ -74,7 +74,7 @@ A raw `diff` locates changed regions but is noisy against a customized file — 
 
 Never copy the `id:` frontmatter line — the seed carries `id: example-codex`, the project file carries `id: codex`. Leave the project's `id` as-is.
 
-If `.lore/codex/CODEX.md` does not exist, `lore init` already seeded a fresh one — nothing to reconcile.
+If `.lore/codex/codex.md` does not exist, `lore init` already seeded a fresh one — nothing to reconcile.
 
 ### 4. Part 2 — reconcile the agent instruction file
 

@@ -15,6 +15,11 @@ properties:
   summary:
     type: string
     minLength: 1
+  type:
+    type: string
+    description: >
+      Optional free-form label (e.g. tech-spec, tech-spec-amendment). Not a
+      schema selector — codex doc_type is resolved from path/group.
   related:
     type: array
     uniqueItems: true

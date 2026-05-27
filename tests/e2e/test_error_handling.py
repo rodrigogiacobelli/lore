@@ -6,7 +6,6 @@ Spec: conceptual-workflows-error-handling (lore codex show conceptual-workflows-
 import json
 from unittest.mock import patch
 
-import pytest
 from click.testing import CliRunner
 
 from lore.cli import main
@@ -14,8 +13,6 @@ from tests.conftest import (
     assert_exit_err,
     assert_exit_ok,
     db_conn,
-    insert_mission,
-    insert_quest,
 )
 
 
@@ -619,14 +616,16 @@ class TestEditSoftDeletedEntity:
         data = json.loads(result.output)
         assert "error" in data
 
-    def test_edit_soft_deleted_quest_json_has_deleted_at_key(self, runner, project_dir):
+    def test_edit_soft_deleted_quest_json_has_deleted_at_in_message(self, runner, project_dir):
+        # G17: CLI emits `{"error": str}` on edit failure; the deleted_at
+        # timestamp is preserved in the error message text (not as a separate key).
         rq = runner.invoke(main, ["--json", "new", "quest", "Q"])
         quest_id = json.loads(rq.output)["id"]
         runner.invoke(main, ["delete", quest_id])
         result = runner.invoke(main, ["--json", "edit", quest_id, "--title", "X"])
         data = json.loads(result.output)
-        assert "deleted_at" in data
-        assert data["deleted_at"] is not None
+        assert "error" in data
+        assert "deleted on" in data["error"]
 
     def test_edit_soft_deleted_mission_exits_one(self, runner, project_dir):
         rq = runner.invoke(main, ["--json", "new", "quest", "Q"])
@@ -637,7 +636,9 @@ class TestEditSoftDeletedEntity:
         result = runner.invoke(main, ["--json", "edit", m_id, "--title", "X"])
         assert_exit_err(result, 1)
 
-    def test_edit_soft_deleted_mission_json_has_both_keys(self, runner, project_dir):
+    def test_edit_soft_deleted_mission_json_has_deleted_at_in_message(self, runner, project_dir):
+        # G17: CLI emits `{"error": str}` on edit failure; the deleted_at
+        # timestamp is preserved in the error message text.
         rq = runner.invoke(main, ["--json", "new", "quest", "Q"])
         quest_id = json.loads(rq.output)["id"]
         rm = runner.invoke(main, ["--json", "new", "mission", "M", "-q", quest_id])
@@ -646,7 +647,7 @@ class TestEditSoftDeletedEntity:
         result = runner.invoke(main, ["--json", "edit", m_id, "--title", "X"])
         data = json.loads(result.output)
         assert "error" in data
-        assert "deleted_at" in data
+        assert "deleted on" in data["error"]
 
 
 # ---------------------------------------------------------------------------

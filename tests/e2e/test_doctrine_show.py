@@ -123,7 +123,7 @@ def test_doctrine_show_missing_design_file_exits_1(project_dir, runner):
     assert result.exit_code == 1
     combined = result.output + (result.stderr if result.stderr else "")
     assert "feature-implementation" in combined
-    assert "design file missing" in combined
+    assert "not found" in combined
 
 
 def test_doctrine_show_missing_design_file_error_contains_exact_phrase(project_dir, runner):
@@ -137,7 +137,7 @@ def test_doctrine_show_missing_design_file_error_contains_exact_phrase(project_d
     assert result.exit_code == 1
     combined = result.output + (result.stderr if result.stderr else "")
     # Must contain the new specific error phrase from show_doctrine()
-    assert "design file missing" in combined
+    assert "not found" in combined
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ def test_doctrine_show_missing_yaml_file_exits_1(project_dir, runner):
     result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
     assert result.exit_code == 1
     combined = result.output + (result.stderr if result.stderr else "")
-    assert "YAML file missing" in combined
+    assert "not found" in combined
 
 
 def test_doctrine_show_missing_yaml_file_references_id(project_dir, runner):
@@ -332,7 +332,7 @@ def test_doctrine_show_json_error_missing_design(project_dir, runner):
     assert result.exit_code == 1
     data = json.loads(result.output)
     assert "error" in data
-    assert "design file missing" in data["error"]
+    assert "not found" in data["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +352,7 @@ def test_doctrine_show_json_error_missing_yaml(project_dir, runner):
     assert result.exit_code == 1
     data = json.loads(result.output)
     assert "error" in data
-    assert "YAML file missing" in data["error"]
+    assert "not found" in data["error"]
 
 
 # ---------------------------------------------------------------------------

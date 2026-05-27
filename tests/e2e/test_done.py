@@ -10,7 +10,6 @@ from lore.cli import main
 from lore.db import close_mission
 from tests.conftest import (
     assert_exit_ok,
-    assert_exit_err,
     db_conn,
     insert_mission,
     insert_quest,
@@ -1007,7 +1006,7 @@ class TestAutoCloseNotTriggeredPartially:
         r1 = runner.invoke(main, ["--json", "new", "mission", "M1", "-q", quest_id])
         r2 = runner.invoke(main, ["--json", "new", "mission", "M2", "-q", quest_id])
         m1 = json.loads(r1.output)["id"]
-        m2 = json.loads(r2.output)["id"]
+        _m2 = json.loads(r2.output)["id"]
         runner.invoke(main, ["done", m1])
         with db_conn(project_dir) as conn:
             row = conn.execute(
@@ -1037,7 +1036,7 @@ class TestQuestStatusDerivationMixedMissions:
         r1 = runner.invoke(main, ["--json", "new", "mission", "M1", "-q", quest_id])
         r2 = runner.invoke(main, ["--json", "new", "mission", "M2", "-q", quest_id])
         m1 = json.loads(r1.output)["id"]
-        m2 = json.loads(r2.output)["id"]
+        _m2 = json.loads(r2.output)["id"]
         runner.invoke(main, ["claim", m1])
         runner.invoke(main, ["done", m1])
         result = runner.invoke(main, ["--json", "show", quest_id])

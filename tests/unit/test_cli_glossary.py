@@ -6,9 +6,7 @@ Workflow: conceptual-workflows-glossary
 
 from __future__ import annotations
 
-import json
 
-import pytest
 from click.testing import CliRunner
 
 

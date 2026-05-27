@@ -11,7 +11,6 @@ Covers all five functions defined in lore.validators:
 
 from pathlib import Path
 
-import pytest
 
 from lore.validators import (
     route_entity,

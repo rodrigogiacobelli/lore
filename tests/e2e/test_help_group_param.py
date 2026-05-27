@@ -126,8 +126,10 @@ def test_list_help_links_to_filter_grammar_doc(runner, cmd):
     """Each list --help points the reader at the filter grammar doctrine."""
     result = runner.invoke(main, cmd)
     assert result.exit_code == 0
-    # Link is either a codex anchor id or a `lore codex show ...` invocation.
+    # Link is a codex anchor id, a `lore codex show ...` invocation, or
+    # a codex.md path pointer (post-bootstrap-restructure form).
     assert (
         "conceptual-workflows-help" in result.output
         or "lore codex show" in result.output
+        or "codex.md" in result.output
     )

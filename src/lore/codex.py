@@ -1,19 +1,307 @@
-"""Codex scanning and document listing."""
+"""Codex scanning and document listing.
+
+Post G17 / codex-CRUD: adds ``create_document`` / ``update_document`` /
+``delete_document`` per ``transient-codex-crud-spec`` Section A.
+"""
 
 import collections
 import random as _random
 from pathlib import Path
 
+import yaml
+
 from lore import frontmatter
 from lore import paths as _paths
+from lore.schemas import validate_entity
+from lore.validators import (
+    _validate_content_nonempty,
+    validate_group,
+    validate_name,
+)
 
 
 class ConflictingDepthFlags(ValueError):
     """Raised when callers combine symmetric `depth` with directional flags."""
 
 
-def scan_codex(codex_dir: Path, filter_groups: list[str] | None = None) -> list[dict]:
-    """Walk codex_dir recursively, parse frontmatter, return document records.
+# ---------------------------------------------------------------------------
+# CRUD constants
+# ---------------------------------------------------------------------------
+
+
+_DOC_TYPE_SCHEMAS: dict[str, str] = {
+    "codex": "codex-frontmatter",
+    "codex-source": "codex-source-frontmatter",
+}
+
+# Per spec §E.1 — refuse to delete a fixed allow-list of seeded ids.
+# Today only ``codex`` (the codex.md root index) is seeded by ``lore init``.
+_RESERVED_DOC_IDS: frozenset[str] = frozenset({"codex"})
+
+
+def _resolve_doc_type_from_path(project_root: Path, filepath: Path) -> str:
+    """Resolve doc_type from a doc's location on disk (path-derived).
+
+    Per spec §A.2 step 3: ``sources/*`` group → ``codex-source``; else ``codex``.
+    """
+    codex_dir = _paths.entity_location(project_root, "codex")
+    group = _paths.derive_group(filepath, codex_dir)
+    if group.startswith("sources/") or group == "sources":
+        return "codex-source"
+    return "codex"
+
+
+def _resolve_doc_type(
+    *,
+    group: str | None,
+    explicit: str | None,
+) -> str:
+    """Resolve the doc_type for create_document per spec §A.2.
+
+    Precedence: explicit kwarg → group-derived → fallback ``codex``.
+    Frontmatter ``type:`` is intentionally NOT consulted (free-form label).
+    """
+    if explicit is not None:
+        if explicit not in _DOC_TYPE_SCHEMAS:
+            raise ValueError(
+                f"Unknown doc_type: {explicit}. Expected: codex, codex-source."
+            )
+        return explicit
+    if group is not None and (group == "sources" or group.startswith("sources/")):
+        return "codex-source"
+    return "codex"
+
+
+def _find_document(project_root: Path, name: str) -> Path | None:
+    """Locate a codex doc by id via subtree rglob.
+
+    Returns the Path to the ``<name>.md`` file if found, or None.
+    Raises ``ValueError`` on path-traversal name OR when >1 match is found
+    (ambiguity — per spec §A.3 deliberate divergence from artifact).
+    """
+    if "/" in name or "\\" in name:
+        raise ValueError(f"Invalid codex doc name: {name!r}")
+    codex_dir = _paths.entity_location(project_root, "codex")
+    if not codex_dir.exists():
+        return None
+    matches = list(codex_dir.rglob(f"{name}.md"))
+    if not matches:
+        return None
+    if len(matches) > 1:
+        rels = ", ".join(
+            str(m.relative_to(codex_dir)) for m in sorted(matches)
+        )
+        raise ValueError(
+            f'Codex doc "{name}" is ambiguous — matches: {rels}'
+        )
+    return matches[0]
+
+
+def _parse_frontmatter_block(content: str) -> tuple[dict, str]:
+    """Parse a codex doc's YAML frontmatter, returning (meta, body).
+
+    ``body`` is bit-identical to ``parts[2]`` from ``content.split("---", 2)``,
+    so callers that only want ``meta`` can discard it. Raises ``ValueError``
+    if the block is missing, the YAML is invalid, or it is not a mapping.
+    """
+    parts = content.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError(
+            "Codex doc content missing frontmatter block (id, title, summary required)"
+        )
+    try:
+        meta = yaml.safe_load(parts[1])
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid frontmatter YAML: {exc}") from exc
+    if not isinstance(meta, dict):
+        raise ValueError("Frontmatter must be a YAML mapping")
+    return meta, parts[2]
+
+
+def create_document(
+    project_root: Path,
+    name: str,
+    content: str,
+    *,
+    group: str | None = None,
+    doc_type: str | None = None,
+) -> dict:
+    """Create a new codex markdown file under ``.lore/codex/[group/]<name>.md``.
+
+    Returns ``{id, filename, group, doc_type}`` per spec §A.1.
+    Raises ``ValueError`` on any validation / duplicate / schema failure.
+    """
+    # 1. name
+    name_err = validate_name(name)
+    if name_err:
+        raise ValueError(name_err)
+    # 2. group
+    group_err = validate_group(group)
+    if group_err:
+        raise ValueError(group_err)
+    # 3. content non-empty
+    content_err = _validate_content_nonempty(content)
+    if content_err:
+        raise ValueError(content_err)
+    # 4. resolve doc_type
+    resolved_type = _resolve_doc_type(group=group, explicit=doc_type)
+    # 5. parse frontmatter (body discarded — create writes raw content verbatim)
+    meta, _ = _parse_frontmatter_block(content)
+    # 6. schema validate
+    issues = validate_entity(_DOC_TYPE_SCHEMAS[resolved_type], meta)
+    if issues:
+        raise ValueError("\n".join(i.message for i in issues))
+    # 7. id ↔ filename invariant
+    if meta.get("id") != name:
+        raise ValueError(
+            f"Frontmatter id '{meta.get('id')}' does not match filename '{name}'."
+        )
+    # 8. subtree-wide duplicate check
+    codex_dir = _paths.entity_location(project_root, "codex")
+    if codex_dir.exists():
+        existing = next(iter(codex_dir.rglob(f"{name}.md")), None)
+        if existing is not None:
+            relpath = existing.relative_to(codex_dir)
+            raise ValueError(
+                f"codex doc '{name}' already exists at {relpath}"
+            )
+    # 9. write
+    target_dir = _paths.entity_location(project_root, "codex", group=group)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / f"{name}.md"
+    target_path.write_text(content)
+    # 10. envelope
+    return {
+        "id": name,
+        "filename": f"{name}.md",
+        "group": group,
+        "doc_type": resolved_type,
+    }
+
+
+# Field-preservation merge set (spec §A.6 step 4).
+_PRESERVED_UPDATE_FIELDS: tuple[str, ...] = (
+    "id",
+    "title",
+    "summary",
+    "related",
+    "binds",
+    "type",
+)
+
+
+def update_document(
+    project_root: Path,
+    name: str,
+    content: str,
+) -> dict:
+    """Overwrite an existing codex doc with new content (frontmatter + body).
+
+    Returns ``{id, filename, group, doc_type, updated_at}`` per spec §A.1.
+    Raises ``ValueError`` on not-found / schema failure / parse failure.
+    """
+    # 1. locate
+    filepath = _find_document(project_root, name)
+    if filepath is None:
+        raise ValueError(f'Codex doc "{name}" not found.')
+    # 2. content non-empty
+    content_err = _validate_content_nonempty(content)
+    if content_err:
+        raise ValueError(content_err)
+    # 3. parse new frontmatter
+    new_meta, new_body = _parse_frontmatter_block(content)
+    # 4. field-preservation merge: load on-disk meta, preserve fields not in new
+    existing_meta, _ = _parse_frontmatter_block(filepath.read_text())
+    merged = dict(new_meta)
+    for field in _PRESERVED_UPDATE_FIELDS:
+        if field not in merged and field in existing_meta:
+            merged[field] = existing_meta[field]
+    # 5. re-resolve doc_type from path (sources stay sources)
+    doc_type = _resolve_doc_type_from_path(project_root, filepath)
+    # 6. schema validate
+    issues = validate_entity(_DOC_TYPE_SCHEMAS[doc_type], merged)
+    if issues:
+        raise ValueError("\n".join(i.message for i in issues))
+    # 7. id invariant
+    if merged.get("id") != name:
+        raise ValueError(
+            f"Frontmatter id '{merged.get('id')}' does not match filename '{name}'."
+        )
+    # 8. serialize + write
+    fm_text = yaml.dump(
+        merged, default_flow_style=False, allow_unicode=True, sort_keys=False
+    )
+    filepath.write_text("---\n" + fm_text + "---" + new_body)
+    # group from path
+    codex_dir = _paths.entity_location(project_root, "codex")
+    group_str = _paths.derive_group(filepath, codex_dir)
+    group: str | None = group_str if group_str else None
+    return {
+        "id": name,
+        "filename": filepath.name,
+        "group": group,
+        "doc_type": doc_type,
+        "updated_at": None,
+    }
+
+
+def delete_document(
+    project_root: Path,
+    name: str,
+) -> dict:
+    """Hard-delete a codex doc (rename to ``<name>.md.deleted``).
+
+    Returns ``{id, deleted, deleted_at, group, doc_type}`` per spec §A.1.
+    Raises ``ValueError`` on not-found OR if ``name`` is a reserved seeded
+    doc id. Idempotent on already-deleted docs.
+    """
+    if "/" in name or "\\" in name:
+        raise ValueError(f"Invalid codex doc name: {name!r}")
+
+    # Reserved-id check (spec §E.1) — runs BEFORE locator so that seeded docs
+    # (e.g. codex.md whose id is "codex") are protected.
+    if name in _RESERVED_DOC_IDS:
+        raise ValueError(
+            f"Cannot delete seeded codex doc '{name}' — protected. Edit instead."
+        )
+
+    codex_dir = _paths.entity_location(project_root, "codex")
+    filepath = _find_document(project_root, name)
+
+    if filepath is None:
+        # idempotent path: if a sibling .deleted exists, return envelope w/o raise
+        if codex_dir.exists():
+            deleted_match = next(
+                iter(codex_dir.rglob(f"{name}.md.deleted")), None
+            )
+            if deleted_match is not None:
+                group_str = _paths.derive_group(deleted_match, codex_dir)
+                doc_type = _resolve_doc_type_from_path(project_root, deleted_match)
+                return {
+                    "id": name,
+                    "deleted": True,
+                    "deleted_at": None,
+                    "group": group_str if group_str else None,
+                    "doc_type": doc_type,
+                }
+        raise ValueError(f'Codex doc "{name}" not found in .lore/codex/')
+
+    group_str = _paths.derive_group(filepath, codex_dir)
+    doc_type = _resolve_doc_type_from_path(project_root, filepath)
+
+    deleted_path = filepath.parent / f"{name}.md.deleted"
+    filepath.rename(deleted_path)
+    return {
+        "id": name,
+        "deleted": True,
+        "deleted_at": None,
+        "group": group_str if group_str else None,
+        "doc_type": doc_type,
+    }
+
+
+def list_codex(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]:
+    """Walk ``project_root/.lore/codex/`` recursively and return document records.
 
     Returns a list of dicts with keys: id, title, summary, path.
     Files without valid frontmatter or missing required fields are skipped.
@@ -23,6 +311,7 @@ def scan_codex(codex_dir: Path, filter_groups: list[str] | None = None) -> list[
     filter_groups or whose group is root-level (empty string) are returned.
     If filter_groups is None or an empty list, all documents are returned.
     """
+    codex_dir = _paths.entity_location(project_root, "codex")
     if not codex_dir.exists():
         return []
 
@@ -41,13 +330,13 @@ def scan_codex(codex_dir: Path, filter_groups: list[str] | None = None) -> list[
     return sorted(results, key=lambda d: d["id"])
 
 
-def search_documents(codex_dir: Path, keyword: str) -> list[dict]:
+def search_documents(project_root: Path, keyword: str) -> list[dict]:
     """Return documents whose title or summary contains the keyword (case-insensitive).
 
     Returns a list of dicts with keys: id, title, summary (no path).
     Results are sorted alphabetically by id.
     """
-    docs = scan_codex(codex_dir)
+    docs = list_codex(project_root)
     kw = keyword.lower()
     results = []
     for doc in docs:
@@ -62,14 +351,14 @@ def search_documents(codex_dir: Path, keyword: str) -> list[dict]:
     return results
 
 
-def read_document(codex_dir: Path, doc_id: str) -> dict | None:
+def read_document(project_root: Path, doc_id: str) -> dict | None:
     """Return a full document record for the given ID, or None if not found.
 
     The returned dict has keys: id, title, summary, body.
     The body is the content below the YAML frontmatter block, with leading
     newlines stripped.
     """
-    docs = scan_codex(codex_dir)
+    docs = list_codex(project_root)
     for doc in docs:
         if doc["id"] == doc_id:
             filepath = doc["path"]
@@ -200,11 +489,12 @@ def _build_neighbour_record(
 
 
 def map_documents(
-    codex_dir: Path,
+    project_root: Path,
     start_id: str,
     *,
-    depth_out: int = 1,
-    depth_in: int = 1,
+    depth: int | None = None,
+    depth_out: int | None = None,
+    depth_in: int | None = None,
     full: bool = False,
 ) -> list[dict] | None:
     """BFS the codex graph from start_id with separate outbound/inbound budgets.
@@ -217,18 +507,39 @@ def map_documents(
 
     Returns None iff start_id is not in the codex index. An empty
     neighbourhood is the empty list [], not None.
+
+    Depth controls:
+      - ``depth=N`` — symmetric budget of ``N`` for both directions.
+      - ``depth_out=N`` / ``depth_in=N`` — explicit directional budgets.
+      - Combining ``depth`` with either directional flag raises
+        :class:`ConflictingDepthFlags` BEFORE any disk I/O.
+      - When neither is set, both budgets default to 1.
     """
-    if depth_out < 0 or depth_in < 0:
+    # Conflict gate — fire BEFORE disk I/O.
+    if depth is not None and (depth_out is not None or depth_in is not None):
+        raise ConflictingDepthFlags(
+            "depth cannot be combined with depth_in or depth_out"
+        )
+
+    if depth is not None:
+        eff_out = depth
+        eff_in = depth
+    else:
+        eff_out = depth_out if depth_out is not None else 1
+        eff_in = depth_in if depth_in is not None else 1
+
+    if eff_out < 0 or eff_in < 0:
         raise ValueError("depth_out and depth_in must be non-negative")
 
-    docs = scan_codex(codex_dir)
+    codex_dir = _paths.entity_location(project_root, "codex")
+    docs = list_codex(project_root)
     index = {doc["id"]: doc for doc in docs}
     if start_id not in index:
         return None
 
     outbound, inbound = _build_adjacency(index, docs)
     neighbour_ids = _bfs_neighbour_ids(
-        start_id, outbound, inbound, depth_out, depth_in
+        start_id, outbound, inbound, eff_out, eff_in
     )
 
     records: list[dict] = []
@@ -237,6 +548,54 @@ def map_documents(
         if record is not None:
             records.append(record)
     return records
+
+
+def read_documents_with_glossary(
+    project_root: Path,
+    doc_ids: list[str],
+    *,
+    skip_glossary: bool = False,
+) -> dict:
+    """Compose a {documents, glossary} envelope for one-or-more codex docs.
+
+    Absorbs the orchestration previously performed inline in
+    ``cli.codex_show`` via ``_collect_codex_glossary``. The envelope
+    carries RAW items only — never pre-rendered markdown — so consumers
+    (CLI text mode, JSON mode, Realm) format as they see fit.
+
+    Parameters
+    ----------
+    project_root:
+        Project root (the directory containing ``.lore/``).
+    doc_ids:
+        Ordered list of codex doc IDs to load. Output order matches input.
+    skip_glossary:
+        When True, returns ``glossary == []`` and does NOT consult the
+        glossary file.
+
+    Returns a dict with EXACTLY the keys ``{"documents", "glossary"}``.
+    Missing doc ids fail soft: a record carrying ``{"id": "<id>", "not_found": True}``
+    is appended in place rather than raising.
+    """
+    from lore import glossary as _glossary  # deferred to keep monkeypatch surface clean
+
+    documents: list[dict] = []
+    for doc_id in doc_ids:
+        doc = read_document(project_root, doc_id)
+        if doc is None:
+            documents.append({"id": doc_id, "not_found": True})
+        else:
+            documents.append(doc)
+
+    if skip_glossary:
+        glossary_items: list = []
+    else:
+        bodies = [d["body"] for d in documents if "body" in d]
+        glossary_items = list(
+            _glossary.match_glossary(bodies, root=project_root)
+        )
+
+    return {"documents": documents, "glossary": glossary_items}
 
 
 def chaos_documents(
@@ -264,8 +623,7 @@ def chaos_documents(
     if not valid:
         raise ValueError(err)
 
-    codex_dir = project_root / ".lore" / "codex"
-    docs = scan_codex(codex_dir)
+    docs = list_codex(project_root)
     index = {doc["id"]: doc for doc in docs}
 
     if start_id not in index:

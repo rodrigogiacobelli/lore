@@ -9,11 +9,11 @@ Use this skill when the user asks, in chat, to add or change a fact in the codex
 
 If the request is "document an entire feature's worth of changes", stop and suggest `/start-quest` with the feature-implementation doctrine instead — that flow has a Tech Writer agent built for it.
 
-## CODEX.md is your primary input — and your responsibility
+## codex.md is your primary input — and your responsibility
 
-`.lore/codex/CODEX.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it is the source of truth for how the codex is organised in *this* project, and it may carry project-specific guidance not present anywhere else.
+`.lore/codex/codex.md` is the project-wide guide to the entire documentation: the layers, the conventions, the rules every codex doc must follow. **Always read it first** — it is the source of truth for how the codex is organised in *this* project, and it may carry project-specific guidance not present anywhere else.
 
-You also **own keeping it current**. When a change introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule that future doc edits must follow, update `CODEX.md` so the next reader (human or agent) finds the rule from the top. **CODEX.md is lean by design** — do not bloat it with per-doc summaries, per-feature notes, or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit. The same dedup and discovery rules below apply to CODEX.md itself.
+You also **own keeping it current**. When a change introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule that future doc edits must follow, update `codex.md` so the next reader (human or agent) finds the rule from the top. **codex.md is lean by design** — do not bloat it with per-doc summaries, per-feature notes, or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit. The same dedup and discovery rules below apply to codex.md itself.
 
 ## Steps
 
@@ -50,20 +50,7 @@ lore codex show <id1> <id2> <id3>
 
 ### 3. Classify
 
-Pick the right layer using the codex taxonomy. Read `lore codex show codex` if unsure of the rules.
-
-| Question | Layer |
-|----------|-------|
-| What is this thing? | `conceptual/entities/` |
-| How do two things connect? | `conceptual/relationships/` |
-| What does the system do internally / what does a user do? | `conceptual/workflows/` |
-| How is it built / stored / served? | `technical/` |
-| Intent around a DB table, endpoint, event, job? | `technical/<domain>/ref/` (reference doc) |
-| Why was this choice made? | `decisions/` (ADR) |
-| How do we comply with a rule? | `standards/` |
-| Hard limits we must never violate? | `constraints/` |
-| Trust model? | `security/` |
-| Dev / deploy / run? | `operations/` |
+Pick the right layer. Read the *The codex* section of `.lore/codex/codex.md` if unsure of the rules — that is the canonical subdir map for this project.
 
 For `ref-*` docs, default to one cluster doc per logical group (not per entity) and ensure the `**Covers:**` line names every covered entity verbatim.
 
@@ -96,6 +83,39 @@ Use the relevant template (e.g. an ADR template for `decisions/`, an entity temp
 
 ### 7. Apply
 
+Drive every change through the CLI — do NOT write the file directly with `cat >` or an editor. The CLI normalises frontmatter and runs schema validation; hand-edits skip both.
+
+**Create a new doc** — draft the body (including frontmatter block) to a temp file, then:
+
+```
+lore codex new <name> --group <subdir> -f <draft>.md
+```
+
+`--group` is slash-delimited (e.g. `decisions`, `technical/database/ref`). For a source snapshot, add `--type codex-source`.
+
+**Replace the body** of an existing doc:
+
+```
+lore codex edit <name> -f <new-body>.md
+```
+
+**Field-edit the frontmatter** without touching the body:
+
+```
+lore codex edit <name> --set summary="..."        # scalar field
+lore codex edit <name> --add related=<other-id>   # list-typed field (append)
+lore codex edit <name> --remove related=<other-id>
+lore codex edit <name> --unset binds              # drop a field entirely
+```
+
+`--set` / `--unset` work on scalar fields (`title`, `summary`); `--add` / `--remove` work on list-typed fields (`related`, `binds`).
+
+**Delete a doc:**
+
+```
+lore codex delete <name>
+```
+
 Frontmatter is exactly:
 
 ```yaml
@@ -110,7 +130,21 @@ binds:          # optional; repo-root-relative paths or globs this doc governs
 ---
 ```
 
-No other fields. `lore health` rejects extras. When adding or updating a `technical/*`, `standards/*`, or ADR doc, consider whether `binds:` applies — populate it so `lore impacts <path>` surfaces this doc when those files are touched. See `conceptual-workflows-impacts`.
+No other fields. `lore health --scope codex` rejects extras.
+
+#### The `binds:` workflow
+
+`binds:` is the codex ↔ code edge. A doc with `binds: [src/lore/cli.py]` is surfaced by `lore impacts src/lore/cli.py`. Populate `binds:` whenever a doc governs specific code files — typically `technical/*`, `standards/*`, ADRs, and `ref-*` docs.
+
+Globs use `**` for recursive descent (e.g. `src/lore/**/*.py`). Literal paths and globs may be mixed in the same list. Absolute paths, `..` segments, and empty strings are rejected by the schema.
+
+Verify a doc's reach after editing `binds:`:
+
+```
+lore impacts <codex-id>          # list the paths the doc claims
+lore impacts <path-or-glob>      # list the docs claiming this path
+lore health --scope schemas      # validate the binds list
+```
 
 Body rules:
 

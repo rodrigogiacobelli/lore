@@ -17,7 +17,6 @@ import pytest
 from click.testing import CliRunner
 
 from lore.doctrine import (
-    DoctrineError,
     _validate_design_frontmatter,
     _validate_yaml_schema,
     create_doctrine,
@@ -68,11 +67,11 @@ def test_list_doctrines_returns_entry_for_valid_pair(tmp_path):
     The entry filename must point to the .design.md file, not the .yaml file.
     This distinguishes from the old YAML-only scanning behavior.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["id"] == "my-doc"
@@ -92,10 +91,10 @@ def test_list_doctrines_returns_empty_for_empty_dir(tmp_path):
     Also verifies that a YAML-only file (no .design.md) is not returned —
     the new scan starts from .design.md files, not .yaml files.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert results == []
 
@@ -105,11 +104,11 @@ def test_list_doctrines_yaml_alone_returns_empty(tmp_path):
 
     This distinguishes new scan-from-design behavior from old scan-from-yaml.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_yaml(doctrines_dir, "yaml-only", _VALID_YAML.replace("my-doc", "yaml-only"))
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert results == []
 
@@ -127,11 +126,11 @@ def test_list_doctrines_skips_orphaned_design_file(tmp_path):
     Unlike old behavior (which ignored .design.md entirely), the new code
     actively checks for the .yaml pair.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_design(doctrines_dir, "orphan", "---\nid: orphan\ntitle: Orphan\n---\n")
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert results == []
     # Verify scan is now driven by .design.md (it found the file, but no .yaml → skip)
@@ -148,11 +147,11 @@ def test_list_doctrines_skips_orphaned_design_file(tmp_path):
 
 def test_list_doctrines_skips_yaml_only_file(tmp_path):
     """list_doctrines() skips a .yaml with no matching .design.md — returns []."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_yaml(doctrines_dir, "legacy", _VALID_YAML.replace("my-doc", "legacy"))
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert results == []
 
@@ -165,14 +164,14 @@ def test_list_doctrines_skips_yaml_only_file(tmp_path):
 
 def test_list_doctrines_skips_design_with_no_id_in_frontmatter(tmp_path):
     """list_doctrines() skips a .design.md whose frontmatter has no 'id' field."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     # .design.md without id
     _make_design(doctrines_dir, "no-id", "---\ntitle: No ID\nsummary: Oops.\n---\n")
     # Matching .yaml exists but design is invalid
     _make_yaml(doctrines_dir, "no-id", "id: no-id\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n")
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert results == []
 
@@ -189,8 +188,8 @@ def test_list_doctrines_title_fallback_to_id(tmp_path):
     Also asserts no legacy keys (name, description, errors) since the new
     entry shape only contains id, group, title, summary, valid, filename.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(
         doctrines_dir,
         "minimal",
@@ -198,7 +197,7 @@ def test_list_doctrines_title_fallback_to_id(tmp_path):
         design_content="---\nid: minimal\n---\n",
     )
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["title"] == "minimal"
@@ -220,8 +219,8 @@ def test_list_doctrines_summary_fallback_to_empty_string(tmp_path):
     Verifies the fallback is '' (empty string) and NOT the old description-based
     truncation behavior which would use the YAML description field.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(
         doctrines_dir,
         "minimal",
@@ -230,7 +229,7 @@ def test_list_doctrines_summary_fallback_to_empty_string(tmp_path):
         design_content="---\nid: minimal\n---\n",
     )
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     # New behavior: summary comes only from design frontmatter; when absent → ""
@@ -250,8 +249,8 @@ def test_list_doctrines_group_derived_from_subdirectory(tmp_path):
     The group is derived from the .design.md file's directory. The entry also
     must not contain legacy 'name' key (distinguishes new from old behavior).
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(
         doctrines_dir,
         "mygroup/my-doc",
@@ -259,7 +258,7 @@ def test_list_doctrines_group_derived_from_subdirectory(tmp_path):
         design_content=_VALID_DESIGN,
     )
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["group"] == "mygroup"
@@ -272,8 +271,8 @@ def test_list_doctrines_group_empty_for_root_level(tmp_path):
 
     Also verifies the entry filename ends with .design.md (new scan behavior).
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(
         doctrines_dir,
         "my-doc",
@@ -281,7 +280,7 @@ def test_list_doctrines_group_empty_for_root_level(tmp_path):
         design_content=_VALID_DESIGN,
     )
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["group"] == ""
@@ -297,11 +296,11 @@ def test_list_doctrines_group_empty_for_root_level(tmp_path):
 
 def test_list_doctrines_filename_is_design_file_name(tmp_path):
     """list_doctrines() sets filename to the design file name (not full path)."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["filename"] == "my-doc.design.md"
@@ -315,8 +314,8 @@ def test_list_doctrines_filename_is_design_file_name(tmp_path):
 
 def test_list_doctrines_all_entries_valid_true(tmp_path):
     """list_doctrines() marks every returned entry with valid=True."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
     _make_pair(
         doctrines_dir,
@@ -325,7 +324,7 @@ def test_list_doctrines_all_entries_valid_true(tmp_path):
         design_content="---\nid: another-doc\ntitle: Another Doc\nsummary: Another.\n---\n",
     )
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 2
     for entry in results:
@@ -340,11 +339,11 @@ def test_list_doctrines_all_entries_valid_true(tmp_path):
 
 def test_list_doctrines_no_legacy_keys(tmp_path):
     """list_doctrines() entries have no 'name', 'description', or 'errors' keys."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     entry = results[0]
@@ -364,11 +363,11 @@ def test_list_doctrines_entry_has_expected_keys(tmp_path):
 
     No extra keys (no name, description, errors from old schema).
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     entry = results[0]
@@ -396,11 +395,11 @@ def test_list_doctrines_id_from_design_frontmatter(tmp_path):
     The design frontmatter 'id' field is authoritative. The test confirms
     the entry has no 'name' key (old behavior used 'name' from YAML).
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["id"] == "my-doc"
@@ -416,11 +415,11 @@ def test_list_doctrines_id_from_design_frontmatter(tmp_path):
 
 def test_list_doctrines_title_from_design_frontmatter(tmp_path):
     """list_doctrines() uses title from design frontmatter."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["title"] == "My Doc"
@@ -434,11 +433,11 @@ def test_list_doctrines_title_from_design_frontmatter(tmp_path):
 
 def test_list_doctrines_summary_from_design_frontmatter(tmp_path):
     """list_doctrines() uses summary from design frontmatter."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(doctrines_dir, "my-doc", _VALID_YAML, _VALID_DESIGN)
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 1
     assert results[0]["summary"] == "A short summary."
@@ -538,8 +537,8 @@ def test_list_doctrines_two_pairs_returns_two_entries(tmp_path):
 
     Spec: US-003 unit — two valid pairs return list of length 2.
     """
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_pair(
         doctrines_dir,
         "alpha",
@@ -553,7 +552,7 @@ def test_list_doctrines_two_pairs_returns_two_entries(tmp_path):
         design_content="---\nid: beta\ntitle: Beta\nsummary: Second.\n---\n",
     )
 
-    results = list_doctrines(doctrines_dir)
+    results = list_doctrines(tmp_path)
 
     assert len(results) == 2
     ids = {r["id"] for r in results}
@@ -608,13 +607,13 @@ _SHOW_DESIGN = (
 
 def test_show_doctrine_returns_correct_keys(tmp_path):
     """show_doctrine() returns a dict with exactly the keys: id, title, summary, design, raw_yaml, steps."""
-    from lore.doctrine import show_doctrine
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_show_pair(doctrines_dir, "my-doc", _SHOW_YAML, _SHOW_DESIGN)
 
-    result = show_doctrine("my-doc", doctrines_dir)
+    result = read_doctrine(tmp_path, "my-doc")
 
     assert isinstance(result, dict)
     assert set(result.keys()) == {"id", "title", "summary", "design", "raw_yaml", "steps"}
@@ -628,13 +627,13 @@ def test_show_doctrine_returns_correct_keys(tmp_path):
 
 def test_show_doctrine_design_is_verbatim_string(tmp_path):
     """show_doctrine() returns design as the exact raw content of the .design.md file."""
-    from lore.doctrine import show_doctrine
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_show_pair(doctrines_dir, "my-doc", _SHOW_YAML, _SHOW_DESIGN)
 
-    result = show_doctrine("my-doc", doctrines_dir)
+    result = read_doctrine(tmp_path, "my-doc")
 
     assert result["design"] == _SHOW_DESIGN
 
@@ -647,13 +646,13 @@ def test_show_doctrine_design_is_verbatim_string(tmp_path):
 
 def test_show_doctrine_raw_yaml_is_verbatim_string(tmp_path):
     """show_doctrine() returns raw_yaml as the exact raw content of the .yaml file."""
-    from lore.doctrine import show_doctrine
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     _make_show_pair(doctrines_dir, "my-doc", _SHOW_YAML, _SHOW_DESIGN)
 
-    result = show_doctrine("my-doc", doctrines_dir)
+    result = read_doctrine(tmp_path, "my-doc")
 
     assert result["raw_yaml"] == _SHOW_YAML
 
@@ -666,10 +665,10 @@ def test_show_doctrine_raw_yaml_is_verbatim_string(tmp_path):
 
 def test_show_doctrine_steps_are_normalized(tmp_path):
     """show_doctrine() steps list has defaults applied (priority, notes, needs)."""
-    from lore.doctrine import show_doctrine
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     # Step has no priority, notes, or needs — defaults should be applied
     yaml_content = (
         "id: my-doc\n"
@@ -681,7 +680,7 @@ def test_show_doctrine_steps_are_normalized(tmp_path):
     )
     _make_show_pair(doctrines_dir, "my-doc", yaml_content, _SHOW_DESIGN)
 
-    result = show_doctrine("my-doc", doctrines_dir)
+    result = read_doctrine(tmp_path, "my-doc")
 
     assert isinstance(result["steps"], list)
     assert len(result["steps"]) == 1
@@ -699,19 +698,16 @@ def test_show_doctrine_steps_are_normalized(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_show_doctrine_design_file_missing_exact_message(tmp_path):
-    """show_doctrine() raises DoctrineError with exact message format for missing design."""
-    from lore.doctrine import show_doctrine, DoctrineError
+def test_show_doctrine_design_file_missing_returns_none(tmp_path):
+    """read_doctrine returns None when the design partner is missing (post-G16)."""
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     yaml_file = doctrines_dir / "my-doc.yaml"
     yaml_file.write_text(_SHOW_YAML)
 
-    with pytest.raises(DoctrineError) as exc_info:
-        show_doctrine("my-doc", doctrines_dir)
-
-    assert str(exc_info.value) == "Doctrine 'my-doc' not found: design file missing"
+    assert read_doctrine(tmp_path, "my-doc") is None
 
 
 # ---------------------------------------------------------------------------
@@ -720,19 +716,16 @@ def test_show_doctrine_design_file_missing_exact_message(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_show_doctrine_yaml_file_missing_exact_message(tmp_path):
-    """show_doctrine() raises DoctrineError with exact message format for missing YAML."""
-    from lore.doctrine import show_doctrine, DoctrineError
+def test_show_doctrine_yaml_file_missing_returns_none(tmp_path):
+    """read_doctrine returns None when the YAML partner is missing (post-G16)."""
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     design_file = doctrines_dir / "my-doc.design.md"
     design_file.write_text(_SHOW_DESIGN)
 
-    with pytest.raises(DoctrineError) as exc_info:
-        show_doctrine("my-doc", doctrines_dir)
-
-    assert str(exc_info.value) == "Doctrine 'my-doc' not found: YAML file missing"
+    assert read_doctrine(tmp_path, "my-doc") is None
 
 
 # ---------------------------------------------------------------------------
@@ -741,17 +734,14 @@ def test_show_doctrine_yaml_file_missing_exact_message(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_show_doctrine_not_found_exact_message(tmp_path):
-    """show_doctrine() raises DoctrineError with exact 'not found' message when both absent."""
-    from lore.doctrine import show_doctrine, DoctrineError
+def test_show_doctrine_not_found_returns_none(tmp_path):
+    """read_doctrine returns None when both files are absent (post-G16)."""
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
-    with pytest.raises(DoctrineError) as exc_info:
-        show_doctrine("nonexistent", doctrines_dir)
-
-    assert str(exc_info.value) == "Doctrine 'nonexistent' not found"
+    assert read_doctrine(tmp_path, "nonexistent") is None
 
 
 # ---------------------------------------------------------------------------
@@ -762,16 +752,16 @@ def test_show_doctrine_not_found_exact_message(tmp_path):
 
 def test_show_doctrine_raises_yaml_parsing_error(tmp_path):
     """show_doctrine() raises DoctrineError starting with 'YAML parsing error:' on bad YAML."""
-    from lore.doctrine import show_doctrine, DoctrineError
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     # Invalid YAML that will fail to parse
     invalid_yaml = "id: my-doc\nsteps: [\nbroken yaml: {{{\n"
     _make_show_pair(doctrines_dir, "my-doc", invalid_yaml, _SHOW_DESIGN)
 
-    with pytest.raises(DoctrineError) as exc_info:
-        show_doctrine("my-doc", doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        read_doctrine(tmp_path, "my-doc")
 
     assert str(exc_info.value).startswith("YAML parsing error:")
 
@@ -784,14 +774,14 @@ def test_show_doctrine_raises_yaml_parsing_error(tmp_path):
 
 def test_show_doctrine_title_fallback_to_id(tmp_path):
     """show_doctrine() title falls back to id when title absent from design frontmatter."""
-    from lore.doctrine import show_doctrine
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     design_no_title = "---\nid: my-doc\n---\n"
     _make_show_pair(doctrines_dir, "my-doc", _SHOW_YAML, design_no_title)
 
-    result = show_doctrine("my-doc", doctrines_dir)
+    result = read_doctrine(tmp_path, "my-doc")
 
     assert result["title"] == "my-doc"
 
@@ -804,14 +794,14 @@ def test_show_doctrine_title_fallback_to_id(tmp_path):
 
 def test_show_doctrine_summary_fallback_to_empty_string(tmp_path):
     """show_doctrine() summary falls back to "" when summary absent from design frontmatter."""
-    from lore.doctrine import show_doctrine
+    from lore.doctrine import read_doctrine
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     design_no_summary = "---\nid: my-doc\ntitle: My Doc\n---\n"
     _make_show_pair(doctrines_dir, "my-doc", _SHOW_YAML, design_no_summary)
 
-    result = show_doctrine("my-doc", doctrines_dir)
+    result = read_doctrine(tmp_path, "my-doc")
 
     assert result["summary"] == ""
 
@@ -841,7 +831,7 @@ def test_doctrine_show_cli_handler_text_mode_format(tmp_path, monkeypatch):
         "steps": [{"id": "s1", "title": "S1", "priority": 2, "type": "knight", "needs": [], "knight": "k", "notes": None}],
     }
 
-    with patch("lore.doctrine.show_doctrine", return_value=mock_result):
+    with patch("lore.doctrine.read_doctrine", return_value=mock_result):
         result = CliRunner().invoke(main, ["doctrine", "show", "my-doc"])
 
     assert result.exit_code == 0
@@ -893,7 +883,7 @@ def test_doctrine_show_cli_json_handler_correct_keys(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     CliRunner().invoke(main, ["init"])
 
-    with patch("lore.doctrine.show_doctrine", return_value=_JSON_MOCK_RESULT):
+    with patch("lore.doctrine.read_doctrine", return_value=_JSON_MOCK_RESULT):
         result = CliRunner().invoke(main, ["doctrine", "show", "my-doc", "--json"])
 
     assert result.exit_code == 0
@@ -914,7 +904,7 @@ def test_doctrine_show_cli_json_handler_strips_raw_yaml(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     CliRunner().invoke(main, ["init"])
 
-    with patch("lore.doctrine.show_doctrine", return_value=_JSON_MOCK_RESULT):
+    with patch("lore.doctrine.read_doctrine", return_value=_JSON_MOCK_RESULT):
         result = CliRunner().invoke(main, ["doctrine", "show", "my-doc", "--json"])
 
     assert result.exit_code == 0
@@ -935,7 +925,7 @@ def test_doctrine_show_cli_json_handler_no_legacy_keys(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     CliRunner().invoke(main, ["init"])
 
-    with patch("lore.doctrine.show_doctrine", return_value=_JSON_MOCK_RESULT):
+    with patch("lore.doctrine.read_doctrine", return_value=_JSON_MOCK_RESULT):
         result = CliRunner().invoke(main, ["doctrine", "show", "my-doc", "--json"])
 
     assert result.exit_code == 0
@@ -957,7 +947,7 @@ def test_doctrine_show_cli_json_handler_design_is_string(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     CliRunner().invoke(main, ["init"])
 
-    with patch("lore.doctrine.show_doctrine", return_value=_JSON_MOCK_RESULT):
+    with patch("lore.doctrine.read_doctrine", return_value=_JSON_MOCK_RESULT):
         result = CliRunner().invoke(main, ["doctrine", "show", "my-doc", "--json"])
 
     assert result.exit_code == 0
@@ -979,7 +969,7 @@ def test_doctrine_show_cli_json_handler_steps_is_list(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     CliRunner().invoke(main, ["init"])
 
-    with patch("lore.doctrine.show_doctrine", return_value=_JSON_MOCK_RESULT):
+    with patch("lore.doctrine.read_doctrine", return_value=_JSON_MOCK_RESULT):
         result = CliRunner().invoke(main, ["doctrine", "show", "my-doc", "--json"])
 
     assert result.exit_code == 0
@@ -1011,7 +1001,7 @@ def test_validate_yaml_schema_missing_id():
     """_validate_yaml_schema() raises DoctrineError with 'Missing required field: id' when id absent."""
 
     data = {"steps": [{"id": "s1", "title": "Step 1", "type": "knight", "knight": "k"}]}
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
     assert "Missing required property 'id'" in str(exc_info.value)
 
@@ -1026,7 +1016,7 @@ def test_validate_yaml_schema_missing_steps():
     """_validate_yaml_schema() raises DoctrineError with 'Missing required field: steps' when steps absent."""
 
     data = {"id": "my-workflow"}
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
     assert "Missing required property 'steps'" in str(exc_info.value)
 
@@ -1044,7 +1034,7 @@ def test_validate_yaml_schema_id_mismatch():
         "id": "other-name",
         "steps": [{"id": "s1", "title": "S1", "type": "knight", "knight": "k"}],
     }
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
     assert "other-name" in str(exc_info.value)
     assert "my-workflow" in str(exc_info.value)
@@ -1064,7 +1054,7 @@ def test_validate_yaml_schema_rejects_name_field():
         "name": "my-workflow",
         "steps": [{"id": "s1", "title": "S1", "type": "knight", "knight": "k"}],
     }
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
     assert "Unknown property 'name'" in str(exc_info.value)
 
@@ -1083,7 +1073,7 @@ def test_validate_yaml_schema_rejects_description_field():
         "description": "some description",
         "steps": [{"id": "s1", "title": "S1", "type": "knight", "knight": "k"}],
     }
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_yaml_schema(data, "my-workflow")
     assert "Unknown property 'description'" in str(exc_info.value)
 
@@ -1113,7 +1103,7 @@ def test_validate_yaml_schema_passes_minimal_yaml():
 def test_validate_design_frontmatter_none_meta():
     """_validate_design_frontmatter() raises DoctrineError with 'Design file missing required frontmatter field: id' when meta is None."""
 
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_design_frontmatter(None, "my-workflow")
     assert "'id'" in str(exc_info.value)
     assert "Missing required propert" in str(exc_info.value)
@@ -1129,7 +1119,7 @@ def test_validate_design_frontmatter_missing_id_key():
     """_validate_design_frontmatter() raises DoctrineError with 'Design file missing required frontmatter field: id' when meta has no id."""
 
     meta = {"title": "My Workflow", "summary": "Does things."}
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_design_frontmatter(meta, "my-workflow")
     assert "Missing required property 'id'" in str(exc_info.value)
 
@@ -1144,7 +1134,7 @@ def test_validate_design_frontmatter_id_mismatch():
     """_validate_design_frontmatter() raises DoctrineError when meta id does not match name."""
 
     meta = {"id": "other-name", "title": "Other"}
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         _validate_design_frontmatter(meta, "my-workflow")
     assert "Design file id" in str(exc_info.value)
     assert "other-name" in str(exc_info.value)
@@ -1172,8 +1162,8 @@ def test_validate_design_frontmatter_passes_valid():
 
 def test_create_doctrine_writes_two_files(tmp_path):
     """create_doctrine() writes both .yaml and .design.md to doctrines_dir on success."""
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1184,7 +1174,7 @@ def test_create_doctrine_writes_two_files(tmp_path):
         "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things.\n---\n\n# My Workflow\n"
     )
 
-    create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert (doctrines_dir / "my-workflow.yaml").exists()
     assert (doctrines_dir / "my-workflow.design.md").exists()
@@ -1199,8 +1189,8 @@ def test_create_doctrine_writes_two_files(tmp_path):
 def test_create_doctrine_no_write_on_yaml_validation_failure(tmp_path):
     """create_doctrine() raises DoctrineError and writes no files when YAML validation fails."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text("id: my-workflow\nsteps: []\n")  # empty steps → validation failure
@@ -1209,8 +1199,8 @@ def test_create_doctrine_no_write_on_yaml_validation_failure(tmp_path):
         "---\nid: my-workflow\ntitle: My Workflow\n---\n"
     )
 
-    with pytest.raises(DoctrineError):
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError):
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert not (doctrines_dir / "my-workflow.yaml").exists()
     assert not (doctrines_dir / "my-workflow.design.md").exists()
@@ -1225,8 +1215,8 @@ def test_create_doctrine_no_write_on_yaml_validation_failure(tmp_path):
 def test_create_doctrine_no_write_on_design_validation_failure(tmp_path):
     """create_doctrine() raises DoctrineError and writes no files when design validation fails."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1236,8 +1226,8 @@ def test_create_doctrine_no_write_on_design_validation_failure(tmp_path):
     # id mismatch triggers design validation failure
     design_source.write_text("---\nid: other-name\ntitle: Other\n---\n")
 
-    with pytest.raises(DoctrineError):
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError):
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert not (doctrines_dir / "my-workflow.yaml").exists()
     assert not (doctrines_dir / "my-workflow.design.md").exists()
@@ -1252,8 +1242,8 @@ def test_create_doctrine_no_write_on_design_validation_failure(tmp_path):
 def test_create_doctrine_duplicate_yaml_stem(tmp_path):
     """create_doctrine() raises DoctrineError containing 'already exists' when YAML stem exists in doctrines_dir."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     # Pre-existing YAML file
     (doctrines_dir / "my-workflow.yaml").write_text("id: my-workflow\nsteps: []\n")
 
@@ -1264,8 +1254,8 @@ def test_create_doctrine_duplicate_yaml_stem(tmp_path):
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text("---\nid: my-workflow\n---\n")
 
-    with pytest.raises(DoctrineError) as exc_info:
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert "already exists" in str(exc_info.value)
 
@@ -1279,8 +1269,8 @@ def test_create_doctrine_duplicate_yaml_stem(tmp_path):
 def test_create_doctrine_duplicate_design_stem(tmp_path):
     """create_doctrine() raises DoctrineError containing 'already exists' when design stem exists in doctrines_dir."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
     # Pre-existing design file (no matching yaml)
     (doctrines_dir / "my-workflow.design.md").write_text(
         "---\nid: my-workflow\ntitle: My Workflow\n---\n"
@@ -1293,8 +1283,8 @@ def test_create_doctrine_duplicate_design_stem(tmp_path):
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text("---\nid: my-workflow\n---\n")
 
-    with pytest.raises(DoctrineError) as exc_info:
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert "already exists" in str(exc_info.value)
 
@@ -1308,15 +1298,15 @@ def test_create_doctrine_duplicate_design_stem(tmp_path):
 def test_create_doctrine_yaml_source_not_found(tmp_path):
     """create_doctrine() raises DoctrineError containing 'File not found' when YAML source path does not exist."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     missing_yaml = tmp_path / "nonexistent.yaml"
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text("---\nid: my-workflow\n---\n")
 
-    with pytest.raises(DoctrineError) as exc_info:
-        create_doctrine("my-workflow", missing_yaml, design_source, doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        create_doctrine(tmp_path, "my-workflow", missing_yaml, design_source)
 
     assert "File not found" in str(exc_info.value)
 
@@ -1337,8 +1327,8 @@ def test_create_doctrine_yaml_source_not_found(tmp_path):
 def test_create_doctrine_returns_correct_dict(tmp_path):
     """create_doctrine() returns {"name", "yaml_filename", "design_filename"} dict on success."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1349,10 +1339,11 @@ def test_create_doctrine_returns_correct_dict(tmp_path):
         "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things.\n---\n"
     )
 
-    result = create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    result = create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
-    assert result["name"] == "my-workflow"
-    assert result["yaml_filename"] == "my-workflow.yaml"
+    # Post-G16 envelope: {id, filename, group, design_filename}.
+    assert result["id"] == "my-workflow"
+    assert result["filename"] == "my-workflow.yaml"
     assert result["design_filename"] == "my-workflow.design.md"
 
 
@@ -1365,8 +1356,8 @@ def test_create_doctrine_returns_correct_dict(tmp_path):
 def test_create_doctrine_yaml_content_equals_source(tmp_path):
     """create_doctrine() writes YAML file whose content is identical to the source YAML."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_content = (
         "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
@@ -1378,7 +1369,7 @@ def test_create_doctrine_yaml_content_equals_source(tmp_path):
         "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things.\n---\n"
     )
 
-    create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert (doctrines_dir / "my-workflow.yaml").read_text() == yaml_content
 
@@ -1392,8 +1383,8 @@ def test_create_doctrine_yaml_content_equals_source(tmp_path):
 def test_create_doctrine_design_content_equals_source(tmp_path):
     """create_doctrine() writes design file whose content is identical to the source design file."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     design_content = (
         "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things.\n---\n\n# My Workflow\n"
@@ -1405,7 +1396,7 @@ def test_create_doctrine_design_content_equals_source(tmp_path):
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text(design_content)
 
-    create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert (doctrines_dir / "my-workflow.design.md").read_text() == design_content
 
@@ -1419,8 +1410,8 @@ def test_create_doctrine_design_content_equals_source(tmp_path):
 def test_create_doctrine_no_partial_write_on_yaml_id_mismatch(tmp_path):
     """create_doctrine() raises DoctrineError and writes no files when YAML id mismatches name."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "other-name.yaml"
     yaml_source.write_text(
@@ -1429,8 +1420,8 @@ def test_create_doctrine_no_partial_write_on_yaml_id_mismatch(tmp_path):
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text("---\nid: my-workflow\ntitle: My Workflow\n---\n")
 
-    with pytest.raises(DoctrineError):
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError):
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert not (doctrines_dir / "my-workflow.yaml").exists()
     assert not (doctrines_dir / "my-workflow.design.md").exists()
@@ -1445,8 +1436,8 @@ def test_create_doctrine_no_partial_write_on_yaml_id_mismatch(tmp_path):
 def test_create_doctrine_no_partial_write_on_design_id_mismatch(tmp_path):
     """create_doctrine() raises DoctrineError and writes no files when design id mismatches name."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1455,8 +1446,8 @@ def test_create_doctrine_no_partial_write_on_design_id_mismatch(tmp_path):
     design_source = tmp_path / "other.design.md"
     design_source.write_text("---\nid: other-name\ntitle: Other\n---\n")
 
-    with pytest.raises(DoctrineError):
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError):
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert not (doctrines_dir / "my-workflow.yaml").exists()
     assert not (doctrines_dir / "my-workflow.design.md").exists()
@@ -1471,8 +1462,8 @@ def test_create_doctrine_no_partial_write_on_design_id_mismatch(tmp_path):
 def test_create_doctrine_file_not_found_design(tmp_path):
     """create_doctrine() raises DoctrineError containing 'File not found' when design source path does not exist."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1480,8 +1471,8 @@ def test_create_doctrine_file_not_found_design(tmp_path):
     )
     missing_design = tmp_path / "nonexistent.design.md"
 
-    with pytest.raises(DoctrineError) as exc_info:
-        create_doctrine("my-workflow", yaml_source, missing_design, doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        create_doctrine(tmp_path, "my-workflow", yaml_source, missing_design)
 
     assert "File not found" in str(exc_info.value)
 
@@ -1499,15 +1490,15 @@ def test_create_doctrine_invalid_name_first(tmp_path):
     first, DoctrineError is raised before any file I/O.
     """
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
-    with pytest.raises(DoctrineError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         create_doctrine(
+            tmp_path,
             "_bad-name",
             tmp_path / "x.yaml",  # does not exist — name check must come first
             tmp_path / "x.design.md",
-            doctrines_dir,
         )
 
     assert "Invalid name" in str(exc_info.value)
@@ -1522,8 +1513,8 @@ def test_create_doctrine_invalid_name_first(tmp_path):
 def test_create_doctrine_yaml_with_name_raises(tmp_path):
     """create_doctrine() raises DoctrineError with 'Unexpected field in YAML: name' when YAML has name key."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1532,8 +1523,8 @@ def test_create_doctrine_yaml_with_name_raises(tmp_path):
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text("---\nid: my-workflow\ntitle: My Workflow\n---\n")
 
-    with pytest.raises(DoctrineError) as exc_info:
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert "Unknown property 'name'" in str(exc_info.value)
 
@@ -1547,8 +1538,8 @@ def test_create_doctrine_yaml_with_name_raises(tmp_path):
 def test_create_doctrine_yaml_with_description_raises(tmp_path):
     """create_doctrine() raises DoctrineError with 'Unexpected field in YAML: description' when YAML has description key."""
 
-    doctrines_dir = tmp_path / "doctrines"
-    doctrines_dir.mkdir()
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
 
     yaml_source = tmp_path / "my-workflow.yaml"
     yaml_source.write_text(
@@ -1557,8 +1548,8 @@ def test_create_doctrine_yaml_with_description_raises(tmp_path):
     design_source = tmp_path / "my-workflow.design.md"
     design_source.write_text("---\nid: my-workflow\ntitle: My Workflow\n---\n")
 
-    with pytest.raises(DoctrineError) as exc_info:
-        create_doctrine("my-workflow", yaml_source, design_source, doctrines_dir)
+    with pytest.raises(ValueError) as exc_info:
+        create_doctrine(tmp_path, "my-workflow", yaml_source, design_source)
 
     assert "Unknown property 'description'" in str(exc_info.value)
 
@@ -1592,56 +1583,56 @@ class TestCreateDoctrineGroup:
 
     def test_group_none_writes_flat(self, tmp_path):
         """group=None writes to doctrines_dir / '<name>.yaml' (flat)."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
-        create_doctrine("d", yaml_src, design_src, doctrines_dir, group=None)
+        create_doctrine(tmp_path, "d", yaml_src, design_src, group=None)
 
         assert (doctrines_dir / "d.yaml").exists()
         assert (doctrines_dir / "d.design.md").exists()
 
     def test_group_single_segment_writes_nested(self, tmp_path):
         """group='seo' writes to doctrines_dir / 'seo' / '<name>.yaml'."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
-        create_doctrine("d", yaml_src, design_src, doctrines_dir, group="seo")
+        create_doctrine(tmp_path, "d", yaml_src, design_src, group="seo")
 
         assert (doctrines_dir / "seo" / "d.yaml").exists()
         assert (doctrines_dir / "seo" / "d.design.md").exists()
 
     def test_group_nested_writes_nested(self, tmp_path):
         """group='a/b/c' writes to doctrines_dir / 'a' / 'b' / 'c' / '<name>.yaml'."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
         result = create_doctrine(
-            "d", yaml_src, design_src, doctrines_dir, group="a/b/c"
+            tmp_path, "d", yaml_src, design_src, group="a/b/c"
         )
 
         assert (doctrines_dir / "a" / "b" / "c" / "d.yaml").exists()
         assert (doctrines_dir / "a" / "b" / "c" / "d.design.md").exists()
         assert result["group"] == "a/b/c"
-        assert result["path"] == str(doctrines_dir / "a" / "b" / "c" / "d.yaml")
+        assert result["filename"] == "d.yaml"  # post-G16: path key dropped
 
     def test_mkdir_idempotent_when_dir_exists(self, tmp_path):
         """Pre-existing nested dir does not cause an error (mkdir parents=True exist_ok=True)."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "a" / "b").mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
-        create_doctrine("d", yaml_src, design_src, doctrines_dir, group="a/b")
+        create_doctrine(tmp_path, "d", yaml_src, design_src, group="a/b")
 
         assert (doctrines_dir / "a" / "b" / "d.yaml").exists()
 
     def test_duplicate_in_subtree_raises_regardless_of_group(self, tmp_path):
         """Existing doctrine anywhere under doctrines_dir fires duplicate check, ignoring supplied group."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "x").mkdir()
         (doctrines_dir / "x" / "d.yaml").write_text(
             "id: d\nsteps:\n  - id: s\n    title: t\n    type: knight\n    knight: k\n"
@@ -1651,22 +1642,22 @@ class TestCreateDoctrineGroup:
         )
         yaml_src, design_src = _write_d_sources(tmp_path)
 
-        with pytest.raises(DoctrineError, match="already exists"):
+        with pytest.raises(ValueError, match="already exists"):
             create_doctrine(
-                "d", yaml_src, design_src, doctrines_dir, group="y"
+                tmp_path, "d", yaml_src, design_src, group="y"
             )
 
         assert not (doctrines_dir / "y").exists()
 
     def test_invalid_group_raises_before_write(self, tmp_path):
         """validate_group failure raises DoctrineError before any filesystem write occurs."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
-        with pytest.raises(DoctrineError, match="invalid group"):
+        with pytest.raises(ValueError, match="invalid group"):
             create_doctrine(
-                "d", yaml_src, design_src, doctrines_dir, group="../etc"
+                tmp_path, "d", yaml_src, design_src, group="../etc"
             )
 
         assert not (doctrines_dir / "d.yaml").exists()
@@ -1674,27 +1665,27 @@ class TestCreateDoctrineGroup:
 
     def test_return_dict_contains_group_and_path(self, tmp_path):
         """Return dict contains 'group' equal to supplied value and 'path' equal to written yaml path."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
         result = create_doctrine(
-            "d", yaml_src, design_src, doctrines_dir, group="a/b"
+            tmp_path, "d", yaml_src, design_src, group="a/b"
         )
 
         assert result["group"] == "a/b"
-        assert result["path"] == str(doctrines_dir / "a" / "b" / "d.yaml")
+        assert result["filename"] == "d.yaml"  # post-G16: path key dropped
 
     def test_return_dict_group_none_for_flat_write(self, tmp_path):
         """Return dict carries group=None and path to flat yaml when no group supplied."""
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src, design_src = _write_d_sources(tmp_path)
 
-        result = create_doctrine("d", yaml_src, design_src, doctrines_dir)
+        result = create_doctrine(tmp_path, "d", yaml_src, design_src)
 
         assert result["group"] is None
-        assert result["path"] == str(doctrines_dir / "d.yaml")
+        assert result["filename"] == "d.yaml"  # post-G16: path key dropped
 
 
 # ---------------------------------------------------------------------------
@@ -1704,7 +1695,6 @@ class TestCreateDoctrineGroup:
 # ---------------------------------------------------------------------------
 
 
-import click  # noqa: E402
 import lore.doctrine as _d_mod  # noqa: E402
 import lore.schemas as _schemas  # noqa: E402
 
@@ -1724,21 +1714,21 @@ def test_us010_validate_yaml_schema_delegates_to_schemas(monkeypatch):
     if hasattr(_d_mod, "validate_entity"):
         monkeypatch.setattr(_d_mod, "validate_entity", spy)
 
-    with pytest.raises(click.ClickException):
+    with pytest.raises(ValueError):
         _d_mod._validate_yaml_schema({"id": "x"}, "x")
     assert called.get("kind") == "doctrine-yaml"
 
 
 def test_us010_validate_yaml_schema_raises_click_on_issues(monkeypatch):
-    """_validate_yaml_schema must raise click.ClickException when validate_entity returns issues."""
+    """_validate_yaml_schema must raise ValueError when validate_entity returns issues."""
     fake_issue = _schemas.SchemaIssue(rule="required", pointer="/", message="Missing required property 'steps'.")
     monkeypatch.setattr(_schemas, "validate_entity", lambda k, d: [fake_issue])
     if hasattr(_d_mod, "validate_entity"):
         monkeypatch.setattr(_d_mod, "validate_entity", lambda k, d: [fake_issue])
 
-    with pytest.raises(click.ClickException) as exc:
+    with pytest.raises(ValueError) as exc:
         _d_mod._validate_yaml_schema({"id": "x"}, "x")
-    assert "Missing required property 'steps'." in str(exc.value.message)
+    assert "Missing required property 'steps'." in str(exc.value)
 
 
 def test_us010_validate_design_frontmatter_delegates(monkeypatch):
@@ -1754,13 +1744,62 @@ def test_us010_validate_design_frontmatter_delegates(monkeypatch):
     if hasattr(_d_mod, "validate_entity"):
         monkeypatch.setattr(_d_mod, "validate_entity", spy)
 
-    with pytest.raises(click.ClickException):
+    with pytest.raises(ValueError):
         _d_mod._validate_design_frontmatter({"id": "x"}, "x")
     assert "doctrine-design-frontmatter" in kinds
 
 
 def test_us010_validate_design_frontmatter_missing_summary_golden_message():
     """Missing 'summary' must surface the frozen golden error text."""
-    with pytest.raises(click.ClickException) as exc:
+    with pytest.raises(ValueError) as exc:
         _d_mod._validate_design_frontmatter({"id": "x", "title": "T"}, "x")
-    assert "Missing required property 'summary'" in str(exc.value.message)
+    assert "Missing required property 'summary'" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# Unit — validate_doctrine_content (used by `lore doctrine edit`) must accept
+# the same minimum field set that create_doctrine / `lore doctrine new`
+# accepts. The schema requires only `id` and `steps`; `description` is NOT
+# in the doctrine YAML schema (it is rejected as an unknown property on
+# create). Edit must agree.
+# ---------------------------------------------------------------------------
+
+
+def test_validate_doctrine_content_accepts_minimal_yaml_without_description():
+    """validate_doctrine_content() does not raise when YAML has only `id` and
+    valid `steps` — matching the create-side schema.
+
+    Regression: previously edit demanded a top-level `description` field that
+    create both does not require and actively rejects.
+    """
+    from lore.doctrine import validate_doctrine_content
+
+    text = (
+        "id: my-doc\n"
+        "steps:\n"
+        "  - id: s1\n"
+        "    title: S1\n"
+        "    type: knight\n"
+        "    knight: k\n"
+    )
+    # Must not raise.
+    validate_doctrine_content(text, "my-doc")
+
+
+def test_validate_doctrine_content_accepts_top_level_description():
+    """validate_doctrine_content() accepts (does not reject) a top-level
+    ``description`` field, matching pre-existing on-disk doctrines.
+    """
+    from lore.doctrine import validate_doctrine_content
+
+    text = (
+        "id: my-doc\n"
+        "description: A doctrine for tests.\n"
+        "steps:\n"
+        "  - id: s1\n"
+        "    title: S1\n"
+        "    type: knight\n"
+        "    knight: k\n"
+    )
+    # Must not raise.
+    validate_doctrine_content(text, "my-doc")

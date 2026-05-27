@@ -9,7 +9,7 @@ Tech spec: codex-map-tech-spec.
 
 These tests target the NEW signature:
 
-    map_documents(codex_dir, start_id, *, depth_out=1, depth_in=1, full=False)
+    map_documents(codex_dir.parent.parent, start_id, *, depth_out=1, depth_in=1, full=False)
 
 The legacy positional `depth` parameter is removed. The function returns
 a list of records with keys {id, group, title, summary} in default mode
@@ -90,7 +90,7 @@ def test_map_documents_bidirectional_default_returns_both_directions(tmp_path):
     _write_doc(codex_dir, "child-a", related=[])
     _write_doc(codex_dir, "parent-b", related=["seed"])
 
-    result = map_documents(codex_dir, "seed")
+    result = map_documents(codex_dir.parent.parent, "seed")
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -104,7 +104,7 @@ def test_map_documents_default_mode_records_have_four_keys(tmp_path):
     _write_doc(codex_dir, "seed", related=["child-a"])
     _write_doc(codex_dir, "child-a", related=[])
 
-    result = map_documents(codex_dir, "seed")
+    result = map_documents(codex_dir.parent.parent, "seed")
 
     assert result is not None
     assert len(result) == 1
@@ -127,7 +127,7 @@ def test_map_documents_result_sorted_alphabetically_by_id(tmp_path):
     _write_doc(codex_dir, "apple", related=[])
     _write_doc(codex_dir, "mango", related=[])
 
-    result = map_documents(codex_dir, "seed")
+    result = map_documents(codex_dir.parent.parent, "seed")
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -141,7 +141,7 @@ def test_map_documents_group_derived_from_path(tmp_path):
     _write_doc(codex_dir, "seed", related=["neighbour"], subdir="foo/bar")
     _write_doc(codex_dir, "neighbour", related=[], subdir="foo/bar")
 
-    result = map_documents(codex_dir, "seed")
+    result = map_documents(codex_dir.parent.parent, "seed")
 
     assert result is not None
     assert len(result) == 1
@@ -160,7 +160,7 @@ def test_map_documents_seed_never_in_result(tmp_path):
     _write_doc(codex_dir, "seed", related=["seed", "child-a"])
     _write_doc(codex_dir, "child-a", related=[])
 
-    result = map_documents(codex_dir, "seed")
+    result = map_documents(codex_dir.parent.parent, "seed")
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -177,7 +177,7 @@ def test_map_documents_dedupes_cross_direction_neighbour(tmp_path):
     _write_doc(codex_dir, "seed", related=["shared"])
     _write_doc(codex_dir, "shared", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=1)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=1)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -197,7 +197,7 @@ def test_map_documents_dedupe_across_two_inbound_paths(tmp_path):
     _write_doc(codex_dir, "parent-b", related=["seed"])
     _write_doc(codex_dir, "grandparent-c", related=["parent-a", "parent-b"])
 
-    result = map_documents(codex_dir, "seed", depth_out=0, depth_in=2)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=0, depth_in=2)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -213,7 +213,7 @@ def test_map_documents_dedupe_full_mode_cross_direction(tmp_path):
     _write_doc(codex_dir, "seed", related=["shared"])
     _write_doc(codex_dir, "shared", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=1, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=1, full=True)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -231,7 +231,7 @@ def test_map_documents_returns_none_for_unknown_seed(tmp_path):
     codex_dir = _make_codex_dir(tmp_path)
     _write_doc(codex_dir, "seed", related=[])
 
-    result = map_documents(codex_dir, "does-not-exist")
+    result = map_documents(codex_dir.parent.parent, "does-not-exist")
 
     assert result is None
 
@@ -242,7 +242,7 @@ def test_map_documents_returns_empty_list_when_no_neighbours(tmp_path):
     codex_dir = _make_codex_dir(tmp_path)
     _write_doc(codex_dir, "seed", related=[])
 
-    result = map_documents(codex_dir, "seed")
+    result = map_documents(codex_dir.parent.parent, "seed")
 
     assert result is not None  # specifically NOT None
     assert result == []
@@ -256,7 +256,7 @@ def test_map_documents_depth_0_returns_empty_list(tmp_path):
     _write_doc(codex_dir, "child-a", related=[])
     _write_doc(codex_dir, "parent-b", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=0, depth_in=0)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=0, depth_in=0)
 
     assert result is not None  # seed exists -> [] not None
     assert result == []
@@ -319,7 +319,7 @@ def test_map_documents_outbound_only_when_depth_in_0(tmp_path):
     _write_doc(codex_dir, "b", related=[])
     _write_doc(codex_dir, "parent", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=0)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=0)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -340,7 +340,7 @@ def test_map_documents_depth_in_0_excludes_inbound_at_any_depth_out(tmp_path):
     _write_doc(codex_dir, "c", related=[])
     _write_doc(codex_dir, "parent", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=5, depth_in=0)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=5, depth_in=0)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -358,7 +358,7 @@ def test_map_documents_depth_out_2_includes_depth_2_chain(tmp_path):
     _write_doc(codex_dir, "b", related=["c"])
     _write_doc(codex_dir, "c", related=[])
 
-    result = map_documents(codex_dir, "seed", depth_out=2, depth_in=0)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=2, depth_in=0)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -375,7 +375,7 @@ def test_map_documents_negative_depth_out_raises_valueerror(tmp_path):
     _write_doc(codex_dir, "seed", related=[])
 
     with _pytest.raises(ValueError):
-        map_documents(codex_dir, "seed", depth_out=-1, depth_in=0)
+        map_documents(codex_dir.parent.parent, "seed", depth_out=-1, depth_in=0)
 
 
 # ===========================================================================
@@ -392,7 +392,7 @@ def test_map_documents_inbound_only_when_depth_out_0(tmp_path):
     _write_doc(codex_dir, "outbound-x", related=[])
     _write_doc(codex_dir, "cite-a", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=0, depth_in=1)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=0, depth_in=1)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -413,7 +413,7 @@ def test_map_documents_depth_out_0_excludes_outbound_at_any_depth_in(tmp_path):
     _write_doc(codex_dir, "parent-2", related=["parent-1"])
     _write_doc(codex_dir, "parent-3", related=["parent-2"])
 
-    result = map_documents(codex_dir, "seed", depth_out=0, depth_in=5)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=0, depth_in=5)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -431,153 +431,20 @@ def test_map_documents_negative_depth_in_raises_valueerror(tmp_path):
     _write_doc(codex_dir, "seed", related=[])
 
     with _pytest.raises(ValueError):
-        map_documents(codex_dir, "seed", depth_out=0, depth_in=-1)
+        map_documents(codex_dir.parent.parent, "seed", depth_out=0, depth_in=-1)
 
 
 # ===========================================================================
 # US-004 — Symmetric --depth shortcut and conflict error (unit)
 # ===========================================================================
-
-
-# Pinned conflict message — must match cli.py and the PRD byte-for-byte.
-_CONFLICT_MSG = (
-    "--depth cannot be combined with --depth-in or --depth-out. "
-    "Use --depth for symmetric traversal, or --depth-in and/or "
-    "--depth-out for directional traversal."
-)
-
-
-# Unit — handler raises UsageError when --depth combined with --depth-out
-# eager-impl from G1; locking in
-def test_codex_map_handler_raises_usage_error_when_depth_combined_with_depth_out(
-    tmp_path, monkeypatch
-):
-    """`--depth 2 --depth-out 1` -> UsageError, no map_documents call."""
-    import click
-    from click.testing import CliRunner
-    from lore.cli import main
-    from lore import codex as codex_module
-
-    monkeypatch.chdir(tmp_path)
-    CliRunner().invoke(main, ["init"])
-
-    calls: list = []
-
-    def _spy(*args, **kwargs):
-        calls.append((args, kwargs))
-        return []
-
-    monkeypatch.setattr(codex_module, "map_documents", _spy)
-
-    runner = CliRunner()
-    result = runner.invoke(
-        main, ["codex", "map", "seed", "--depth", "2", "--depth-out", "1"]
-    )
-
-    assert result.exit_code == 2
-    assert calls == []
-    # Click writes the UsageError to stderr prefixed with "Error: ".
-    assert f"Error: {_CONFLICT_MSG}" in result.stderr
-    # Underlying exception is click.UsageError when caught.
-    if result.exception is not None and not isinstance(result.exception, SystemExit):
-        assert isinstance(result.exception, click.UsageError)
-        assert result.exception.message == _CONFLICT_MSG
-
-
-# Unit — handler raises UsageError when --depth combined with --depth-in
-# eager-impl from G1; locking in
-def test_codex_map_handler_raises_usage_error_when_depth_combined_with_depth_in(
-    tmp_path, monkeypatch
-):
-    """`--depth 2 --depth-in 1` -> UsageError, no map_documents call."""
-    import click
-    from click.testing import CliRunner
-    from lore.cli import main
-    from lore import codex as codex_module
-
-    monkeypatch.chdir(tmp_path)
-    CliRunner().invoke(main, ["init"])
-
-    calls: list = []
-
-    def _spy(*args, **kwargs):
-        calls.append((args, kwargs))
-        return []
-
-    monkeypatch.setattr(codex_module, "map_documents", _spy)
-
-    runner = CliRunner()
-    result = runner.invoke(
-        main, ["codex", "map", "seed", "--depth", "2", "--depth-in", "1"]
-    )
-
-    assert result.exit_code == 2
-    assert calls == []
-    assert f"Error: {_CONFLICT_MSG}" in result.stderr
-    if result.exception is not None and not isinstance(result.exception, SystemExit):
-        assert isinstance(result.exception, click.UsageError)
-        assert result.exception.message == _CONFLICT_MSG
-
-
-# Unit — handler accepts --depth-in and --depth-out together
-# eager-impl from G1; locking in
-def test_codex_map_handler_accepts_depth_in_and_depth_out_together(
-    tmp_path, monkeypatch
-):
-    """`--depth-in 1 --depth-out 2` -> map_documents called with depth_in=1, depth_out=2."""
-    from click.testing import CliRunner
-    from lore.cli import main
-    from lore import codex as codex_module
-
-    monkeypatch.chdir(tmp_path)
-    CliRunner().invoke(main, ["init"])
-
-    captured: dict = {}
-
-    def _spy(codex_dir, start_id, *, depth_out, depth_in, full=False):
-        captured["depth_out"] = depth_out
-        captured["depth_in"] = depth_in
-        captured["start_id"] = start_id
-        return []
-
-    monkeypatch.setattr(codex_module, "map_documents", _spy)
-
-    runner = CliRunner()
-    result = runner.invoke(
-        main, ["codex", "map", "seed", "--depth-in", "1", "--depth-out", "2"]
-    )
-
-    assert result.exit_code == 0, result.stderr
-    assert captured["depth_out"] == 2
-    assert captured["depth_in"] == 1
-
-
-# Unit — `--depth` alone folds to symmetric budgets
-# eager-impl from G1; locking in
-def test_codex_map_handler_depth_alone_sets_symmetric_budgets(tmp_path, monkeypatch):
-    """`--depth 3` -> map_documents called with depth_out=3, depth_in=3."""
-    from click.testing import CliRunner
-    from lore.cli import main
-    from lore import codex as codex_module
-
-    monkeypatch.chdir(tmp_path)
-    CliRunner().invoke(main, ["init"])
-
-    captured: dict = {}
-
-    def _spy(codex_dir, start_id, *, depth_out, depth_in, full=False):
-        captured["depth_out"] = depth_out
-        captured["depth_in"] = depth_in
-        return []
-
-    monkeypatch.setattr(codex_module, "map_documents", _spy)
-
-    runner = CliRunner()
-    result = runner.invoke(main, ["codex", "map", "seed", "--depth", "3"])
-
-    assert result.exit_code == 0, result.stderr
-    assert captured["depth_out"] == 3
-    assert captured["depth_in"] == 3
+#
+# G11 inverts the conflict-detection location: the op fn `map_documents`
+# raises `ConflictingDepthFlags` and the CLI catches it. The 4 handler-spy
+# tests previously here pinned the OLD CLI-first-check flow and were deleted
+# in G11 Green. New unit coverage lives in `test_codex_map_depths.py`
+# (`TestMapDocumentsConflictingDepthFlags`, `TestMapDocumentsDepthSymmetric`,
+# `TestMapDocumentsDirectionalAloneUnchanged`); end-to-end CLI UsageError
+# emission stays pinned in `tests/e2e/test_codex_map.py`.
 
 
 # Unit — ConflictingDepthFlags is a ValueError subclass importable from lore.codex
@@ -602,7 +469,7 @@ def test_map_documents_full_mode_records_have_six_keys(tmp_path):
     _write_doc(codex_dir, "seed", related=["a"])
     _write_doc(codex_dir, "a", related=[])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=0, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=0, full=True)
 
     assert result is not None
     assert len(result) == 1
@@ -618,7 +485,7 @@ def test_map_documents_full_mode_excludes_seed(tmp_path):
     _write_doc(codex_dir, "seed", related=["a"], body="SEED-SENTINEL")
     _write_doc(codex_dir, "a", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=1, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=1, full=True)
 
     assert result is not None
     for r in result:
@@ -634,7 +501,7 @@ def test_map_documents_full_mode_dedupes_cross_direction_neighbour(tmp_path):
     _write_doc(codex_dir, "seed", related=["shared"])
     _write_doc(codex_dir, "shared", related=["seed"])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=1, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=1, full=True)
 
     assert result is not None
     shared_recs = [r for r in result if r["id"] == "shared"]
@@ -651,7 +518,7 @@ def test_map_documents_full_mode_result_sorted_alphabetically_by_id(tmp_path):
     _write_doc(codex_dir, "apple", related=[])
     _write_doc(codex_dir, "mango", related=[])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=0, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=0, full=True)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -667,7 +534,7 @@ def test_map_documents_full_mode_record_includes_group_and_related_keys(tmp_path
     _write_doc(codex_dir, "n", related=["x"], subdir="foo/bar")
     _write_doc(codex_dir, "x", related=[])
 
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=0, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=0, full=True)
 
     assert result is not None
     n_rec = next((r for r in result if r["id"] == "n"), None)
@@ -687,7 +554,7 @@ def test_map_documents_full_mode_skips_unparseable_neighbour(tmp_path):
     broken.write_text(
         "---\nid: broken\ntitle: Broken\nsummary: B\nrelated: []\n---\nbody"
     )
-    result = map_documents(codex_dir, "seed", depth_out=1, depth_in=0, full=True)
+    result = map_documents(codex_dir.parent.parent, "seed", depth_out=1, depth_in=0, full=True)
 
     assert result is not None
     ids = [r["id"] for r in result]
@@ -894,7 +761,7 @@ def test_map_documents_handles_multiline_summary_continuation(tmp_path):
     (codex_dir / "wrapped.md").write_text(multiline)
     _write_doc(codex_dir, "peer", related=[])
 
-    result = map_documents(codex_dir, "wrapped", depth_out=1, depth_in=0)
+    result = map_documents(codex_dir.parent.parent, "wrapped", depth_out=1, depth_in=0)
 
     assert result is not None
     assert [r["id"] for r in result] == ["peer"]

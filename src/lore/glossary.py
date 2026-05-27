@@ -10,7 +10,9 @@ see `standards-single-responsibility`.
 
 from __future__ import annotations
 
+import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -18,7 +20,7 @@ import yaml
 
 from lore.models import GlossaryItem
 from lore.paths import glossary_path
-from lore.schemas import SchemaValidationError, validate_entity_file
+from lore.schemas import SchemaValidationError, validate_entity, validate_entity_file
 
 
 _TOKEN_RE = re.compile(r"[^\w]+", re.UNICODE)
@@ -198,6 +200,265 @@ def _scan_runs(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Write surface — create / update / delete a single glossary item.
+#
+# Spec: .lore/codex/transient/glossary-crud-spec.md
+# Comments in glossary.yaml are project-meaningful guidance: we preserve any
+# header text that appears BEFORE the first `items:` line by treating it as a
+# raw prefix and only round-tripping the items list through PyYAML. Inline
+# item-level comments are dropped — documented limitation.
+# ---------------------------------------------------------------------------
+
+
+_KEYWORD_MAX = 80
+_DEFINITION_MAX = 1000
+
+
+def _validate_keyword_format(keyword: str) -> None:
+    if not isinstance(keyword, str) or not keyword.strip():
+        raise ValueError("Glossary keyword must be 1-80 chars, no line breaks.")
+    if len(keyword) > _KEYWORD_MAX or "\n" in keyword or "\r" in keyword:
+        raise ValueError("Glossary keyword must be 1-80 chars, no line breaks.")
+
+
+def _validate_definition(definition: str) -> None:
+    if not isinstance(definition, str) or not definition.strip():
+        raise ValueError("Glossary definition must be 1-1000 chars, not empty.")
+    if len(definition) > _DEFINITION_MAX:
+        raise ValueError("Glossary definition must be 1-1000 chars, not empty.")
+
+
+def _validate_alias_list(values: list[str]) -> None:
+    """Per-string + uniqueness rules for aliases / do_not_use lists."""
+    seen: set[str] = set()
+    for v in values:
+        if (
+            not isinstance(v, str)
+            or not v.strip()
+            or len(v) > _KEYWORD_MAX
+            or "\n" in v
+            or "\r" in v
+        ):
+            raise ValueError(
+                "Glossary aliases/do_not_use entries must be 1-80 chars, "
+                "no line breaks, no duplicates."
+            )
+        if v in seen:
+            raise ValueError(
+                "Glossary aliases/do_not_use entries must be 1-80 chars, "
+                "no line breaks, no duplicates."
+            )
+        seen.add(v)
+
+
+def _split_header_and_items(text: str) -> tuple[str, dict]:
+    """Split file text into a comment/blank prefix and the parsed YAML body.
+
+    Strategy per Q1 decision: locate the first line whose lstrip starts with
+    ``items:`` and treat everything before it as a raw prefix to be preserved
+    verbatim on write. The body (from that line on) is parsed with safe_load.
+    If no such line exists (file may be e.g. ``items: []`` on one line), the
+    whole document parses as body with empty prefix.
+    """
+    lines = text.splitlines(keepends=True)
+    split_idx: int | None = None
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("items:") or stripped.startswith("items :"):
+            split_idx = i
+            break
+    if split_idx is None:
+        prefix = ""
+        body_text = text
+    else:
+        prefix = "".join(lines[:split_idx])
+        body_text = "".join(lines[split_idx:])
+    data = yaml.safe_load(body_text) or {}
+    if not isinstance(data, dict):
+        raise ValueError("Glossary file body must parse to a mapping.")
+    return prefix, data
+
+
+def _serialise_item(item: dict) -> dict:
+    """Produce the storage-shaped dict for an item — drops empty optional lists."""
+    out: dict = {"keyword": item["keyword"], "definition": item["definition"]}
+    aliases = item.get("aliases") or []
+    if aliases:
+        out["aliases"] = list(aliases)
+    do_not_use = item.get("do_not_use") or []
+    if do_not_use:
+        out["do_not_use"] = list(do_not_use)
+    return out
+
+
+def _load_for_write(root: Path) -> tuple[Path, str, dict]:
+    """Open glossary.yaml for a write op; raise ValueError if absent or invalid.
+
+    Returns ``(path, prefix, data_dict)`` where ``data_dict["items"]`` is the
+    items list (list of dicts) ready for mutation.
+    """
+    path = glossary_path(root)
+    if not path.exists():
+        raise ValueError(
+            "Glossary file not found — run lore init or restore "
+            ".lore/codex/glossary.yaml."
+        )
+    try:
+        validate_entity_file(str(path), "glossary")
+    except SchemaValidationError as e:
+        raise ValueError(str(e)) from e
+    text = path.read_text(encoding="utf-8")
+    prefix, data = _split_header_and_items(text)
+    if "items" not in data or not isinstance(data["items"], list):
+        raise ValueError("Glossary file must contain an `items:` list.")
+    return path, prefix, data
+
+
+def _commit(path: Path, prefix: str, data: dict) -> None:
+    """Re-validate, serialise, atomic-write (tmp + os.replace)."""
+    issues = validate_entity("glossary", data)
+    if issues:
+        raise ValueError("\n".join(i.message for i in issues))
+    body = yaml.safe_dump(
+        data, sort_keys=False, allow_unicode=True, default_flow_style=False
+    )
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(prefix + body, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _find_item_index(items: list[dict], keyword: str) -> int | None:
+    needle = keyword.casefold()
+    for idx, item in enumerate(items):
+        stored = item.get("keyword", "")
+        if isinstance(stored, str) and stored.casefold() == needle:
+            return idx
+    return None
+
+
+def create_glossary_item(
+    project_root: Path,
+    keyword: str,
+    definition: str,
+    *,
+    aliases: list[str] | None = None,
+    do_not_use: list[str] | None = None,
+) -> dict:
+    """Append a new glossary item to ``.lore/codex/glossary.yaml``.
+
+    Returns ``{"keyword": str, "filename": "glossary.yaml"}``.
+
+    Raises ``ValueError`` on missing/empty keyword or definition, schema
+    violation, duplicate keyword (case-insensitive), or missing glossary file.
+    Comments at the top of the file are preserved (Q1 decision); inline
+    item-level comments are dropped (documented limitation).
+    """
+    _validate_keyword_format(keyword)
+    _validate_definition(definition)
+    if aliases is not None:
+        _validate_alias_list(aliases)
+    if do_not_use is not None:
+        _validate_alias_list(do_not_use)
+
+    path, prefix, data = _load_for_write(project_root)
+    items: list[dict] = data["items"]
+
+    if _find_item_index(items, keyword) is not None:
+        raise ValueError(f'Glossary keyword "{keyword}" already exists.')
+
+    new_item: dict = {"keyword": keyword, "definition": definition}
+    if aliases:
+        new_item["aliases"] = list(aliases)
+    if do_not_use:
+        new_item["do_not_use"] = list(do_not_use)
+
+    items.append(new_item)
+    data["items"] = [_serialise_item(i) for i in items]
+
+    _commit(path, prefix, data)
+    return {"keyword": keyword, "filename": "glossary.yaml"}
+
+
+def update_glossary_item(
+    project_root: Path,
+    keyword: str,
+    *,
+    definition: str | None = None,
+    aliases: list[str] | None = None,
+    do_not_use: list[str] | None = None,
+) -> dict:
+    """Mutate the matched item in-place. ``None`` means "leave field unchanged";
+    ``aliases=[]`` / ``do_not_use=[]`` explicitly clears the list (and removes
+    the YAML key on write).
+
+    Lookup is case-insensitive on keyword; stored casing is preserved. Renames
+    are out of scope — use ``delete_glossary_item`` + ``create_glossary_item``.
+
+    Returns ``{"keyword": str, "filename": "glossary.yaml"}`` (keyword as stored).
+
+    Raises ``ValueError`` on missing file, item not found, schema violation, or
+    a no-op call (every kwarg ``None``).
+    """
+    if definition is None and aliases is None and do_not_use is None:
+        raise ValueError(
+            "update_glossary_item requires at least one field to change."
+        )
+
+    if definition is not None:
+        _validate_definition(definition)
+    if aliases is not None:
+        _validate_alias_list(aliases)
+    if do_not_use is not None:
+        _validate_alias_list(do_not_use)
+
+    path, prefix, data = _load_for_write(project_root)
+    items: list[dict] = data["items"]
+    idx = _find_item_index(items, keyword)
+    if idx is None:
+        raise ValueError(f'Glossary keyword "{keyword}" not found.')
+
+    target = dict(items[idx])
+    stored_keyword = target["keyword"]
+    if definition is not None:
+        target["definition"] = definition
+    if aliases is not None:
+        target["aliases"] = list(aliases)
+    if do_not_use is not None:
+        target["do_not_use"] = list(do_not_use)
+
+    items[idx] = target
+    data["items"] = [_serialise_item(i) for i in items]
+
+    _commit(path, prefix, data)
+    return {"keyword": stored_keyword, "filename": "glossary.yaml"}
+
+
+def delete_glossary_item(project_root: Path, keyword: str) -> dict:
+    """Hard-delete the matched item from ``items[]``. Idempotent — re-deleting
+    a missing keyword returns the same envelope shape (no ``already_deleted``
+    flag, per canonical A2).
+
+    Returns ``{"keyword": str, "deleted": True, "deleted_at": <UTC ISO str>}``.
+
+    Raises ``ValueError`` only when the glossary file is missing or invalid.
+    A missing keyword is NOT an error.
+    """
+    _validate_keyword_format(keyword)
+    path, prefix, data = _load_for_write(project_root)
+    items: list[dict] = data["items"]
+    idx = _find_item_index(items, keyword)
+    if idx is not None:
+        items.pop(idx)
+        data["items"] = [_serialise_item(i) for i in items]
+        _commit(path, prefix, data)
+    return {
+        "keyword": keyword,
+        "deleted": True,
+        "deleted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+    }
+
+
 def match_glossary(
     bodies: list[str],
     *,
@@ -223,15 +484,3 @@ def match_glossary(
         for item, _tag in _scan_runs(tokens, lookup):
             matched[id(item)] = item
     return sorted(matched.values(), key=lambda i: i.keyword.casefold())
-
-
-def _render_glossary_block(items: list[GlossaryItem]) -> str:
-    """Render ``## Glossary`` block. Empty list → empty string."""
-    if not items:
-        return ""
-    ordered = sorted(items, key=lambda i: i.keyword.casefold())
-    paragraphs = [
-        f"**{i.keyword}** — {' '.join(i.definition.split())}"
-        for i in ordered
-    ]
-    return "\n## Glossary\n\n" + "\n\n".join(paragraphs) + "\n"

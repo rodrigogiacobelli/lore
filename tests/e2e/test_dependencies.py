@@ -9,7 +9,6 @@ from lore.cli import main
 from lore.db import remove_dependency
 from tests.conftest import (
     assert_exit_ok,
-    assert_exit_err,
     db_conn,
     insert_dependency,
     insert_mission,
@@ -838,32 +837,37 @@ class TestCycleDetectionIgnoresSoftDeleted:
 
 
 class TestRemoveDependencyDbApi:
-    """remove_dependency() DB function returns existence-based result (not format error)."""
+    """remove_dependency() DB function returns existence-based result (not format error).
+
+    G17 (amendment Section B): envelope is ``{from, to, removed}`` —
+    preserves the ADR-011 existence-based contract (no raise on malformed IDs
+    or missing dependency).
+    """
 
     def test_malformed_from_id_returns_not_found(self, project_dir):
         result = remove_dependency(project_dir, "bad", "q-a1b2/m-f3c1")
-        assert result == {"removed": False, "not_found": True}
+        assert result == {"from": "bad", "to": "q-a1b2/m-f3c1", "removed": False}
 
     def test_malformed_to_id_returns_not_found(self, project_dir):
         result = remove_dependency(project_dir, "q-a1b2/m-f3c1", "also-bad")
-        assert result == {"removed": False, "not_found": True}
+        assert result == {"from": "q-a1b2/m-f3c1", "to": "also-bad", "removed": False}
 
     def test_both_ids_malformed_returns_not_found(self, project_dir):
         result = remove_dependency(project_dir, "bad", "also-bad")
-        assert result == {"removed": False, "not_found": True}
+        assert result == {"from": "bad", "to": "also-bad", "removed": False}
 
     def test_valid_ids_proceed_to_db_lookup(self, project_dir):
         result = remove_dependency(project_dir, "q-a1b2/m-f3c1", "q-a1b2/m-f3d2")
-        assert result.get("ok") is not False
         assert "error" not in result
+        assert set(result.keys()) == {"from", "to", "removed"}
 
     def test_valid_scoped_id_accepted(self, project_dir):
         result = remove_dependency(project_dir, "q-a1b2/m-f3c1", "q-a1b2/m-f3d2")
-        assert result.get("ok") is not False
+        assert set(result.keys()) == {"from", "to", "removed"}
 
     def test_valid_standalone_id_accepted(self, project_dir):
         result = remove_dependency(project_dir, "m-f3c1", "q-a1b2/m-f3d2")
-        assert result.get("ok") is not False
+        assert set(result.keys()) == {"from", "to", "removed"}
 
     def test_no_error_key_for_valid_ids(self, project_dir):
         result = remove_dependency(project_dir, "q-a1b2/m-f3c1", "q-a1b2/m-f3d2")

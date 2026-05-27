@@ -4,7 +4,7 @@ title: API — {Domain} Commands
 summary: CLI command reference (or HTTP endpoint reference) for the {domain} domain.
   Covers all sub-commands, options, output shapes, and error codes.
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # API — {Domain} Commands

@@ -5,7 +5,7 @@ summary: 'All external systems this project interacts with: purpose, protocol, a
   method, failure behaviour, and what is off-limits to modify. Agents must read this
   before touching any code that calls an external system.'
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Integrations

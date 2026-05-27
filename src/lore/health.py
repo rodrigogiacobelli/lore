@@ -43,9 +43,21 @@ class HealthIssue:
 
 @dataclasses.dataclass(frozen=True)
 class HealthReport:
-    """Structured health check result (errors, warnings)."""
+    """Structured health check result.
+
+    Attributes:
+        errors: Issues with severity ``error`` (or escalated warnings).
+        warnings: Non-error issues.
+        report_path: Filesystem path of the markdown report when
+            ``health_check`` was called with ``write_report=True``; otherwise
+            ``None``.
+        schemas_ran: ``True`` when the run included the ``schemas`` or
+            ``glossary`` scope (drives schema-summary rendering on the CLI).
+    """
     errors: tuple[HealthIssue, ...]
     warnings: tuple[HealthIssue, ...]
+    report_path: Path | None = None
+    schemas_ran: bool = False
 
     @property
     def has_errors(self) -> bool:
@@ -264,7 +276,8 @@ def _check_doctrines(
     artifacts_dir: Path,
 ) -> list[HealthIssue]:
     """Audit doctrines for orphaned files, broken knight refs, and broken artifact refs."""
-    from lore.knight import find_knight
+    from lore.knight import _find_knight as find_knight
+    project_root = knights_dir.parent.parent
 
     issues: list[HealthIssue] = []
 
@@ -334,7 +347,7 @@ def _check_doctrines(
                 if knight_name:
                     # Strip .md suffix if present (some doctrines use filename form)
                     knight_stem = knight_name[:-3] if knight_name.endswith(".md") else knight_name
-                    knight_path = find_knight(knights_dir, knight_stem)
+                    knight_path = find_knight(project_root, knight_stem)
                     if knight_path is None and not _is_knight_soft_deleted(knights_dir, knight_stem):
                         issues.append(HealthIssue(
                             severity="error",
@@ -366,7 +379,7 @@ def _check_doctrines(
 def _check_knights(knights_dir: Path, project_root: Path) -> list[HealthIssue]:
     """Audit knight refs from active missions."""
     from lore.db import list_missions
-    from lore.knight import find_knight
+    from lore.knight import _find_knight as find_knight
 
     issues: list[HealthIssue] = []
 
@@ -387,7 +400,7 @@ def _check_knights(knights_dir: Path, project_root: Path) -> list[HealthIssue]:
     for knight_name, mission_ids in knight_to_missions.items():
         # Strip .md suffix if present
         knight_stem = knight_name[:-3] if knight_name.endswith(".md") else knight_name
-        knight_path = find_knight(knights_dir, knight_stem)
+        knight_path = find_knight(project_root, knight_stem)
         if knight_path is not None:
             continue
 
@@ -959,15 +972,42 @@ def health_check(
     project_root: Path | None = None,
     scope: list[str] | None = None,
     scopes: list[str] | None = None,
+    *,
+    write_report: bool = False,
+    timestamp: str | None = None,
 ) -> HealthReport:
-    """Audit file-based entity types and return a HealthReport.
+    """Audit file-based entity types and return a :class:`HealthReport`.
 
-    scope=None audits all scopes in ``_ALL_SCOPES``.
-    scope=["codex", "watchers"] audits only those two.
-    ``scopes`` is an alias for ``scope`` (US-004 signature).
+    Args:
+        project_root: Project root containing ``.lore/``. When ``None``,
+            resolved via :func:`lore.root.find_project_root`.
+        scope: Scopes to audit. ``None`` (default) audits every scope in
+            ``_ALL_SCOPES``. Example: ``["codex", "watchers"]`` runs only
+            those two.
+        scopes: Alias for ``scope`` (kept for US-004 signature parity). When
+            both are passed, ``scopes`` wins.
+        write_report: When ``True``, writes the markdown report to
+            ``<project>/.lore/codex/transient/health-<timestamp>.md`` and
+            sets ``HealthReport.report_path``. Default ``False`` is a
+            pure read-only audit.
+        timestamp: ``%Y-%m-%dT%H-%M-%S`` UTC stamp used in the report
+            filename. Only consulted when ``write_report=True``; defaults
+            to "now" when omitted.
+
+    Raises:
+        ValueError: When ``scope``/``scopes`` contains an unknown token.
+
     Never prints to stdout or stderr.
     """
     selected = scopes if scopes is not None else scope
+    if selected is not None:
+        invalid = [s for s in selected if s not in _ALL_SCOPES]
+        if invalid:
+            raise ValueError(
+                f"Unknown scope: '{invalid[0]}'. Valid scopes: "
+                + ", ".join(_ALL_SCOPES)
+                + "."
+            )
     active_scope = list(_ALL_SCOPES) if selected is None else list(selected)
 
     if project_root is None:
@@ -1015,4 +1055,20 @@ def health_check(
             else:
                 warnings.append(issue)
 
-    return HealthReport(errors=tuple(errors), warnings=tuple(warnings))
+    schemas_ran = "schemas" in active_scope or "glossary" in active_scope
+    report = HealthReport(
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+        schemas_ran=schemas_ran,
+    )
+
+    if write_report:
+        if timestamp is None:
+            import datetime
+            timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+                "%Y-%m-%dT%H-%M-%S"
+            )
+        report_path = _write_report(report, codex_dir, timestamp, schemas_ran=schemas_ran)
+        report = dataclasses.replace(report, report_path=report_path)
+
+    return report

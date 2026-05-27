@@ -4,7 +4,7 @@ title: Staging Deployment
 summary: 'How to deploy a pre-release build to the staging environment: prerequisites,
   deployment process, verification steps, and rollback procedure.'
 # related: []  # optional: codex IDs this doc links to outbound (see lore codex map)
-# binds: []  # optional: repo-root-relative paths or globs this doc governs (see conceptual-workflows-impacts)
+# binds: []  # optional: repo-root-relative paths or globs this doc governs (see codex.md "The impacts engine")
 ---
 
 # Staging Deployment

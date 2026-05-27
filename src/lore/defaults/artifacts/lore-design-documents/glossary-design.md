@@ -33,7 +33,7 @@ If any answer is NO, the term does NOT go in the glossary. The "Where to put it 
 
 | Keyword | Why it qualifies |
 |---|---|
-| **Constable** | Project-invented label for a Mission type the orchestrator handles inline. Not an entity (no `conceptual-entities-constable`), not a generic IT term, not a workflow. The canonical glossary example. |
+| **Constable** | Project-invented label for a Mission type the orchestrator handles inline. Not an entity (Constable has no entry under `conceptual/entities/`), not a generic IT term, not a workflow. The canonical glossary example. |
 
 ### Does NOT go in the glossary
 
@@ -60,7 +60,9 @@ If any answer is NO, the term does NOT go in the glossary. The "Where to put it 
 
 ## YAML Stanza Template
 
-When the gate passes for term `<X>`, append this to `.lore/codex/glossary.yaml`:
+When the gate passes for term `<X>`, run `lore glossary new <keyword> -d "<definition>" [--alias <a1> --alias <a2>] [--do-not-use <bad>] [--do-not-use <bad2>]`.
+
+The on-disk shape is:
 
 ```yaml
 - keyword: <X>

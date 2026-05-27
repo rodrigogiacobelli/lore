@@ -27,15 +27,23 @@ from tests.conftest import (
 
 
 class TestCreateQuest:
-    """create_quest returns a string ID; raises ValueError on invalid input."""
+    """create_quest returns a dict envelope; raises ValueError on invalid input.
+
+    G17 (amendment Section B Quest row): return shape is
+    ``{id, filename: None, group: None}`` (was bare str).
+    """
 
     def test_returns_id_string(self, project_dir):
         result = create_quest(project_dir, "My Quest")
-        assert isinstance(result, str), f"Expected str, got {type(result)}: {result}"
-        assert result.startswith("q-"), f"Expected q- prefix, got: {result}"
+        # G17: returns dict envelope.
+        assert isinstance(result, dict)
+        qid = result["id"]
+        assert qid.startswith("q-"), f"Expected q- prefix, got: {qid}"
+        assert result["filename"] is None
+        assert result["group"] is None
 
         conn = db_conn(project_dir)
-        row = conn.execute("SELECT * FROM quests WHERE id = ?", (result,)).fetchone()
+        row = conn.execute("SELECT * FROM quests WHERE id = ?", (qid,)).fetchone()
         conn.close()
         assert row is not None
 
@@ -50,17 +58,22 @@ class TestCreateQuest:
 
 
 class TestCreateMission:
-    """create_mission returns a string ID; raises ValueError on invalid input."""
+    """create_mission returns a dict envelope; raises ValueError on invalid input.
+
+    G17 (amendment Section B Mission row): return shape is
+    ``{id, filename: None, group: None}`` (was bare str).
+    """
 
     def test_with_quest_id_returns_hierarchical_id(self, project_dir):
-        quest_id = create_quest(project_dir, "My Quest")
+        quest_id = create_quest(project_dir, "My Quest")["id"]
         result = create_mission(project_dir, "Mission Title", quest_id=quest_id)
 
-        assert isinstance(result, str), f"Expected str, got {type(result)}"
-        assert result.startswith(f"{quest_id}/m-"), f"Unexpected ID: {result}"
+        assert isinstance(result, dict)
+        mid = result["id"]
+        assert mid.startswith(f"{quest_id}/m-"), f"Unexpected ID: {mid}"
 
         conn = db_conn(project_dir)
-        row = conn.execute("SELECT quest_id FROM missions WHERE id = ?", (result,)).fetchone()
+        row = conn.execute("SELECT quest_id FROM missions WHERE id = ?", (mid,)).fetchone()
         conn.close()
         assert row is not None
         assert row[0] == quest_id
@@ -70,11 +83,12 @@ class TestCreateMission:
         insert_quest(project_dir, "q-aa02", "Quest B")
 
         result = create_mission(project_dir, "Standalone")
-        assert isinstance(result, str), f"Expected str, got {type(result)}"
-        assert result.startswith("m-"), f"Expected m- prefix, got: {result}"
+        assert isinstance(result, dict)
+        mid = result["id"]
+        assert mid.startswith("m-"), f"Expected m- prefix, got: {mid}"
 
         conn = db_conn(project_dir)
-        row = conn.execute("SELECT quest_id FROM missions WHERE id = ?", (result,)).fetchone()
+        row = conn.execute("SELECT quest_id FROM missions WHERE id = ?", (mid,)).fetchone()
         conn.close()
         assert row is not None
         assert row[0] is None
@@ -93,8 +107,8 @@ class TestCreateMission:
         )
 
         result = create_mission(project_dir, "New Task", quest_id="q-c001")
-        assert isinstance(result, str)
-        assert result.startswith("q-c001/m-")
+        assert isinstance(result, dict)
+        assert result["id"].startswith("q-c001/m-")
 
         conn = db_conn(project_dir)
         row = conn.execute("SELECT status, closed_at FROM quests WHERE id = 'q-c001'").fetchone()
@@ -207,17 +221,18 @@ class TestBlockUnblockMission:
 
 
 class TestAddBoardMessage:
-    """add_board_message returns ok=True with id on success; ok=False on empty message."""
+    """add_board_message returns positive envelope on success; raises ValueError on bad input.
+
+    G17 (amendment Review Ledger CHANGED): the ``ok`` wrapper is dropped;
+    validation/lookup failures raise ``ValueError``.
+    """
 
     def test_empty_message_rejected_at_api_layer(self, project_dir):
         insert_quest(project_dir, "q-a001", "Quest A")
         insert_mission(project_dir, "q-a001/m-ab01", "q-a001", "Mission One")
 
-        result = add_board_message(project_dir, "q-a001/m-ab01", "")
-
-        assert isinstance(result, dict)
-        assert result["ok"] is False
-        assert "error" in result
+        with pytest.raises(ValueError):
+            add_board_message(project_dir, "q-a001/m-ab01", "")
 
         conn = db_conn(project_dir)
         count = conn.execute("SELECT COUNT(*) FROM board_messages").fetchone()[0]
@@ -236,7 +251,8 @@ class TestAddBoardMessage:
             sender=sender_label,
         )
 
-        assert result["ok"] is True, f"Expected ok=True, got: {result}"
+        # G17: positive envelope, no `ok`.
+        assert "ok" not in result
         assert isinstance(result["id"], int)
         assert result["sender"] == sender_label
 
@@ -304,11 +320,14 @@ class TestRemoveDependency:
         assert row[0] is not None, "deleted_at should be set after remove_dependency"
 
     def test_invalid_id_format_rejected(self, project_dir):
+        # G17: existence-based contract preserved; envelope is
+        # ``{from, to, removed: False}`` (no `not_found` flag).
         result = remove_dependency(project_dir, "notanid", "q-ab12/m-bb01")
 
         assert isinstance(result, dict)
-        assert result.get("not_found") is True
-        assert result.get("removed") is False
+        assert result["removed"] is False
+        assert result["from"] == "notanid"
+        assert result["to"] == "q-ab12/m-bb01"
 
 
 class TestEdgeCaseBehaviours:
@@ -326,10 +345,12 @@ class TestEdgeCaseBehaviours:
 
         result = create_mission(project_dir, "Task")
 
-        assert isinstance(result, str), f"create_mission should return a string ID, got {type(result)}"
+        # G17: returns dict envelope.
+        assert isinstance(result, dict)
+        mid = result["id"]
         # Either assigned to deleted quest (known bug) or standalone (correct) — record actual behaviour
-        assert result.startswith("q-ab01/m-") or result.startswith("m-"), (
-            f"Unexpected mission ID format: {result}"
+        assert mid.startswith("q-ab01/m-") or mid.startswith("m-"), (
+            f"Unexpected mission ID format: {mid}"
         )
 
     def test_add_board_message_race_window_documented(self, project_dir):
@@ -344,7 +365,9 @@ class TestEdgeCaseBehaviours:
 
         insert_quest(project_dir, "q-ab01", "Quest AB01")
         result = add_board_message(project_dir, "q-ab01", "Test message")
-        assert result.get("ok") is True, f"add_board_message failed: {result}"
+        # G17: positive envelope, no `ok`.
+        assert "ok" not in result
+        assert result["entity_id"] == "q-ab01"
 
 
 # ---------------------------------------------------------------------------
@@ -366,8 +389,8 @@ class TestPythonApiListWatchers:
         from lore.paths import watchers_dir
         from lore.watcher import list_watchers
 
-        wdir = watchers_dir(project_dir)
-        watchers = list_watchers(wdir)
+        _wdir = watchers_dir(project_dir)
+        watchers = list_watchers(project_dir)
 
         assert len(watchers) >= 1, "Expected at least one watcher after lore init"
         entry = watchers[0]
@@ -380,8 +403,8 @@ class TestPythonApiListWatchers:
         from lore.paths import watchers_dir
         from lore.watcher import list_watchers
 
-        wdir = watchers_dir(project_dir)
-        watchers = list_watchers(wdir)
+        _wdir = watchers_dir(project_dir)
+        watchers = list_watchers(project_dir)
 
         assert len(watchers) >= 1, "Expected at least one watcher after lore init"
         entry = watchers[0]
@@ -401,10 +424,10 @@ class TestPythonApiLoadWatcher:
     def test_load_watcher_returns_all_eight_keys(self, project_dir):
         # Spec: watchers-us-7 Scenario 2
         from lore.paths import watchers_dir
-        from lore.watcher import list_watchers, load_watcher
+        from lore.watcher import list_watchers, _load_watcher as load_watcher
 
         wdir = watchers_dir(project_dir)
-        watchers = list_watchers(wdir)
+        watchers = list_watchers(project_dir)
         assert len(watchers) >= 1, "Expected at least one watcher after lore init"
         w = watchers[0]
         filepath = wdir / w["group"] / w["filename"] if w["group"] else wdir / w["filename"]
@@ -419,10 +442,10 @@ class TestPythonApiLoadWatcher:
     def test_load_watcher_has_id_and_group_keys(self, project_dir):
         # Spec: watchers-us-7 Scenario 2
         from lore.paths import watchers_dir
-        from lore.watcher import list_watchers, load_watcher
+        from lore.watcher import list_watchers, _load_watcher as load_watcher
 
         wdir = watchers_dir(project_dir)
-        watchers = list_watchers(wdir)
+        watchers = list_watchers(project_dir)
         assert len(watchers) >= 1, "Expected at least one watcher after lore init"
         filepath = wdir / watchers[0]["group"] / watchers[0]["filename"] if watchers[0]["group"] else wdir / watchers[0]["filename"]
         data = load_watcher(filepath)
@@ -434,7 +457,7 @@ class TestPythonApiLoadWatcher:
         # Spec: watchers-us-7 Scenario 2 — watch_target, interval, action returned as-is
         import textwrap
 
-        from lore.watcher import load_watcher
+        from lore.watcher import _load_watcher as load_watcher
 
         watcher_yaml = textwrap.dedent("""
             id: my-watcher
@@ -457,7 +480,7 @@ class TestPythonApiLoadWatcher:
         import textwrap
 
         from lore.models import Watcher
-        from lore.watcher import load_watcher
+        from lore.watcher import _load_watcher as load_watcher
 
         watcher_yaml = textwrap.dedent("""
             id: hydrate-watcher
@@ -487,10 +510,10 @@ class TestPythonApiLoadWatcher:
 
         from lore.models import Watcher
         from lore.paths import watchers_dir
-        from lore.watcher import list_watchers, load_watcher
+        from lore.watcher import list_watchers, _load_watcher as load_watcher
 
         wdir = watchers_dir(project_dir)
-        watchers = list_watchers(wdir)
+        watchers = list_watchers(project_dir)
         assert len(watchers) >= 1, "Expected at least one watcher after lore init"
         w = watchers[0]
         filepath = wdir / w["group"] / w["filename"] if w["group"] else wdir / w["filename"]
@@ -512,12 +535,12 @@ class TestPythonApiCreateWatcher:
         # Spec: watchers-us-7 Scenario 3 — create then load via single-arg load_watcher
         # Fails: load_watcher currently requires two arguments (filepath, watchers_dir)
         from lore.paths import watchers_dir
-        from lore.watcher import create_watcher, find_watcher, load_watcher
+        from lore.watcher import create_watcher, _find_watcher as find_watcher, _load_watcher as load_watcher
 
-        wdir = watchers_dir(project_dir)
-        create_watcher(wdir, "realm-hook", "id: realm-hook\ntitle: Realm Hook\nsummary: Test\n")
+        _wdir = watchers_dir(project_dir)
+        create_watcher(project_dir, "realm-hook", "id: realm-hook\ntitle: Realm Hook\nsummary: Test\n")
 
-        filepath = find_watcher(wdir, "realm-hook")
+        filepath = find_watcher(project_dir, "realm-hook")
         assert filepath is not None, "realm-hook.yaml not found after create_watcher"
 
         # Single-arg load_watcher — fails until production code supports it
@@ -537,14 +560,14 @@ class TestPythonApiUpdateWatcher:
         # Spec: watchers-us-7 Scenario 4 — update then reload via single-arg load_watcher
         # Fails: load_watcher currently requires two arguments (filepath, watchers_dir)
         from lore.paths import watchers_dir
-        from lore.watcher import create_watcher, find_watcher, load_watcher, update_watcher
+        from lore.watcher import create_watcher, _find_watcher as find_watcher, _load_watcher as load_watcher, update_watcher
 
-        wdir = watchers_dir(project_dir)
-        create_watcher(wdir, "my-watcher", "id: my-watcher\ntitle: My Watcher\nsummary: Original\n")
+        _wdir = watchers_dir(project_dir)
+        create_watcher(project_dir, "my-watcher", "id: my-watcher\ntitle: My Watcher\nsummary: Original\n")
         new_content = "id: my-watcher\ntitle: Updated\nsummary: Updated summary\n"
-        update_watcher(wdir, "my-watcher", new_content)
+        update_watcher(project_dir, "my-watcher", new_content)
 
-        filepath = find_watcher(wdir, "my-watcher")
+        filepath = find_watcher(project_dir, "my-watcher")
         assert filepath is not None
 
         # Single-arg load_watcher — fails until production code supports it
@@ -566,12 +589,12 @@ class TestPythonApiDeleteWatcher:
         from lore.paths import watchers_dir
         from lore.watcher import create_watcher, delete_watcher, list_watchers
 
-        wdir = watchers_dir(project_dir)
-        create_watcher(wdir, "to-delete", "id: to-delete\ntitle: To Delete\nsummary: Will be deleted\n")
-        delete_watcher(wdir, "to-delete")
-        create_watcher(wdir, "new-hook", "id: new-hook\ntitle: New Hook\nsummary: Test\n")
+        _wdir = watchers_dir(project_dir)
+        create_watcher(project_dir, "to-delete", "id: to-delete\ntitle: To Delete\nsummary: Will be deleted\n")
+        delete_watcher(project_dir, "to-delete")
+        create_watcher(project_dir, "new-hook", "id: new-hook\ntitle: New Hook\nsummary: Test\n")
 
-        watchers = list_watchers(wdir)
+        watchers = list_watchers(project_dir)
         assert len(watchers) >= 1, "Expected new-hook to appear in list"
         entry = next(w for w in watchers if w["id"] == "new-hook")
         assert "filename" in entry, f"Missing 'filename' key in list entry: {entry}"
@@ -619,10 +642,11 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_returns_one_entry_for_valid_pair(self, tmp_path):
         # Spec: US-003 Scenario 1 — one valid pair → list of length 1 with correct shape
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        design = tmp_path / "my-workflow.design.md"
+        design = (tmp_path / ".lore" / "doctrines" / "my-workflow.design.md")
         design.write_text("---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n")
-        yaml_file = tmp_path / "my-workflow.yaml"
+        yaml_file = (tmp_path / ".lore" / "doctrines" / "my-workflow.yaml")
         yaml_file.write_text(
             "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
@@ -647,8 +671,9 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_skips_orphaned_design(self, tmp_path):
         # Spec: US-003 Scenario 2 — orphaned .design.md → []
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        design = tmp_path / "orphan.design.md"
+        design = (tmp_path / ".lore" / "doctrines" / "orphan.design.md")
         design.write_text("---\nid: orphan\ntitle: Orphan\n---\n")
 
         result = list_doctrines(tmp_path)
@@ -663,8 +688,9 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_skips_yaml_only(self, tmp_path):
         # Spec: US-003 Scenario 3 — .yaml without .design.md → []
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "legacy.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "legacy.yaml")).write_text(
             "id: legacy\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
@@ -680,9 +706,10 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_title_summary_fallbacks(self, tmp_path):
         # Spec: US-003 Scenario 4 — title falls back to id; summary falls back to ""
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "minimal.design.md").write_text("---\nid: minimal\n---\n")
-        (tmp_path / "minimal.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "minimal.design.md")).write_text("---\nid: minimal\n---\n")
+        ((tmp_path / ".lore" / "doctrines" / "minimal.yaml")).write_text(
             "id: minimal\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
@@ -700,9 +727,10 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_group_from_subdirectory(self, tmp_path):
         # Spec: US-003 Scenario 5 — group comes from subdirectory name
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        subdir = tmp_path / "feature-implementation"
-        subdir.mkdir()
+        subdir = tmp_path / ".lore" / "doctrines" / "feature-implementation"
+        subdir.mkdir(parents=True)
         (subdir / "my-doctrine.design.md").write_text(
             "---\nid: my-doctrine\ntitle: My Doctrine\n---\n"
         )
@@ -723,9 +751,10 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_skips_malformed_frontmatter(self, tmp_path):
         # Spec: US-003 Scenario 6 — no frontmatter block → []
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "bad.design.md").write_text("Just plain markdown, no frontmatter\n")
-        (tmp_path / "bad.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "bad.design.md")).write_text("Just plain markdown, no frontmatter\n")
+        ((tmp_path / ".lore" / "doctrines" / "bad.yaml")).write_text(
             "id: bad\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
@@ -740,11 +769,12 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_entry_keys_exact_set(self, tmp_path):
         # Spec: US-003 — entry dict has exactly {id, group, title, summary, filename, valid}
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "my-doc.design.md").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.design.md")).write_text(
             "---\nid: my-doc\ntitle: My Doc\nsummary: Short.\n---\n"
         )
-        (tmp_path / "my-doc.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.yaml")).write_text(
             "id: my-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
@@ -759,11 +789,12 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_filename_is_design_file_name(self, tmp_path):
         # Spec: US-003 — filename = "<id>.design.md" (not a full path)
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "my-doc.design.md").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.design.md")).write_text(
             "---\nid: my-doc\ntitle: My Doc\nsummary: Short.\n---\n"
         )
-        (tmp_path / "my-doc.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.yaml")).write_text(
             "id: my-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
@@ -776,13 +807,15 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_valid_always_true(self, tmp_path):
         # Spec: US-003 — valid is always True for every returned entry
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
+        d_dir = tmp_path / ".lore" / "doctrines"
         for i in range(3):
             name = f"doc-{i}"
-            (tmp_path / f"{name}.design.md").write_text(
+            (d_dir / f"{name}.design.md").write_text(
                 f"---\nid: {name}\ntitle: Doc {i}\n---\n"
             )
-            (tmp_path / f"{name}.yaml").write_text(
+            (d_dir / f"{name}.yaml").write_text(
                 f"id: {name}\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
             )
 
@@ -795,11 +828,12 @@ class TestPythonApiListDoctrines:
     def test_list_doctrines_api_design_file_no_id_skipped(self, tmp_path):
         # Spec: US-003 unit — design file with no frontmatter id skipped silently
         from lore.doctrine import list_doctrines
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "no-id.design.md").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "no-id.design.md")).write_text(
             "---\ntitle: No ID\nsummary: Oops.\n---\n"
         )
-        (tmp_path / "no-id.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "no-id.yaml")).write_text(
             "id: no-id\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
@@ -830,7 +864,8 @@ class TestPythonApiShowDoctrine:
 
     def test_show_doctrine_api_returns_full_dict(self, tmp_path):
         # Spec: US-006 Scenario 1 — valid pair → full dict with all required keys and values
-        from lore.doctrine import show_doctrine
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
         design_text = (
             "---\n"
@@ -850,10 +885,10 @@ class TestPythonApiShowDoctrine:
             "    knight: scout\n"
             "    priority: 2\n"
         )
-        (tmp_path / "feature-implementation.design.md").write_text(design_text)
-        (tmp_path / "feature-implementation.yaml").write_text(yaml_text)
+        ((tmp_path / ".lore" / "doctrines" / "feature-implementation.design.md")).write_text(design_text)
+        ((tmp_path / ".lore" / "doctrines" / "feature-implementation.yaml")).write_text(yaml_text)
 
-        result = show_doctrine("feature-implementation", tmp_path)
+        result = read_doctrine(tmp_path, "feature-implementation")
 
         assert result["id"] == "feature-implementation"
         assert result["title"] == "Feature Implementation"
@@ -876,50 +911,44 @@ class TestPythonApiShowDoctrine:
     # conceptual-workflows-doctrine-show step 3: exact error message
     # -----------------------------------------------------------------------
 
-    def test_show_doctrine_api_raises_design_file_missing(self, tmp_path):
-        # Spec: US-006 Scenario 2 — YAML only → DoctrineError with exact message
-        from lore.doctrine import DoctrineError, show_doctrine
+    def test_show_doctrine_api_returns_none_design_file_missing(self, tmp_path):
+        # Post-G16: read_doctrine returns None on miss (was DoctrineError).
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "feature-implementation.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "feature-implementation.yaml")).write_text(
             "id: feature-implementation\nsteps: []\n"
         )
 
-        with pytest.raises(
-            DoctrineError,
-            match="Doctrine 'feature-implementation' not found: design file missing",
-        ):
-            show_doctrine("feature-implementation", tmp_path)
+        assert read_doctrine(tmp_path, "feature-implementation") is None
 
     # -----------------------------------------------------------------------
     # Scenario 3: Raises DoctrineError when YAML file is absent
     # conceptual-workflows-doctrine-show step 3: exact error message
     # -----------------------------------------------------------------------
 
-    def test_show_doctrine_api_raises_yaml_file_missing(self, tmp_path):
-        # Spec: US-006 Scenario 3 — design only → DoctrineError with exact message
-        from lore.doctrine import DoctrineError, show_doctrine
+    def test_show_doctrine_api_returns_none_yaml_file_missing(self, tmp_path):
+        # Post-G16: read_doctrine returns None on miss (was DoctrineError).
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "feature-implementation.design.md").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "feature-implementation.design.md")).write_text(
             "---\nid: feature-implementation\n---\n"
         )
 
-        with pytest.raises(
-            DoctrineError,
-            match="Doctrine 'feature-implementation' not found: YAML file missing",
-        ):
-            show_doctrine("feature-implementation", tmp_path)
+        assert read_doctrine(tmp_path, "feature-implementation") is None
 
     # -----------------------------------------------------------------------
     # Scenario 4: Raises DoctrineError when both files are absent
     # conceptual-workflows-doctrine-show step 3: both missing
     # -----------------------------------------------------------------------
 
-    def test_show_doctrine_api_raises_not_found_both_absent(self, tmp_path):
-        # Spec: US-006 Scenario 4 — neither file exists → DoctrineError 'not found'
-        from lore.doctrine import DoctrineError, show_doctrine
+    def test_show_doctrine_api_returns_none_both_absent(self, tmp_path):
+        # Post-G16: read_doctrine returns None on miss (was DoctrineError).
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        with pytest.raises(DoctrineError, match="Doctrine 'nonexistent' not found"):
-            show_doctrine("nonexistent", tmp_path)
+        assert read_doctrine(tmp_path, "nonexistent") is None
 
     # -----------------------------------------------------------------------
     # Scenario 5: Raises DoctrineError on YAML parse failure
@@ -928,13 +957,14 @@ class TestPythonApiShowDoctrine:
 
     def test_show_doctrine_api_raises_yaml_parsing_error(self, tmp_path):
         # Spec: US-006 Scenario 5 — invalid YAML → DoctrineError starting with 'YAML parsing error:'
-        from lore.doctrine import DoctrineError, show_doctrine
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "bad.design.md").write_text("---\nid: bad\ntitle: Bad\n---\n")
-        (tmp_path / "bad.yaml").write_text("{invalid: yaml: content: [")
+        ((tmp_path / ".lore" / "doctrines" / "bad.design.md")).write_text("---\nid: bad\ntitle: Bad\n---\n")
+        ((tmp_path / ".lore" / "doctrines" / "bad.yaml")).write_text("{invalid: yaml: content: [")
 
-        with pytest.raises(DoctrineError, match="YAML parsing error:"):
-            show_doctrine("bad", tmp_path)
+        with pytest.raises(ValueError, match="YAML parsing error:"):
+            read_doctrine(tmp_path, "bad")
 
     # -----------------------------------------------------------------------
     # Scenario 6: Searches recursively for doctrine files
@@ -943,10 +973,11 @@ class TestPythonApiShowDoctrine:
 
     def test_show_doctrine_api_recursive_search(self, tmp_path):
         # Spec: US-006 Scenario 6 — files in subdirectory found via recursive search
-        from lore.doctrine import show_doctrine
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        subdir = tmp_path / "feature-implementation"
-        subdir.mkdir()
+        subdir = tmp_path / ".lore" / "doctrines" / "feature-implementation"
+        subdir.mkdir(parents=True)
         (subdir / "quick-feature-implementation.design.md").write_text(
             "---\nid: quick-feature-implementation\ntitle: Quick\n---\n"
         )
@@ -959,7 +990,7 @@ class TestPythonApiShowDoctrine:
             "    knight: k\n"
         )
 
-        result = show_doctrine("quick-feature-implementation", tmp_path)
+        result = read_doctrine(tmp_path, "quick-feature-implementation")
 
         assert result["id"] == "quick-feature-implementation"
 
@@ -969,42 +1000,45 @@ class TestPythonApiShowDoctrine:
 
     def test_show_doctrine_api_return_keys_exact_set(self, tmp_path):
         # Spec: US-006 unit — return value has exactly {id, title, summary, design, raw_yaml, steps}
-        from lore.doctrine import show_doctrine
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "my-doc.design.md").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.design.md")).write_text(
             "---\nid: my-doc\ntitle: My Doc\nsummary: Short.\n---\n"
         )
-        (tmp_path / "my-doc.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.yaml")).write_text(
             "id: my-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
-        result = show_doctrine("my-doc", tmp_path)
+        result = read_doctrine(tmp_path, "my-doc")
 
         assert set(result.keys()) == {"id", "title", "summary", "design", "raw_yaml", "steps"}
 
     def test_show_doctrine_api_title_fallback_to_id(self, tmp_path):
         # Spec: US-006 unit — title falls back to id when absent from design frontmatter
-        from lore.doctrine import show_doctrine
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "my-doc.design.md").write_text("---\nid: my-doc\n---\n")
-        (tmp_path / "my-doc.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.design.md")).write_text("---\nid: my-doc\n---\n")
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.yaml")).write_text(
             "id: my-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
-        result = show_doctrine("my-doc", tmp_path)
+        result = read_doctrine(tmp_path, "my-doc")
 
         assert result["title"] == "my-doc"
 
     def test_show_doctrine_api_summary_fallback_to_empty_string(self, tmp_path):
         # Spec: US-006 unit — summary falls back to "" when absent from design frontmatter
-        from lore.doctrine import show_doctrine
+        from lore.doctrine import read_doctrine
+        (tmp_path / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
 
-        (tmp_path / "my-doc.design.md").write_text("---\nid: my-doc\ntitle: My Doc\n---\n")
-        (tmp_path / "my-doc.yaml").write_text(
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.design.md")).write_text("---\nid: my-doc\ntitle: My Doc\n---\n")
+        ((tmp_path / ".lore" / "doctrines" / "my-doc.yaml")).write_text(
             "id: my-doc\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
         )
 
-        result = show_doctrine("my-doc", tmp_path)
+        result = read_doctrine(tmp_path, "my-doc")
 
         assert result["summary"] == ""
 
@@ -1033,8 +1067,8 @@ class TestPythonApiCreateDoctrine:
         # Spec: US-008 E2E Scenario 1 — correct return dict, both files written
         from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src = tmp_path / "my-workflow.yaml"
         yaml_src.write_text(
             "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
@@ -1044,10 +1078,11 @@ class TestPythonApiCreateDoctrine:
             "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things\n---\n"
         )
 
-        result = create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
+        result = create_doctrine(tmp_path, "my-workflow", yaml_src, design_src)
 
-        assert result["name"] == "my-workflow"
-        assert result["yaml_filename"] == "my-workflow.yaml"
+        # Post-G16 envelope: {id, filename, group, design_filename}.
+        assert result["id"] == "my-workflow"
+        assert result["filename"] == "my-workflow.yaml"
         assert result["design_filename"] == "my-workflow.design.md"
         assert (doctrines_dir / "my-workflow.yaml").exists()
         assert (doctrines_dir / "my-workflow.design.md").exists()
@@ -1061,10 +1096,10 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_yaml_id_mismatch_no_files_written(self, tmp_path):
         # Spec: US-008 E2E Scenario 2 — raises DoctrineError with exact message, no files
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src = tmp_path / "other-name.yaml"
         yaml_src.write_text(
             "id: other-name\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
@@ -1073,10 +1108,10 @@ class TestPythonApiCreateDoctrine:
         design_src.write_text("---\nid: my-workflow\n---\n")
 
         with pytest.raises(
-            DoctrineError,
+            ValueError,
             match='Doctrine id "other-name" does not match command argument "my-workflow"',
         ):
-            create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
+            create_doctrine(tmp_path, "my-workflow", yaml_src, design_src)
 
         assert not (doctrines_dir / "my-workflow.yaml").exists()
         assert not (doctrines_dir / "my-workflow.design.md").exists()
@@ -1088,10 +1123,10 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_design_id_mismatch_no_files_written(self, tmp_path):
         # Spec: US-008 E2E Scenario 3 — design id mismatch, no files written
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src = tmp_path / "my-workflow.yaml"
         yaml_src.write_text(
             "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
@@ -1100,10 +1135,10 @@ class TestPythonApiCreateDoctrine:
         design_src.write_text("---\nid: other-name\n---\n")
 
         with pytest.raises(
-            DoctrineError,
+            ValueError,
             match='Design file id "other-name" does not match command argument "my-workflow"',
         ):
-            create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
+            create_doctrine(tmp_path, "my-workflow", yaml_src, design_src)
 
         assert not (doctrines_dir / "my-workflow.yaml").exists()
 
@@ -1114,10 +1149,10 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_duplicate_yaml_exists(self, tmp_path):
         # Spec: US-008 E2E Scenario 4 — YAML stem already present → already exists error
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "my-workflow.yaml").write_text("id: my-workflow\nsteps: []\n")
         yaml_src = tmp_path / "my-workflow.yaml"
         yaml_src.write_text(
@@ -1126,8 +1161,8 @@ class TestPythonApiCreateDoctrine:
         design_src = tmp_path / "my-workflow.design.md"
         design_src.write_text("---\nid: my-workflow\n---\n")
 
-        with pytest.raises(DoctrineError, match="Error: doctrine 'my-workflow' already exists."):
-            create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
+        with pytest.raises(ValueError, match="Error: doctrine 'my-workflow' already exists."):
+            create_doctrine(tmp_path, "my-workflow", yaml_src, design_src)
 
     # -----------------------------------------------------------------------
     # E2E — Scenario 5: Raises DoctrineError on duplicate (design file exists)
@@ -1136,10 +1171,10 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_duplicate_design_exists(self, tmp_path):
         # Spec: US-008 E2E Scenario 5 — design stem already present → already exists error
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "my-workflow.design.md").write_text("---\nid: my-workflow\n---\n")
         yaml_src = tmp_path / "my-workflow.yaml"
         yaml_src.write_text(
@@ -1148,8 +1183,8 @@ class TestPythonApiCreateDoctrine:
         design_src = tmp_path / "my-workflow.design.md"
         design_src.write_text("---\nid: my-workflow\n---\n")
 
-        with pytest.raises(DoctrineError, match="Error: doctrine 'my-workflow' already exists."):
-            create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
+        with pytest.raises(ValueError, match="Error: doctrine 'my-workflow' already exists."):
+            create_doctrine(tmp_path, "my-workflow", yaml_src, design_src)
 
     # -----------------------------------------------------------------------
     # E2E — Scenario 6: Raises DoctrineError when YAML source file not found
@@ -1158,16 +1193,16 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_yaml_source_not_found(self, tmp_path):
         # Spec: US-008 E2E Scenario 6 — missing YAML source → File not found error
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         design_src = tmp_path / "my-workflow.design.md"
         design_src.write_text("---\nid: my-workflow\n---\n")
         missing = tmp_path / "nonexistent.yaml"
 
-        with pytest.raises(DoctrineError, match="File not found:"):
-            create_doctrine("my-workflow", missing, design_src, doctrines_dir)
+        with pytest.raises(ValueError, match="File not found:"):
+            create_doctrine(tmp_path, "my-workflow", missing, design_src)
 
         assert not (doctrines_dir / "my-workflow.yaml").exists()
 
@@ -1178,17 +1213,17 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_invalid_name_format(self, tmp_path):
         # Spec: US-008 E2E Scenario 7 — invalid name raises before any file access
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
 
-        with pytest.raises(DoctrineError, match="Invalid name"):
+        with pytest.raises(ValueError, match="Invalid name"):
             create_doctrine(
+                tmp_path,
                 "_bad-name",
                 tmp_path / "x.yaml",
                 tmp_path / "x.design.md",
-                doctrines_dir,
             )
 
     # -----------------------------------------------------------------------
@@ -1198,10 +1233,10 @@ class TestPythonApiCreateDoctrine:
 
     def test_create_doctrine_api_yaml_with_legacy_name_field(self, tmp_path):
         # Spec: US-008 E2E Scenario 8 — legacy 'name' field in YAML → rejected
-        from lore.doctrine import DoctrineError, create_doctrine
+        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / "doctrines"
-        doctrines_dir.mkdir()
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrines_dir.mkdir(parents=True)
         yaml_src = tmp_path / "my-workflow.yaml"
         yaml_src.write_text(
             "id: my-workflow\nname: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
@@ -1209,8 +1244,8 @@ class TestPythonApiCreateDoctrine:
         design_src = tmp_path / "my-workflow.design.md"
         design_src.write_text("---\nid: my-workflow\n---\n")
 
-        with pytest.raises(DoctrineError, match="Unknown property 'name'"):
-            create_doctrine("my-workflow", yaml_src, design_src, doctrines_dir)
+        with pytest.raises(ValueError, match="Unknown property 'name'"):
+            create_doctrine(tmp_path, "my-workflow", yaml_src, design_src)
 
         assert not (doctrines_dir / "my-workflow.yaml").exists()
 
@@ -1622,7 +1657,7 @@ class TestUS009HealthCheckPythonAPI:
             [
                 sys.executable,
                 "-c",
-                "import lore.models as m; "
+                "import lore.api as m; "
                 "print('health_check' in m.__all__, "
                 "'validate_entity_file' in m.__all__, "
                 "'load_schema' in m.__all__)",
@@ -1646,7 +1681,7 @@ class TestUS009HealthCheckPythonAPI:
             [
                 sys.executable,
                 "-c",
-                "from lore.models import validate_entity_file; "
+                "from lore.api import validate_entity_file; "
                 f"r = validate_entity_file({str(p)!r}, 'knight-frontmatter'); "
                 "print(r[0].rule, r[0].pointer)",
             ],
@@ -1685,7 +1720,7 @@ class TestUS009HealthCheckPythonAPI:
             [
                 sys.executable,
                 "-c",
-                "from lore.models import health_check; import json; "
+                "from lore.api import health_check; import json; "
                 "r = health_check(); "
                 "print(json.dumps("
                 "[{'check':i.check,'rule':i.rule,'pointer':i.pointer,"
@@ -1713,7 +1748,7 @@ class TestUS009HealthCheckPythonAPI:
             [
                 sys.executable,
                 "-c",
-                "from lore.models import health_check; import json; "
+                "from lore.api import health_check; import json; "
                 "r = health_check(); "
                 "print(json.dumps("
                 "[{'check':i.check,'rule':i.rule,'pointer':i.pointer,"
@@ -1744,7 +1779,7 @@ class TestUS009HealthCheckPythonAPI:
             "s.load_schema = boom\n"
             "try: s._validator_for.cache_clear()\n"
             "except Exception: pass\n"
-            "from lore.models import health_check\n"
+            "from lore.api import health_check\n"
             "r = health_check()\n"
             "print(r.has_errors)\n"
             "scan_failed = [i for i in r.issues if i.check == 'scan_failed']\n"
@@ -1780,7 +1815,7 @@ class TestUS009HealthCheckPythonAPI:
             [
                 sys.executable,
                 "-c",
-                "from lore.models import health_check; "
+                "from lore.api import health_check; "
                 "r = health_check(); "
                 "assert r.has_errors is True",
             ],
@@ -1804,7 +1839,7 @@ class TestUS009HealthCheckPythonAPI:
             [
                 sys.executable,
                 "-c",
-                "from lore.models import health_check; health_check()",
+                "from lore.api import health_check; health_check()",
             ],
             capture_output=True,
             text=True,
