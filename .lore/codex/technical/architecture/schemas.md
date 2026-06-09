@@ -1,7 +1,7 @@
 ---
 id: tech-arch-schemas
 title: Schemas Module Internals
-summary: Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the seven schema kinds (the seventh, glossary, is the first full-YAML kind validated against a literal single-file glob rather than a directory walk), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact and the audit-time lore health schema check share a single authoritative contract.
+summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the nine schema kinds (glossary, main-rite, and shared-step are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
 binds:
 - src/lore/schemas/__init__.py
 - src/lore/schemas/doctrine-yaml.yaml
@@ -12,6 +12,8 @@ binds:
 - src/lore/schemas/codex-source-frontmatter.yaml
 - src/lore/schemas/artifact-frontmatter.yaml
 - src/lore/schemas/glossary.yaml
+- src/lore/schemas/main-rite.yaml
+- src/lore/schemas/shared-step.yaml
 - src/lore/health.py
 - tests/unit/test_schemas.py
 - tests/unit/test_health_schemas.py
@@ -23,7 +25,7 @@ binds:
 - tests/e2e/test_health_schemas_us005.py
 - tests/e2e/test_health_schemas_us007.py
 - tests/e2e/test_health_schemas_us008.py
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction"]
 ---
 
 # Schemas Module Internals
@@ -43,7 +45,7 @@ This module is the single authoritative home for the JSON Schemas that define th
 
 ## Schema Kinds
 
-Seven entity kinds are validated. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
+Nine entity kinds are validated. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
 
 | Kind | Source pattern | Schema `$id` |
 |---|---|---|
@@ -54,8 +56,19 @@ Seven entity kinds are validated. Each kind is a short slug that appears in `Hea
 | `codex` | Frontmatter of `.lore/codex/**/*.md` | `lore://schemas/codex-frontmatter` |
 | `artifact` | Frontmatter of `.lore/artifacts/**/*.md` | `lore://schemas/artifact-frontmatter` |
 | `glossary` | `.lore/codex/glossary.yaml` (single literal file, NOT a `**/*.yaml` walk) | `lore://schemas/glossary` |
+| `main-rite` | `.lore/rites/main/*.yaml` (full-YAML) | `lore://schemas/main-rite` |
+| `shared-step` | `.lore/rites/shared/*.yaml` (full-YAML) | `lore://schemas/shared-step` |
 
-The `glossary` kind is the first full-YAML kind whose source pattern is a literal single-file path rather than a directory glob. `_check_schemas` treats glob entries with no `*` characters as literal filenames and validates only when `(project_root / ".lore" / root_name / glob).is_file()`. The other six kinds continue to use `rglob(glob)` over their entity directory. This isolates the single-file behaviour without changing existing wiring.
+The `glossary` kind is the first full-YAML kind whose source pattern is a literal single-file path rather than a directory glob. `_check_schemas` treats glob entries with no `*` characters as literal filenames and validates only when `(project_root / ".lore" / root_name / glob).is_file()`. The remaining directory-glob kinds use `rglob(glob)` (frontmatter/`**` kinds) or a flat `*.yaml` walk over their entity directory (`main-rite`, `shared-step`). This isolates the single-file behaviour without changing existing wiring.
+
+### Rite schema kinds — `main-rite` and `shared-step`
+
+Both are full-YAML kinds (parsed via `yaml.safe_load`, like `watcher`/`glossary`), `additionalProperties: false`, shipped from `src/lore/schemas/`. They validate the Rite entity's *shape* only (see `conceptual-entities-rite`); graph-level rules (reachability, single entry, dangling `then`/`goto`/`use`, conclusion reachability) are NOT expressible in JSON Schema and live in runtime checks in `rite.py`/`health.py` (see `conceptual-workflows-health`).
+
+- **`main-rite`** — required `id, title, summary, trigger, nodes, conclusions`. `nodes` is a non-empty array of node objects; each node requires `id`, carries optional `do`/`use`/`then`, and enforces `not: {required: [do, use]}` plus `anyOf: [{required: [do]}, {required: [use]}]` (a node is a do-node XOR a use-node, never both, never neither). `then` is `oneOf` a string (straight edge / conclusion key) or an array of `{if, goto}` branch objects (fork). `conclusions` is a non-empty mapping of `{audience, response}` objects. Because the root is `additionalProperties: false`, an outbound `related`/`binds` key is rejected automatically — satisfying ADR-014's "the rite schema rejects both" with no extra rules.
+- **`shared-step`** — required `id, title, summary, do` (in that field order) and nothing else; each is a `string` with `minLength: 1`, like every other entity field. `summary` is the one-line "what it does" — the universal cross-entity summary convention (`tech-arch-frontmatter`), NOT a retrieval cue; `trigger` stays MAIN-rite-only, so adding `summary` keeps the pure single-exit shape intact. `additionalProperties: false` is exactly the design-doc "shared step with branching/conclusions" check: any `nodes`/`then`/`conclusions`/`use`/`goto`/`trigger` key is rejected as an unknown property, declaratively enforcing the pure-step / single-exit rule.
+
+Create-time enforcement lives in `rite.py` (`create_rite`/`update_rite` call `validate_entity("main-rite"|"shared-step", data)` before write); audit-time enforcement is the standard `_check_schemas` path. One schema, two enforcement points (DRY).
 
 Schemas are authored as YAML (not JSON) because they were drafted as fenced YAML blocks and the YAML-at-rest form stays diff-friendly and self-documenting. PyYAML is already a dependency.
 
@@ -75,7 +88,7 @@ The validator is compiled once per kind and reused across all files of that kind
 
 Full file-level validator. Dispatches by kind:
 
-- **Full-YAML kinds** (`doctrine-yaml`, `watcher`, `glossary`): calls `yaml.safe_load` on the file contents.
+- **Full-YAML kinds** (`doctrine-yaml`, `watcher`, `glossary`, `main-rite`, `shared-step`): calls `yaml.safe_load` on the file contents.
 - **Frontmatter kinds** (`doctrine-design-frontmatter`, `knight`, `codex`, `artifact`): calls `frontmatter.parse_frontmatter_raw(path)` to obtain the raw mapping preserving every key.
 
 Error translation:
@@ -91,7 +104,7 @@ Error translation:
 
 ## Reuse at Create Time (FR-20)
 
-The existing private create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, and `artifact.py` keep their current signatures and exception types (callers outside the module see no change), but internally delegate to `lore.schemas.validate_entity(kind, data)`:
+The existing private create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, `artifact.py`, and `rite.py` keep their current signatures and exception types (callers outside the module see no change), but internally delegate to `lore.schemas.validate_entity(kind, data)`:
 
 | Callsite | Delegates to |
 |---|---|
@@ -100,6 +113,7 @@ The existing private create-time validators in `doctrine.py`, `knight.py`, `watc
 | `knight.create_knight` frontmatter check | `validate_entity("knight", meta)` |
 | `watcher.create_watcher` YAML shape check | `validate_entity("watcher", data)` |
 | `artifact.create_artifact` frontmatter re-check | `validate_entity("artifact", meta)` |
+| `rite.create_rite`/`update_rite` body check | `validate_entity("main-rite", data)` / `validate_entity("shared-step", data)` |
 
 One schema, one contract, enforced at both write time and audit time. Any drift in the future is a DRY violation by definition.
 
@@ -128,6 +142,7 @@ The `codex-frontmatter` schema (`src/lore/schemas/codex-frontmatter.yaml`) is `a
 | `summary` | yes | string (minLength 1) | Scannable one-paragraph summary. |
 | `related` | no | array of unique strings | Directed edges to other codex ids. Empty list and missing field behave identically. |
 | `binds` | no | array of unique strings | Repo-root-relative paths or globs governed by this entry. See "The `binds:` field" below. Empty list and missing field behave identically (FR-4 of `lore-impacts-prd`). |
+| `rites` | no | array of unique strings | Rite ids (in `.lore/rites/main/`) governed by this entry — the codex→rite edge. See "The `rites:` field" below. Empty list and missing field behave identically. |
 
 ### The `binds:` field
 
@@ -161,6 +176,34 @@ enforcement matches the `validate_chaos_threshold` precedent (see
 `lore health --scope schemas` surfaces every malformed entry as a HealthIssue
 with `entity_type="codex"` and `rule` set to the violated JSON-Schema keyword
 (`type`, `pattern`, `minLength`, `uniqueItems`).
+
+### The `rites:` field
+
+`rites:` is the codex→rite edge (ADR-014, `decisions-014-link-direction`): a
+codex doc names the rite ids it governs; rites never link back. Because
+`codex-frontmatter` is `additionalProperties: false`, `rites:` had to be **added
+explicitly** to the schema's `properties` — without that edit, `lore health
+--scope schemas` rejects any doc carrying it. The field mirrors `binds:`'s array
+shape but **omits** the path-pattern `not.anyOf` rules — rite ids are plain slugs,
+not paths:
+
+| Rule | Schema construct | Rejects |
+|---|---|---|
+| Must be an array | `type: array` | scalars, mappings |
+| No duplicates | `uniqueItems: true` | repeated ids |
+| Each entry is a non-empty string | `items.type: string`, `items.minLength: 1` | non-strings, `""` |
+
+**Absent-vs-empty semantics.** `rites:` absent and `rites: []` both mean "this
+entry governs no rites" and validate identically.
+
+Read-side wiring reuses the bindings-style pattern (`tech-arch-frontmatter`): no
+new parse helper — `parse_frontmatter_doc(filepath, extra_fields=("rites",))`,
+exactly how `related` and `binds` are read. The codex `rites:` index the health
+checker consumes is built with one `scan_codex` walk, mirroring
+`impacts._load_codex_binds_index`. Reference integrity (a `rites:` id resolving to
+an existing rite) is the `dangling_codex_rite` check under `--scope rites`/`codex`
+(`conceptual-workflows-health`), NOT a schema check; the schema validates shape
+only.
 
 ## Dependency Rules
 

@@ -791,3 +791,288 @@ class TestValidateGlossaryKind:
         )
         with pytest.raises(SchemaValidationError, match="uniqueItems"):
             validate_entity_file(str(p), "glossary")
+
+
+# ---------------------------------------------------------------------------
+# Rite schema kinds — main-rite + shared-step (transient-rites-us-1)
+# Anchor: tech-arch-schemas — two new full-YAML kinds, $id lore://schemas/<kind>,
+# additionalProperties:false; node not/anyOf do-XOR-use enforcement.
+#
+# validate_entity(kind, data) -> list[SchemaIssue]; [] means valid.
+# These MUST fail until US-001 Green ships the two schema YAMLs + registration.
+# ---------------------------------------------------------------------------
+
+
+CANONICAL_MAIN_RITE = {
+    "id": "issue-refund",
+    "title": "Issue a refund for a returned order",
+    "summary": "Confirm the customer is reachable, then refund.",
+    "trigger": "Customer requests a refund on a returned order.",
+    "nodes": [
+        {
+            "id": "locate-order",
+            "do": "Find the order by id; confirm it is in 'returned' state.",
+            "then": "get-contact",
+        },
+        {"id": "get-contact", "use": "read-contact-info", "then": "review-contact"},
+        {
+            "id": "review-contact",
+            "do": "Decide whether contact details support a refund.",
+            "then": [
+                {"if": "email and a current mailing address are present", "goto": "do-refund"},
+                {"if": "anything is missing or the address looks stale", "goto": "request-update"},
+            ],
+        },
+        {"id": "do-refund", "do": "Post the refund to billing.", "then": "refunded"},
+        {"id": "request-update", "do": "Ask the customer to confirm contact.", "then": "contact-requested"},
+    ],
+    "conclusions": {
+        "refunded": {"audience": "customer-care", "response": "Refund posted."},
+        "contact-requested": {"audience": "customer-care", "response": "Refund held."},
+    },
+}
+
+CANONICAL_SHARED_STEP = {
+    "id": "read-contact-info",
+    "title": "Read the user's contact information",
+    "summary": "Read the user's email, phone, and mailing address from admin.",
+    "do": "Open the user profile in admin. Read and report back email, phone, address.",
+}
+
+
+def _drop_key(d, key):
+    out = {k: v for k, v in d.items() if k != key}
+    return out
+
+
+def _rules(issues):
+    return [i.rule for i in issues]
+
+
+class TestRiteSchemaKindRegistration:
+    """The two rite kinds are registered and load via load_schema with the
+    canonical $id values."""
+
+    def test_main_rite_schema_loadable_with_id(self):
+        # tech-arch-schemas — main-rite kind reachable via load_schema
+        schema = load_schema("main-rite")
+        assert isinstance(schema, dict)
+        assert schema["$id"] == "lore://schemas/main-rite"
+
+    def test_shared_step_schema_loadable_with_id(self):
+        # tech-arch-schemas — shared-step kind reachable via load_schema
+        schema = load_schema("shared-step")
+        assert isinstance(schema, dict)
+        assert schema["$id"] == "lore://schemas/shared-step"
+
+    def test_main_rite_schema_yaml_ships_with_package(self):
+        # tech-arch-schemas — schema file packaged as a resource
+        names = {p.name for p in files("lore.schemas").iterdir()}
+        assert "main-rite.yaml" in names
+
+    def test_shared_step_schema_yaml_ships_with_package(self):
+        names = {p.name for p in files("lore.schemas").iterdir()}
+        assert "shared-step.yaml" in names
+
+
+class TestMainRiteSchemaHappy:
+    def test_canonical_main_rite_validates_clean(self):
+        # transient-rites-us-1 — happy fixture produces no issues
+        assert validate_entity("main-rite", CANONICAL_MAIN_RITE) == []
+
+
+class TestMainRiteSchemaViolations:
+    def test_missing_summary_fails_required(self):
+        # transient-rites-us-1 — required keyword
+        issues = validate_entity("main-rite", _drop_key(CANONICAL_MAIN_RITE, "summary"))
+        assert "required" in _rules(issues)
+
+    def test_missing_trigger_fails_required(self):
+        issues = validate_entity("main-rite", _drop_key(CANONICAL_MAIN_RITE, "trigger"))
+        assert "required" in _rules(issues)
+
+    def test_missing_nodes_fails_required(self):
+        issues = validate_entity("main-rite", _drop_key(CANONICAL_MAIN_RITE, "nodes"))
+        assert "required" in _rules(issues)
+
+    def test_missing_conclusions_fails_required(self):
+        issues = validate_entity("main-rite", _drop_key(CANONICAL_MAIN_RITE, "conclusions"))
+        assert "required" in _rules(issues)
+
+    def test_unknown_root_key_fails_additional_properties(self):
+        # transient-rites-us-1 — additionalProperties:false at root
+        issues = validate_entity("main-rite", {**CANONICAL_MAIN_RITE, "xtra": 1})
+        assert "additionalProperties" in _rules(issues)
+
+    def test_related_root_key_rejected(self):
+        # ADR-014 — rite schema rejects outbound links automatically
+        issues = validate_entity("main-rite", {**CANONICAL_MAIN_RITE, "related": ["x"]})
+        assert "additionalProperties" in _rules(issues)
+
+    def test_binds_root_key_rejected(self):
+        issues = validate_entity("main-rite", {**CANONICAL_MAIN_RITE, "binds": ["x"]})
+        assert "additionalProperties" in _rules(issues)
+
+    def test_summary_wrong_type_fails_type(self):
+        # transient-rites-us-1 — type keyword
+        issues = validate_entity("main-rite", {**CANONICAL_MAIN_RITE, "summary": 123})
+        assert "type" in _rules(issues)
+
+    def test_empty_nodes_fails_min_items(self):
+        # transient-rites-us-1 — minItems on nodes
+        issues = validate_entity("main-rite", {**CANONICAL_MAIN_RITE, "nodes": []})
+        assert "minItems" in _rules(issues)
+
+    def test_empty_title_fails_min_length(self):
+        # transient-rites-us-1 — minLength on string fields
+        issues = validate_entity("main-rite", {**CANONICAL_MAIN_RITE, "title": ""})
+        assert "minLength" in _rules(issues)
+
+    def test_node_with_both_do_and_use_rejected(self):
+        # transient-rites-us-1 — node not:{required:[do,use]} (do-XOR-use)
+        bad = {
+            **CANONICAL_MAIN_RITE,
+            "nodes": [{"id": "n", "do": "x", "use": "y", "then": "done"}],
+            "conclusions": {"done": {"audience": "a", "response": "r"}},
+        }
+        assert validate_entity("main-rite", bad) != []
+
+    def test_node_with_neither_do_nor_use_rejected(self):
+        # transient-rites-us-1 — node anyOf:[{required:[do]},{required:[use]}]
+        bad = {
+            **CANONICAL_MAIN_RITE,
+            "nodes": [{"id": "n", "then": "done"}],
+            "conclusions": {"done": {"audience": "a", "response": "r"}},
+        }
+        assert validate_entity("main-rite", bad) != []
+
+
+class TestSharedStepSchemaHappy:
+    def test_canonical_shared_step_validates_clean(self):
+        # transient-rites-us-1 — pure procedure (id, title, do) validates clean
+        assert validate_entity("shared-step", CANONICAL_SHARED_STEP) == []
+
+
+class TestSharedStepSchemaViolations:
+    def test_then_key_fails_additional_properties(self):
+        # transient-rites-us-1 — branching key 'then' rejected (pure-step rule)
+        issues = validate_entity("shared-step", {**CANONICAL_SHARED_STEP, "then": "next"})
+        assert "additionalProperties" in _rules(issues)
+
+    def test_nodes_key_fails_additional_properties(self):
+        issues = validate_entity("shared-step", {**CANONICAL_SHARED_STEP, "nodes": []})
+        assert "additionalProperties" in _rules(issues)
+
+    def test_conclusions_key_fails_additional_properties(self):
+        issues = validate_entity("shared-step", {**CANONICAL_SHARED_STEP, "conclusions": {}})
+        assert "additionalProperties" in _rules(issues)
+
+    def test_missing_do_fails_required(self):
+        # transient-rites-us-1 — required do
+        issues = validate_entity("shared-step", _drop_key(CANONICAL_SHARED_STEP, "do"))
+        assert "required" in _rules(issues)
+
+    def test_missing_summary_fails_required(self):
+        # tech-arch-frontmatter — summary required on every entity, shared step included
+        issues = validate_entity("shared-step", _drop_key(CANONICAL_SHARED_STEP, "summary"))
+        assert "required" in _rules(issues)
+
+    def test_empty_summary_fails_min_length(self):
+        issues = validate_entity("shared-step", {**CANONICAL_SHARED_STEP, "summary": ""})
+        assert "minLength" in _rules(issues)
+
+
+# ---------------------------------------------------------------------------
+# Codex `rites:` frontmatter field + rite link-direction (transient-rites-us-5)
+# Anchors:
+#   tech-arch-schemas — validate_entity against codex-frontmatter; the new
+#     `rites:` property is an array of unique non-empty strings (no path-pattern
+#     `not.anyOf` rules — rite ids are plain slugs). additionalProperties:false
+#     rejects it until added (KNOWN FINDING, Scout).
+#   decisions-014-link-direction — codex → rite is the only rite edge; the rite
+#     schemas reject `related`/`binds` via their own additionalProperties:false
+#     (constraint 1).
+# ---------------------------------------------------------------------------
+
+
+CODEX_FM = {"id": "ops-refunds", "title": "Refunds", "summary": "s"}
+
+
+def _keyword_for(issues, pointer):
+    """Return the rule of the first issue whose pointer targets `pointer`."""
+    for i in issues:
+        if i.pointer == pointer or i.pointer.startswith(pointer):
+            return i.rule
+    return None
+
+
+class TestCodexRitesSchemaAccepts:
+    """A well-formed `rites:` array validates clean (absent == [])."""
+
+    def test_accepts_array_of_unique_nonempty_strings(self):
+        # tech-arch-schemas — happy path: rites: [a, b] is valid
+        assert validate_entity("codex-frontmatter", {**CODEX_FM, "rites": ["a", "b"]}) == []
+
+    def test_accepts_single_rite_id(self):
+        assert validate_entity(
+            "codex-frontmatter", {**CODEX_FM, "rites": ["issue-refund"]}
+        ) == []
+
+    def test_accepts_empty_rites_list(self):
+        # absent and [] behave identically (additive, backward-compatible)
+        assert validate_entity("codex-frontmatter", {**CODEX_FM, "rites": []}) == []
+
+    def test_accepts_absent_rites_field(self):
+        # backward-compatible: a doc with no rites: validates clean
+        assert validate_entity("codex-frontmatter", {**CODEX_FM}) == []
+
+
+class TestCodexRitesSchemaRejects:
+    """Malformed `rites:` fires the named JSON-Schema rule on /rites."""
+
+    def test_rejects_non_array_with_type_rule(self):
+        # tech-arch-schemas — rites: scalar -> type rule on /rites
+        issues = validate_entity("codex-frontmatter", {**CODEX_FM, "rites": "x"})
+        assert _keyword_for(issues, "/rites") == "type"
+
+    def test_rejects_mapping_with_type_rule(self):
+        issues = validate_entity("codex-frontmatter", {**CODEX_FM, "rites": {"a": "b"}})
+        assert _keyword_for(issues, "/rites") == "type"
+
+    def test_rejects_duplicates_with_unique_items_rule(self):
+        issues = validate_entity("codex-frontmatter", {**CODEX_FM, "rites": ["a", "a"]})
+        assert any(i.rule == "uniqueItems" for i in issues), _rules(issues)
+
+    def test_rejects_empty_string_item_with_min_length_rule(self):
+        issues = validate_entity("codex-frontmatter", {**CODEX_FM, "rites": [""]})
+        assert any(i.rule == "minLength" for i in issues), _rules(issues)
+
+
+class TestCodexRitesNoPathPatternRules:
+    """`rites:` ids are plain slugs — unlike `binds:`, the path-pattern
+    `not.anyOf` rules (absolute / `..`) MUST NOT be applied. A slug that would
+    be rejected as a binds path validates clean as a rite id."""
+
+    def test_slug_that_looks_like_relative_path_is_accepted(self):
+        # rite ids are slugs; the binds-only `..`/leading-slash bans do not apply
+        assert validate_entity(
+            "codex-frontmatter", {**CODEX_FM, "rites": ["issue-refund"]}
+        ) == []
+
+
+class TestSharedStepRejectsOutboundLinks:
+    """decisions-014-link-direction constraint 1: the shared-step schema rejects
+    `related`/`binds` via its own additionalProperties:false (no extra rule).
+    Mirrors the main-rite assertions already pinned above."""
+
+    def test_related_root_key_rejected(self):
+        issues = validate_entity(
+            "shared-step", {**CANONICAL_SHARED_STEP, "related": ["x"]}
+        )
+        assert "additionalProperties" in _rules(issues)
+
+    def test_binds_root_key_rejected(self):
+        issues = validate_entity(
+            "shared-step", {**CANONICAL_SHARED_STEP, "binds": ["x"]}
+        )
+        assert "additionalProperties" in _rules(issues)

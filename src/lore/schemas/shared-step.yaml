@@ -1,0 +1,19 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/shared-step"
+title: Shared Step
+type: object
+additionalProperties: false
+required: [id, title, summary, do]
+properties:
+  id:
+    type: string
+    minLength: 1
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1
+  do:
+    type: string
+    minLength: 1

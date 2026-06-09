@@ -6,6 +6,11 @@ import textwrap
 
 from lore.frontmatter import parse_frontmatter_doc, parse_frontmatter_doc_full
 
+# transient-rites-us-5 — the codex `rites:` read side reuses the bindings parse
+# pattern: parse_frontmatter_doc(extra_fields=("rites",)) feeds
+# `_load_codex_rites_index`, which the wiring test below exercises end to end.
+from lore.impacts import _load_codex_rites_index
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,6 +66,57 @@ def test_parse_frontmatter_doc_default_call_unaffected(tmp_path):
     result = parse_frontmatter_doc(path, extra_fields=())
     assert result is not None
     assert "related" not in result
+
+
+# ---------------------------------------------------------------------------
+# parse_frontmatter_doc — codex `rites:` read side (transient-rites-us-5)
+# tech-arch-frontmatter (a new codex edge is read through extra_fields, exactly
+#   like binds/related — no new parse helper)
+# decisions-014-link-direction (codex → rite is the only rite edge)
+# ---------------------------------------------------------------------------
+
+
+def _make_codex_file(tmp_path, doc_id: str, rites_block: str = "", name=None):
+    """Write a codex doc with required triple plus optional `rites:` block."""
+    text = textwrap.dedent(
+        """\
+        ---
+        id: {doc_id}
+        title: {doc_id}
+        summary: s
+        {rites}---
+        Body.
+        """
+    ).format(doc_id=doc_id, rites=rites_block)
+    path = tmp_path / (name or f"{doc_id}.md")
+    path.write_text(text)
+    return path
+
+
+def test_parse_frontmatter_doc_reads_rites_list(tmp_path):
+    """extra_fields=("rites",) returns the rite-id list when the field is present."""
+    path = _make_codex_file(tmp_path, "ops-refunds", "rites:\n  - issue-refund\n")
+    result = parse_frontmatter_doc(path, extra_fields=("rites",))
+    assert result is not None
+    assert result.get("rites") == ["issue-refund"]
+
+
+def test_parse_frontmatter_doc_absent_rites_yields_none(tmp_path):
+    """Absent `rites:` is omitted from the dict — .get('rites') is None (== empty)."""
+    path = _make_codex_file(tmp_path, "plain")  # no rites:
+    result = parse_frontmatter_doc(path, extra_fields=("rites",))
+    assert result is not None
+    assert result.get("rites") is None
+
+
+def test_codex_rites_index_consumes_parsed_rites(tmp_path):
+    """transient-rites-us-5 — the codex read side wires the parsed `rites:` into
+    `_load_codex_rites_index`: the parsed list round-trips into the index."""
+    codex_dir = tmp_path / ".lore" / "codex"
+    codex_dir.mkdir(parents=True)
+    _make_codex_file(codex_dir, "ops-refunds", "rites:\n  - issue-refund\n")
+    index = _load_codex_rites_index(codex_dir)
+    assert index["ops-refunds"] == ["issue-refund"]
 
 
 # conceptual-workflows-codex-map step 3 (extra_fields — related: null returns None)

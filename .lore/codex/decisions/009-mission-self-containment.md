@@ -17,8 +17,6 @@ related:
 
 # ADR-009: Missions must be self-contained — board messages carry the chain, artifacts carry the content
 
-**Status:** ACCEPTED
-
 ## Context
 
 A multi-step pipeline (such as the adversarial-spec doctrine) requires each

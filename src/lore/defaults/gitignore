@@ -16,6 +16,8 @@ doctrines/default/
 !watchers
 !watchers/**
 watchers/default/
+!rites
+!rites/**
 GETTING-STARTED.md
 LORE-AGENT.md
 skills/

@@ -64,7 +64,7 @@ _FRONTMATTER_KINDS = {
     "doctrine-design-frontmatter",
 }
 
-_YAML_KINDS = {"doctrine-yaml", "watcher-yaml", "glossary"}
+_YAML_KINDS = {"doctrine-yaml", "watcher-yaml", "glossary", "main-rite", "shared-step"}
 
 _RAISE_KINDS = {"glossary"}
 

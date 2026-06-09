@@ -1,0 +1,79 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/main-rite"
+title: Main Rite
+type: object
+additionalProperties: false
+required: [id, title, summary, trigger, nodes, conclusions]
+properties:
+  id:
+    type: string
+    minLength: 1
+  title:
+    type: string
+    minLength: 1
+  summary:
+    type: string
+    minLength: 1
+  trigger:
+    type: string
+    minLength: 1
+  nodes:
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/node"
+  conclusions:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      $ref: "#/$defs/conclusion"
+$defs:
+  node:
+    type: object
+    additionalProperties: false
+    required: [id]
+    not:
+      required: [do, use]
+    anyOf:
+      - required: [do]
+      - required: [use]
+    properties:
+      id:
+        type: string
+        minLength: 1
+      do:
+        type: string
+        minLength: 1
+      use:
+        type: string
+        minLength: 1
+      then:
+        $ref: "#/$defs/then"
+  then:
+    oneOf:
+      - type: string
+        minLength: 1
+      - type: array
+        minItems: 1
+        items:
+          type: object
+          additionalProperties: false
+          required: [if, goto]
+          properties:
+            if:
+              type: string
+              minLength: 1
+            goto:
+              type: string
+              minLength: 1
+  conclusion:
+    type: object
+    additionalProperties: false
+    required: [audience, response]
+    properties:
+      audience:
+        type: string
+        minLength: 1
+      response:
+        type: string
+        minLength: 1

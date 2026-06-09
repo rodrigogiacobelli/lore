@@ -14,7 +14,7 @@ Everything is reachable from the CLI — every command group accepts `--help`.
 
 ## The codex
 
-`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`) and a body. `lore health --scope codex` enforces this — no other frontmatter fields are permitted.
+`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other frontmatter fields are permitted.
 
 Docs live under subdirectories that scope intent. The set below is what `lore init` *expects* a fresh project to use; the dirs are created on demand by `lore codex new --group <subdir>`.
 
@@ -67,7 +67,7 @@ lore codex edit <name> -f <file>              # replace body from a file
 lore codex delete <name>
 ```
 
-Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`. No other fields — `lore health --scope codex` rejects extras.
+Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`. No other fields — `lore health --scope codex` rejects extras.
 
 Do not write codex files by hand with `cat >` or an editor — drive every change through the CLI so frontmatter normalisation and validation run. For the full discovery → classify → dedup → apply → verify workflow, read the `update-codex` skill.
 
@@ -91,6 +91,12 @@ A codex doc may declare `binds: [<path-or-glob>, ...]` in its frontmatter. Each 
 Use cases: read governing docs before editing a file; assess a doc's reach across the repo. Absolute paths, `..` segments, and empty strings are rejected by the schema and surfaced by `lore health --scope schemas`.
 
 For workflow details — when to populate `binds:`, glob semantics, examples — read the `update-codex` skill.
+
+### Linking a codex doc to the rites it governs
+
+A **rite** is procedural memory — how to do or diagnose a recurring task — stored as YAML under `.lore/rites/main/`, a sibling of the codex. See `.lore/docs/LORE-AGENT.md` for the entity descriptions, and `lore artifact show rite-design` for authoring.
+
+A codex doc may declare `rites: [<rite-id>, ...]` — the ids of the rites that this doc governs. This is the **codex→rite edge**: the link lives only on the codex side, and rites never link back (no `related`, no `binds` on a rite). The one-way direction is fixed by ADR-014 (`decisions-014-link-direction`) — the stable codex doc owns the pointer because a change to it can force a change to the rites built on it. Each entry is a plain rite id slug, not a path or glob. `lore health --scope codex` validates every `rites:` id resolves to an existing rite.
 
 ## Sources layer
 

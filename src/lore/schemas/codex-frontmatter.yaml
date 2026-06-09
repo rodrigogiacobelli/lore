@@ -43,3 +43,13 @@ properties:
       Optional. List of repo-root-relative paths or globs (recursive **
       supported) governed by this codex entry. Empty list and missing
       field behave identically (FR-4).
+  rites:
+    type: array
+    uniqueItems: true
+    items:
+      type: string
+      minLength: 1
+    description: >
+      Optional. List of rite ids governed by this codex entry. Plain
+      slugs (no path-pattern rules). Empty list and missing field behave
+      identically.

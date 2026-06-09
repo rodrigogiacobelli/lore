@@ -1,7 +1,7 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — full-scan or scoped audit of all six file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema and intra-file collision checks, and the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings).
+summary: What the system does internally when lore health runs — full-scan or scoped audit of all seven file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary, rites), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), and the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks.
 binds:
 - src/lore/health.py
 - src/lore/cli.py
@@ -10,12 +10,12 @@ binds:
 - tests/e2e/test_health_schemas.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
 
-`lore health` audits all six file-based entity types in a Lore project — codex, artifacts, doctrines, knights, watchers, and the Glossary (lore codex show conceptual-entities-glossary) — and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove the project's knowledge base is internally consistent.
+`lore health` audits all seven file-based entity types in a Lore project — codex, artifacts, doctrines, knights, watchers, the Glossary (lore codex show conceptual-entities-glossary), and Rites (lore codex show conceptual-entities-rite) — and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove the project's knowledge base is internally consistent.
 
 ## Preconditions
 
@@ -32,11 +32,13 @@ lore health --scope glossary
 lore health --scope codex glossary
 lore health --scope bindings
 lore health --scope bindings codex
+lore health --scope rites
+lore health --scope codex rites
 lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. Omitting `--scope` runs every scope including `schemas`, `glossary`, and `bindings`.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, and `rites`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. The report file is always written regardless of `--json`.
 
@@ -45,9 +47,9 @@ lore health --scope codex --json
 ### 1. Resolve scope
 
 The system determines which entity types to audit:
-- No `--scope`: all scopes run, including `schemas`, `glossary`, and `bindings`.
+- No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, and `rites`.
 - `--scope TYPE [TYPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`.
 
 ### 2. Run per-entity checkers
 
@@ -106,9 +108,11 @@ Per-kind coverage:
 - **`doctrine-design-frontmatter`** — frontmatter of every `.lore/doctrines/**/*.design.md` validated against `lore://schemas/doctrine-design-frontmatter`.
 - **`knight`** — frontmatter of every `.lore/knights/**/*.md` validated against `lore://schemas/knight-frontmatter`.
 - **`watcher`** — every `.lore/watchers/**/*.yaml` validated against `lore://schemas/watcher-yaml`.
-- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related` array accepted; mapping form rejected).
+- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related`, `binds`, and `rites` arrays accepted; mapping form rejected). A malformed `rites:` (non-array, duplicates, empty string) is a schema error with `entity_type="codex"`.
 - **`artifact`** — frontmatter of every `.lore/artifacts/**/*.md` validated against `lore://schemas/artifact-frontmatter`.
 - **`glossary`** — the single file `.lore/codex/glossary.yaml` (full-YAML, not frontmatter) validated against `lore://schemas/glossary`. Unique among schema kinds: a literal file glob, not a `**/*.yaml` walk.
+- **`main-rite`** — every `.lore/rites/main/**/*.yaml` (full-YAML, recursive) validated against `lore://schemas/main-rite`. Missing required fields (`id, title, summary, trigger, nodes, conclusions`) → error.
+- **`shared-step`** — every `.lore/rites/shared/**/*.yaml` (full-YAML, recursive) validated against `lore://schemas/shared-step`. Missing `id, title, summary, do` → error; any branching/conclusions/retrieval key (`nodes`, `then`, `conclusions`, `use`, `goto`, `trigger`) → `additionalProperties` error, declaratively enforcing the pure-step / single-exit rule (`summary` is allowed — the universal what-it-does line — but `trigger` stays MAIN-rite-only).
 
 Special error rules (beyond JSON Schema keywords):
 
@@ -134,6 +138,37 @@ A codex entry with no `binds:` field, or with `binds: []`, emits zero rows. A ma
 Severity split is deliberate: `dead_binding` flips exit code 1 (refactor-induced governance drift fails CI), `empty_glob_binding` does not (forward-looking globs during feature bootstrap stay green). The warning never escalates to an error.
 
 `--scope bindings` runs only this audit. `--scope bindings codex` runs both (multi-scope per ADR-012). `lore health` with no `--scope` runs bindings as part of the default-all-scopes execution.
+
+#### Rite checks (scope: `rites`)
+
+The rites scope audits the Rite entity (lore codex show conceptual-entities-rite) — main rites under `.lore/rites/main/` and shared steps under `.lore/rites/shared/`, both scanned **recursively** (`main/**/*.yaml`, `shared/**/*.yaml`). `.yaml.deleted` files are skipped (soft-delete). The checker is `health._check_rites(project_root)`; it walks each main rite's node-graph once. Rite identity is the `id:` field, resolved across the whole tree — `use:`, the shared-step index, and the orphan check all match by id regardless of subfolder. Schema validation of the rite YAML shape runs under `--scope schemas` (see Schema checks below), not here — this scope covers id-collision, reference integrity, graph well-formedness, and the orphan asymmetry. Orphan rules differ for main vs shared, and that asymmetry is the design point: a main rite is found via `lore rite list`, a shared step is reachable only via `use:`.
+
+Every rite issue is a `HealthIssue(severity, entity_type, id, check, detail, schema_id=None, rule=None, pointer=None)` with `entity_type="rites"`; `schema_id`/`rule`/`pointer` are `null` (only `check="schema"` rows populate those). `id` is the rite id for graph/orphan checks, and the codex doc id for the `dangling_codex_rite` check.
+
+**Id collision (error — flips exit 1):**
+
+- **`duplicate_rite_id`** — the same `id:` appears in two files anywhere across the `main/` + `shared/` tree (two subfolders, or `main/` vs `shared/`). Rite ids are globally unique like codex ids; a collision makes `use: x` ambiguous. `detail='rite id "<id>" defined in multiple files: <rel-path>, <rel-path>'`, `id=<rite-id>`.
+
+**Reference integrity (error — flips exit 1):**
+
+- **`dangling_use`** — a node `use:`es a shared-step id that matches no shared step anywhere under `shared/` (resolved by id, recursively). `detail='node "<node-id>" uses missing shared step "<use-id>"'`, `id=<main-rite-id>`.
+- **`dangling_then`** — a `then`/`goto` points to a node id or conclusion key that exists nowhere in the rite. `detail='node "<node-id>" routes to unknown target "<target>"'`, `id=<main-rite-id>`.
+- **`dangling_codex_rite`** — a codex `rites:` field names a non-existent rite id (codex-side; mirrors `related`/`binds` validation). `detail='codex "<codex-id>" references missing rite "<rite-id>"'`, `id=<codex-id>`. This check runs under **both** the `rites` and `codex` scopes — it is a codex reference-integrity check that depends on the rite index, so it fires whenever either scope is active (mirrors how `bindings` ids are codex-typed but auditable on their own scope).
+
+**Graph well-formedness (error — per main rite):**
+
+- **`no_entry_node`** — every node has an inbound edge, so there is no start. `detail='no entry node — every node has an inbound edge'`.
+- **`multiple_entry_nodes`** — more than one node has no inbound edge → ambiguous start. `detail='multiple entry nodes: <id>, <id>'`.
+- **`unreachable_node`** — nothing routes to it and it is not the entry. `detail='node "<node-id>" is unreachable'`.
+- **`conclusion_never_reached`** — a `conclusions:` key that no `then`/`goto` targets. `detail='conclusion "<key>" is defined but never reached'`.
+- **`undefined_conclusion`** — a `then`/`goto` names a conclusion-like target with no `conclusions:` entry and no matching node id. `detail='node "<node-id>" routes to "<target>" — no node or conclusion'`. `undefined_conclusion` and `dangling_then` are the two faces of "target resolves to nothing", emitted as distinct check names so the report distinguishes "looked like a conclusion key" from "looked like a node id".
+
+**Orphans — the asymmetry (design point):**
+
+- **`orphan_shared_step`** (**warning**) — no main rite `use:`es this shared step (matched by id across the recursive tree). Shared exists only to be used; a warning, not an error (does not flip exit 1, matching codex `island_node`). `detail='no main rite uses this shared step'`, `id=<shared-step-id>`.
+- **Orphan main rite — NOT flagged.** A main rite that no codex `rites:` points to emits **no issue**. It is found via `lore rite list`; `rites:` is secondary discovery (decisions-014-link-direction constraint 4). Same posture as inbound-orphan sources.
+
+`--scope rites` runs only these rite checks. `--scope codex rites` runs codex reference-integrity AND rite checks (multi-scope per ADR-012); the `dangling_codex_rite` check fires under both. `lore health` with no `--scope` runs rites as part of the default-all-scopes execution.
 
 ### 3. Collect results
 
@@ -165,7 +200,10 @@ Issues present:
 SEVERITY  ENTITY_TYPE  ID                CHECK
 ERROR     doctrines    feat-auth         broken_knight_ref: 'senior-engineer' not found (step 2)
 ERROR     watchers     on-quest-close    broken_doctrine_ref: 'feat-payments' not found
+ERROR     rites        issue-refund      dangling_use: node "get-contact" uses missing shared step "read-contact-info"
+ERROR     rites        ops-refunds       dangling_codex_rite: codex "ops-refunds" references missing rite "issue-refund"
 WARNING   codex        proposals-draft   island_node: no documents link here
+WARNING   rites        read-contact-info orphan_shared_step: no main rite uses this shared step
 ```
 
 Schema violations use a dedicated multi-line ERROR block followed by a summary line:
@@ -212,6 +250,16 @@ Issues present:
       "schema_id": "lore://schemas/knight-frontmatter",
       "rule": "additionalProperties",
       "pointer": "/stability"
+    },
+    {
+      "severity": "warning",
+      "entity_type": "rites",
+      "id": "read-contact-info",
+      "check": "orphan_shared_step",
+      "detail": "no main rite uses this shared step",
+      "schema_id": null,
+      "rule": null,
+      "pointer": null
     }
   ]
 }
@@ -242,6 +290,8 @@ report = health_check(project_root=Path("."), scope=None)
 report = health_check(project_root=Path("."), scope=["codex"])
 report = health_check(project_root=Path("."), scope=["doctrines", "watchers"])
 report = health_check(project_root=Path("."), scope=["bindings"])
+report = health_check(project_root=Path("."), scope=["rites"])
+report = health_check(project_root=Path("."), scope=["codex", "rites"])
 
 report.has_errors       # bool
 report.errors           # tuple[HealthIssue, ...]
@@ -257,7 +307,7 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary, bindings.` |
+| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary, bindings, rites.` |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |
@@ -280,5 +330,7 @@ When `--scope` is provided, only the named entity types are checked. No other en
 - conceptual-workflows-error-handling (lore codex show conceptual-workflows-error-handling)
 - conceptual-workflows-json-output (lore codex show conceptual-workflows-json-output)
 - decisions-012-multi-value-cli-param-convention (lore codex show decisions-012-multi-value-cli-param-convention)
+- decisions-014-link-direction (lore codex show decisions-014-link-direction) — the codex → rite edge the dangling_codex_rite check audits
+- conceptual-entities-rite (lore codex show conceptual-entities-rite) — the Rite entity these checks audit
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands)
 - ref-lore_api-core (lore codex show ref-lore_api-core)

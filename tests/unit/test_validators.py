@@ -453,6 +453,73 @@ class TestValidateGroup:
         assert validate_group("-a") is not None
 
 
+# ---------------------------------------------------------------------------
+# validate_rite_id — raising validator for rite names (new/edit/delete)
+# Spec: conceptual-workflows-rite-crud "Name validation" + decisions-011-api-parity-with-cli
+# ---------------------------------------------------------------------------
+
+
+class TestValidateRiteId:
+    """validate_rite_id(s): accepts valid slugs, raises on invalid."""
+
+    def test_accepts_hyphenated_slug(self):
+        from lore.validators import validate_rite_id
+
+        # valid — must not raise
+        validate_rite_id("issue-refund")
+
+    def test_accepts_underscore_and_digit(self):
+        from lore.validators import validate_rite_id
+
+        # valid — must not raise
+        validate_rite_id("a_1")
+
+    def test_accepts_alphanumeric_start(self):
+        from lore.validators import validate_rite_id
+
+        validate_rite_id("read-contact-info")
+
+    def test_rejects_leading_hyphen(self):
+        import pytest
+
+        from lore.validators import validate_rite_id
+
+        with pytest.raises(Exception):
+            validate_rite_id("-lead")
+
+    def test_rejects_space(self):
+        import pytest
+
+        from lore.validators import validate_rite_id
+
+        with pytest.raises(Exception):
+            validate_rite_id("has space")
+
+    def test_rejects_slash(self):
+        import pytest
+
+        from lore.validators import validate_rite_id
+
+        with pytest.raises(Exception):
+            validate_rite_id("a/b")
+
+    def test_rejects_empty(self):
+        import pytest
+
+        from lore.validators import validate_rite_id
+
+        with pytest.raises(Exception):
+            validate_rite_id("")
+
+    def test_rejects_dot(self):
+        import pytest
+
+        from lore.validators import validate_rite_id
+
+        with pytest.raises(Exception):
+            validate_rite_id("dot.name")
+
+
 def test_validators_has_no_lore_imports():
     """Enforces standards-dependency-inversion: validators.py must not import lore.*."""
     import ast

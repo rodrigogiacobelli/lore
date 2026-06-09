@@ -68,6 +68,17 @@ except ImportError:  # pragma: no cover — red phase, symbols not implemented y
     _match_pattern = None  # type: ignore[assignment]
     _normalize_path_input = None  # type: ignore[assignment]
 
+# transient-rites-us-5 — the codex `rites:` index helper. `_load_codex_rites_index`
+# does not exist yet (it lands in US-005 Green, modelled on
+# `_load_codex_binds_index`), so the import fails and the symbol is None until
+# Green. Same try/except None-fallback pattern as the clusters above.
+try:
+    from lore.impacts import (  # type: ignore[import-not-found]
+        _load_codex_rites_index,
+    )
+except ImportError:  # pragma: no cover — red phase, helper not implemented yet
+    _load_codex_rites_index = None  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -747,3 +758,80 @@ def test_impacts_code_seed_direct_links_empty_when_only_globs(tmp_project):
 # `tests/e2e/test_impacts.py::test_direct_links_is_silent_noop_on_codex_seed`
 # alongside the path-seed scenarios; no extra unit test is needed here
 # because the codex-seed function signature already accepts the kwarg.
+
+
+# ===========================================================================
+# transient-rites-us-5 — `_load_codex_rites_index`
+# Anchors:
+#   tech-arch-frontmatter — a new codex edge is read via
+#     parse_frontmatter_doc(extra_fields=("rites",)); no new parse helper.
+#   decisions-014-link-direction — codex → rite is the only rite edge.
+#   _load_codex_binds_index precedent (src/lore/impacts.py) — one scan_codex
+#     walk builds {codex_id: [rite_id, ...]}; missing key materialises as [].
+# ===========================================================================
+
+
+def _write_codex_rites_entry(
+    project_root: Path,
+    *,
+    entry_id: str,
+    rites: list | None = None,
+    omit_rites: bool = False,
+) -> Path:
+    """Write a minimal codex markdown file carrying an optional `rites:` list.
+
+    Mirrors `_write_codex_entry` but for the codex → rite edge. ``omit_rites``
+    skips the key entirely (absent == [] path).
+    """
+    fm: dict = {
+        "id": entry_id,
+        "title": entry_id.replace("-", " ").title(),
+        "summary": f"Codex entry {entry_id}.",
+    }
+    if not omit_rites:
+        fm["rites"] = rites if rites is not None else []
+    front = yaml.safe_dump(fm, sort_keys=False, default_flow_style=False)
+    codex_dir = project_root / ".lore" / "codex"
+    codex_dir.mkdir(parents=True, exist_ok=True)
+    path = codex_dir / f"{entry_id}.md"
+    path.write_text(f"---\n{front}---\nBody for {entry_id}.\n", encoding="utf-8")
+    return path
+
+
+def test_load_codex_rites_index_maps_doc_to_rite_ids(tmp_project):
+    """transient-rites-us-5 — single scan_codex walk maps codex id -> rite ids."""
+    _write_codex_rites_entry(tmp_project, entry_id="ops-refunds", rites=["issue-refund"])
+    index = _load_codex_rites_index(tmp_project / ".lore" / "codex")
+    assert index["ops-refunds"] == ["issue-refund"]
+
+
+def test_load_codex_rites_index_preserves_yaml_sequence_order(tmp_project):
+    """transient-rites-us-5 — order is the author's; no sort/re-order."""
+    _write_codex_rites_entry(tmp_project, entry_id="x", rites=["b-rite", "a-rite"])
+    index = _load_codex_rites_index(tmp_project / ".lore" / "codex")
+    assert index["x"] == ["b-rite", "a-rite"]
+
+
+def test_load_codex_rites_index_missing_key_is_empty_list(tmp_project):
+    """transient-rites-us-5 — absent `rites:` materialises as [] (== missing)."""
+    _write_codex_rites_entry(tmp_project, entry_id="x", omit_rites=True)
+    index = _load_codex_rites_index(tmp_project / ".lore" / "codex")
+    assert index["x"] == []
+
+
+def test_load_codex_rites_index_indexes_every_entry(tmp_project):
+    """transient-rites-us-5 — one pass over the codex dir indexes all docs."""
+    _write_codex_rites_entry(tmp_project, entry_id="a", rites=["r1"])
+    _write_codex_rites_entry(tmp_project, entry_id="b", rites=["r2"])
+    _write_codex_rites_entry(tmp_project, entry_id="c", rites=[])
+    index = _load_codex_rites_index(tmp_project / ".lore" / "codex")
+    assert set(index.keys()) >= {"a", "b", "c"}
+    assert index["a"] == ["r1"]
+    assert index["b"] == ["r2"]
+    assert index["c"] == []
+
+
+def test_load_codex_rites_index_empty_when_codex_dir_absent(tmp_path):
+    """transient-rites-us-5 — a missing codex dir yields an empty index, no raise."""
+    index = _load_codex_rites_index(tmp_path / ".lore" / "codex")
+    assert index == {}

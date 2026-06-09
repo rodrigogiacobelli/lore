@@ -27,8 +27,6 @@ related:
 
 # ADR-013: TOML for project config, YAML for glossary content; lore init seeds glossary directly under .lore/codex/
 
-**Status:** ACCEPTED
-
 ## Context
 
 The Glossary feature (PRD `fi-prd-glossary`, Tech Spec `glossary-tech-spec`) introduces two new on-disk surfaces that did not previously exist in a Lore project:

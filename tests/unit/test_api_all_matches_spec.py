@@ -184,6 +184,20 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "load_config",
     # paths (G15 — amendment C1)
     "entity_location",
+    # rite (US-007 — functions + types + validator)
+    "scan_rites",
+    "read_rite",
+    "search_rites",
+    "create_rite",
+    "update_rite",
+    "delete_rite",
+    "Rite",
+    "RiteNode",
+    "RiteBranch",
+    "RiteConclusion",
+    "SharedStep",
+    "RiteError",
+    "validate_rite_id",
 )
 
 

@@ -1752,3 +1752,213 @@ class TestLoreApiAllUnchangedForBindings:
         assert "health_check" in lore.api.__all__
         assert "HealthReport" in lore.api.__all__
         assert "HealthIssue" in lore.api.__all__
+
+
+# ---------------------------------------------------------------------------
+# Rite data model — frozen dataclasses with from_dict round-tripping
+# read_rite / scan_rites output. RiteBranch.if_ is mapped from the YAML `if`
+# key (a Python keyword). Nested: RiteNode carries an optional resolved
+# SharedStep on `step`; a fork node's `then` is a list of RiteBranch.
+# Spec: transient-rites-us-7 (Python API parity + model dataclasses).
+# ---------------------------------------------------------------------------
+
+
+# Canonical resolved read_rite() output for the `issue-refund` main rite:
+# the use:-node carries its resolved shared step under "step".
+SAMPLE_RITE_DICT = {
+    "id": "issue-refund",
+    "title": "Issue a refund for a returned order",
+    "summary": "Confirm the customer is reachable, then refund.",
+    "trigger": "Customer requests a refund on a returned order.",
+    "nodes": [
+        {
+            "id": "locate-order",
+            "do": "Find the order by id; confirm it is in 'returned' state.",
+            "then": "get-contact",
+        },
+        {
+            "id": "get-contact",
+            "use": "read-contact-info",
+            "then": "review-contact",
+            "step": {
+                "id": "read-contact-info",
+                "title": "Read the user's contact information",
+                "do": (
+                    "Open the user profile in admin. Read and report back:\n"
+                    "  - email\n  - phone\n"
+                    "  - mailing address, with its last-confirmed date\n"
+                ),
+            },
+        },
+        {
+            "id": "review-contact",
+            "do": "Decide whether contact details support a refund.",
+            "then": [
+                {
+                    "if": "email and a current mailing address are present",
+                    "goto": "do-refund",
+                },
+                {
+                    "if": "anything is missing or the address looks stale",
+                    "goto": "request-update",
+                },
+            ],
+        },
+        {
+            "id": "do-refund",
+            "do": "Post the refund to billing. Record the txn id.",
+            "then": "refunded",
+        },
+    ],
+    "conclusions": {
+        "refunded": {
+            "audience": "customer-care",
+            "response": "Refund posted; share the transaction id.",
+        },
+        "contact-requested": {
+            "audience": "customer-care",
+            "response": "Refund held pending a contact-details update.",
+        },
+    },
+}
+
+
+class TestRiteImportable:
+    """The Rite model types are importable from lore.models."""
+
+    def test_rite_types_importable(self):
+        from lore.models import (  # noqa: F401
+            Rite,
+            RiteBranch,
+            RiteConclusion,
+            RiteNode,
+            SharedStep,
+        )
+
+    def test_rite_error_importable_and_value_error(self):
+        from lore.models import RiteError
+
+        assert issubclass(RiteError, ValueError)
+
+
+class TestRiteAllExports:
+    """All rite model names appear in lore.models.__all__."""
+
+    def test_rite_names_in_all(self):
+        expected = {
+            "Rite",
+            "RiteNode",
+            "RiteBranch",
+            "RiteConclusion",
+            "SharedStep",
+            "RiteError",
+        }
+        missing = expected - set(m.__all__)
+        assert missing == set(), (
+            f"rite model names missing from lore.models.__all__: {sorted(missing)}"
+        )
+
+
+class TestRiteFromDict:
+    """Rite.from_dict round-trips read_rite/scan_rites output."""
+
+    def test_from_dict_top_level_fields(self):
+        from lore.models import Rite
+
+        rite = Rite.from_dict(SAMPLE_RITE_DICT)
+        assert rite.id == "issue-refund"
+        assert rite.title == "Issue a refund for a returned order"
+        assert rite.summary == "Confirm the customer is reachable, then refund."
+        assert rite.trigger == "Customer requests a refund on a returned order."
+
+    def test_from_dict_use_node_resolves_shared_step(self):
+        from lore.models import Rite, SharedStep
+
+        rite = Rite.from_dict(SAMPLE_RITE_DICT)
+        use_node = rite.nodes[1]
+        assert use_node.id == "get-contact"
+        assert use_node.use == "read-contact-info"
+        assert isinstance(use_node.step, SharedStep)
+        assert use_node.step.id == "read-contact-info"
+        assert use_node.step.title == "Read the user's contact information"
+
+    def test_from_dict_fork_branch_maps_if_keyword(self):
+        from lore.models import Rite, RiteBranch
+
+        rite = Rite.from_dict(SAMPLE_RITE_DICT)
+        fork_node = rite.nodes[2]
+        assert fork_node.id == "review-contact"
+        assert isinstance(fork_node.then, list)
+        assert all(isinstance(b, RiteBranch) for b in fork_node.then)
+        assert fork_node.then[0].if_ == (
+            "email and a current mailing address are present"
+        )
+        assert fork_node.then[0].goto == "do-refund"
+
+    def test_from_dict_conclusions(self):
+        from lore.models import Rite, RiteConclusion
+
+        rite = Rite.from_dict(SAMPLE_RITE_DICT)
+        refunded = rite.conclusions["refunded"]
+        assert isinstance(refunded, RiteConclusion)
+        assert refunded.audience == "customer-care"
+        assert refunded.response == "Refund posted; share the transaction id."
+
+
+class TestRiteBranchIfMapping:
+    """RiteBranch.if_ is sourced from the YAML `if` key (a Python keyword)."""
+
+    def test_branch_if_mapped_from_if(self):
+        from lore.models import RiteBranch
+
+        branch = RiteBranch.from_dict({"if": "x", "goto": "y"})
+        assert branch.if_ == "x"
+        assert branch.goto == "y"
+
+
+class TestRiteImmutability:
+    """Rite and its nested dataclasses are frozen."""
+
+    def test_rite_frozen(self):
+        from lore.models import Rite
+
+        rite = Rite.from_dict(SAMPLE_RITE_DICT)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            rite.id = "x"  # type: ignore[misc]
+
+    def test_rite_node_frozen(self):
+        from lore.models import Rite
+
+        rite = Rite.from_dict(SAMPLE_RITE_DICT)
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            rite.nodes[0].id = "x"  # type: ignore[misc]
+
+    def test_rite_branch_frozen(self):
+        from lore.models import RiteBranch
+
+        branch = RiteBranch.from_dict({"if": "x", "goto": "y"})
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            branch.goto = "z"  # type: ignore[misc]
+
+    def test_shared_step_frozen(self):
+        from lore.models import SharedStep
+
+        step = SharedStep.from_dict(
+            {"id": "s", "title": "S", "summary": "sums it up", "do": "do it"}
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            step.id = "x"  # type: ignore[misc]
+
+    def test_shared_step_from_dict_reads_summary(self):
+        from lore.models import SharedStep
+
+        step = SharedStep.from_dict(
+            {"id": "s", "title": "S", "summary": "one-line what-it-does", "do": "do it"}
+        )
+        assert step.summary == "one-line what-it-does"
+
+    def test_shared_step_summary_defaults_none(self):
+        from lore.models import SharedStep
+
+        step = SharedStep.from_dict({"id": "s"})
+        assert step.summary is None

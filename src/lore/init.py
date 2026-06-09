@@ -188,6 +188,10 @@ def run_init() -> list[str]:
         _copy_defaults_tree("skills", lore_dir / "skills", label="skills")
     )
 
+    # Seed empty rite directories (.lore/rites/main + shared)
+    for subfolder in ("main", "shared"):
+        (lore_dir / "rites" / subfolder).mkdir(parents=True, exist_ok=True)
+
     # Generate skills/.gitignore listing every Lore-shipped skill, so when the
     # user copies this directory into .claude/skills/ the bundled skills are
     # ignored without manual gitignore edits.

@@ -1850,3 +1850,135 @@ class TestUS009HealthCheckPythonAPI:
         assert after == before, (
             f"expected no new transient report, new files: {after - before}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Rite Python API parity — the six functions, types, exception, and validator
+# are importable from `lore.api`, and read_rite behaviour matches `rite show
+# --json`. Per ADR-011 every CLI command is a thin wrapper over a self-
+# contained lore.api function; per ADR-010 these names live in lore.api.__all__.
+# Spec: conceptual-workflows-python-api / transient-rites-us-7.
+# ---------------------------------------------------------------------------
+
+
+_RITE_MAIN_YAML = """\
+id: issue-refund
+title: Issue a refund for a returned order
+summary: Confirm the customer is reachable, then refund.
+trigger: Customer requests a refund on a returned order.
+nodes:
+  - id: locate-order
+    do: Find the order by id; confirm it is in 'returned' state.
+    then: get-contact
+  - id: get-contact
+    use: read-contact-info
+    then: review-contact
+  - id: review-contact
+    do: Decide whether contact details support a refund.
+    then:
+      - if: email and a current mailing address are present
+        goto: do-refund
+      - if: anything is missing or the address looks stale
+        goto: request-update
+  - id: do-refund
+    do: Post the refund to billing. Record the txn id.
+    then: refunded
+  - id: request-update
+    do: Ask the customer to confirm contact details first.
+    then: contact-requested
+conclusions:
+  refunded:
+    audience: customer-care
+    response: Refund posted; share the transaction id.
+  contact-requested:
+    audience: customer-care
+    response: Refund held pending a contact-details update.
+"""
+
+_RITE_SHARED_YAML = """\
+id: read-contact-info
+title: Read the user's contact information
+do: |
+  Open the user profile in admin. Read and report back:
+    - email
+    - phone
+    - mailing address, with its last-confirmed date
+"""
+
+
+def _seed_rite_main(project_dir, name, text):
+    path = project_dir / ".lore" / "rites" / "main" / f"{name}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _seed_rite_shared(project_dir, name, text):
+    path = project_dir / ".lore" / "rites" / "shared" / f"{name}.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+class TestPythonApiRiteFunctionsImportable:
+    """The six rite functions import from lore.api and back the CLI."""
+
+    def test_six_rite_functions_importable_from_api(self):
+        from lore.api import (  # noqa: F401
+            create_rite,
+            delete_rite,
+            read_rite,
+            scan_rites,
+            search_rites,
+            update_rite,
+        )
+
+    def test_read_rite_matches_cli_show_json(self, project_dir):
+        import json
+
+        from lore.api import read_rite
+        from lore.cli import main
+
+        _seed_rite_main(project_dir, "issue-refund", _RITE_MAIN_YAML)
+        _seed_rite_shared(project_dir, "read-contact-info", _RITE_SHARED_YAML)
+
+        from click.testing import CliRunner
+
+        rdir = project_dir / ".lore" / "rites"
+        api_out = read_rite(rdir, "issue-refund")
+
+        result = CliRunner().invoke(
+            main, ["--json", "rite", "show", "issue-refund"]
+        )
+        assert result.exit_code == 0
+        cli_out = json.loads(result.stdout)
+        assert cli_out["rites"][0] == api_out
+
+
+class TestPythonApiRiteTypesExported:
+    """Types, exception, and validator import from lore.api."""
+
+    def test_types_exception_validator_importable(self):
+        from lore.api import (  # noqa: F401
+            Rite,
+            RiteBranch,
+            RiteConclusion,
+            RiteError,
+            RiteNode,
+            SharedStep,
+            validate_rite_id,
+        )
+
+    def test_rite_error_is_value_error(self):
+        from lore.api import RiteError
+
+        assert issubclass(RiteError, ValueError)
+
+    def test_rite_from_dict_round_trips_read_rite(self, project_dir):
+        from lore.api import Rite, read_rite
+
+        _seed_rite_main(project_dir, "issue-refund", _RITE_MAIN_YAML)
+        _seed_rite_shared(project_dir, "read-contact-info", _RITE_SHARED_YAML)
+
+        rdir = project_dir / ".lore" / "rites"
+        rite = Rite.from_dict(read_rite(rdir, "issue-refund"))
+        assert rite.id == "issue-refund"
+        assert rite.nodes

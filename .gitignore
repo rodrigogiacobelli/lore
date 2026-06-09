@@ -22,7 +22,7 @@ uv.lock
 *.swo
 
 # Project-specific
-.claude/
+.claude/settings.*
 .reports/
 .ideas/
 .old/

@@ -2,7 +2,7 @@
 id: conceptual-workflows-filter-list
 title: lore * list --filter Behaviour
 summary: What the system does when --filter GROUP... is passed to the list subcommand
-  of codex, artifact, knight, doctrine, or watcher commands — slash-delimited token-to-group
+  of codex, artifact, knight, doctrine, watcher, or rite commands — slash-delimited token-to-group
   segment-prefix matching, root-level file inclusion, Python API parity, and unchanged
   unfiltered behaviour.
 binds:
@@ -15,6 +15,7 @@ related:
 - conceptual-workflows-knight-list
 - conceptual-workflows-doctrine-list
 - conceptual-workflows-watcher-list
+- conceptual-workflows-rite-list
 - conceptual-workflows-codex
 - ref-lore_cli-commands
 - decisions-011-api-parity-with-cli
@@ -22,7 +23,7 @@ related:
 
 # `lore * list --filter` Behaviour
 
-The `--filter GROUP...` flag is available on the `list` subcommand of all five entity list commands: `lore codex list`, `lore artifact list`, `lore knight list`, `lore doctrine list`, and `lore watcher list`. It limits output to entities in the specified namespace group(s) while always including root-level files.
+The `--filter GROUP...` flag is available on the `list` subcommand of all six entity list commands: `lore codex list`, `lore artifact list`, `lore knight list`, `lore doctrine list`, `lore watcher list`, and `lore rite list` (which filters main rites by default, or shared steps with `--shared`). It limits output to entities in the specified namespace group(s) while always including root-level files.
 
 ## Preconditions
 
@@ -30,7 +31,7 @@ The `--filter GROUP...` flag is available on the `list` subcommand of all five e
 - The caller knows the group token(s) to filter on. Group tokens are slash-delimited paths that match the on-disk subdirectory layout exactly (e.g., `technical/api` maps to `technical/api/`). A token also matches all deeper subgroups — `technical` matches `technical/api`, `technical/reference`, etc., but only on full-segment boundaries.
 - **Breaking change:** the hyphen-delimited input grammar (`default-codex`, `technical-api`) is no longer accepted. Users must pass slash-delimited tokens (`default/codex`, `technical/api`). This keeps what the user types in `--filter` identical to what they see in `list` output and what they passed to `--group` on create.
 
-## Steps (applied identically across all five list commands)
+## Steps (applied identically across all six list commands)
 
 ### 1. Discover all entities (unchanged)
 
@@ -91,6 +92,7 @@ lore artifact list --filter default/codex
 lore knight list --filter feature-implementation
 lore doctrine list --filter seo-analysis/keyword-analysers
 lore watcher list --filter default
+lore rite list --filter diagnostics/network
 ```
 
 Multiple tokens are supplied by repeating the flag or as separate arguments:
@@ -102,7 +104,7 @@ lore codex list --filter conceptual technical/api
 
 ## Python API Parity
 
-Per ADR-011, the filtering logic lives in each Python module function — not in `cli.py`. All five list functions accept a `filter_groups` keyword argument:
+Per ADR-011, the filtering logic for the five frontmatter/YAML entities lives in each Python module function — not in `cli.py`. Those five list functions accept a `filter_groups` keyword argument:
 
 ```python
 scan_codex(codex_dir, filter_groups=None)
@@ -113,6 +115,8 @@ list_watchers(watchers_dir, filter_groups=None)
 ```
 
 `filter_groups=None` (or omitted) returns all entities — existing callers are unaffected. `filter_groups=["conceptual"]` returns all entities whose group is `conceptual` or starts with the segment `conceptual` (e.g., `conceptual/workflows`, `conceptual/reference`), plus root-level entities.
+
+Rites apply the same `paths.group_matches_filter` rule, but the filter is applied in the `rite list` CLI handler over the `group` each `scan_rites` record already carries (rather than as a `scan_rites` keyword) — `scan_rites(rites_dir, shared=...)` always returns the full recursive listing with groups attached, and the segment-prefix match plus root-always-included semantics are identical to the other five.
 
 ## Example Output
 

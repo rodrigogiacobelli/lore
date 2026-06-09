@@ -228,10 +228,14 @@ def test_schemas_in_all_scopes_list():
 def test_schemas_is_last_in_all_scopes():
     """Tech Notes: schemas registered last among the original seven scope tokens.
 
-    Note: the bindings scope (US-001) was appended after schemas; this guard
-    now pins schemas as the last non-bindings token.
+    Note: bindings (US-001) and rites (US-006) were appended after schemas, so
+    schemas is no longer at a fixed tail index; the durable invariant is that
+    schemas still ships in the default-all scope set and precedes the later
+    additions (bindings, then rites last).
     """
-    assert _ALL_SCOPES[-2] == "schemas"
+    assert "schemas" in _ALL_SCOPES
+    assert _ALL_SCOPES[-1] == "rites"
+    assert _ALL_SCOPES.index("schemas") < _ALL_SCOPES.index("bindings")
 
 
 # ---------------------------------------------------------------------------

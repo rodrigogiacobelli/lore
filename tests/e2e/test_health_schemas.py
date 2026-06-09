@@ -776,3 +776,182 @@ def test_multiple_canonical_links_to_source_violations(runner, project_dir):
     for canonical in ("conceptual-entities-a", "conceptual-entities-b"):
         assert any(p[0] == canonical and "K-1" in p[1] for p in pairs)
     assert any(p[0] == "conceptual-entities-c" and "K-2" in p[1] for p in pairs)
+
+
+# ---------------------------------------------------------------------------
+# Codex `rites:` frontmatter field + rite link-direction (transient-rites-us-5)
+# Anchors:
+#   conceptual-workflows-health §Schema checks — `--scope schemas` validates
+#     codex frontmatter against codex-frontmatter (optional `rites:` array
+#     accepted); a malformed `rites:` is a schema error with entity_type=codex.
+#   decisions-014-link-direction — codex → rite is the only rite edge; the
+#     rite schema rejects `related`/`binds` (additionalProperties). The
+#     rite-link-rejection scenario rides on US-001's additionalProperties:false
+#     and is pinned end-to-end here.
+# ---------------------------------------------------------------------------
+
+
+CANONICAL_MAIN_RITE_YAML = (
+    "id: issue-refund\n"
+    "title: Issue a refund for a returned order\n"
+    "summary: Confirm the customer is reachable, then refund.\n"
+    "trigger: Customer requests a refund on a returned order.\n"
+    "nodes:\n"
+    "  - id: do-refund\n"
+    "    do: Post the refund to billing.\n"
+    "    then: refunded\n"
+    "conclusions:\n"
+    "  refunded:\n"
+    "    audience: customer-care\n"
+    "    response: Refund posted.\n"
+)
+
+
+def _write_main_rite(project_dir: Path, rite_id: str, body: str) -> Path:
+    path = project_dir / ".lore" / "rites" / "main" / f"{rite_id}.yaml"
+    _write(path, body)
+    return path
+
+
+def _write_codex_with_rites(project_dir: Path, doc_id: str, rites_yaml: str) -> Path:
+    path = project_dir / ".lore" / "codex" / f"{doc_id}.md"
+    _write(
+        path,
+        f"---\nid: {doc_id}\ntitle: {doc_id}\nsummary: s\n{rites_yaml}---\nBody.\n",
+    )
+    return path
+
+
+def test_codex_valid_rites_field_passes_schema(runner, project_dir):
+    """conceptual-workflows-health — Scenario 1: a doc with a valid `rites:`
+    field validates clean under --scope schemas (exit 0)."""
+    _write_main_rite(project_dir, "issue-refund", CANONICAL_MAIN_RITE_YAML)
+    _write_codex_with_rites(
+        project_dir, "ops-refunds", "rites:\n  - issue-refund\n"
+    )
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 0, result.stdout
+    assert result.stdout.rstrip().endswith("Schema validation: 0 errors")
+
+
+def test_codex_no_rites_field_passes_schema(runner, project_dir):
+    """conceptual-workflows-health — Scenario 2: absent `rites:` behaves like
+    `rites: []` (additive, backward-compatible) — clean, exit 0."""
+    _write(
+        project_dir / ".lore" / "codex" / "plain-doc.md",
+        "---\nid: plain-doc\ntitle: Plain\nsummary: s\n---\nBody.\n",
+    )
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 0, result.stdout
+    assert "Schema validation: 0 errors" in result.stdout
+
+
+def test_codex_rites_non_array_is_schema_error(runner, project_dir):
+    """conceptual-workflows-health — Scenario 3: a non-array `rites:` is a schema
+    error block with kind: codex naming the violated rule (type)."""
+    _write_codex_with_rites(project_dir, "bad-doc", "rites: not-a-list\n")
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 1, result.stdout
+    assert "kind: codex" in result.stdout
+    assert "rule: type" in result.stdout
+
+
+def test_codex_rites_duplicates_is_schema_error(runner, project_dir):
+    """conceptual-workflows-health — Scenario 3: duplicate rite ids fail
+    uniqueItems on the codex doc."""
+    _write_codex_with_rites(
+        project_dir, "dup-doc", "rites:\n  - issue-refund\n  - issue-refund\n"
+    )
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 1, result.stdout
+    assert "kind: codex" in result.stdout
+    assert "rule: uniqueItems" in result.stdout
+
+
+def test_codex_rites_empty_string_item_is_schema_error(runner, project_dir):
+    """conceptual-workflows-health — Scenario 3: an empty-string rite id fails
+    minLength on the codex doc."""
+    _write_codex_with_rites(project_dir, "empty-doc", 'rites:\n  - ""\n')
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 1, result.stdout
+    assert "kind: codex" in result.stdout
+    assert "rule: minLength" in result.stdout
+
+
+def test_codex_rites_malformed_json_entity_type_codex(runner, project_dir):
+    """conceptual-workflows-health — Scenario 3: JSON envelope carries
+    entity_type=codex and check=schema for the malformed `rites:` row."""
+    _write_codex_with_rites(project_dir, "bad-doc", "rites: not-a-list\n")
+
+    result = runner.invoke(main, ["health", "--scope", "schemas", "--json"])
+
+    assert result.exit_code == 1, result.stdout
+    payload = _json.loads(result.stdout)
+    hits = [
+        i for i in payload["issues"]
+        if i["check"] == "schema"
+        and i["entity_type"] == "codex"
+        and (i.get("pointer") or "").startswith("/rites")
+    ]
+    assert hits, payload
+    assert hits[0]["rule"] == "type"
+
+
+def test_main_rite_with_related_rejected_additional_properties(runner, project_dir):
+    """decisions-014-link-direction constraint 1 — a main rite carrying
+    `related:` fails additionalProperties (kind: main-rite)."""
+    _write_main_rite(
+        project_dir,
+        "issue-refund",
+        CANONICAL_MAIN_RITE_YAML + "related:\n  - x\n",
+    )
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 1, result.stdout
+    assert "kind: main-rite" in result.stdout
+    assert "rule: additionalProperties" in result.stdout
+
+
+def test_main_rite_with_binds_rejected_additional_properties(runner, project_dir):
+    """decisions-014-link-direction constraint 1 — a main rite carrying `binds:`
+    fails additionalProperties (rites link to nothing)."""
+    _write_main_rite(
+        project_dir,
+        "issue-refund",
+        CANONICAL_MAIN_RITE_YAML + "binds:\n  - src/x.py\n",
+    )
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 1, result.stdout
+    assert "kind: main-rite" in result.stdout
+    assert "rule: additionalProperties" in result.stdout
+
+
+def test_shared_step_with_related_rejected_additional_properties(runner, project_dir):
+    """decisions-014-link-direction constraint 1 — a shared step carrying
+    `related:` fails additionalProperties (kind: shared-step)."""
+    _write(
+        project_dir / ".lore" / "rites" / "shared" / "read-contact-info.yaml",
+        "id: read-contact-info\n"
+        "title: Read the user's contact information\n"
+        "do: Open the user profile in admin and report contact details.\n"
+        "related:\n  - x\n",
+    )
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert result.exit_code == 1, result.stdout
+    assert "kind: shared-step" in result.stdout
+    assert "rule: additionalProperties" in result.stdout

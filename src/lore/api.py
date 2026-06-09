@@ -14,6 +14,7 @@ from lore.models import (
     Quest, Mission, Dependency, BoardMessage,
     Artifact, CodexDocument, DoctrineStep, Doctrine, Knight,
     DoctrineListEntry, GlossaryItem, Watcher,
+    Rite, RiteNode, RiteBranch, RiteConclusion, SharedStep, RiteError,
 )
 
 # --- Operational dataclasses (sourced from their owning modules) ---
@@ -33,6 +34,7 @@ from lore.validators import (
     validate_priority, validate_name, validate_group,
     validate_quest_id_loose, validate_chaos_threshold,
     validate_binds_entry, is_glob_pattern, route_entity,
+    validate_rite_id,
 )
 
 # --- DB (CRUD + envelopes + bulk ops) ---
@@ -114,6 +116,12 @@ from lore.glossary import (
 # --- Impacts ---
 from lore.impacts import impacts, classify_token
 
+# --- Rite ---
+from lore.rite import (
+    scan_rites, read_rite, search_rites,
+    create_rite, update_rite, delete_rite,
+)
+
 # --- Health ---
 from lore.health import health_check
 
@@ -156,6 +164,7 @@ from lore import glossary as _glossary  # noqa: F401
 from lore import impacts as _impacts  # noqa: F401
 from lore import doctrine as _doctrine  # noqa: F401
 from lore import health as _health  # noqa: F401
+from lore import rite as _rite  # noqa: F401
 from lore.knight import _validate_frontmatter as _validate_frontmatter  # noqa: F401
 
 __all__ = [
@@ -307,4 +316,18 @@ __all__ = [
     "load_config",
     # paths (G15 — amendment C1)
     "entity_location",
+    # rite (US-007 — functions + types + validator)
+    "scan_rites",
+    "read_rite",
+    "search_rites",
+    "create_rite",
+    "update_rite",
+    "delete_rite",
+    "Rite",
+    "RiteNode",
+    "RiteBranch",
+    "RiteConclusion",
+    "SharedStep",
+    "RiteError",
+    "validate_rite_id",
 ]

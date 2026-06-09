@@ -5,6 +5,8 @@ import enum
 import sqlite3
 from typing import Literal
 
+from lore.rite import RiteError
+
 try:
     from enum import StrEnum
 except ImportError:
@@ -327,6 +329,128 @@ class DoctrineListEntry:
         )
 
 
+@dataclasses.dataclass(frozen=True)
+class SharedStep:
+    """A reusable pure-procedure fragment from .lore/rites/shared/.
+
+    Round-trips a shared-step dict (its own file, or the resolved ``step`` key
+    attached to a ``use:`` node by read_rite).
+    """
+
+    id: str
+    title: str | None = None
+    summary: str | None = None
+    do: str | None = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SharedStep":
+        return cls(
+            id=d["id"],
+            title=d.get("title"),
+            summary=d.get("summary"),
+            do=d.get("do"),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class RiteBranch:
+    """One conditional branch of a fork node's ``then`` list.
+
+    ``if_`` is sourced from the YAML ``if`` key (a Python keyword).
+    """
+
+    if_: str
+    goto: str
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RiteBranch":
+        return cls(
+            if_=d["if"],
+            goto=d["goto"],
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class RiteNode:
+    """A single node in a rite's node-graph.
+
+    A ``do`` node carries inline instructions; a ``use`` node pulls in a shared
+    step (resolved onto ``step`` by read_rite). ``then`` is either a next-node
+    id (str) or a list of RiteBranch forks.
+    """
+
+    id: str
+    do: str | None = None
+    use: str | None = None
+    then: str | list[RiteBranch] | None = None
+    step: SharedStep | None = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RiteNode":
+        then = d.get("then")
+        if isinstance(then, list):
+            then = [RiteBranch.from_dict(b) for b in then]
+        step = d.get("step")
+        if step is not None:
+            step = SharedStep.from_dict(step)
+        return cls(
+            id=d["id"],
+            do=d.get("do"),
+            use=d.get("use"),
+            then=then,
+            step=step,
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class RiteConclusion:
+    """A typed terminal outcome of a rite."""
+
+    audience: str | None = None
+    response: str | None = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "RiteConclusion":
+        return cls(
+            audience=d.get("audience"),
+            response=d.get("response"),
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class Rite:
+    """Typed representation of read_rite()/scan_rites() output.
+
+    A main rite is a node-graph (``nodes`` + ``conclusions``) carrying a
+    ``trigger`` and ``summary``; from_dict() round-trips the resolved dict
+    read_rite returns, with each ``use:`` node's resolved shared step on
+    RiteNode.step.
+    """
+
+    id: str
+    title: str | None = None
+    summary: str | None = None
+    trigger: str | None = None
+    do: str | None = None
+    nodes: tuple[RiteNode, ...] = ()
+    conclusions: dict[str, RiteConclusion] = dataclasses.field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Rite":
+        return cls(
+            id=d["id"],
+            title=d.get("title"),
+            summary=d.get("summary"),
+            trigger=d.get("trigger"),
+            do=d.get("do"),
+            nodes=tuple(RiteNode.from_dict(n) for n in d.get("nodes", [])),
+            conclusions={
+                k: RiteConclusion.from_dict(v)
+                for k, v in d.get("conclusions", {}).items()
+            },
+        )
+
+
 __all__ = [
     "QuestStatus",
     "MissionStatus",
@@ -343,4 +467,10 @@ __all__ = [
     "DoctrineListEntry",
     "GlossaryItem",
     "Watcher",
+    "Rite",
+    "RiteNode",
+    "RiteBranch",
+    "RiteConclusion",
+    "SharedStep",
+    "RiteError",
 ]

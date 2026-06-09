@@ -18,6 +18,7 @@ related:
 - conceptual-workflows-codex-chaos
 - conceptual-workflows-error-handling
 - conceptual-workflows-json-output
+- decisions-014-link-direction
 - conceptual-workflows-validators
 - conceptual-workflows-health
 - tech-arch-schemas

@@ -7,6 +7,9 @@ summary: 'What the system does when the --json flag is applied to any command �
   '
 related:
 - conceptual-workflows-error-handling
+- conceptual-workflows-rite-list
+- conceptual-workflows-rite-crud
+- decisions-016-rite-json-envelope-omits-group
 - ref-lore_cli-commands
 ---
 
@@ -30,6 +33,8 @@ Several subcommands also accept a local `--json` flag at the subcommand level. T
 - `lore artifact list`
 - `lore knight list`
 - `lore doctrine list`
+- `lore rite list`
+- `lore rite show`
 
 For these commands, the local flag and the global flag produce identical output. Double-declaration (`lore --json knight list --json`) is harmless.
 
@@ -65,6 +70,12 @@ Each command documents its own JSON shape. Common patterns:
 | `lore knight new` | `{"name", "group", "filename", "path"}` — `group` slash-joined or `null` |
 | `lore watcher new` | `{"id", "group", "filename", "path"}` — `group` slash-joined or `null` |
 | `lore artifact new` | `{"id", "group", "filename", "path"}` — `group` slash-joined or `null` |
+| `lore rite list` | `{"rites": [{id, group, trigger, summary}]}` (main) / `{"shared_steps": [{id, group, title}]}` (`--shared`) — `group` slash-joined or `null` |
+| `lore rite show` | `{"rites": [...]}` — full structured rite objects with each `use:`-node carrying an inlined `step` |
+| `lore rite search` | `{"rites": [{id, trigger, summary}]}` — matching main rites only |
+| `lore rite new` | `{"id", "kind", "group", "filename", "path"}` — `kind` is `"main"` or `"shared"`; `group` slash-joined or `null` |
+| `lore rite edit` | Full updated entity object (the parsed rite/step dict) |
+| `lore rite delete` | `{"id", "group", "deleted_at"}` — `group` slash-joined or `null` |
 
 ## Error JSON Format
 
@@ -94,12 +105,14 @@ All fields in documented envelopes are always present, even when the value is `n
 
 ### Group key canonical form
 
-For every entity with a `group` field in the JSON envelope (the five `list` commands plus the four `new` commands), the canonical form is:
+For every entity with a `group` field in the JSON envelope (the six `list` commands — codex/artifact/knight/doctrine/watcher/**rite** — plus the four `new` commands and `rite new`/`rite delete`), the canonical form is:
 
 - `null` — entity lives directly at the entity root (`.lore/<entity>/<name>.*`).
 - slash-joined string (e.g., `"seo-analysis/keyword-analysers"`) — entity lives in a nested subdirectory under the entity root.
 
 JSON never emits an empty string `""` for `group`, and never emits the legacy hyphen-joined form (e.g., `"default-codex"`). Consumers must treat the hyphen form as invalid input.
+
+Rites follow this rule like every other entity — they are discovered recursively and carry a `group` derived from their subfolder path (root → `null`), with the kind axis (`main` vs `shared`) surfaced separately via distinct `list` envelope keys (`rites` vs `shared_steps`) and the `kind` field on `new`. There is **no rite carve-out** (decisions-016-rite-json-envelope-omits-group reversed its original flat/no-group decision).
 
 ## Commands That Do Not Support JSON
 

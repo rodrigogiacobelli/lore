@@ -224,6 +224,37 @@ def _load_codex_binds_index(codex_dir: Path) -> dict[str, list[str]]:
     return index
 
 
+@functools.lru_cache(maxsize=1)
+def _load_codex_rites_index(codex_dir: Path) -> dict[str, list[str]]:
+    """Return ``{entry_id: [rites...]}`` for every parseable codex entry.
+
+    Missing ``rites:`` materialises as an empty list. Malformed ``rites:``
+    entries (non-list, or list containing non-string items) are silently
+    dropped: this is a read tool; authoritative rejection lives in
+    ``lore health``.
+    """
+    index: dict[str, list[str]] = {}
+    if not codex_dir.exists():
+        return index
+    for filepath in codex_dir.rglob("*.md"):
+        record = frontmatter.parse_frontmatter_doc(
+            filepath, extra_fields=("rites",)
+        )
+        if record is None:
+            continue
+        rites = record.get("rites")
+        if rites is None:
+            rites = []
+        elif not isinstance(rites, list):
+            # Malformed (e.g. scalar): skip the entry entirely.
+            continue
+        elif not all(isinstance(r, str) for r in rites):
+            # Malformed item inside the list: skip the entry entirely.
+            continue
+        index[record["id"]] = list(rites)
+    return index
+
+
 # ---------------------------------------------------------------------------
 # Public function
 # ---------------------------------------------------------------------------

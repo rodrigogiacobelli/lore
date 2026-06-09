@@ -21,8 +21,6 @@ related:
 
 # ADR-010: lore.api.__all__ is the stable public API contract
 
-**Status:** ACCEPTED
-
 ## Context
 
 Lore has two consumers today: human operators via the CLI, and Realm via Python import. A future third consumer — Lore Server — will expose the same surface over HTTP/MCP. All three must call the same underlying functions: no consumer may re-implement logic, and no consumer may be given a surface the others don't trust.

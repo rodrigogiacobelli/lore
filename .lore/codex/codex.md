@@ -1,10 +1,13 @@
 ---
 id: codex
 title: Codex
-summary: What this documentation system is, how it is structured, and how to use it. Read this before reading or writing any other file in this repository.
+summary: What this documentation system is, how it is structured, and how to use it.
+  Read this before reading or writing any other file in this repository.
 related:
-  - conceptual-entities-glossary
-  - conceptual-workflows-glossary
+- conceptual-entities-glossary
+- conceptual-workflows-glossary
+- conceptual-entities-rite
+- decisions-014-link-direction
 ---
 
 # Codex
@@ -150,6 +153,7 @@ Every file has frontmatter with the fields below. The `summary` field is written
 |-------|-------------|
 | `related` | YAML array of related codex IDs. Followed outbound by `lore codex map` and surfaced inbound as backlinks. Omit or use `[]` if none. |
 | `binds` | YAML array of repo-root-relative paths or globs naming the code files this doc governs. The codex↔code edge described below. Omit or use `[]` if none. |
+| `rites` | YAML array of rite IDs (in `.lore/rites/main/`) that this codex entry governs. The codex→rite edge — links live on the codex side only; rites never link back. Omit or use `[]` if none. |
 
 The `binds` field is an **optional** list of repo-root-relative paths or globs
 naming the code files this codex entry governs. Each entry is either a literal
@@ -160,5 +164,28 @@ rejected by the schema and surfaced by `lore health --scope schemas`. The
 `binds` graph is queried with `lore impacts <token>`: pass a codex id to list
 the bound paths; pass a file path to list the codex entries whose `binds`
 match it (exact-or-glob). See `conceptual-workflows-impacts`.
+
+The `rites` field is an **optional** list of rite ids. A **rite** is procedural
+memory — how to do or diagnose a recurring task (see `conceptual-entities-rite`).
+It is the **codex→rite edge**: a codex
+doc names the rites it governs; rites never link back (no `related`, no `binds`
+on the rite side). The direction is fixed by ADR-014 (`decisions-014-link-direction`):
+the stable/authoritative side (the codex) owns the link, because a change to a
+codex doc can force a change to the rites built on it, so the codex entry owns
+the pointer. Each entry is a plain rite id slug (no path patterns — unlike
+`binds`). Missing field and empty list (`rites: []`) behave identically. `rites:`
+is a **secondary discovery path, not retrieval** — a main rite with no codex
+pointer is still found via `lore rite list`, so a missing inbound link is never a
+failure to find a rite (this is why an orphan *main* rite is not a health error,
+while a `rites:` id with no matching rite IS — see `conceptual-workflows-health`).
+The field is queryable indirectly: `lore health --scope rites` (or `--scope
+codex`) validates every `rites:` id resolves to an existing rite.
+
+**Schema requirement.** `lore://schemas/codex-frontmatter`
+(`src/lore/schemas/codex-frontmatter.yaml`) is `additionalProperties: false`, so
+`rites:` MUST be added explicitly to the schema's `properties` — beside `binds`,
+as an array of unique non-empty strings (no path-pattern rules; rite ids are
+plain slugs) — or `lore health --scope schemas` rejects any doc carrying it. See
+`tech-arch-schemas`.
 
 No other frontmatter fields are permitted. `lore health` enforces this — any extra field fails validation.

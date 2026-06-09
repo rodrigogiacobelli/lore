@@ -8,6 +8,7 @@ summary: 'What the system does when CLI commands encounter errors — exit codes
 related:
 - conceptual-workflows-json-output
 - ref-lore_cli-commands
+- decisions-017-constrained-flags-use-click-choice
 ---
 
 # CLI Error Handling
@@ -59,6 +60,7 @@ Exit code is `1` if `errors` is non-empty.
 
 - `raise click.ClickException(message)`: formats `Error: <message>` to stderr, exits with code 1. Used for programmer-error-level failures (bad priority value).
 - `click.UsageError(message)`: formats `Error: <message>` to stderr with usage hint, exits with code 2. Used for invalid option combinations.
+- `click.Choice` on a constrained-value flag: an out-of-set value raises Click's `BadParameter` (a `UsageError` subclass), formatted `Error: Invalid value for '<flag>': '<value>' is not one of '...'` to stderr, exit code 2. This is the required mechanism for any flag whose value is a fixed token set (e.g. `lore health --scope`) — see decisions-017-constrained-flags-use-click-choice. Adding a new valid token is non-breaking; rewording the message, hand-rolling a custom validator, or changing the exit code is a breaking contract change.
 - `click.echo(message, err=True); ctx.exit(1)`: used for entity-not-found and status-transition errors (allows multi-entity commands to continue processing).
 
 ## Project-Not-Found Error

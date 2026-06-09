@@ -373,3 +373,30 @@ def test_codex_md_path_returns_expected_subpath(tmp_path):
     from lore.paths import codex_md_path
 
     assert codex_md_path(tmp_path) == tmp_path / ".lore" / "codex" / "codex.md"
+
+
+# ---------------------------------------------------------------------------
+# Rite directory seeding on `lore init`.
+# Spec: transient-rites-us-1 (lore codex show transient-rites-us-1)
+# Anchor: tech-arch-source-layout (init.py seeding obligation)
+#
+# After init, .lore/rites/main/ and .lore/rites/shared/ must exist as dirs.
+# ---------------------------------------------------------------------------
+
+
+def test_init_creates_rite_main_dir(tmp_path, monkeypatch):
+    """transient-rites-us-1 — Unit: after run_init, .lore/rites/main/ exists."""
+    from lore import init as init_mod
+
+    monkeypatch.chdir(tmp_path)
+    init_mod.run_init()
+    assert (tmp_path / ".lore" / "rites" / "main").is_dir()
+
+
+def test_init_creates_rite_shared_dir(tmp_path, monkeypatch):
+    """transient-rites-us-1 — Unit: after run_init, .lore/rites/shared/ exists."""
+    from lore import init as init_mod
+
+    monkeypatch.chdir(tmp_path)
+    init_mod.run_init()
+    assert (tmp_path / ".lore" / "rites" / "shared").is_dir()

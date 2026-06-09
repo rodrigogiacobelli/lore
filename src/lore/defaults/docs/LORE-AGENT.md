@@ -86,13 +86,19 @@ A workflow template stored as YAML under `.lore/doctrines/`. Generates a Quest's
 
 ### Codex
 
-Typed markdown docs under `.lore/codex/` describing facts about the system as it exists today. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`) and a markdown body. The codex is a graph: `related` links connect docs both ways. See `.lore/codex/codex.md` for the layout, three content classes, impacts engine, and naming rules. (`lore codex list` / `lore codex search` / `lore codex show` / `lore codex new` / `lore codex edit` / `lore codex delete` / `lore codex map` / `lore codex chaos`)
+Typed markdown docs under `.lore/codex/` describing facts about the system as it exists today. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a markdown body. The codex is a graph: `related` links connect docs both ways. A codex doc links to the rites it governs via `rites:` — the edge runs codex→rite only, never the reverse. See `.lore/codex/codex.md` for the layout, three content classes, impacts engine, and naming rules. (`lore codex list` / `lore codex search` / `lore codex show` / `lore codex new` / `lore codex edit` / `lore codex delete` / `lore codex map` / `lore codex chaos`)
 
 ### Glossary
 
 Controlled vocabulary at `.lore/codex/glossary.yaml` — small, project-specific terms only. Auto-surfaced when terms appear in `lore codex show` output. Not for entities (they have codex docs) and not for named workflows (they have workflow docs). (`lore glossary list` / `lore glossary search` / `lore glossary show` / `lore glossary new` / `lore glossary edit` / `lore glossary delete`)
 
 *Example:* "Constable" — a project-invented label for a Mission type the orchestrator handles inline — qualifies.
+
+### Rite
+
+Procedural memory — "how to do or diagnose recurring task X" — stored as YAML under `.lore/rites/`, a sibling of the codex. Where the codex holds *semantic* knowledge (what is true), a rite holds *procedural* knowledge (what to do, step by step). Two shapes: a **main rite** (`main/`) is a node-graph of steps — each node either a `do:` action or a `use:` of a shared step, routed by `then`/`if`/`goto` and terminating in typed `conclusions:` — and a **shared step** (`shared/`) is a pure, single-exit procedure (`id`/`title`/`summary`/`do` only, no branching, no trigger) that main rites pull in by bare id with `use:`. Discovery is recursive; a rite's subfolder becomes a cosmetic `group` for display/filter only, and its `id:` is globally unique like the codex. Agents find a rite by reading `lore rite list` and picking the matching trigger themselves — Lore never matches a situation. Rites link to nothing; a codex doc points at the rites it governs via its `rites:` field (codex→rite, never the reverse — ADR-014). (`lore rite list` (GROUP column, `--filter`) / `lore rite show` (inlines shared steps) / `lore rite search` / `lore rite new --group` / `lore rite edit` / `lore rite delete`)
+
+*Example:* A `refund-customer` main rite branches on order age and reason, `use:`-ing a shared `verify-payment-method` step, and ends in `refund-issued` / `escalate-to-human` conclusions.
 
 ### Artifact
 
@@ -166,6 +172,7 @@ Primitives for reading project state before you act:
 | `new-knight`     | Draft and create a new knight persona                              |
 | `new-watcher`    | Draft and create a new watcher                                     |
 | `new-artifact`   | Draft and create a new artifact file                               |
+| `new-rite`       | Draft or update a rite and link the codex docs that govern it      |
 | `explore-codex`  | Search, map, and traverse the codex                                |
 | `update-codex`   | Edit codex docs directly outside the feature-implementation flow   |
 | `ingest-source`  | Capture an upstream source under `codex/sources/`                  |

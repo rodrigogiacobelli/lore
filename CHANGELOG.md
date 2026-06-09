@@ -6,6 +6,34 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 See standards-public-api-stability for the public API stability and semver policy.
 
+## [Unreleased]
+
+## [0.8.0] - 2026-06-09
+
+### Added
+
+#### Rite — procedural-memory entity
+
+A new file-backed entity type — the seventh audited by `lore health`. A **rite** is procedural memory: how to do or diagnose a recurring task, stored as YAML under `.lore/rites/`, a sibling of the codex.
+
+- **Rite storage, schemas, and loader** — two rite kinds. **Main rites** (`main/`) are node-graphs carrying `summary`, `trigger`, branching `nodes`, and typed `conclusions`. **Shared steps** (`shared/`) are pure single-exit procedures (`id, title, summary, do`) reused by main rites via a node's `use:` reference. New schemas `lore://schemas/main-rite` and `lore://schemas/shared-step`; the loader resolves `use:` by inlining the shared step's body.
+- **`lore rite list` and `lore rite search`** — `list` browses main rites (`ID GROUP TRIGGER SUMMARY`) or shared steps (`--shared`); `search` is a keyword browse over main rites' `id / title / summary / trigger`.
+- **`lore rite show` with shared-step inlining** — render one or many rites in full, inlining each `use:`d shared step's body into the document.
+- **`lore rite new` / `edit` / `delete`** — full write path following the watcher/doctrine/knight/artifact model: validate-then-write, subtree-wide duplicate-id detection, and soft-delete by `.yaml.deleted` rename (ADR-015). `--shared` selects the shared-step schema and subfolder.
+- **Codex `rites:` frontmatter field and one-way link direction** — codex docs name the rites they govern via an optional `rites:` array. The edge is one-way — codex→rite — fixed by ADR-014 (`decisions-014-link-direction`); rites carry no back-links (`related`/`binds` rejected on the rite side). A `rites:` id with no matching rite is a health error; an orphan main rite is not (it is still found via `lore rite list`).
+- **Rite Python API parity and models** — `Rite`, `RiteNode`, `RiteBranch`, `RiteConclusion`, and `SharedStep` dataclasses; rite CRUD, scan, and read callables exported through `lore.api.__all__` at parity with the other file-backed entities.
+- **Rite health checks** — graph well-formedness per main rite (single entry node, reachability, defined-and-reached conclusions), reference integrity (dangling `use:`, dangling `then:`, dangling codex `rites:`), duplicate-id detection, and an orphan-shared-step warning.
+- **Recursive discovery, grouping, and global id uniqueness** — rites are discovered recursively under `main/` and `shared/` with a `group` derived from the subfolder path; identity is the `id:` field, globally unique across the entire tree (ADR-016). JSON envelopes carry `group` (root → `null`), with the `main`/`shared` kind surfaced via distinct envelope keys.
+- **Default rite templates and design guide** — `rite-main` and `rite-shared-step` template artifacts plus the `rite-design` guide seeded into `src/lore/defaults/`.
+- **`new-rite` skill and docs** — the `new-rite` skill drafts, creates, or updates a rite and links the codex docs it governs; rites documented in the seeded `LORE-AGENT.md` and `codex.md`.
+- **`explore-rite` and `explore-codex-rite` skills** — read-path counterparts to `new-rite`, seeded into `src/lore/defaults/skills/`. `explore-rite` browses, matches (AI-as-matcher on `trigger` + `summary`), and follows a rite via `lore rite list / search / show`. `explore-codex-rite` researches a question across both memory surfaces at once — codex (what-is-true) and rites (how-to) — classifying the question, traversing each, and bridging codex→rite via the doc's `rites:` field. Both are auto-discovered by `lore init`; no manifest change.
+- **Rite surfaced in `lore --help`** — Rite listed among the entity types in `lore --help`; `lore health` now audits seven file-backed entity types.
+- **`summary` on shared steps** — shared steps gained a required `summary` field (field order `id, title, summary, do`, `minLength: 1`), bringing them in line with the cross-entity summary convention every other entity already follows. Surfaced as a new `SUMMARY` column in `lore rite list --shared`, in that command's JSON envelope, and in `lore rite show`. `summary` is a what-it-does description, not a retrieval cue — `trigger` stays main-rite-only, so shared steps remain pure single-exit procedures.
+
+#### `tdd-feature` doctrine
+
+- **New `tdd-feature` doctrine** — a spec pipeline that consumes a pre-existing PRD (it does not produce one): Branch → Scout → Tech Spec → ADR reconciliation → human Spec Gate → parallel Tech Planning + Codex Apply → Group Stories → dynamically-created grouped TDD dev cycles (Red → Green → Refactor → Dev Commit, one chain per story group, run sequentially) → a final Defaults Review reconciling `src/lore/defaults/`. Its knights are namespaced under a `tdd-feature/` group (`adr-standards-enforcer`, `defaults-reviewer`, `story-grouper`, `tech-planner`), reusing the shared `feature-implementation/` knights (scout, architect, tech-writer).
+
 ## [0.7.0] - 2026-05-27
 
 ### Added

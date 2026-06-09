@@ -1,5 +1,12 @@
 id: tdd-feature
 steps:
+  # ---------------------------------------------------------------------------
+  # PRECONDITION: a final PRD already exists in the codex before this doctrine
+  # runs. Product planning (PRD authoring + gate) happens BEFORE the quest is
+  # started — this doctrine does not produce a PRD. The orchestrator passes the
+  # PRD codex ID into the quest's mission descriptions.
+  # ---------------------------------------------------------------------------
+
   # --- Phase 0: Branch ---
 
   - id: branch
@@ -32,7 +39,9 @@ steps:
       - branch
     knight: feature-implementation/scout.md
     notes: |
-      The orchestrator provides the feature request in this mission description.
+      Your mission description contains the feature request and the PRD codex ID.
+      The PRD already exists — it was authored before this quest. Read it for context:
+        lore codex show <prd-id>
 
       Run two passes — one from the BUSINESS lens, one from the TECHNICAL lens.
 
@@ -59,75 +68,29 @@ steps:
       When in doubt whether a document is relevant — include it.
       Downstream agents cannot find what is missing.
 
-      Post board messages to prd, tech-spec, ba-stories, codex-apply, and tech-notes
-      with both map codex IDs:
-        lore board add <mission-id> "Maps ready — business: lore codex show <biz-id> | technical: lore codex show <tech-id>"
+      Post board messages to tech-spec, tech-planning, and codex-apply with the PRD ID
+      and both map codex IDs:
+        lore board add <mission-id> "PRD: lore codex show <prd-id> | Maps ready — business: lore codex show <biz-id> | technical: lore codex show <tech-id>"
 
       Mark done: `lore done <mission-id>`
 
-  # --- Phase 2: PRD ---
+  # --- Phase 2: Tech Spec ---
 
-  - id: prd
-    title: Produce final PRD from user input and context maps
+  - id: tech-spec
+    title: Produce final Tech Spec from the existing PRD and context maps
     type: knight
     priority: 2
     needs:
       - scout
-    knight: feature-implementation/pm.md
-    notes: |
-      The orchestrator provides the raw user input in this mission description.
-
-      Read your board to find the business-map and technical-map IDs: `lore show <mission-id>`
-      Read both maps: `lore codex show <business-map-id> <technical-map-id>`
-
-      Retrieve the template: `lore artifact show fi-prd`
-
-      Produce a structured final PRD — fill every section completely:
-      - Executive Summary, Classification, Success Criteria, Product Scope,
-        User Workflows, Functional Requirements, Non-Functional Requirements
-      - User Workflows must specify exact user actions and exact system responses —
-        not vague descriptions. Example: "User runs `lore list --json`" not "user lists items"
-      - Be concrete — no vague placeholders
-      - Do not invent scope the user did not surface
-      - Resolve all open questions — do not defer
-      - Leave the Pre-Architecture Notes section empty — user fills it next
-
-      Write to .lore/codex/transient/<feature-slug>-prd.md with proper frontmatter.
-
-      Post a board message to prd-gate with the PRD ID:
-        lore board add <prd-gate-mission-id> "PRD ready: lore codex show <id>"
-
-      Mark done: `lore done <mission-id>`
-
-  - id: prd-gate
-    title: Review PRD — append pre-architecture notes
-    type: human
-    priority: 2
-    needs:
-      - prd
-    notes: >
-      Read the PRD from your board: `lore show <mission-id>`.
-      Read it: `lore codex show <prd-id>`.
-      Append pre-architecture notes directly to the Pre-Architecture Notes section —
-      technical preferences, constraints, priorities, or context for the architect.
-      Mark done.
-
-  # --- Phase 3: Tech Spec ---
-
-  - id: tech-spec
-    title: Produce final Tech Spec from PRD and context maps
-    type: knight
-    priority: 3
-    needs:
-      - prd-gate
     knight: feature-implementation/architect.md
     notes: |
       Your board messages contain the PRD ID and technical-map ID posted by the Scout.
-      Read the PRD including Pre-Architecture Notes: `lore codex show <prd-id>`
+      Read the PRD in full: `lore codex show <prd-id>`
       Read the technical-map: `lore codex show <technical-map-id>` and every doc it references.
 
       Run `lore codex list` and read all relevant existing technical and architectural docs.
-      You must know the current state before designing.
+      You must know the current state before designing. Read the ADRs (decisions group) —
+      your decisions must not contradict them; the ADR Enforcer will reconcile what does.
 
       Retrieve the template: `lore artifact show fi-tech-spec`
 
@@ -142,80 +105,133 @@ steps:
 
       Write to .lore/codex/transient/<feature-slug>-tech-spec.md with proper frontmatter.
 
-      Post a board message to tech-spec-gate with the Tech Spec ID and PRD ID:
-        lore board add <tech-spec-gate-mission-id> "Tech Spec ready: lore codex show <tech-spec-id> | PRD: lore codex show <prd-id>"
+      Post a board message to adr-enforce with the Tech Spec ID and PRD ID:
+        lore board add <adr-enforce-mission-id> "Tech Spec ready: lore codex show <tech-spec-id> | PRD: lore codex show <prd-id>"
 
       Mark done: `lore done <mission-id>`
 
-  - id: tech-spec-gate
-    title: Review Tech Spec — append feedback
-    type: human
+  # --- Phase 3: ADR Enforcement ---
+
+  - id: adr-enforce
+    title: Reconcile the Tech Spec against the project's ADRs and standards
+    type: knight
     priority: 3
     needs:
       - tech-spec
-    notes: >
-      Read the Tech Spec from your board: `lore show <mission-id>`.
-      Read it: `lore codex show <tech-spec-id>`.
-      Append your feedback directly to the Tech Spec file — no specific format required.
-      Mark done.
+    knight: tdd-feature/adr-standards-enforcer.md
+    notes: |
+      Your board messages contain the Tech Spec ID and PRD ID.
+      Read the Tech Spec in full: `lore codex show <tech-spec-id>`
+      Read the PRD for deferral boundaries: `lore codex show <prd-id>`
 
-  # --- Phase 4: Parallel ---
+      Run `lore codex list` and read EVERY doc in the `decisions` group (the ADRs) and
+      every doc whose title or summary mentions standards, conventions, contracts, or workflow.
+      These are the settled rules the Tech Spec must obey.
 
-  - id: ba-stories
-    title: Write and finalize User Stories
-    type: knight
+      Go through the Tech Spec decision-by-decision and RECONCILE it — do not merely audit:
+      - Where a spec line contradicts a settled ADR, rewrite that line in place so it complies.
+      - Where a cross-cutting standard demands something missing (Python API parity signature
+        per ADR-011/ADR-010, exact JSON envelope, CLI error contract + exit code, enriched
+        `--help` per ADR-008, space-separated multi-value per ADR-012, TOML/YAML split per
+        ADR-013, ID-not-path references per ADR-006, link direction per ADR-014), fill it
+        directly in the spec.
+      - Where the spec makes a NEW architectural decision no ADR governs, leave it but list it
+        as "needs an ADR" for the tech-writer.
+      - Where the spec builds something the PRD marked deferred, remove or flag it.
+      - Escalate (do not edit) only when a fix needs a judgment the ADRs do not settle.
+
+      Append an "ADR & Standards Audit" section to the Tech Spec file recording:
+      Reconciled (old -> new + ADR id), Coverage filled, Unrecorded decisions, Deferral
+      violations, Escalations. Last line is the verdict: `RECONCILED` or `BLOCKED`.
+
+      Post a board message to spec-gate with the Tech Spec ID, PRD ID, and verdict:
+        lore board add <spec-gate-mission-id> "Tech Spec reconciled (<RECONCILED|BLOCKED>): lore codex show <tech-spec-id> | PRD: lore codex show <prd-id>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 4: Human Gate ---
+
+  - id: spec-gate
+    title: Review the reconciled Tech Spec — append feedback
+    type: human
     priority: 4
     needs:
-      - tech-spec-gate
-    knight: feature-implementation/ba.md
+      - adr-enforce
+    notes: >
+      Read the reconciled Tech Spec from your board.
+      Read it: `lore codex show <tech-spec-id>` — including the ADR & Standards Audit section
+      at the bottom. If the verdict is `BLOCKED`, resolve the listed escalations before
+      proceeding. Append your feedback directly to the Tech Spec file — no specific format
+      required. Mark done.
+
+  # --- Phase 5: Parallel — Tech Planning ∥ Codex Apply ---
+
+  - id: tech-planning
+    title: Translate the Tech Spec into sized, testable deliverables
+    type: knight
+    priority: 5
+    needs:
+      - spec-gate
+    knight: tdd-feature/tech-planner.md
     notes: |
-      Your board messages contain the PRD ID, Tech Spec ID, and business-map ID posted by the Scout and Architect.
-      Read the PRD first: `lore codex show <prd-id>` — this is your primary source. Read it in full.
-      Read the business-map: `lore codex show <business-map-id>` and the docs it references.
-      Read the Tech Spec: `lore codex show <tech-spec-id>`
+      Your board messages contain the PRD ID, Tech Spec ID, and technical-map ID posted by
+      the Scout and Architect.
+      Read the settled Tech Spec in full — including the ADR & Standards Audit and the human
+      gate notes at the bottom: `lore codex show <tech-spec-id>`. This is your contract.
+      Read the PRD for the product "why": `lore codex show <prd-id>`
+      Read the technical-map: `lore codex show <technical-map-id>` and the docs it references.
+
+      There is no Business Analyst upstream and no separate sizing pass after you — you own
+      authoring AND sizing.
+
+      Before writing test stubs, search for workflow documents: `lore codex search workflow`.
+      Each stub must trace to a specific step in a workflow doc.
 
       Retrieve templates:
         lore artifact show fi-user-story
         lore artifact show fi-user-story-index
 
-      Identify all epics from the PRD user workflows and functional requirements.
-
-      For each story:
-      - Write to .lore/codex/transient/<feature-slug>-us-{number}.md with proper frontmatter
-      - Fill Story, Context, Acceptance Criteria, and Out of Scope sections
-      - E2E Scenarios: specify exact commands and exact expected outputs — not descriptions.
-        Example: "User runs `lore list --json`" receives `[{"id": 1, ...}]`, not "returns a list"
+      Carve the Tech Spec into stories. For each story, write to
+      .lore/codex/transient/<feature-slug>-us-{number}.md with proper frontmatter and fill
+      EVERY section:
+      - Story, Context, Acceptance Criteria, Out of Scope
+      - E2E Scenarios: exact commands and exact expected outputs — not descriptions
       - Unit Test Scenarios: name the specific function/module and what to assert
-      - Every story must trace back to a specific PRD requirement — if it cannot, it does not belong
-      - Leave the Tech Notes section empty with placeholder text intact
+      - Tech Notes: Implementation Approach (specific files — verify every path against the
+        real src/ tree, never guess), Test File Locations, Test Stubs (one per E2E and per
+        unit scenario, each citing the workflow codex ID it exercises), and a Complexity
+        Estimate (S / M / L / XL with a one-line justification)
+      - Every story traces to a Tech Spec requirement or PRD workflow, or it does not belong
+      - Honour the ADR & Standards Audit — never author a story that builds a flagged deferral
+        or an unresolved conflict
+      - Set Status: final on each story
 
-      Write the index file to .lore/codex/transient/<feature-slug>-us-index.md
-      Fill the PRD Coverage Map — every functional requirement must map to at least one story.
+      Write the index to .lore/codex/transient/<feature-slug>-us-index.md with the Coverage
+      Map — every Tech Spec requirement maps to at least one story. Status: final.
 
-      Verify each story before finalizing:
-      - Is every E2E scenario specific enough to write a test directly from it?
-      - Is Out of Scope explicit enough to prevent scope creep?
-      - Update Status to: final on each story and on the index
-
-      Post all story IDs and the index ID to the tech-notes board:
-        lore board add <tech-notes-mission-id> "Stories final: <id1> <id2> ... index: <index-id>"
+      Post all story IDs, the index ID, and a flat complexity summary to group-stories:
+        lore board add <group-stories-mission-id> "Stories sized: <id1>(S) <id2>(M) <id3>(XL) ... Index: <index-id>"
 
       Mark done: `lore done <mission-id>`
 
   - id: codex-apply
-    title: Apply codex changes directly from Tech Spec and PRD
+    title: Apply codex changes directly from the Tech Spec and PRD
     type: knight
-    priority: 4
+    priority: 5
     needs:
-      - tech-spec-gate
+      - spec-gate
     knight: feature-implementation/tech-writer.md
     notes: |
       Your board messages contain the PRD ID, Tech Spec ID, business-map ID, and technical-map ID.
       Read the PRD: `lore codex show <prd-id>`
       Read both context maps and the docs they reference.
-      Read the Tech Spec: `lore codex show <tech-spec-id>`
+      Read the settled Tech Spec including its ADR & Standards Audit: `lore codex show <tech-spec-id>`
 
       Run `lore codex list` and read every document that this feature might affect.
+
+      The ADR & Standards Audit lists "Unrecorded decisions" — new architectural decisions
+      with no governing ADR. Create an ADR (decisions group) for each, per the project's
+      ADR-in-place convention.
 
       Explicitly check workflows:
         lore codex search workflow
@@ -223,73 +239,32 @@ steps:
       Does this feature introduce a new user-facing command or flow that needs a new workflow doc?
       Every new CLI command needs a workflow doc — this is not optional.
 
-      Identify every codex document to create, update, or retire.
-      Apply changes directly — no proposal step:
-      - Create new documents using the correct artifact templates (`lore artifact list` to find them)
+      Identify every codex document to create, update, or retire. Apply changes directly —
+      no proposal step:
+      - Create new documents (including the ADRs above) using the correct artifact templates
+        (`lore artifact list`)
       - Update existing documents with the specific changes needed
       - Retire obsolete documents
 
-      Post a board message to tech-notes listing all codex document IDs
-      created, updated, or retired — by codex ID only, never by file path:
-        lore board add <tech-notes-mission-id> "Codex updated: created <id1> updated <id2> retired <id3>"
+      Post a board message to group-stories listing all codex document IDs created, updated,
+      or retired — by codex ID only, never by file path:
+        lore board add <group-stories-mission-id> "Codex updated: created <id1> updated <id2> retired <id3>"
 
       Mark done: `lore done <mission-id>`
 
-  - id: tech-notes
-    title: Add tech notes and complexity estimates to each user story
-    type: knight
-    priority: 4
-    needs:
-      - ba-stories
-      - codex-apply
-    knight: feature-implementation/tech-lead.md
-    notes: |
-      Your board messages contain all story IDs, PRD ID, Tech Spec ID, technical-map ID,
-      and updated codex IDs posted by the BA and Tech Writer.
-      Read the PRD first: `lore codex show <prd-id>`
-      Read the technical-map: `lore codex show <technical-map-id>` and the docs it references.
-      Read the Tech Spec and updated codex docs.
-      Read every user story.
-
-      Before writing any test stubs, search for workflow documents:
-        lore codex search workflow
-      Read every workflow doc that covers the commands or interactions the stories exercise.
-      Each test stub must trace back to a specific step or decision point in a workflow doc.
-
-      For each story, fill the Tech Notes section:
-      - Implementation Approach: list specific files to create or modify.
-        Verify every path exists in src/ before writing it — never guess.
-      - Test File Locations: exact test file paths following the conventions in the Tech Spec
-      - Test Stubs: write pseudocode stubs for every E2E scenario and every unit test scenario
-        in the story's Acceptance Criteria. One stub per scenario — no exceptions.
-        Each stub must include a comment citing the workflow codex ID it exercises
-        (e.g., `# conceptual-workflows-claim step 3`). A stub without a citation is incomplete.
-        Reference exact output formats from the acceptance criteria.
-      - Complexity Estimate: S / M / L / XL with one-line justification
-
-      Verify before marking done:
-      - Every file path exists in src/ or matches the Tech Spec project structure
-      - Every codex reference is a valid codex ID
-      - Every acceptance criterion scenario has a corresponding test stub
-
-      Post a board message to group-stories with all final story IDs, the index ID,
-      and a flat complexity summary:
-        lore board add <group-stories-mission-id> "Stories sized: <id1>(S) <id2>(M) <id3>(XL) ... Index: <index-id>"
-
-      Mark done: `lore done <mission-id>`
-
-  # --- Phase 5: Group Stories ---
+  # --- Phase 6: Group Stories ---
 
   - id: group-stories
     title: Group sized stories into dev cycle batches and commit spec outputs
     type: knight
-    priority: 5
+    priority: 6
     needs:
-      - tech-notes
+      - tech-planning
+      - codex-apply
     knight: tdd-feature/story-grouper.md
     notes: |
-      Your board contains all story IDs with complexity estimates and the index ID.
-      Read it: `lore show <mission-id>`
+      Your board contains all story IDs with complexity estimates, the index ID, and the list
+      of codex docs created/updated/retired. Read it: `lore show <mission-id>`
 
       Read every story: `lore codex show <id1> <id2> ...`
       Read the index: `lore codex show <index-id>`
@@ -308,19 +283,23 @@ steps:
 
       Then commit all spec pipeline outputs on the feature branch:
         git add .lore/codex/transient/<feature-slug>-*.md
-        git add .lore/codex/   (any new or updated non-transient codex docs)
-        git commit -m "feat(<feature-slug>): spec pipeline — PRD, tech spec, user stories, codex, groups"
+        git add .lore/codex/   (any new or updated non-transient codex docs, including new ADRs)
+        git commit -m "feat(<feature-slug>): spec pipeline — tech spec, stories, codex, groups"
 
       Post a board message to the quest board signalling the orchestrator:
-        lore board add <quest-id> "Spec complete. Groups defined in index: lore codex show <index-id>. Orchestrator: create dev cycle missions."
+        lore board add <quest-id> "Spec complete. Groups defined in index: lore codex show <index-id>. Orchestrator: create dev cycle missions, then the final Defaults Review."
 
       Mark done: `lore done <mission-id>`
 
-  # -----------------------------------------------------------------------
-  # Dev cycle missions (Red → Green → Refactor → Dev Commit, per group)
+  # ---------------------------------------------------------------------------
+  # Phase 7+: Dev cycle missions (Red → Green → Refactor → Dev Commit, per group)
   # are NOT pre-created here. After group-stories completes, the orchestrator
-  # reads the "Dev Cycle Groups" section from the story index and creates
-  # one Red → Green → Refactor → Dev Commit chain per group.
-  # Groups run sequentially: each group's Red depends on the previous
-  # group's Dev Commit. See start-tdd-quest skill for orchestrator instructions.
-  # -----------------------------------------------------------------------
+  # reads the "Dev Cycle Groups" section from the story index and creates one
+  # Red → Green → Refactor → Dev Commit chain per group. Groups run sequentially:
+  # each group's Red depends on the previous group's Dev Commit.
+  #
+  # FINAL: after the last group's Dev Commit, the orchestrator creates ONE
+  # Defaults Review mission (knight: tdd-feature/defaults-reviewer.md) that
+  # reconciles src/lore/defaults/ with the shipped feature and commits the seed
+  # changes. It depends on the last Dev Commit. See start-tdd-quest skill.
+  # ---------------------------------------------------------------------------

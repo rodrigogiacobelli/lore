@@ -18,8 +18,6 @@ related:
 
 # ADR-007: Artifact instances are the official communication protocol between pipeline steps
 
-**Status:** ACCEPTED
-
 ## Context
 
 The adversarial-spec doctrine is a multi-step pipeline. Each step consumes the

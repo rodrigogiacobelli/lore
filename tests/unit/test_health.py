@@ -3004,11 +3004,11 @@ def test_schema_kinds_contains_glossary_row():
 
 
 def test_all_scopes_contains_bindings():
-    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 8."""
+    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 9 (US-006 added rites)."""
     from lore.health import _ALL_SCOPES
 
     assert "bindings" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 8
+    assert len(_ALL_SCOPES) == 9
 
 
 def test_health_check_scope_bindings_only_routes_to_check_bindings(tmp_path):
@@ -3585,4 +3585,387 @@ class TestHealthIssueFieldShape:
             "rule",
             "pointer",
         }
+
+
+# ===========================================================================
+# _check_rites — reference integrity, graph well-formedness, orphan asymmetry
+#
+# Spec: conceptual-workflows-health (lore codex show conceptual-workflows-health)
+#
+# `lore.health._check_rites` does not exist yet — these tests import it lazily
+# inside each function so the rest of this module still collects. Every test
+# below MUST fail (ImportError on the absent `_check_rites`, the absent `rites`
+# scope token, or the old `Unknown scope:` wording).
+# ===========================================================================
+
+
+import yaml as _rites_yaml  # noqa: E402
+
+
+def _make_rites_root(tmp_path):
+    """Create a project root with empty .lore/rites/{main,shared} + codex."""
+    root = tmp_path / "proj"
+    for sub in ("rites/main", "rites/shared", "codex"):
+        (root / ".lore" / sub).mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _write_main(root, rite_id, body):
+    p = root / ".lore" / "rites" / "main" / f"{rite_id}.yaml"
+    p.write_text(_rites_yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
+
+
+def _write_shared(root, step_id, body):
+    p = root / ".lore" / "rites" / "shared" / f"{step_id}.yaml"
+    p.write_text(_rites_yaml.safe_dump(body, sort_keys=False), encoding="utf-8")
+
+
+def _write_codex_rites(root, doc_id, rites):
+    items = "\n".join(f"  - {r}" for r in rites)
+    text = (
+        "---\n"
+        f"id: {doc_id}\n"
+        f"title: {doc_id}\n"
+        f"summary: s\n"
+        f"rites:\n{items}\n"
+        "---\nbody\n"
+    )
+    (root / ".lore" / "codex" / f"{doc_id}.md").write_text(text, encoding="utf-8")
+
+
+# A rite exhibiting every check defect at once (each check name appears once).
+def _seed_all_defects(root):
+    # dangling_use + dangling_then on issue-refund.
+    _write_main(root, "issue-refund", {
+        "id": "issue-refund",
+        "title": "Issue refund",
+        "summary": "s",
+        "trigger": "t",
+        "nodes": [
+            {"id": "get-contact", "use": "read-contact-info", "then": "review-contact"},
+            {"id": "review-contact", "do": "review", "then": "do-refnud"},
+        ],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    })
+    # dangling_codex_rite: codex points at a missing rite.
+    _write_codex_rites(root, "ops-refunds", ["totally-missing-rite"])
+    # no_entry_node: 2-cycle, every node has inbound.
+    _write_main(root, "rite-no-entry", {
+        "id": "rite-no-entry", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "a", "do": "a", "then": "b"},
+            {"id": "b", "do": "b", "then": "a"},
+        ],
+        "conclusions": {"k": {"audience": "agent", "response": "r"}},
+    })
+    # multiple_entry_nodes: two no-inbound nodes that BOTH route onward through
+    # the same downstream node, so every node is reachable from an entry — the
+    # sole defect is the two entry points (no spurious unreachable_node here).
+    _write_main(root, "rite-multi-entry", {
+        "id": "rite-multi-entry", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "locate-order", "do": "x", "then": "merge"},
+            {"id": "do-refund", "do": "y", "then": "merge"},
+            {"id": "merge", "do": "z", "then": "done"},
+        ],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    })
+    # unreachable_node: a single entry `start` reaching `done`, plus a
+    # disconnected self-looping node `request-update`. The self-loop gives
+    # `request-update` an inbound edge (so it is NOT an entry → exactly one
+    # entry, no multiple_entry_nodes) yet leaves it unreachable from `start`.
+    _write_main(root, "rite-unreachable", {
+        "id": "rite-unreachable", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "start", "do": "x", "then": "done"},
+            {"id": "request-update", "do": "y", "then": "request-update"},
+        ],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    })
+    # conclusion_never_reached.
+    _write_main(root, "rite-conc-unreached", {
+        "id": "rite-conc-unreached", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "start", "do": "x", "then": "done"}],
+        "conclusions": {
+            "done": {"audience": "agent", "response": "r"},
+            "contact-requested": {"audience": "agent", "response": "r2"},
+        },
+    })
+    # undefined_conclusion.
+    _write_main(root, "rite-undef-conc", {
+        "id": "rite-undef-conc", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "do-refund", "do": "x", "then": "refunded"}],
+        "conclusions": {"other": {"audience": "agent", "response": "r"}},
+    })
+
+
+def test_check_rites_each_check(tmp_path):
+    """_check_rites emits one issue per check name with exact detail + HealthIssue fields."""
+    from lore.health import _check_rites
+
+    root = _make_rites_root(tmp_path)
+    _seed_all_defects(root)
+    issues = _check_rites(root)
+    by_check = {i.check: i for i in issues}
+
+    assert by_check["dangling_use"].detail == (
+        'node "get-contact" uses missing shared step "read-contact-info"'
+    )
+    assert by_check["dangling_use"].entity_type == "rites"
+    assert by_check["dangling_use"].id == "issue-refund"
+    # Null on non-schema rows.
+    assert by_check["dangling_use"].schema_id is None
+    assert by_check["dangling_use"].rule is None
+    assert by_check["dangling_use"].pointer is None
+
+    assert by_check["dangling_then"].detail == (
+        'node "review-contact" routes to unknown target "do-refnud"'
+    )
+    assert by_check["dangling_codex_rite"].id == "ops-refunds"
+    assert by_check["dangling_codex_rite"].entity_type == "rites"
+
+    for name in [
+        "dangling_then",
+        "dangling_codex_rite",
+        "no_entry_node",
+        "multiple_entry_nodes",
+        "unreachable_node",
+        "conclusion_never_reached",
+        "undefined_conclusion",
+    ]:
+        assert name in by_check, f"missing check: {name}"
+
+
+def test_check_rites_graph_detail_strings(tmp_path):
+    """Graph-walk check details match the codex spec verbatim.
+
+    Each graph defect is seeded in its OWN project root so a single rite triggers
+    exactly the check under test, with no cross-rite collisions on the same check
+    name (e.g. two rites each emitting `conclusion_never_reached` would clobber a
+    shared `by_check` dict). The `multiple_entry_nodes` and `unreachable_node`
+    fixtures are structurally distinct: the former has every node reachable from
+    an entry (sole defect = two entries); the latter has one entry plus a
+    disconnected self-looping node (sole defect = an unreachable node).
+    """
+    from lore.health import _check_rites
+
+    def detail_for(rite_id, body, check):
+        sub = tmp_path / rite_id
+        root = _make_rites_root(sub)
+        _write_main(root, rite_id, body)
+        matches = [i for i in _check_rites(root) if i.check == check]
+        assert matches, f"expected a {check} issue for {rite_id}"
+        assert len(matches) == 1, f"expected exactly one {check} issue, got {matches}"
+        return matches[0].detail
+
+    # no_entry_node: a 2-cycle (every node has an inbound edge).
+    assert detail_for("rite-no-entry", {
+        "id": "rite-no-entry", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "a", "do": "a", "then": "b"},
+            {"id": "b", "do": "b", "then": "a"},
+        ],
+        # Conclusion intentionally omitted so no_entry_node is the only defect.
+        "conclusions": {},
+    }, "no_entry_node") == "no entry node — every node has an inbound edge"
+
+    # multiple_entry_nodes: two entries, every node still reachable via `merge`.
+    assert detail_for("rite-multi-entry", {
+        "id": "rite-multi-entry", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "locate-order", "do": "x", "then": "merge"},
+            {"id": "do-refund", "do": "y", "then": "merge"},
+            {"id": "merge", "do": "z", "then": "done"},
+        ],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    }, "multiple_entry_nodes") == "multiple entry nodes: locate-order, do-refund"
+
+    # unreachable_node: single entry `start`; `request-update` self-loops (has an
+    # inbound edge so it is not an entry) yet is unreachable from `start`.
+    assert detail_for("rite-unreachable", {
+        "id": "rite-unreachable", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "start", "do": "x", "then": "done"},
+            {"id": "request-update", "do": "y", "then": "request-update"},
+        ],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    }, "unreachable_node") == 'node "request-update" is unreachable'
+
+    # conclusion_never_reached: a reachable node, but a second conclusion is
+    # defined that nothing routes to.
+    assert detail_for("rite-conc-unreached", {
+        "id": "rite-conc-unreached", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "start", "do": "x", "then": "done"}],
+        "conclusions": {
+            "done": {"audience": "agent", "response": "r"},
+            "contact-requested": {"audience": "agent", "response": "r2"},
+        },
+    }, "conclusion_never_reached") == (
+        'conclusion "contact-requested" is defined but never reached'
+    )
+
+    # undefined_conclusion: an entry node routes to a target that is neither a
+    # node nor a declared conclusion.
+    assert detail_for("rite-undef-conc", {
+        "id": "rite-undef-conc", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "do-refund", "do": "x", "then": "refunded"}],
+        "conclusions": {"other": {"audience": "agent", "response": "r"}},
+    }, "undefined_conclusion") == (
+        'node "do-refund" routes to "refunded" — no node or conclusion'
+    )
+
+
+def test_check_rites_valid_rite_clean(tmp_path):
+    """A well-formed main rite (single entry, all reachable, conclusions reached) emits no issue."""
+    from lore.health import _check_rites
+
+    root = _make_rites_root(tmp_path)
+    _write_main(root, "valid-rite", {
+        "id": "valid-rite", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [
+            {"id": "locate-order", "do": "find", "then": "do-refund"},
+            {"id": "do-refund", "do": "refund", "then": "refunded"},
+        ],
+        "conclusions": {"refunded": {"audience": "agent", "response": "r"}},
+    })
+    assert _check_rites(root) == []
+
+
+def test_check_rites_orphans(tmp_path):
+    """orphan_shared_step warns; an orphan main rite is NOT flagged."""
+    from lore.health import _check_rites
+
+    root = _make_rites_root(tmp_path)
+    _write_shared(root, "read-contact-info", {
+        "id": "read-contact-info", "title": "t", "do": "read",
+    })
+    _write_main(root, "lonely", {
+        "id": "lonely", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "n", "do": "x", "then": "done"}],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    })
+    issues = _check_rites(root)
+    orphans = [i for i in issues if i.check == "orphan_shared_step"]
+    assert len(orphans) == 1
+    assert orphans[0].severity == "warning"
+    assert orphans[0].id == "read-contact-info"
+    assert orphans[0].detail == "no main rite uses this shared step"
+    # Orphan main rite emits NO issue.
+    assert not any(i.id == "lonely" for i in issues)
+
+
+def test_check_rites_used_shared_step_not_orphan(tmp_path):
+    """A shared step that a main rite use:es is not flagged as orphan."""
+    from lore.health import _check_rites
+
+    root = _make_rites_root(tmp_path)
+    _write_shared(root, "read-contact-info", {
+        "id": "read-contact-info", "title": "t", "do": "read",
+    })
+    _write_main(root, "uses-it", {
+        "id": "uses-it", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "n", "use": "read-contact-info", "then": "done"}],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    })
+    issues = _check_rites(root)
+    assert not any(i.check == "orphan_shared_step" for i in issues)
+
+
+def test_check_rites_skips_deleted(tmp_path):
+    """`.yaml.deleted` rite files are ignored by _check_rites."""
+    from lore.health import _check_rites
+
+    root = _make_rites_root(tmp_path)
+    p = root / ".lore" / "rites" / "main" / "broken.yaml"
+    p.write_text(_rites_yaml.safe_dump({
+        "id": "broken", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "n", "use": "missing-step", "then": "gone"}],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    }), encoding="utf-8")
+    p.rename(p.with_name("broken.yaml.deleted"))
+    assert _check_rites(root) == []
+
+
+# ---------------------------------------------------------------------------
+# scope-token validation + multi-scope dispatch
+# ---------------------------------------------------------------------------
+
+
+def test_health_scope_tokens_includes_rites():
+    """The valid-scope token set includes `rites`."""
+    import lore.health as h
+
+    assert "rites" in h._ALL_SCOPES
+
+
+def test_health_check_unknown_scope_message_verbatim(tmp_path):
+    """An unknown scope raises ValueError with the shipped `Unknown scope:` text incl. rites.
+
+    The library-level `health_check` keeps its historic `Unknown scope:` wording
+    (the CLI Choice validation is the user-facing guard). `rites` now appears in
+    the listed valid scopes since it was added to `_ALL_SCOPES`.
+    """
+    root = _make_rites_root(tmp_path)
+    with pytest.raises(ValueError) as exc:
+        health_check(root, scope=["xyz"])
+    assert str(exc.value) == (
+        "Unknown scope: 'xyz'. Valid scopes: codex, artifacts, "
+        "doctrines, knights, watchers, glossary, schemas, bindings, rites."
+    )
+
+
+def test_health_check_scope_rites_runs_rite_checks(tmp_path):
+    """scope=['rites'] surfaces a dangling_use rite issue."""
+    root = _make_rites_root(tmp_path)
+    (root / ".lore" / "codex" / "transient").mkdir(parents=True, exist_ok=True)
+    _write_main(root, "issue-refund", {
+        "id": "issue-refund", "title": "t", "summary": "s", "trigger": "t",
+        "nodes": [{"id": "get-contact", "use": "read-contact-info", "then": "done"}],
+        "conclusions": {"done": {"audience": "agent", "response": "r"}},
+    })
+    report = health_check(root, scope=["rites"], write_report=False)
+    checks = {i.check for i in report.issues}
+    assert "dangling_use" in checks
+
+
+def test_health_check_scope_codex_rites_dispatches_both(tmp_path):
+    """scope=['codex', 'rites'] runs codex checks AND rite checks; dangling_codex_rite fires."""
+    root = _make_rites_root(tmp_path)
+    (root / ".lore" / "codex" / "transient").mkdir(parents=True, exist_ok=True)
+    _write_codex_rites(root, "ops-refunds", ["totally-missing-rite"])
+    report = health_check(root, scope=["codex", "rites"], write_report=False)
+    assert any(i.check == "dangling_codex_rite" for i in report.issues)
+
+
+def test_health_check_dangling_codex_rite_under_rites_alone(tmp_path):
+    """dangling_codex_rite fires under scope=['rites'] alone (dual-scope codex check)."""
+    root = _make_rites_root(tmp_path)
+    (root / ".lore" / "codex" / "transient").mkdir(parents=True, exist_ok=True)
+    _write_codex_rites(root, "ops-refunds", ["totally-missing-rite"])
+    report = health_check(root, scope=["rites"], write_report=False)
+    assert any(i.check == "dangling_codex_rite" for i in report.issues)
+
+
+def test_health_check_dangling_codex_rite_under_codex_alone(tmp_path):
+    """dangling_codex_rite also fires under scope=['codex'] alone (dual-scope)."""
+    root = _make_rites_root(tmp_path)
+    (root / ".lore" / "codex" / "transient").mkdir(parents=True, exist_ok=True)
+    _write_codex_rites(root, "ops-refunds", ["totally-missing-rite"])
+    report = health_check(root, scope=["codex"], write_report=False)
+    assert any(i.check == "dangling_codex_rite" for i in report.issues)
+
+
+def test_health_check_orphan_shared_step_keeps_exit_zero(tmp_path):
+    """An orphan shared step is a warning — report.has_errors stays False."""
+    root = _make_rites_root(tmp_path)
+    (root / ".lore" / "codex" / "transient").mkdir(parents=True, exist_ok=True)
+    _write_shared(root, "read-contact-info", {
+        "id": "read-contact-info", "title": "t", "do": "read",
+    })
+    report = health_check(root, scope=["rites"], write_report=False)
+    assert any(
+        i.check == "orphan_shared_step" and i.severity == "warning"
+        for i in report.issues
+    )
+    assert report.has_errors is False
 

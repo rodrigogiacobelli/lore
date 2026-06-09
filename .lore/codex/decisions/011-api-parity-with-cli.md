@@ -19,8 +19,6 @@ related:
 
 # ADR-011: Python API must be safe and behaviourally equivalent to the CLI
 
-**Status:** ACCEPTED
-
 ## Context
 
 The public API surface is `lore.api.__all__` (ADR-010). External consumers — Realm, user scripts, the future Lore Server — import and call these functions directly, bypassing the CLI entirely. `lore.api` is a facade; the names it re-exports are sourced from internal operational modules (`lore.db`, `lore.codex`, `lore.validators`, …).

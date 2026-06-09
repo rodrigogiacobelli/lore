@@ -195,6 +195,20 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "load_config",
     # paths (G15 — amendment C1)
     "entity_location",
+    # rite (US-007 — functions + types + validator)
+    "scan_rites",
+    "read_rite",
+    "search_rites",
+    "create_rite",
+    "update_rite",
+    "delete_rite",
+    "Rite",
+    "RiteNode",
+    "RiteBranch",
+    "RiteConclusion",
+    "SharedStep",
+    "RiteError",
+    "validate_rite_id",
 )
 
 
@@ -350,6 +364,20 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "load_config": "lore.config",
     # paths (G15 — amendment C1)
     "entity_location": "lore.paths",
+    # rite (US-007)
+    "scan_rites": "lore.rite",
+    "read_rite": "lore.rite",
+    "search_rites": "lore.rite",
+    "create_rite": "lore.rite",
+    "update_rite": "lore.rite",
+    "delete_rite": "lore.rite",
+    "Rite": "lore.models",
+    "RiteNode": "lore.models",
+    "RiteBranch": "lore.models",
+    "RiteConclusion": "lore.models",
+    "SharedStep": "lore.models",
+    "RiteError": "lore.models",
+    "validate_rite_id": "lore.validators",
 }
 
 
@@ -529,6 +557,58 @@ class TestApiBodyIsPureReexport:
 # ---------------------------------------------------------------------------
 # dir() does not advertise non-__all__ names beyond stdlib / dunders
 # ---------------------------------------------------------------------------
+
+
+RITE_PUBLIC_NAMES: frozenset[str] = frozenset(
+    {
+        # functions (lore.rite)
+        "scan_rites",
+        "read_rite",
+        "search_rites",
+        "create_rite",
+        "update_rite",
+        "delete_rite",
+        # dataclasses + exception (lore.models)
+        "Rite",
+        "RiteNode",
+        "RiteBranch",
+        "RiteConclusion",
+        "SharedStep",
+        "RiteError",
+        # validator (lore.validators)
+        "validate_rite_id",
+    }
+)
+
+
+class TestApiRiteSurface:
+    """Rite public surface is in `lore.api.__all__`; `_rite` alias stays private.
+
+    Per ADR-010/011 every `lore rite` command is backed by a self-contained
+    `lore.api` function, and its types + validator are exported through
+    `lore.api.__all__`. The `_rite` underscore alias `cli.py` consumes is the
+    internal facade boundary and must NOT appear in `__all__`.
+    """
+
+    def test_rite_public_names_in_all(self):
+        from lore import api
+
+        missing = RITE_PUBLIC_NAMES - set(api.__all__)
+        assert missing == set(), (
+            f"rite public names missing from lore.api.__all__: {sorted(missing)}"
+        )
+
+    @pytest.mark.parametrize("name", sorted(RITE_PUBLIC_NAMES))
+    def test_rite_public_name_importable_from_api(self, name: str):
+        from lore import api
+
+        assert hasattr(api, name), f"lore.api missing rite name: {name}"
+        assert getattr(api, name) is not None, f"lore.api.{name} resolved to None"
+
+    def test_rite_error_is_value_error_subclass(self):
+        from lore.api import RiteError
+
+        assert issubclass(RiteError, ValueError)
 
 
 class TestApiDirCleanliness:

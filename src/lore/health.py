@@ -69,7 +69,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites")
 
 # Schema-validated entity kinds. Each tuple is:
 #   (entity_type label used on HealthIssue,
@@ -84,6 +84,8 @@ _SCHEMA_KINDS: tuple[tuple[str, str, str, str], ...] = (
     ("codex",                       "codex-frontmatter",           "codex",     "**/*.md"),
     ("artifact",                    "artifact-frontmatter",        "artifacts", "**/*.md"),
     ("glossary",                    "glossary",                    "codex",     "glossary.yaml"),
+    ("main-rite",                   "main-rite",                   "rites",     "main/**/*.yaml"),
+    ("shared-step",                 "shared-step",                 "rites",     "shared/**/*.yaml"),
 )
 
 # Schema kinds whose payload lives in a leading YAML frontmatter block.
@@ -890,6 +892,289 @@ def _check_glossary(project_root: Path) -> list[HealthIssue]:
     ]
 
 
+def _rite_targets(then) -> list[str]:
+    """Return the routing targets declared by a node's ``then`` value.
+
+    ``then`` is a single target string or a list of ``{if, goto}`` branches.
+    Missing/empty ``then`` yields no targets.
+    """
+    if then is None:
+        return []
+    if isinstance(then, str):
+        return [then]
+    targets: list[str] = []
+    if isinstance(then, list):
+        for branch in then:
+            if isinstance(branch, dict) and branch.get("goto"):
+                targets.append(str(branch["goto"]))
+    return targets
+
+
+def _scan_main_rites(main_dir: Path) -> list[dict]:
+    """Parse every non-deleted ``main/**/*.yaml`` rite into a dict (recursive)."""
+    if not main_dir.is_dir():
+        return []
+    rites: list[dict] = []
+    for filepath in sorted(main_dir.rglob("*.yaml")):
+        if not filepath.is_file():
+            continue
+        try:
+            data = yaml.safe_load(filepath.read_text(encoding="utf-8"))
+        except yaml.YAMLError:
+            continue
+        if isinstance(data, dict):
+            rites.append(data)
+    return rites
+
+
+def _scan_rite_id_files(rites_dir: Path) -> list[tuple[str, Path]]:
+    """Return ``(id, filepath)`` for every non-deleted rite across the tree.
+
+    Scans ``main/`` then ``shared/`` recursively. The id is the file's ``id:``
+    field, falling back to its stem. Used for the duplicate-id collision check.
+    """
+    out: list[tuple[str, Path]] = []
+    for sub in ("main", "shared"):
+        subdir = rites_dir / sub
+        if not subdir.is_dir():
+            continue
+        for filepath in sorted(subdir.rglob("*.yaml")):
+            if not filepath.is_file():
+                continue
+            try:
+                data = yaml.safe_load(filepath.read_text(encoding="utf-8"))
+            except yaml.YAMLError:
+                continue
+            rid = str(data.get("id", filepath.stem)) if isinstance(data, dict) else filepath.stem
+            out.append((rid, filepath))
+    return out
+
+
+def _check_dangling_codex_rites(project_root: Path) -> list[HealthIssue]:
+    """Return ``dangling_codex_rite`` rows for codex ``rites:`` naming a missing rite.
+
+    Codex-side reference-integrity check that depends on the rite index, so it
+    runs under both the ``rites`` and ``codex`` scopes.
+    """
+    from lore.impacts import _load_codex_rites_index
+
+    codex_dir = project_root / ".lore" / "codex"
+    main_dir = project_root / ".lore" / "rites" / "main"
+    main_ids = {str(r.get("id")) for r in _scan_main_rites(main_dir) if r.get("id")}
+
+    issues: list[HealthIssue] = []
+    index = _load_codex_rites_index(codex_dir)
+    for codex_id in sorted(index):
+        for ref in index[codex_id]:
+            if ref not in main_ids:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type="rites",
+                    id=codex_id,
+                    check="dangling_codex_rite",
+                    detail=f'codex "{codex_id}" references missing rite "{ref}"',
+                ))
+    return issues
+
+
+def _check_rites(project_root: Path) -> list[HealthIssue]:
+    """Audit rites: reference integrity, graph well-formedness, orphan asymmetry.
+
+    Three classes (all errors except the orphan-shared-step warning):
+
+    * Reference integrity — ``dangling_use``, ``dangling_then``,
+      ``dangling_codex_rite``.
+    * Graph well-formedness (per main rite) — ``no_entry_node``,
+      ``multiple_entry_nodes``, ``unreachable_node``,
+      ``conclusion_never_reached``, ``undefined_conclusion``.
+    * Orphans — ``orphan_shared_step`` (warning); an orphan main rite is NOT
+      flagged.
+
+    Skips ``*.yaml.deleted`` files. ``schema_id``/``rule``/``pointer`` are null
+    on every row (schema checks ride on ``_check_schemas``).
+    """
+    issues: list[HealthIssue] = []
+    rites_dir = project_root / ".lore" / "rites"
+    main_dir = rites_dir / "main"
+    shared_dir = rites_dir / "shared"
+
+    # Duplicate-id collision across the whole main+shared tree. A rite's id is
+    # globally unique (codex model); the same id in two files anywhere is an
+    # error, like a codex id collision.
+    id_files: dict[str, list[Path]] = {}
+    for rid, filepath in _scan_rite_id_files(rites_dir):
+        id_files.setdefault(rid, []).append(filepath)
+    for rid in sorted(id_files):
+        paths = id_files[rid]
+        if len(paths) > 1:
+            rels = ", ".join(
+                str(p.relative_to(rites_dir)) for p in sorted(paths)
+            )
+            issues.append(HealthIssue(
+                severity="error",
+                entity_type="rites",
+                id=rid,
+                check="duplicate_rite_id",
+                detail=f'rite id "{rid}" defined in multiple files: {rels}',
+            ))
+
+    # Known shared-step ids (non-deleted), resolved by id across the recursive
+    # shared/ tree.
+    shared_ids: set[str] = set()
+    if shared_dir.is_dir():
+        for filepath in sorted(shared_dir.rglob("*.yaml")):
+            if not filepath.is_file():
+                continue
+            try:
+                data = yaml.safe_load(filepath.read_text(encoding="utf-8"))
+            except yaml.YAMLError:
+                continue
+            sid = str(data.get("id", filepath.stem)) if isinstance(data, dict) else filepath.stem
+            shared_ids.add(sid)
+
+    main_rites = _scan_main_rites(main_dir)
+    used_shared: set[str] = set()
+
+    for rite in main_rites:
+        rite_id = str(rite.get("id", ""))
+        nodes = rite.get("nodes") or []
+        node_ids = [str(n.get("id")) for n in nodes if isinstance(n, dict) and n.get("id")]
+        node_id_set = set(node_ids)
+        conclusions = rite.get("conclusions") or {}
+        conclusion_keys = set(conclusions.keys()) if isinstance(conclusions, dict) else set()
+
+        # Reference integrity: dangling use.
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            use_id = node.get("use")
+            if use_id is not None:
+                used_shared.add(str(use_id))
+                if str(use_id) not in shared_ids:
+                    issues.append(HealthIssue(
+                        severity="error",
+                        entity_type="rites",
+                        id=rite_id,
+                        check="dangling_use",
+                        detail=f'node "{node.get("id")}" uses missing shared step "{use_id}"',
+                    ))
+
+        # Pre-pass: build inbound edges + the set of reached conclusions.
+        inbound: set[str] = set()
+        reached_conclusions: set[str] = set()
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            for target in _rite_targets(node.get("then")):
+                if target in node_id_set:
+                    inbound.add(target)
+                elif target in conclusion_keys:
+                    reached_conclusions.add(target)
+
+        # Classify routes to unknown targets. A node WITH an inbound edge
+        # "looked like a missing node id" mid-chain → dangling_then. An entry
+        # node (no inbound edge) routing to an unknown terminal target "looked
+        # like a missing conclusion key" → undefined_conclusion.
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            node_id = str(node.get("id"))
+            for target in _rite_targets(node.get("then")):
+                if target in node_id_set or target in conclusion_keys:
+                    continue
+                if node_id in inbound:
+                    issues.append(HealthIssue(
+                        severity="error",
+                        entity_type="rites",
+                        id=rite_id,
+                        check="dangling_then",
+                        detail=f'node "{node_id}" routes to unknown target "{target}"',
+                    ))
+                else:
+                    issues.append(HealthIssue(
+                        severity="error",
+                        entity_type="rites",
+                        id=rite_id,
+                        check="undefined_conclusion",
+                        detail=f'node "{node_id}" routes to "{target}" — no node or conclusion',
+                    ))
+
+        # Graph well-formedness — only when there are nodes.
+        if node_ids:
+            entries = [nid for nid in node_ids if nid not in inbound]
+            if not entries:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type="rites",
+                    id=rite_id,
+                    check="no_entry_node",
+                    detail="no entry node — every node has an inbound edge",
+                ))
+            elif len(entries) > 1:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type="rites",
+                    id=rite_id,
+                    check="multiple_entry_nodes",
+                    detail="multiple entry nodes: " + ", ".join(entries),
+                ))
+
+            # Reachability from the entry node(s). A node not reachable from
+            # ANY entry is unreachable (seeding from every entry avoids false
+            # positives when a rite has more than one entry).
+            if entries:
+                reachable: set[str] = set()
+                stack = list(entries)
+                node_by_id = {
+                    str(n["id"]): n for n in nodes
+                    if isinstance(n, dict) and n.get("id")
+                }
+                while stack:
+                    cur = stack.pop()
+                    if cur in reachable:
+                        continue
+                    reachable.add(cur)
+                    for target in _rite_targets(node_by_id.get(cur, {}).get("then")):
+                        if target in node_id_set and target not in reachable:
+                            stack.append(target)
+                for nid in node_ids:
+                    if nid not in reachable:
+                        issues.append(HealthIssue(
+                            severity="error",
+                            entity_type="rites",
+                            id=rite_id,
+                            check="unreachable_node",
+                            detail=f'node "{nid}" is unreachable',
+                        ))
+
+        # Conclusion reachability: conclusion defined but never reached.
+        for ckey in conclusion_keys:
+            if ckey not in reached_conclusions:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type="rites",
+                    id=rite_id,
+                    check="conclusion_never_reached",
+                    detail=f'conclusion "{ckey}" is defined but never reached',
+                ))
+
+    # Reference integrity: dangling codex rite.
+    issues.extend(_check_dangling_codex_rites(project_root))
+
+    # Orphan shared steps (warning).
+    for step_id in sorted(shared_ids):
+        if step_id not in used_shared:
+            issues.append(HealthIssue(
+                severity="warning",
+                entity_type="rites",
+                id=step_id,
+                check="orphan_shared_step",
+                detail="no main rite uses this shared step",
+            ))
+
+    return issues
+
+
 def _humanize_timestamp(timestamp: str) -> str:
     """Convert a filename-safe timestamp like 2026-04-09T14-32-00 to 2026-04-09T14:32:00."""
     date_part, sep, time_part = timestamp.partition("T")
@@ -1025,7 +1310,7 @@ def health_check(
     warnings: list[HealthIssue] = []
 
     checkers = {
-        "codex": lambda: _check_codex(codex_dir),
+        "codex": lambda: _check_codex(codex_dir) + _check_dangling_codex_rites(project_root),
         "artifacts": lambda: _check_artifacts(artifacts_dir),
         "doctrines": lambda: _check_doctrines(doctrines_dir, knights_dir, artifacts_dir),
         "knights": lambda: _check_knights(knights_dir, project_root),
@@ -1033,8 +1318,10 @@ def health_check(
         "schemas": lambda: _check_schemas(project_root),
         "glossary": lambda: _check_glossary(project_root),
         "bindings": lambda: _check_bindings(project_root),
+        "rites": lambda: _check_rites(project_root),
     }
 
+    seen: set[HealthIssue] = set()
     for scope_name in active_scope:
         checker = checkers.get(scope_name)
         if checker is None:
@@ -1050,6 +1337,12 @@ def health_check(
                 detail=str(exc),
             )]
         for issue in issues:
+            # Dedup the dual-scope dangling_codex_rite row when both codex and
+            # rites scopes run.
+            if issue.check == "dangling_codex_rite":
+                if issue in seen:
+                    continue
+                seen.add(issue)
             if issue.severity == "error" or issue.check in _ESCALATED_WARNING_CHECKS:
                 errors.append(issue)
             else:

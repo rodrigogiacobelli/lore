@@ -109,6 +109,18 @@ def validate_name(name: str) -> str | None:
     return None
 
 
+def validate_rite_id(s: str) -> None:
+    """Raise ``ValueError`` if *s* is not a valid rite name, else return None.
+
+    A valid rite name must start with an alphanumeric character and contain only
+    letters, digits, hyphens, and underscores (``^[a-zA-Z0-9][a-zA-Z0-9_-]*$``).
+    """
+    if not s or not _NAME_RE.match(s):
+        raise ValueError(
+            "Invalid name: must be alphanumeric, hyphens, underscores only."
+        )
+
+
 def validate_group(group: str | None) -> str | None:
     """Return an error string if *group* is not a safe group path, else None.
 

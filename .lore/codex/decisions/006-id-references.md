@@ -13,8 +13,6 @@ related:
 
 # ADR-006: Agents reference entities by ID, never by file path
 
-**Status:** ACCEPTED
-
 ## Context
 
 Lore manages several categories of reusable entity: Doctrines (YAML workflow

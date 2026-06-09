@@ -37,6 +37,18 @@ def watchers_dir(root: Path) -> Path:
     return root / ".lore" / "watchers"
 
 
+def rites_dir(root: Path) -> Path:
+    return root / ".lore" / "rites"
+
+
+def rites_main_dir(root: Path) -> Path:
+    return root / ".lore" / "rites" / "main"
+
+
+def rites_shared_dir(root: Path) -> Path:
+    return root / ".lore" / "rites" / "shared"
+
+
 def db_path(root: Path) -> Path:
     return root / ".lore" / "lore.db"
 

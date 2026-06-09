@@ -14,8 +14,6 @@ related:
 
 # ADR-008: CLI `--help` is the primary teaching interface for AI agents
 
-**Status:** ACCEPTED
-
 ## Context
 
 Lore is used by AI agents. Those agents must understand the tool before they

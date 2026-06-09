@@ -7,8 +7,6 @@ related: ["conceptual-workflows-filter-list", "conceptual-workflows-health", "re
 
 # ADR-012: Multi-value CLI parameters use space-separated syntax
 
-**Status:** ACCEPTED
-
 ## Context
 
 Two conflicting conventions exist in Click for multi-value CLI parameters:

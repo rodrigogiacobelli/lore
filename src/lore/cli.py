@@ -257,6 +257,7 @@ def main(ctx, json_mode):
     Knight   — a reusable agent persona attached to missions.
     Doctrine — workflow templates that guide how missions are executed.
     Codex    — project documentation, searchable and graph-traversable.
+    Rite     — procedural memory: how to do or diagnose a recurring task.
     Artifact — reusable template files referenced by stable ID.
     Watcher  — definitions for agents that monitor and react to project state.
 
@@ -2117,6 +2118,396 @@ def _show_quest(ctx, quest_id):
 
 @main.group()
 @click.pass_context
+def rite(ctx):
+    """Manage rites — procedural memory ("how to do or diagnose recurring task X").
+
+    A Rite is the how-to counterpart of the codex: the codex stores semantic,
+    factual knowledge; a rite stores a procedure. A main rite is a node-graph of
+    steps (`do`/`use` + `then`) ending in typed conclusions; a shared step is a
+    reusable pure procedure that main rites pull in with `use:`. Agents find a
+    rite by reading `lore rite list` (triggers + summaries) and picking the match
+    themselves — Lore never matches a situation for you.
+
+    Browse main rites with `lore rite list` (add --shared for reusable steps);
+    read one with `lore rite show <id>` (which inlines every shared step it uses
+    into a single document); keyword-browse with `lore rite search <kw>`. Author
+    with `lore rite new|edit|delete`. Rites link to nothing — a codex doc points at
+    the rites it governs via its `rites: frontmatter field`, never the reverse.
+    """
+    pass
+
+
+@rite.command(
+    "list",
+    help=_list_doc(
+        "List main rites, or shared steps with --shared.",
+        "diagnostics/network",
+    ),
+)
+@click.option("--shared", is_flag=True, help="List shared steps instead of main rites.")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
+@click.argument("extra_filters", nargs=-1)
+@click.pass_context
+def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
+    from lore.api import _rite as _rite_mod
+
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+    rites = _rite_mod.scan_rites(paths.rites_dir(project_root), shared=shared)
+
+    combined_filters = list(filter_groups) + list(extra_filters)
+    if any(not token.strip("/") for token in combined_filters):
+        raise click.ClickException("empty filter token")
+    if combined_filters:
+        rites = [
+            r for r in rites
+            if paths.group_matches_filter(r.get("group", ""), combined_filters)
+        ]
+
+    if shared:
+        if json_mode:
+            data = {
+                "shared_steps": [
+                    {
+                        "id": r["id"],
+                        "group": _group_for_json(r.get("group", "")),
+                        "title": r.get("title", ""),
+                        "summary": r.get("summary", ""),
+                    }
+                    for r in rites
+                ]
+            }
+            click.echo(json.dumps(data))
+            return
+        if not rites:
+            click.echo("No shared steps found.")
+            return
+        rows = [
+            [r["id"], r.get("group", ""), r.get("title", ""), r.get("summary", "")]
+            for r in rites
+        ]
+        for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+            click.echo(line)
+        return
+
+    if json_mode:
+        data = {
+            "rites": [
+                {
+                    "id": r["id"],
+                    "group": _group_for_json(r.get("group", "")),
+                    "trigger": r.get("trigger", ""),
+                    "summary": r.get("summary", ""),
+                }
+                for r in rites
+            ]
+        }
+        click.echo(json.dumps(data))
+        return
+    if not rites:
+        click.echo("No rites found.")
+        return
+    rows = [
+        [r["id"], r.get("group", ""), r.get("trigger", ""), r.get("summary", "")]
+        for r in rites
+    ]
+    for line in _format_table(["ID", "GROUP", "TRIGGER", "SUMMARY"], rows):
+        click.echo(line)
+
+
+@rite.command("search")
+@click.argument("keyword")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def rite_search(ctx, keyword, json_flag):
+    """Keyword-browse main rites by id, title, summary, or trigger."""
+    from lore.api import _rite as _rite_mod
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+    rites = _rite_mod.search_rites(paths.rites_dir(project_root), keyword)
+
+    if json_mode:
+        data = {
+            "rites": [
+                {
+                    "id": r["id"],
+                    "trigger": r.get("trigger", ""),
+                    "summary": r.get("summary", ""),
+                }
+                for r in rites
+            ]
+        }
+        click.echo(json.dumps(data))
+        return
+    if not rites:
+        click.echo(f'No rites matching "{keyword}".')
+        return
+    rows = [[r["id"], r.get("trigger", ""), r.get("summary", "")] for r in rites]
+    for line in _format_table(["ID", "TRIGGER", "SUMMARY"], rows):
+        click.echo(line)
+
+
+def _render_rite_text(rite: dict) -> list[str]:
+    """Render one resolved rite as text lines (no === header)."""
+    lines: list[str] = []
+    if "nodes" not in rite:
+        # Bare shared step.
+        lines.append(f"{rite.get('id', '')} — {rite.get('title', '')}")
+        if rite.get("summary"):
+            lines.append(f"Summary: {rite['summary']}")
+        do = rite.get("do", "")
+        for do_line in do.splitlines():
+            lines.append(f"  {do_line}")
+        return lines
+
+    if rite.get("title"):
+        lines.append(f"# {rite['title']}")
+    lines.append("")
+    if rite.get("trigger"):
+        lines.append(f"Trigger: {rite['trigger']}")
+    if rite.get("summary"):
+        lines.append(f"Summary: {rite['summary']}")
+    lines.append("")
+
+    conclusions = rite.get("conclusions", {}) or {}
+    for node in rite.get("nodes", []):
+        nid = node.get("id", "")
+        if "use" in node:
+            lines.append(f"[{nid}]  use: {node['use']}")
+            step = node.get("step", {})
+            lines.append(
+                f"    {step.get('id', '')} — {step.get('title', '')}"
+            )
+            for do_line in step.get("do", "").splitlines():
+                lines.append(f"      {do_line}")
+        else:
+            lines.append(f"[{nid}]  {node.get('do', '')}")
+
+        then = node.get("then")
+        if isinstance(then, list):
+            for branch in then:
+                lines.append(
+                    f"  if {branch.get('if', '')} -> {branch.get('goto', '')}"
+                )
+        elif then is not None:
+            if then in conclusions:
+                lines.append(f"  -> (conclusion) {then}")
+            else:
+                lines.append(f"  -> {then}")
+        lines.append("")
+
+    if conclusions:
+        lines.append("Conclusions:")
+        for name, body in conclusions.items():
+            body = body or {}
+            lines.append(f"  {name}  (audience: {body.get('audience', '')})")
+            lines.append(f"    {body.get('response', '')}")
+    return lines
+
+
+@rite.command("show")
+@click.argument("rite_ids", nargs=-1, required=True)
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def rite_show(ctx, rite_ids, json_flag):
+    """Show one or more rites in full, inlining shared steps."""
+    from lore.api import _rite as _rite_mod
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+    rdir = paths.rites_dir(project_root)
+
+    ids = list(dict.fromkeys(rite_ids))
+    resolved: list[dict] = []
+    for rid in ids:
+        try:
+            resolved.append(_rite_mod.read_rite(rdir, rid))
+        except _rite_mod.RiteError as exc:
+            msg = str(exc)
+            if json_mode:
+                err: dict = {"error": msg}
+                if "deleted on " in msg:
+                    err["deleted_at"] = msg.split("deleted on ", 1)[1].rstrip(")")
+                click.echo(json.dumps(err), err=True)
+            else:
+                click.echo(msg, err=True)
+            ctx.exit(1)
+
+    if json_mode:
+        click.echo(json.dumps({"rites": resolved}))
+        return
+
+    blocks: list[str] = []
+    for rid, rite in zip(ids, resolved):
+        block = [f"=== {rid} ==="]
+        block.extend(_render_rite_text(rite))
+        blocks.append("\n".join(block).rstrip())
+    click.echo("\n\n".join(blocks))
+
+
+def _read_rite_body(ctx, from_file, *, json_mode=False, usage_error_on_empty=False):
+    """Resolve a rite body from --from or stdin. Returns the content string.
+
+    Missing file → ``File not found: <path>``, exit 1. Empty stdin → either
+    ``No content provided on stdin.`` exit 1, or (when usage_error_on_empty) a
+    Click ``UsageError`` (exit 2). In JSON mode errors are emitted as
+    ``{"error": <msg>}`` to stderr. Returns ``None`` after exiting on error.
+    """
+    def fail(msg):
+        if json_mode:
+            click.echo(json.dumps({"error": msg}), err=True)
+        else:
+            click.echo(msg, err=True)
+        ctx.exit(1)
+
+    if from_file is not None:
+        src = Path(from_file)
+        if not src.exists():
+            fail(f"File not found: {from_file}")
+            return None
+        return src.read_text(encoding="utf-8")
+
+    content = click.get_text_stream("stdin").read()
+    if not content or not content.strip():
+        if usage_error_on_empty:
+            raise click.UsageError(
+                "No content provided: pass --from <path> or pipe via stdin."
+            )
+        fail("No content provided on stdin.")
+        return None
+    return content
+
+
+@rite.command(
+    "new",
+    help=_new_doc(
+        "Create a main rite (or shared step with --shared) from a file or stdin.",
+        resource="rite",
+        root=".lore/rites/main/",
+        example="lore rite new diagnose-timeout --group diagnostics/network -f r.yaml",
+    ),
+)
+@click.argument("name")
+@click.option("--shared", is_flag=True, help="Create a shared step instead of a main rite.")
+@click.option(
+    "--group",
+    default=None,
+    help=_group_opt_help(".lore/rites/main/", "diagnostics/network"),
+)
+@click.option("--from", "-f", "from_file", default=None, help="Source YAML file (else stdin).")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def rite_new(ctx, name, shared, group, from_file, json_flag):
+    from lore.api import _rite as _rite_mod
+
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+
+    content = _read_rite_body(ctx, from_file, json_mode=json_mode)
+    if content is None:
+        return
+
+    try:
+        result = _rite_mod.create_rite(
+            paths.rites_dir(project_root), name, content, shared=shared, group=group
+        )
+    except _rite_mod.RiteError as exc:
+        if json_mode:
+            click.echo(json.dumps({"error": str(exc)}), err=True)
+        else:
+            click.echo(str(exc), err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+    else:
+        kind = "shared" if shared else "main"
+        label = "shared step" if shared else "rite"
+        rel = f"{kind}/{group}/{name}.yaml" if group else f"{kind}/{name}.yaml"
+        click.echo(f"Created {label} {rel}")
+
+
+@rite.command("edit")
+@click.argument("name")
+@click.option("--shared", is_flag=True, help="Edit a shared step instead of a main rite.")
+@click.option("--from", "-f", "from_file", default=None, help="Source YAML file (else stdin).")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def rite_edit(ctx, name, shared, from_file, json_flag):
+    """Replace an existing rite in place, resolved by its bare id.
+
+    The rite is located by id across the whole main+shared tree; --shared
+    selects the schema (main-rite vs shared-step) the new body validates
+    against."""
+    from lore.api import _rite as _rite_mod
+
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+
+    content = _read_rite_body(
+        ctx, from_file, json_mode=json_mode, usage_error_on_empty=True
+    )
+    if content is None:
+        return
+
+    try:
+        result = _rite_mod.update_rite(
+            paths.rites_dir(project_root), name, content, shared=shared
+        )
+    except _rite_mod.RiteError as exc:
+        if json_mode:
+            click.echo(json.dumps({"error": str(exc)}), err=True)
+        else:
+            click.echo(str(exc), err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+    elif shared:
+        click.echo(f"Updated shared step {name}")
+    else:
+        click.echo(f"Updated rite {name}")
+
+
+@rite.command("delete")
+@click.argument("name")
+@click.option("--shared", is_flag=True, help="Delete a shared step instead of a main rite.")
+@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
+@click.pass_context
+def rite_delete(ctx, name, shared, json_flag):
+    """Soft-delete a main rite (or shared step with --shared) by rename.
+
+    The rite is resolved by its bare id across the whole main+shared tree;
+    --shared is accepted for parity but does not affect the lookup."""
+    from lore.api import _rite as _rite_mod
+
+    project_root = ctx.obj["project_root"]
+    json_mode = json_flag or ctx.obj.get("json", False)
+
+    try:
+        result = _rite_mod.delete_rite(
+            paths.rites_dir(project_root), name, shared=shared
+        )
+    except _rite_mod.RiteError as exc:
+        if json_mode:
+            click.echo(json.dumps({"error": str(exc)}), err=True)
+        else:
+            click.echo(str(exc), err=True)
+        ctx.exit(1)
+        return
+
+    if json_mode:
+        click.echo(json.dumps(result))
+    elif shared:
+        click.echo(f"Deleted shared step {name}")
+    else:
+        click.echo(f"Deleted rite {name}")
+
+
+@main.group()
+@click.pass_context
 def codex(ctx):
     """Access project documentation — a set of typed markdown files maintained in .lore/codex/. Use 'lore codex list' to see all documents, 'lore codex search <keyword>' to narrow by keyword, and 'lore codex show <id>' to read one or more documents in full. Prefer 'lore codex show id1 id2' over multiple separate calls."""
     pass
@@ -3696,7 +4087,7 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
-_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings")
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings", "rites")
 
 
 @main.command("health")
@@ -3711,7 +4102,7 @@ _VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "sche
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
 def health_cmd(ctx, scope, extra_scopes, json_mode):
-    """Audit all six file-based entity types and report issues."""
+    """Audit all seven file-based entity types and report issues."""
     import datetime
 
     from lore.api import _health as _health_mod

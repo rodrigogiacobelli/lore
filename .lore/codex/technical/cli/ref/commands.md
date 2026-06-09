@@ -28,12 +28,20 @@ related:
 - conceptual-workflows-error-handling
 - conceptual-workflows-impacts
 - conceptual-entities-glossary
+- conceptual-entities-rite
+- conceptual-workflows-rite-list
+- conceptual-workflows-rite-show
+- conceptual-workflows-rite-search
+- conceptual-workflows-rite-crud
+- decisions-014-link-direction
+- decisions-015-rites-writable-file-entity
+- decisions-016-rite-json-envelope-omits-group
 - tech-arch-schemas
 ---
 
 # Lore CLI — commands surface
 
-**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore knight`, `lore knight list`, `lore knight show`, `lore knight new`, `lore knight edit`, `lore knight delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
+**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore knight`, `lore knight list`, `lore knight show`, `lore knight new`, `lore knight edit`, `lore knight delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore rite`, `lore rite list`, `lore rite show`, `lore rite search`, `lore rite new`, `lore rite edit`, `lore rite delete`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
 **Source of truth:** `src/lore/cli.py` (Click decorators, handler bodies); `lore <command> --help` for per-command flags and prose (canonical per ADR-008).
 
 ## Why this exists
@@ -114,7 +122,17 @@ Slash-delimited segment-prefix matching. `--filter feature-implementation` match
 
 ### Codex / artifact `show` are fail-fast on multi-arg
 
-`lore codex show <id1> <id2>` and `lore artifact show <id1> <id2>` emit zero partial output if any ID is missing. Failure: `Document "<id>" not found` or `Artifact "<id>" not found`, exit 1. Avoid scripting on partial output — there is none.
+`lore codex show <id1> <id2>` and `lore artifact show <id1> <id2>` emit zero partial output if any ID is missing. Failure: `Document "<id>" not found` or `Artifact "<id>" not found`, exit 1. Avoid scripting on partial output — there is none. `lore rite show` follows the same fail-fast rule (failure: `Rite "<id>" not found`).
+
+### `lore rite` surface
+
+`lore rite {list|show|search|new|edit|delete}` manages Rites (the procedural-memory entity, lore codex show conceptual-entities-rite). Notable behaviour:
+
+- **Recursive + grouped, like every other entity.** Rites are discovered recursively under `main/` (default) and `shared/` (selected by `--shared`), and carry a `group` derived from their subfolder path. `rite list` shows a **GROUP column** and accepts **`--filter GROUP…`**; `rite new` accepts **`--group <path>`** (placing the file at `main/<group>/<name>.yaml`). `list`/`new`/`delete` JSON envelopes **carry the `group` key** (root → `null`) — no rite carve-out (see decisions-016-rite-json-envelope-omits-group and conceptual-workflows-json-output). `rite new` also carries a `kind` field (`"main"`/`"shared"`).
+- **Globally-unique ids (codex model).** A rite's identity is its `id:`, unique across the ENTIRE `main/` + `shared/` tree (every subfolder); the subfolder path is cosmetic. `rite new` duplicate detection is tree-wide; a duplicate id anywhere → `Rite "<name>" already exists.`, exit 1. Health adds a `duplicate_rite_id` error for the same id in two files.
+- **`show`/`edit`/`delete`/`use:` resolve by bare id, recursively.** `rite show <id>` / `edit <id>` / `delete <id>` take the bare id and scan the whole tree for the matching `id:` (mirroring `lore codex show <id>` and watcher edit/delete rglob lookup). `use:` references a bare id and resolves across `shared/` regardless of group. `show` inlines `use:` steps flat, non-recursively; a bare shared-step id renders the step alone. Dangling `use:` at show time → `Rite "<id>": shared step "<u>" not found`, exit 1.
+- **`search` is keyword browse**, case-insensitive substring over id/title/summary/trigger of main rites (recursive) — NOT a situational matcher (scoring is deferred). No match → `No rites matching "<kw>".`, exit 0.
+- **Name and group validation.** Name uses the shared `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` rule (`validate_rite_id`, bare — no slashes); `--group` is validated separately by `validate_group` like the other `--group` flags. `rite edit` with no `--from`/stdin → Click UsageError, exit 2 (parity with `lore edit`). Delete is soft-delete to `<id>.yaml.deleted`. See conceptual-workflows-rite-crud, conceptual-workflows-rite-list, conceptual-workflows-rite-show, conceptual-workflows-rite-search.
 
 ### `lore codex map` flag matrix
 
@@ -174,7 +192,7 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits all six file-based entity types, JSON-Schema-validates entity files, and audits codex `binds:` reference integrity. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`. The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. See conceptual-workflows-health.
+Audits all seven file-based entity types, JSON-Schema-validates entity files, and audits codex `binds:` reference integrity and codex `rites:` reference integrity. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`. The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. See conceptual-workflows-health.
 
 ## Shape — command tree
 
@@ -199,6 +217,7 @@ lore doctrine {list|show|new}
 lore knight    {list|show|new|edit|delete}
 lore watcher   {list|show|new|edit|delete}
 lore artifact  {list|show|new}
+lore rite      {list|show|search|new|edit|delete}
 lore codex     {list|show|search|map|chaos}
 lore impacts   <codex-id|path> [--direct-links]
 lore glossary  {list|show|search}
