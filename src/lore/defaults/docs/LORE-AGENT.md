@@ -173,6 +173,7 @@ Primitives for reading project state before you act:
 | `new-watcher`    | Draft and create a new watcher                                     |
 | `new-artifact`   | Draft and create a new artifact file                               |
 | `new-rite`       | Draft or update a rite and link the codex docs that govern it      |
+| `new-custom-schema` | Add custom frontmatter keys to a codex schema via a `.lore/custom-schemas/<kind>.yaml` overlay |
 | `explore-codex`  | Search, map, and traverse the codex                                |
 | `update-codex`   | Edit codex docs directly outside the feature-implementation flow   |
 | `ingest-source`  | Capture an upstream source under `codex/sources/`                  |

@@ -65,6 +65,14 @@ def config_path(root: Path) -> Path:
     return root / ".lore" / "config.toml"
 
 
+def custom_schemas_dir(root: Path) -> Path:
+    return root / ".lore" / "custom-schemas"
+
+
+def custom_schema_path(root: Path, kind: str) -> Path:
+    return custom_schemas_dir(root) / f"{kind}.yaml"
+
+
 _ENTITY_LOCATION_BASES: dict[str, tuple[str, ...]] = {
     "knight": (".lore", "knights"),
     "doctrine": (".lore", "doctrines"),

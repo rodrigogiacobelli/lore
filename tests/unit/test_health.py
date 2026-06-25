@@ -2756,20 +2756,19 @@ def test_check_schemas_sources_override_reports_scan_failure_loudly(
 ):
     """codex-sources-us-002 — Unit: sources override init failure surfaces loudly.
 
-    When get_validator('codex-source-frontmatter') raises, _check_schemas must
-    emit a HealthIssue(check='scan_failed', entity_type='codex-source',
+    When the codex-source-frontmatter validator resolution raises, _check_schemas
+    must emit a HealthIssue(check='scan_failed', entity_type='codex-source',
     schema_id='lore://schemas/codex-source-frontmatter') whose detail carries
-    the exception message.
+    the exception message. Post G2 the sources/* override resolves through the
+    project-aware seam `health.project_get_validator`, so the boom is injected
+    there (the behavior contract is unchanged; only the seam moved).
     """
     import lore.health as health
 
-    def boom(kind):
+    def boom(kind, project_root):
         raise RuntimeError("kaboom")
 
-    # Production code under G2 Green is expected to expose `get_validator` at
-    # module scope. Use raising=False so this test fails on assertion (RED),
-    # not on attribute lookup during setup.
-    monkeypatch.setattr(health, "get_validator", boom, raising=False)
+    monkeypatch.setattr(health, "project_get_validator", boom, raising=False)
 
     project = _make_lore_project(tmp_path)
     issues = health._check_schemas(project)

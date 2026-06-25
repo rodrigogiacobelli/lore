@@ -148,7 +148,9 @@ def create_document(
     # 5. parse frontmatter (body discarded — create writes raw content verbatim)
     meta, _ = _parse_frontmatter_block(content)
     # 6. schema validate
-    issues = validate_entity(_DOC_TYPE_SCHEMAS[resolved_type], meta)
+    issues = validate_entity(
+        _DOC_TYPE_SCHEMAS[resolved_type], meta, project_root=project_root
+    )
     if issues:
         raise ValueError("\n".join(i.message for i in issues))
     # 7. id ↔ filename invariant
@@ -219,7 +221,9 @@ def update_document(
     # 5. re-resolve doc_type from path (sources stay sources)
     doc_type = _resolve_doc_type_from_path(project_root, filepath)
     # 6. schema validate
-    issues = validate_entity(_DOC_TYPE_SCHEMAS[doc_type], merged)
+    issues = validate_entity(
+        _DOC_TYPE_SCHEMAS[doc_type], merged, project_root=project_root
+    )
     if issues:
         raise ValueError("\n".join(i.message for i in issues))
     # 7. id invariant

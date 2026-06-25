@@ -8,6 +8,19 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-25
+
+### Added
+
+#### Custom codex frontmatter schemas
+
+Projects can extend the packaged codex frontmatter schemas with their own **add-only overlay** files, validated everywhere the packaged schemas are.
+
+- **Overlay discovery and merge** — a project drops `.lore/custom-schemas/<kind>.yaml` (for v1, `codex-frontmatter` and `codex-source-frontmatter`), auto-discovered by filename with no config. The resolver merges the overlay's `properties` and `required` onto the packaged base: **add-only** (a key colliding with a packaged field is rejected; defaults can never be redefined or weakened) and **strict** (`additionalProperties` stays `false`, so declared custom keys validate but undeclared keys — typos — still error). Merged validators are cache-keyed on the overlay's mtime, so an edited overlay is re-read within a long-running process.
+- **Validation integration** — `lore health` validates both codex kinds against the merged schema (canonical docs and the `sources/` layer), and `lore codex` create/edit accept declared custom keys at write time. A malformed or rule-breaking overlay surfaces as a single clean `scan_failed` health issue, never a stack trace, with every other check still running.
+- **`OverlayError` and public API** — overlay-construction failures raise `OverlayError(ValueError)` (mirroring `GlossaryError`/`ImpactsError`), surfaced as `scan_failed` in health and propagating through codex create/edit's existing `ValueError` contract. `resolve_merged_schema`, `project_validator_for`, `OverlayError`, and `validate_entity(..., project_root=...)` are exported through `lore.api.__all__` at CLI↔API parity (additive, minor bump per the semver policy).
+- **`new-custom-schema` skill** — a seeded authoring skill that interviews for the target kind and custom fields, enforces the add-only rules before writing, writes the overlay, then runs `lore health` for immediate confirmation.
+
 ## [0.8.0] - 2026-06-09
 
 ### Added

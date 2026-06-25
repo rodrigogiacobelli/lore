@@ -126,7 +126,14 @@ from lore.rite import (
 from lore.health import health_check
 
 # --- Schemas ---
-from lore.schemas import load_schema, validate_entity, validate_entity_file
+from lore.schemas import (
+    OverlayError,
+    load_schema,
+    project_validator_for,
+    resolve_merged_schema,
+    validate_entity,
+    validate_entity_file,
+)
 
 # --- Project setup / reports ---
 from lore.init import run_init
@@ -310,6 +317,9 @@ __all__ = [
     "load_schema",
     "validate_entity",
     "validate_entity_file",
+    "resolve_merged_schema",
+    "project_validator_for",
+    "OverlayError",
     # init / reports / config
     "run_init",
     "generate_reports",

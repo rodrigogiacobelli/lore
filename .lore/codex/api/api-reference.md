@@ -5,6 +5,7 @@ summary: Exhaustive per-symbol reference for lore.api — signatures, return sha
 related:
   - api-guide
   - decisions-010-public-api-stability
+  - tech-arch-schemas
 ---
 
 # lore.api — Reference
@@ -694,7 +695,9 @@ create_document(project_root: Path, name: str, content: str, *, group: str | Non
 
 Returns `{"id", "filename", "group", "doc_type"}`.
 
-Raises: `ValueError` on validation, duplicate, or schema failure.
+Frontmatter is validated against the **overlay-merged** codex schema (it passes `project_root` to `validate_entity`), so a custom key declared in `.lore/custom-schemas/<kind>.yaml` is accepted at write time and an undeclared key is still rejected.
+
+Raises: `ValueError` on validation, duplicate, or schema failure — including `OverlayError` (a `ValueError`) when the project overlay is malformed.
 
 ```python
 create_document(pr, "014-use-sqlite", content, group="decisions")
@@ -726,7 +729,9 @@ update_document(project_root: Path, name: str, content: str) -> dict
 
 Returns `{"id", "filename", "group", "doc_type", "updated_at"}`.
 
-Raises: `ValueError` on not-found / schema / parse failure.
+Frontmatter is re-validated against the overlay-merged codex schema (same `project_root` path as `create_document`).
+
+Raises: `ValueError` on not-found / schema / parse failure — including `OverlayError` (a `ValueError`) when the project overlay is malformed.
 
 ```python
 update_document(pr, "api-guide", new_content)
@@ -1185,15 +1190,50 @@ report = health_check(pr, scope=["codex"])
 Validate an in-memory dict against a named schema.
 
 ```python
-validate_entity(kind: str, data: Any) -> list[SchemaIssue]
+validate_entity(kind: str, data: Any, *, project_root: Path | None = None) -> list[SchemaIssue]
 ```
 
 Returns a list of `SchemaIssue(rule, pointer, message)`. Never raises on validation failure.
 
-Raises: `FileNotFoundError` if `kind` is not a known schema.
+When `project_root` is passed and `kind` is overlay-eligible (`codex-frontmatter`, `codex-source-frontmatter`), validation uses the merged validator from `project_validator_for(kind, project_root)` (packaged default + the project overlay at `.lore/custom-schemas/<kind>.yaml`). When `project_root=None` (default) or the kind is not overlay-eligible, behaviour is identical to the packaged-only path. The keyword is additive (minor bump, ADR-010).
+
+Raises: `FileNotFoundError` if `kind` is not a known schema; `OverlayError` (a `ValueError`) if the project overlay is malformed.
 
 ```python
 issues = validate_entity("knight-frontmatter", {"id": "x", "title": "X", "summary": "..."})
+issues = validate_entity("codex-frontmatter", meta, project_root=pr)  # overlay-aware
+```
+
+### `resolve_merged_schema`
+
+Resolve the effective schema for a codex kind, merging the project overlay onto the packaged default.
+
+```python
+resolve_merged_schema(kind: str, project_root: Path) -> dict[str, Any]
+```
+
+Returns the packaged schema unchanged when no `.lore/custom-schemas/<kind>.yaml` overlay exists; otherwise a deep copy with the overlay's `properties` injected and `required` appended, `additionalProperties` pinned `false`. Add-only — packaged fields are never redefined.
+
+Raises: `OverlayError` (a `ValueError`) on unparseable YAML, non-mapping top-level, a property colliding with a packaged field, or a `required` entry not declared in the overlay.
+
+```python
+resolve_merged_schema("codex-frontmatter", pr)
+```
+
+### `project_validator_for`
+
+Build (and cache) the project-aware merged validator for a codex kind.
+
+```python
+project_validator_for(kind: str, project_root: Path) -> Draft202012Validator
+```
+
+Cached on `(kind, project_root, overlay_mtime_ns)` — an edited overlay yields a fresh validator within a long-running process. Wraps `resolve_merged_schema`.
+
+Raises: `OverlayError` (a `ValueError`) when the overlay is malformed.
+
+```python
+project_validator_for("codex-source-frontmatter", pr)
 ```
 
 ### `validate_entity_file`
@@ -1598,4 +1638,5 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 - **`ProjectNotFoundError`** — raised by `find_project_root` when no `.lore/` is found.
 - **`ImpactsError`** — raised by `impacts(...)` on bad input.
 - **`GlossaryError`** — raised by glossary reads on malformed YAML.
+- **`OverlayError`** — subclass of `ValueError`; raised by `resolve_merged_schema` / `project_validator_for` / `validate_entity(project_root=...)` when a `.lore/custom-schemas/<kind>.yaml` overlay is malformed (bad YAML, packaged-field collision, undeclared `required`). Propagates unchanged through `create_document` / `update_document` (their existing `ValueError` contract).
 - **`ConflictingDepthFlags`** — raised by `map_documents` on bad depth-flag combos.

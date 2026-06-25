@@ -10,6 +10,7 @@ import yaml
 # Re-exported at module scope so tests can monkeypatch `health.get_validator`
 # and `_check_schemas` can resolve its default via `sys.modules[__name__]`.
 from lore.schemas import _validator_for as get_validator  # noqa: F401
+from lore.schemas import project_validator_for as project_get_validator  # noqa: F401
 
 if TYPE_CHECKING:
     from jsonschema import Draft202012Validator
@@ -537,10 +538,11 @@ def _check_schemas(
     """
     import sys
 
-    from lore.schemas import SchemaIssue, _issue_from_error
+    from lore.schemas import _OVERLAY_KINDS, SchemaIssue, _issue_from_error
 
     if get_validator is None:
         get_validator = sys.modules[__name__].get_validator
+    project_get_validator = sys.modules[__name__].project_get_validator  # noqa: F811
 
     issues: list[HealthIssue] = []
     lore_dir = project_root / ".lore"
@@ -553,7 +555,10 @@ def _check_schemas(
         schema_id = f"lore://schemas/{schema_kind}"
         validator = None
         try:
-            validator = get_validator(schema_kind)
+            if schema_kind in _OVERLAY_KINDS:
+                validator = project_get_validator(schema_kind, project_root)
+            else:
+                validator = get_validator(schema_kind)
             schema_id = str(validator.schema.get("$id", schema_id))
         except Exception as exc:
             issues.append(HealthIssue(
@@ -572,7 +577,9 @@ def _check_schemas(
         if entity_label == "codex":
             source_schema_id = "lore://schemas/codex-source-frontmatter"
             try:
-                src_validator = get_validator("codex-source-frontmatter")
+                src_validator = project_get_validator(
+                    "codex-source-frontmatter", project_root
+                )
                 resolved_source_id = str(
                     src_validator.schema.get("$id", source_schema_id)
                 )

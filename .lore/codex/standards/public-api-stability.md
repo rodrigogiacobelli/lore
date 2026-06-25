@@ -53,6 +53,7 @@ __all__ = [
     "ImpactsError",
     "ImpactsResult",
     "GlossaryError",
+    "OverlayError",
     "ProjectNotFoundError",
     "ConflictingDepthFlags",
     "Config",
@@ -171,6 +172,8 @@ __all__ = [
     "load_schema",
     "validate_entity",
     "validate_entity_file",
+    "resolve_merged_schema",
+    "project_validator_for",
     # init / reports / config
     "run_init",
     "generate_reports",

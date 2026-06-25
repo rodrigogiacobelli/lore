@@ -188,4 +188,6 @@ as an array of unique non-empty strings (no path-pattern rules; rite ids are
 plain slugs) — or `lore health --scope schemas` rejects any doc carrying it. See
 `tech-arch-schemas`.
 
-No other frontmatter fields are permitted. `lore health` enforces this — any extra field fails validation.
+No other frontmatter fields are permitted by default. `lore health` enforces this — any extra field fails validation.
+
+**Project-local custom fields.** A project may add its own frontmatter keys (e.g. `owner`, `reviewed`) by declaring them once in an add-only overlay at `.lore/custom-schemas/codex-frontmatter.yaml` (or `codex-source-frontmatter.yaml` for source docs). The overlay extends the packaged schema: declared custom keys then pass `lore health` and `lore codex` create/edit, while undeclared keys (and typos) still fail — `additionalProperties` stays `false`. Overlays are add-only: they cannot redefine, relax, or drop a packaged field. Use the `new-custom-schema` skill to scaffold one; the resolver and merge rules live in `tech-arch-schemas`.

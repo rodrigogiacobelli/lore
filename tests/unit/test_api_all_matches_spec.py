@@ -178,6 +178,9 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "load_schema",
     "validate_entity",
     "validate_entity_file",
+    "resolve_merged_schema",
+    "project_validator_for",
+    "OverlayError",
     # init / reports / config
     "run_init",
     "generate_reports",

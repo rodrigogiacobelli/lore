@@ -10,7 +10,7 @@ binds:
 - tests/e2e/test_health_schemas.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
@@ -108,7 +108,7 @@ Per-kind coverage:
 - **`doctrine-design-frontmatter`** — frontmatter of every `.lore/doctrines/**/*.design.md` validated against `lore://schemas/doctrine-design-frontmatter`.
 - **`knight`** — frontmatter of every `.lore/knights/**/*.md` validated against `lore://schemas/knight-frontmatter`.
 - **`watcher`** — every `.lore/watchers/**/*.yaml` validated against `lore://schemas/watcher-yaml`.
-- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related`, `binds`, and `rites` arrays accepted; mapping form rejected). A malformed `rites:` (non-array, duplicates, empty string) is a schema error with `entity_type="codex"`.
+- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related`, `binds`, and `rites` arrays accepted; mapping form rejected). A malformed `rites:` (non-array, duplicates, empty string) is a schema error with `entity_type="codex"`. Source docs under `.lore/codex/sources/` are validated against `lore://schemas/codex-source-frontmatter` via the in-loop per-file override. Both codex kinds are **overlay-aware**: when the project ships a `.lore/custom-schemas/<kind>.yaml` overlay, the validator is the merged schema (packaged default + overlay), so declared custom keys pass while undeclared keys (e.g. a typo) still error — see "Project-local schema overlays" below.
 - **`artifact`** — frontmatter of every `.lore/artifacts/**/*.md` validated against `lore://schemas/artifact-frontmatter`.
 - **`glossary`** — the single file `.lore/codex/glossary.yaml` (full-YAML, not frontmatter) validated against `lore://schemas/glossary`. Unique among schema kinds: a literal file glob, not a `**/*.yaml` walk.
 - **`main-rite`** — every `.lore/rites/main/**/*.yaml` (full-YAML, recursive) validated against `lore://schemas/main-rite`. Missing required fields (`id, title, summary, trigger, nodes, conclusions`) → error.
@@ -121,6 +121,17 @@ Special error rules (beyond JSON Schema keywords):
 - **`rule="read-failed"`** — I/O or Unicode failure on read. Single error, `pointer="/"`, `message=str(exc)`. Validation continues to the next file.
 
 Files that the existing entity loaders today silently skip (unpaired doctrine designs, frontmatter-less knights, malformed artifacts) are surfaced here as schema errors instead of being silently dropped.
+
+##### Project-local schema overlays
+
+A project may add custom frontmatter keys to its codex docs by declaring them once in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`). For the two codex kinds the schema audit resolves its validator through the project-aware health seam `project_get_validator(kind, project_root)` (re-exporting `schemas.project_validator_for`); the other seven kinds use the kind-only `get_validator(kind)` seam. Both are internal module-level monkeypatch seams (neither is public API); the kind split — project-aware for the two codex kinds, kind-only for the rest — is the routing rule. The merged validator adds the overlay's declared properties (and any overlay `required` entries) onto the packaged schema while keeping `additionalProperties: false`. Effect on the audit:
+
+- A doc carrying a **declared** custom key (e.g. `owner:` named in the overlay) passes.
+- An **undeclared** key — including a typo of a declared key (`onwer:`) — still errors as `additionalProperties`, now listing the custom key among the allowed keys.
+- A doc missing an overlay-`required` key errors as `required`, exactly like a missing packaged field.
+- With **no** overlay present, output is byte-for-byte identical to the packaged-only behaviour.
+
+A **malformed overlay** — unparseable YAML, non-mapping top-level, a property colliding with a packaged field, or a `required` entry not declared in the overlay — raises `OverlayError` during validator construction. `_check_schemas` catches it in its existing validator-construction `try/except` and emits **one** `scan_failed` error naming the overlay (`severity="error"`, `check="scan_failed"`, `detail="<overlay-path>: <reason>"`, `schema_id="lore://schemas/<kind>"`); the per-file loop for that kind is skipped, every other kind and check still runs, and no stack trace escapes `lore health`. The overlay file itself is project config, not a codex entity, and is never walked as a `.md` doc (`decisions-018-overlays-are-path-discovered-config`). The resolver and merge semantics live in `tech-arch-schemas`.
 
 #### Bindings checks (scope: `bindings`)
 

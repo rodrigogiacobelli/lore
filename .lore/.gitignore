@@ -2,6 +2,8 @@
 *
 !.gitignore
 !config.toml
+!custom-schemas
+!custom-schemas/**
 !codex
 !codex/**
 !artifacts

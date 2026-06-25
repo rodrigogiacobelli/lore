@@ -189,6 +189,9 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "load_schema",
     "validate_entity",
     "validate_entity_file",
+    "resolve_merged_schema",
+    "project_validator_for",
+    "OverlayError",
     # init / reports / config
     "run_init",
     "generate_reports",
@@ -358,6 +361,9 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "load_schema": "lore.schemas",
     "validate_entity": "lore.schemas",
     "validate_entity_file": "lore.schemas",
+    "resolve_merged_schema": "lore.schemas",
+    "project_validator_for": "lore.schemas",
+    "OverlayError": "lore.schemas",
     # init / oracle / config
     "run_init": "lore.init",
     "generate_reports": "lore.oracle",

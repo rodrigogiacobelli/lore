@@ -1,18 +1,23 @@
 """Packaged JSON-Schema (draft 2020-12) resources, loader, and validators.
 
-Public API:
-    from lore.schemas import load_schema, validate_entity, validate_entity_file, SchemaIssue
+The public API is the set of names in ``__all__``: the schema loader, the entity
+validators, the project-overlay resolver, and their issue/error types.
 """
 
 from __future__ import annotations
 
+import copy
 import functools
+import os
 from dataclasses import dataclass
 from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 import jsonschema
 import yaml
+
+from lore import paths
 
 __all__ = [
     "load_schema",
@@ -20,7 +25,15 @@ __all__ = [
     "validate_entity_file",
     "SchemaIssue",
     "SchemaValidationError",
+    "OverlayError",
+    "merge_overlay",
+    "resolve_merged_schema",
+    "project_validator_for",
 ]
+
+
+class OverlayError(ValueError):
+    """Raised when a custom-schema overlay is malformed or collides with packaged keys."""
 
 
 class SchemaValidationError(Exception):
@@ -55,6 +68,97 @@ class SchemaIssue:
 @functools.lru_cache(maxsize=None)
 def _validator_for(kind: str) -> jsonschema.Draft202012Validator:
     return jsonschema.Draft202012Validator(load_schema(kind))
+
+
+_OVERLAY_KINDS = frozenset({"codex-frontmatter", "codex-source-frontmatter"})
+
+
+def merge_overlay(base: dict, overlay: dict, kind: str) -> dict:
+    """Merge a project overlay onto a packaged schema (add-only, defaults-authoritative).
+
+    Overlay ``properties`` are injected; overlay ``required`` entries are appended
+    after the packaged ones. ``additionalProperties`` is pinned ``False`` and ``$id``
+    is left as the packaged value. A property colliding with a packaged key, or a
+    ``required`` entry naming a property not declared in the overlay, raises
+    ``OverlayError``. The ``base`` dict is not mutated.
+    """
+    merged = copy.deepcopy(base)
+    packaged_keys = set(merged.get("properties", {}))
+    overlay_props = overlay.get("properties", {}) or {}
+
+    for key in overlay_props:
+        if key in packaged_keys:
+            raise OverlayError(
+                f"property '{key}' collides with a packaged field and cannot be overridden"
+            )
+
+    merged.setdefault("properties", {}).update(overlay_props)
+
+    overlay_required = overlay.get("required", []) or []
+    for name in overlay_required:
+        if name not in overlay_props:
+            raise OverlayError(
+                f"required entry '{name}' is not declared in this overlay"
+            )
+    merged["required"] = list(merged.get("required", [])) + list(overlay_required)
+
+    merged["additionalProperties"] = False
+    return merged
+
+
+def resolve_merged_schema(kind: str, project_root: Path) -> dict:
+    """Return the packaged schema for ``kind`` merged with the project overlay, if any.
+
+    Absent overlay file -> the packaged ``load_schema(kind)`` content unchanged.
+    Present -> parse the overlay YAML, validate its shape, and ``merge_overlay``.
+    Malformed overlays raise ``OverlayError``.
+    """
+    overlay_path = paths.custom_schema_path(project_root, kind)
+    try:
+        text = overlay_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return load_schema(kind)
+
+    try:
+        overlay = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise OverlayError(f"{overlay_path}: invalid YAML: {e}") from e
+
+    if not isinstance(overlay, dict):
+        raise OverlayError(f"{overlay_path}: overlay must be a mapping")
+    if not isinstance(overlay.get("properties"), dict):
+        raise OverlayError(f"{overlay_path}: overlay 'properties' must be a mapping")
+
+    try:
+        return merge_overlay(load_schema(kind), overlay, kind)
+    except OverlayError as e:
+        raise OverlayError(f"{overlay_path}: {e}") from e
+
+
+_project_validator_cache: dict[tuple[str, str, int], jsonschema.Draft202012Validator] = {}
+
+
+def project_validator_for(kind: str, project_root: Path) -> jsonschema.Draft202012Validator:
+    """Return a validator for ``kind`` merged with the project overlay, cached on mtime.
+
+    Cache key is ``(kind, str(project_root), overlay_mtime_ns)`` where the mtime is
+    ``-1`` when the overlay file is absent. An edited overlay (changed mtime) yields
+    a fresh validator. ``OverlayError`` from resolution propagates.
+    """
+    overlay_path = paths.custom_schema_path(project_root, kind)
+    try:
+        mtime_ns = os.stat(overlay_path).st_mtime_ns
+    except FileNotFoundError:
+        mtime_ns = -1
+
+    key = (kind, str(project_root), mtime_ns)
+    cached = _project_validator_cache.get(key)
+    if cached is not None:
+        return cached
+
+    validator = jsonschema.Draft202012Validator(resolve_merged_schema(kind, project_root))
+    _project_validator_cache[key] = validator
+    return validator
 
 
 _FRONTMATTER_KINDS = {
@@ -110,13 +214,22 @@ def _issue_from_error(err: jsonschema.ValidationError) -> SchemaIssue:
     )
 
 
-def validate_entity(kind: str, data: Any) -> list[SchemaIssue]:
+def validate_entity(
+    kind: str, data: Any, project_root: Path | None = None
+) -> list[SchemaIssue]:
     """Validate an in-memory dict against a named schema.
 
     Returns a list of SchemaIssue records. Never raises on validation failure.
     Raises FileNotFoundError if ``kind`` is not a known schema.
+
+    When ``project_root`` is provided and ``kind`` is overlay-eligible
+    (``codex-frontmatter`` / ``codex-source-frontmatter``), the project's merged
+    validator is used; otherwise the packaged validator is used.
     """
-    validator = _validator_for(kind)
+    if project_root is not None and kind in _OVERLAY_KINDS:
+        validator = project_validator_for(kind, project_root)
+    else:
+        validator = _validator_for(kind)
     issues: list[SchemaIssue] = []
     required_by_pointer: dict[str, SchemaIssue] = {}
     required_missing: dict[str, list[str]] = {}

@@ -66,7 +66,7 @@ related:
 
 - **`match_glossary` operates on body strings.** Pass a `dict[doc_id, body]` (or list of bodies). Canonical-only token-run matching. Used by `lore codex show` auto-surface. There is no corpus-level deprecated-term scan — `find_deprecated_terms` has been removed.
 
-- **Schema validation is callable from Realm.** `load_schema(kind)` returns the cached schema dict; `validate_entity_file(path, kind)` returns `list[HealthIssue]` with zero stdout/stderr side effects (ADR-011). Both are in `lore.api.__all__`.
+- **Schema validation is callable from Realm.** `load_schema(kind)` returns the cached schema dict; `validate_entity_file(path, kind)` returns `list[HealthIssue]` with zero stdout/stderr side effects (ADR-011). Both are in `lore.api.__all__`. For project-local custom frontmatter, `validate_entity(kind, data, project_root=...)`, `resolve_merged_schema(kind, project_root)`, and `project_validator_for(kind, project_root)` build the overlay-merged validator from `.lore/custom-schemas/<kind>.yaml` (the two codex kinds; see tech-arch-schemas). A malformed overlay raises `OverlayError` (a `ValueError`).
 
 - **`impacts(token, *, project_root, direct_links=False) -> ImpactsResult`.** The Python mirror of `lore impacts` (conceptual-workflows-impacts). `ImpactsResult` is a tagged-union dataclass — `kind == "codex"` populates `codex_items: tuple[CodexBinding, ...]`; `kind == "code"` populates `code_items: tuple[CodeBinding, ...]`. Errors surface as `ImpactsError` (subclass of `ValueError`) — unknown codex id, path outside repo, `..` traversal. The function takes `project_root: Path` (NOT `codex_dir`) because path-seed lookups normalise against the repo root, not the codex subdir.
 
@@ -100,7 +100,7 @@ Y = public function exists in `lore.api.__all__`. — = no concept in this dimen
 
 The facade re-exports the operational surface in named sections; this list mirrors the structure of `__all__` in `src/lore/api.py`. New exports are appended within the relevant section, never sprinkled across sections.
 
-- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineStep`, `Doctrine`, `Knight`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`.
+- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineStep`, `Doctrine`, `Knight`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`.
 - **Project root** — `find_project_root`.
 - **Validators** — `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_group`, `validate_quest_id_loose`, `validate_chaos_threshold`, `validate_binds_entry`, `is_glob_pattern`, `route_entity`.
 - **DB: quest CRUD** — `create_quest`, `list_quests`, `get_quest`, `edit_quest`, `edit_quest_full`, `delete_quest`, `close_quest`.
@@ -120,7 +120,7 @@ The facade re-exports the operational surface in named sections; this list mirro
 - **Glossary** — `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary`.
 - **Impacts** — `impacts`, `classify_token`.
 - **Health** — `health_check`.
-- **Schemas** — `load_schema`, `validate_entity`, `validate_entity_file`.
+- **Schemas** — `load_schema`, `validate_entity`, `validate_entity_file`, `resolve_merged_schema`, `project_validator_for`.
 - **Init / reports / config** — `run_init`, `generate_reports`, `load_config`.
 
 The authoritative list lives in `src/lore/api.py`. If this doc and the source drift, the source wins; report the drift via `lore health` or a codex update.

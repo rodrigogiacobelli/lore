@@ -15,6 +15,9 @@ binds:
 - src/lore/schemas/main-rite.yaml
 - src/lore/schemas/shared-step.yaml
 - src/lore/health.py
+- src/lore/paths.py
+- src/lore/codex.py
+- src/lore/api.py
 - tests/unit/test_schemas.py
 - tests/unit/test_health_schemas.py
 - tests/unit/test_health_schemas_binds.py
@@ -25,7 +28,7 @@ binds:
 - tests/e2e/test_health_schemas_us005.py
 - tests/e2e/test_health_schemas_us007.py
 - tests/e2e/test_health_schemas_us008.py
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction"]
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config"]
 ---
 
 # Schemas Module Internals
@@ -78,11 +81,13 @@ Schemas are authored as YAML (not JSON) because they were drafted as fenced YAML
 
 Loads the packaged schema for the given kind via `importlib.resources.files("lore.schemas") / f"{kind}.yaml"` and parses it with `yaml.safe_load`. Cached for the lifetime of the process. Raises `FileNotFoundError` with a clear message for an unknown kind.
 
-### `validate_entity(kind: str, data: dict) -> list[tuple[str, str, str]]`
+### `validate_entity(kind: str, data: dict, *, project_root: Path | None = None) -> list[tuple[str, str, str]]`
 
 Pure-data validator. Given a kind and a parsed mapping, returns a list of `(rule, pointer, message)` tuples — one per validation failure. Empty list means valid. Uses a cached `jsonschema.Draft202012Validator(load_schema(kind))` and collects every violation via `iter_errors` (no short-circuit on the first error — FR-9).
 
 The validator is compiled once per kind and reused across all files of that kind within a `health_check()` invocation. This keeps the PRD's ≤200 ms overhead budget on a typical project intact.
+
+**`project_root` keyword (overlay-aware path).** When `project_root` is passed and `kind` is overlay-eligible (`codex-frontmatter`, `codex-source-frontmatter`), `validate_entity` validates against the **merged** validator from `project_validator_for(kind, project_root)` (packaged default + the project overlay at `.lore/custom-schemas/<kind>.yaml`) instead of the packaged validator. When `project_root` is `None` (the default) or the kind is not overlay-eligible, it falls through to today's packaged behaviour — byte-for-byte identical. The keyword is additive (a minor bump under ADR-010); existing callers are unaffected. `lore codex` create/edit pass `project_root=project_root`, so a declared custom key is accepted at write time consistently with the health audit. If overlay construction fails, `validate_entity` raises `OverlayError` (see "Project-local schema overlays" below) rather than returning issues.
 
 ### `validate_entity_file(path: Path, kind: str) -> list[HealthIssueTuple]`
 
@@ -130,6 +135,41 @@ One schema, one contract, enforced at both write time and audit time. Any drift 
 - `rule`, `pointer` from the tuple
 
 A catastrophic failure loading the schema resource itself (e.g. the wheel is corrupted) raises out of `_check_schemas` and is caught by `health_check()`'s existing `scan_failed` wrapper — the health check fails loud, never false-greens.
+
+**Overlay-aware routing.** For the two codex kinds (`codex-frontmatter`, `codex-source-frontmatter`) `_check_schemas` resolves its validator through the project-aware health seam `project_get_validator(kind, project_root)` (re-exporting `project_validator_for`) so the merged validator is used; every other kind still routes through the kind-only `get_validator(kind)` seam. Both are internal module-level monkeypatch seams (neither is public API), split by kind: project-aware for the two codex kinds, kind-only for the rest. A malformed overlay raises `OverlayError`, which the existing `try/except Exception` around validator construction turns into a single `scan_failed` issue naming the overlay — other kinds and checks continue. See "Project-local schema overlays" below and `conceptual-workflows-health`.
+
+## Project-local schema overlays
+
+A project may extend the two codex frontmatter schemas with its own **add-only overlay** at `.lore/custom-schemas/<kind>.yaml`, where `<kind>` ∈ {`codex-frontmatter`, `codex-source-frontmatter`} for v1. The overlay adds new typed frontmatter properties (and optionally marks them required) while the packaged core fields stay authoritative and untouched. With no overlay file present, behaviour is byte-for-byte identical to the packaged-only path. The classification of an overlay as path-discovered project config (not an ID-addressable entity) is `decisions-018-overlays-are-path-discovered-config`.
+
+### Resolver surface
+
+The merge logic is a single region in this module — no second copy lives in `health.py` or `codex.py` (DRY, `standards-dry`):
+
+- **`resolve_merged_schema(kind, project_root) -> dict`** — returns the packaged `load_schema(kind)` unchanged when no overlay exists; otherwise a deep copy of the packaged base with overlay `properties` injected, overlay `required` appended, and `additionalProperties` pinned `false` (the packaged base is never mutated, preserving cache integrity). Raises `OverlayError` on any rule violation.
+- **`merge_overlay(base, overlay, kind) -> dict`** — the pure merge helper. Add-only: it only adds `properties`/`required`; it never reads a value out of the packaged `properties`/`required`.
+- **`project_validator_for(kind, project_root) -> Draft202012Validator`** — builds the merged schema via `resolve_merged_schema`, constructs the validator, and caches it on key `(kind, str(project_root), overlay_mtime_ns)`, where `overlay_mtime_ns` is `os.stat(overlay).st_mtime_ns` or sentinel `-1` when absent. An edited overlay yields a new key → re-read within a long-running process (Realm). The kind-only `lru_cache` on `_validator_for` is project-blind and is not reused.
+- **`OverlayError(ValueError)`** — the overlay-resolution failure type (see "Failure handling").
+
+`resolve_merged_schema`, `project_validator_for`, and `OverlayError` are public (re-exported in the `# --- Schemas ---` block of `api.py` and in `lore.api.__all__`); `validate_entity` gains the `project_root` keyword. The path helpers `paths.custom_schemas_dir(root)` and `paths.custom_schema_path(root, kind)` follow the `glossary_path`/`config_path` shape. The resolver imports only stdlib (`os`, `pathlib`, `copy`), `yaml`, `jsonschema`, and `lore.paths` — no cycle into the entity modules.
+
+### Merge semantics (add-only, strict)
+
+An overlay is a JSON-Schema fragment: a top-level mapping with `properties` (object, required) and optional `required` (array of strings). All other top-level keys are ignored — the merge synthesizes everything else from the packaged base (`$schema`, `$id`, `type`, `additionalProperties` are never copied from the overlay).
+
+- New `properties` keys are merged in (FR-4).
+- `required` entries are appended, and each must name a property declared in the **same** overlay (FR-5).
+- `additionalProperties` stays `false` (FR-6): declared custom keys pass; an undeclared key (e.g. a typo `onwer:`) still errors as an unknown property, listing the custom key among allowed keys because the merged `properties` contains it.
+- An overlay property whose key collides with a packaged field — for `codex-frontmatter`: `id, title, summary, type, related, binds, rites`; for `codex-source-frontmatter`: `id, title, summary, type, related` — is rejected (FR-7). Defaults can never be redefined or weakened.
+
+### Failure handling
+
+`resolve_merged_schema` raises `OverlayError` (subclass of `ValueError`, mirroring the `GlossaryError` / `ImpactsError` precedent; public in `lore.api.__all__`) on: unparseable YAML, a non-mapping top-level, a missing/non-mapping `properties`, a packaged-field collision (FR-7), or a `required` entry not declared in the overlay (FR-5). The two consumers handle it as follows:
+
+- **Health** catches it in the existing `try/except Exception` around validator construction and emits one `scan_failed` `HealthIssue` naming the overlay; the per-file loop for that kind is skipped, other kinds and checks continue. No stack trace escapes `lore health`.
+- **Codex create/edit** let `OverlayError` propagate unchanged out of `create_document` / `update_document` — because it subclasses `ValueError`, it rides their existing "raises `ValueError` on schema failure" contract. Ordinary validation failures (typo, missing required) still return the `list[SchemaIssue]` that create/edit join into a `ValueError`.
+
+Overlays are parsed with `yaml.safe_load` only (NFR Security) and cannot weaken packaged invariants (add-only), bounding blast radius.
 
 ## Codex Frontmatter Fields
 
@@ -207,9 +247,9 @@ only.
 
 ## Dependency Rules
 
-- `schemas.py` imports **only** `importlib.resources`, `yaml`, `jsonschema`, and `lore.frontmatter`. It has zero imports from any entity module (`doctrine.py`, `knight.py`, etc.), so the create-time validators can import `schemas.py` without creating a cycle.
+- `schemas/__init__.py` imports **only** stdlib (`importlib.resources`, `os`, `pathlib`, `copy`), `yaml`, `jsonschema`, `lore.frontmatter`, and `lore.paths` (for the overlay path helpers). It has zero imports from any entity module (`doctrine.py`, `knight.py`, etc.), so the create-time validators can import it without creating a cycle. `lore.paths` has no cycle back into schemas.
 - The packaged schema YAML files are static resources. They are never written to and never fetched over the network — `$schema` and `$id` URIs are metadata only.
-- User-extensible / project-local schemas are explicitly post-MVP. There is no runtime override path.
+- **Project-local schema overlays are supported** for the two codex kinds via the resolver above (`.lore/custom-schemas/<kind>.yaml`, add-only, strict). This reverses the previous "no runtime override path" posture. The override is add-only and defaults-authoritative — an overlay can never redefine, relax, or remove a packaged field — so the packaged schemas remain the single source of truth for the core shape. Overlays for other entity kinds (knight, artifact, doctrine) and per-doc-type overlays remain post-MVP.
 
 ## Packaging
 
