@@ -57,12 +57,12 @@ Every file in the codex belongs to exactly one of three classes, defined by its 
 | Class    | Directory                  | Deletion test |
 |----------|----------------------------|---------------|
 | Stable   | `vision/`, `conceptual/`, `technical/`, `api/`, `decisions/`, `standards/`, `operations/` | Deleting any file LOSES information. Never safe. |
-| In-Flight | `transient/` | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. |
+| In-Flight | `transient/` | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. Validated against the packaged schema only — exempt from custom-schema overlays. |
 | Sources  | `sources/<system>/<id>.md` | Safe to delete **at any time**. Every fact worth keeping already lives in a stable doc. |
 
 **Stable** describes the system as it exists today. Never future intentions, never work in progress.
 
-**In-flight** (`transient/`) holds work being planned or developed — PRDs, tech specs, maps, reports. Deleted when the feature ships.
+**In-flight** (`transient/`) holds work being planned or developed — PRDs, tech specs, maps, reports. Deleted when the feature ships. These docs validate against the packaged `codex-frontmatter` schema only and are exempt from project custom-schema overlays — see "Project-local custom fields" below.
 
 **Sources** (`sources/<system>/<id>.md`) hold raw upstream material — Jira tickets, meeting transcripts, chat threads, pasted documents — captured verbatim as point-in-time snapshots. They are never canonical. Every fact that matters must be propagated into a stable doc before the source becomes deletable; after that, the source is disposable.
 
@@ -190,4 +190,4 @@ plain slugs) — or `lore health --scope schemas` rejects any doc carrying it. S
 
 No other frontmatter fields are permitted by default. `lore health` enforces this — any extra field fails validation.
 
-**Project-local custom fields.** A project may add its own frontmatter keys (e.g. `owner`, `reviewed`) by declaring them once in an add-only overlay at `.lore/custom-schemas/codex-frontmatter.yaml` (or `codex-source-frontmatter.yaml` for source docs). The overlay extends the packaged schema: declared custom keys then pass `lore health` and `lore codex` create/edit, while undeclared keys (and typos) still fail — `additionalProperties` stays `false`. Overlays are add-only: they cannot redefine, relax, or drop a packaged field. Use the `new-custom-schema` skill to scaffold one; the resolver and merge rules live in `tech-arch-schemas`.
+**Project-local custom fields.** A project may add its own frontmatter keys (e.g. `owner`, `reviewed`) by declaring them once in an add-only overlay at `.lore/custom-schemas/codex-frontmatter.yaml` (or `codex-source-frontmatter.yaml` for source docs). The overlay extends the packaged schema: declared custom keys then pass `lore health` and `lore codex` create/edit, while undeclared keys (and typos) still fail — `additionalProperties` stays `false`. Overlays are add-only: they cannot redefine, relax, or drop a packaged field. They also apply to **canonical docs and sources only** — in-flight docs under `transient/` validate against the packaged schema alone, so a transient doc that carries a custom key is rejected as an unknown property and an overlay `required` field never fires on one (`decisions-019-overlay-scope-stops-at-transient`). Use the `new-custom-schema` skill to scaffold one; the resolver and merge rules live in `tech-arch-schemas`.

@@ -51,6 +51,18 @@ def _resolve_doc_type_from_path(project_root: Path, filepath: Path) -> str:
     return "codex"
 
 
+def _overlay_root(project_root: Path, filepath: Path) -> Path | None:
+    """Return the root custom-schema overlays resolve from, or ``None``.
+
+    Overlays are canonical-codex governance: they apply to codex docs and
+    sources. A transient working doc gets ``None``, which makes
+    ``validate_entity`` pick the packaged validator instead of the merged one.
+    """
+    if _paths.is_transient_codex_path(project_root, filepath):
+        return None
+    return project_root
+
+
 def _resolve_doc_type(
     *,
     group: str | None,
@@ -147,9 +159,13 @@ def create_document(
     resolved_type = _resolve_doc_type(group=group, explicit=doc_type)
     # 5. parse frontmatter (body discarded — create writes raw content verbatim)
     meta, _ = _parse_frontmatter_block(content)
-    # 6. schema validate
+    # 6. schema validate (overlay-aware; transient docs use the packaged schema)
+    target_dir = _paths.entity_location(project_root, "codex", group=group)
+    target_path = target_dir / f"{name}.md"
     issues = validate_entity(
-        _DOC_TYPE_SCHEMAS[resolved_type], meta, project_root=project_root
+        _DOC_TYPE_SCHEMAS[resolved_type],
+        meta,
+        project_root=_overlay_root(project_root, target_path),
     )
     if issues:
         raise ValueError("\n".join(i.message for i in issues))
@@ -168,9 +184,7 @@ def create_document(
                 f"codex doc '{name}' already exists at {relpath}"
             )
     # 9. write
-    target_dir = _paths.entity_location(project_root, "codex", group=group)
     target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / f"{name}.md"
     target_path.write_text(content)
     # 10. envelope
     return {
@@ -220,9 +234,11 @@ def update_document(
             merged[field] = existing_meta[field]
     # 5. re-resolve doc_type from path (sources stay sources)
     doc_type = _resolve_doc_type_from_path(project_root, filepath)
-    # 6. schema validate
+    # 6. schema validate (overlay-aware; transient docs use the packaged schema)
     issues = validate_entity(
-        _DOC_TYPE_SCHEMAS[doc_type], merged, project_root=project_root
+        _DOC_TYPE_SCHEMAS[doc_type],
+        merged,
+        project_root=_overlay_root(project_root, filepath),
     )
     if issues:
         raise ValueError("\n".join(i.message for i in issues))

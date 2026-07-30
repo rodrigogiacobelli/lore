@@ -8,6 +8,13 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+### Fixed
+
+#### Custom codex frontmatter schema overlays — scope corrections
+
+- **Overlays no longer reach `codex/transient/`** — a custom field, especially a `required` one, was applied to every codex document including the in-flight working docs under `.lore/codex/transient/` and the health reports `lore health` writes there itself. Declaring a required custom field therefore turned every past report into a schema error and every subsequent `lore health` run added one more, while `lore codex new --group transient` refused to create a PRD or tech spec without the field. Overlays now govern canonical codex docs and the `sources/` layer only; transient working docs validate against the packaged schema at every seam (`lore health`, `lore codex new`, `lore codex edit`). A transient doc that carries a declared custom key is still rejected as an unknown property — custom fields are canonical-codex governance.
+- **`lore codex edit --set/--unset/--add/--remove` honours the overlay** — field-edit mode validated against the packaged schema only, so `--set owner=alice` failed with `Unknown property 'owner'` even when the project's overlay declared `owner`. That blocked the backfill `lore health` prescribes when a custom field is newly made required. Field-edit now resolves the same merged schema as every other codex writer (packaged for transient docs), and CLI scalar coercion consults it too, so a custom array, integer, or boolean field coerces by its declared type instead of reaching validation as a raw string.
+
 ## [0.9.0] - 2026-06-25
 
 ### Added

@@ -17,6 +17,8 @@ related:
 - decisions-006-id-references
 - decisions-012-multi-value-cli-param-convention
 - decisions-013-toml-for-config-yaml-for-glossary
+- decisions-018-overlays-are-path-discovered-config
+- decisions-019-overlay-scope-stops-at-transient
 - conceptual-workflows-codex-map
 - conceptual-workflows-codex-chaos
 - conceptual-workflows-filter-list
@@ -192,7 +194,7 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits all seven file-based entity types, JSON-Schema-validates entity files, and audits codex `binds:` reference integrity and codex `rites:` reference integrity. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`. The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. See conceptual-workflows-health.
+Audits all seven file-based entity types, JSON-Schema-validates entity files, and audits codex `binds:` reference integrity and codex `rites:` reference integrity. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`. The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. See conceptual-workflows-health.
 
 ## Shape — command tree
 

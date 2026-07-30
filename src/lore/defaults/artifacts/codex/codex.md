@@ -14,7 +14,7 @@ Everything is reachable from the CLI — every command group accepts `--help`.
 
 ## The codex
 
-`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other frontmatter fields are permitted.
+`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other fields, unless the project declares them in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (the `new-custom-schema` skill). Overlays cover canonical docs and `sources/` only; `transient/` docs always validate against the packaged schema.
 
 Docs live under subdirectories that scope intent. The set below is what `lore init` *expects* a fresh project to use; the dirs are created on demand by `lore codex new --group <subdir>`.
 
@@ -27,7 +27,7 @@ Docs live under subdirectories that scope intent. The set below is what `lore in
 | `vision/`       | product direction, long-arc goals                                             |
 | `operations/`   | dev, deploy, run, runbooks                                                    |
 | `sources/`      | verbatim upstream snapshots (Jira, transcripts) — safe to delete after distil |
-| `transient/`    | in-flight work products — safe to delete after the feature ships              |
+| `transient/`    | in-flight work products — safe to delete after the feature ships; packaged schema only |
 
 `codex.md` and `glossary.yaml` live at `.lore/codex/` root, not under a subdir. Other subdirs (`constraints/`, `personas/`, `integrations/`, `security/`) are optional — create them on first use via `lore codex new --group <subdir>`.
 
@@ -38,7 +38,7 @@ Every codex file belongs to exactly one of three classes, defined by its top-lev
 | Class    | Directory                                                                                   | Deletion test                                                                                       |
 |----------|---------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | Stable   | `decisions/`, `standards/`, `technical/`, `conceptual/`, `vision/`, `operations/`           | Deleting any file LOSES information. Never safe.                                                    |
-| In-Flight | `transient/`                                                                               | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. |
+| In-Flight | `transient/`                                                                               | Safe to delete **after** the in-flight feature ships and its facts have been folded into stable docs. Packaged schema only — no custom-schema overlay. |
 | Sources  | `sources/<system>/<id>.md`                                                                  | Safe to delete **at any time**. Every fact worth keeping already lives in a stable doc.             |
 
 ## Reading the codex
@@ -67,7 +67,7 @@ lore codex edit <name> -f <file>              # replace body from a file
 lore codex delete <name>
 ```
 
-Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`. No other fields — `lore health --scope codex` rejects extras.
+Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`. `lore health --scope codex` rejects extras — except keys the project declares in a `.lore/custom-schemas/<kind>.yaml` overlay, which do not apply under `transient/`.
 
 Do not write codex files by hand with `cat >` or an editor — drive every change through the CLI so frontmatter normalisation and validation run. For the full discovery → classify → dedup → apply → verify workflow, read the `update-codex` skill.
 

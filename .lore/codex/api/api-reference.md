@@ -695,7 +695,7 @@ create_document(project_root: Path, name: str, content: str, *, group: str | Non
 
 Returns `{"id", "filename", "group", "doc_type"}`.
 
-Frontmatter is validated against the **overlay-merged** codex schema (it passes `project_root` to `validate_entity`), so a custom key declared in `.lore/custom-schemas/<kind>.yaml` is accepted at write time and an undeclared key is still rejected.
+Frontmatter is validated against the **overlay-merged** codex schema (it passes `project_root` to `validate_entity`), so a custom key declared in `.lore/custom-schemas/<kind>.yaml` is accepted at write time and an undeclared key is still rejected. Exception: a doc created under `group="transient"` (anything landing in `.lore/codex/transient/`) validates against the **packaged** schema alone — overlays do not reach the transient subtree, so a declared custom key is rejected there as an unknown property (ADR-019).
 
 Raises: `ValueError` on validation, duplicate, or schema failure — including `OverlayError` (a `ValueError`) when the project overlay is malformed.
 
@@ -729,7 +729,7 @@ update_document(project_root: Path, name: str, content: str) -> dict
 
 Returns `{"id", "filename", "group", "doc_type", "updated_at"}`.
 
-Frontmatter is re-validated against the overlay-merged codex schema (same `project_root` path as `create_document`).
+Frontmatter is re-validated against the overlay-merged codex schema (same `project_root` path as `create_document`), including the same transient carve-out — a doc under `.lore/codex/transient/` is re-validated against the packaged schema alone.
 
 Raises: `ValueError` on not-found / schema / parse failure — including `OverlayError` (a `ValueError`) when the project overlay is malformed.
 
@@ -959,9 +959,11 @@ update_frontmatter_fields(project_root: Path, kind: str, name: str, *, set_field
 
 `kind` ∈ `{"knight", "doctrine", "artifact", "watcher", "codex"}`. Schema validation runs against the mutated frontmatter BEFORE any disk write — invalid edits leave the file untouched. Write is atomic via tempfile + `os.replace`.
 
+For `kind="codex"` validation is **overlay-merged**: the function resolves its overlay root through `codex._overlay_root`, so a canonical or `sources/` doc validates against the merged schema and a doc under `.lore/codex/transient/` validates against the packaged schema alone (ADR-019). This is what makes the CLI backfill of a newly `required` custom field possible — `set_fields={"owner": "alice"}` on a declared custom key now passes instead of failing `Unknown property 'owner'`.
+
 Returns `{"id": name, "filename": str, "updated_at": None}`.
 
-Raises: `ValueError` on validation / lookup / schema failure.
+Raises: `ValueError` on validation / lookup / schema failure — including `OverlayError` (a `ValueError`) when the project overlay is malformed.
 
 ```python
 update_frontmatter_fields(pr, kind="codex", name="api-guide", set_fields={"summary": "New."})

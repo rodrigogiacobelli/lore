@@ -193,7 +193,7 @@ for h in hits:
 
 Graph queries are first-class: `map_documents` does bidirectional BFS over the `related` field; `chaos_documents` is a random-walk traversal.
 
-`create_document` / `update_document` validate frontmatter against the **overlay-merged** codex schema (they pass `project_root` through to `validate_entity`). A project that declares custom frontmatter keys in `.lore/custom-schemas/<kind>.yaml` (add-only overlay; see `tech-arch-schemas`) gets those keys accepted at write time, while undeclared keys still raise `ValueError`. A malformed overlay raises `OverlayError` (a `ValueError`). Build the merged validator directly with `project_validator_for(kind, project_root)` or validate in-memory data with `validate_entity(kind, data, project_root=pr)`.
+`create_document` / `update_document` validate frontmatter against the **overlay-merged** codex schema (they pass a path-scoped `project_root` through to `validate_entity`). A project that declares custom frontmatter keys in `.lore/custom-schemas/<kind>.yaml` (add-only overlay; see `tech-arch-schemas`) gets those keys accepted at write time, while undeclared keys still raise `ValueError`. The overlay reaches canonical docs and the `sources/` layer only: a doc under `.lore/codex/transient/` is validated against the packaged schema alone, so a declared custom key is rejected there (`decisions-019-overlay-scope-stops-at-transient`). A malformed overlay raises `OverlayError` (a `ValueError`). Build the merged validator directly with `project_validator_for(kind, project_root)` or validate in-memory data with `validate_entity(kind, data, project_root=pr)`.
 
 ### Glossary item
 
@@ -259,7 +259,7 @@ update_frontmatter_fields(
 )
 ```
 
-`set_fields` overwrites scalar values; `unset_fields` drops keys; `add_to_list` and `remove_from_list` mutate list-valued keys idempotently. Schema validation runs against the mutated frontmatter before any disk write — invalid edits leave the file untouched.
+`set_fields` overwrites scalar values; `unset_fields` drops keys; `add_to_list` and `remove_from_list` mutate list-valued keys idempotently. Schema validation runs against the mutated frontmatter before any disk write — invalid edits leave the file untouched. For `kind="codex"` that validation is **overlay-merged**, so setting a custom key declared in `.lore/custom-schemas/<kind>.yaml` succeeds — this is the backfill path when a project newly marks a custom field `required`. Docs under `.lore/codex/transient/` are validated against the packaged schema alone (`decisions-019-overlay-scope-stops-at-transient`).
 
 ## Errors and validation
 
@@ -268,7 +268,7 @@ Every facade function validates inputs via `lore.validators` (ADR-011, Decision 
 - `ValueError` — invalid ID format, out-of-range priority, unknown entity, schema violation, empty required field. This is the default failure for CRUD.
 - `ImpactsError` — `impacts(...)` only: unknown codex id, outside-repo path, or `..` traversal.
 - `GlossaryError` — `scan_glossary`, `match_glossary`: malformed glossary YAML or read error.
-- `OverlayError` — a `ValueError` subclass: `resolve_merged_schema`, `project_validator_for`, `validate_entity(project_root=...)`, and `create_document`/`update_document` when a `.lore/custom-schemas/<kind>.yaml` overlay is malformed (bad YAML, packaged-field collision, undeclared `required`).
+- `OverlayError` — a `ValueError` subclass: `resolve_merged_schema`, `project_validator_for`, `validate_entity(project_root=...)`, `create_document`/`update_document`, and `update_frontmatter_fields(kind="codex", ...)` when a `.lore/custom-schemas/<kind>.yaml` overlay is malformed (bad YAML, packaged-field collision, undeclared `required`).
 - `ProjectNotFoundError` — `find_project_root` could not locate `.lore/` on the upward walk.
 - `ConflictingDepthFlags` — `map_documents` called with both `depth` and `depth_out`/`depth_in`.
 

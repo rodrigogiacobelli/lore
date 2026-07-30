@@ -62,6 +62,21 @@ def _canonical(root: Path, name: str = "doc", extra: str = "") -> Path:
     return p
 
 
+def _transient(root: Path, name: str = "wip", extra: str = "") -> Path:
+    p = root / ".lore" / "codex" / "transient" / f"{name}.md"
+    _write(
+        p,
+        "---\n"
+        f"id: {name}\n"
+        "title: WIP\n"
+        "summary: s\n"
+        f"{extra}"
+        "---\n"
+        "# Body\n",
+    )
+    return p
+
+
 def _source(root: Path, name: str = "src", extra: str = "") -> Path:
     p = root / ".lore" / "codex" / "sources" / f"{name}.md"
     _write(
@@ -266,3 +281,176 @@ def test_check_schemas_source_override_rejects_canonical_custom_key(tmp_path):
         and "Unknown property 'ingested_at'" in i.detail
     ]
     assert canonical_issues, issues
+
+
+# ---------------------------------------------------------------------------
+# transient/* is out of overlay scope — packaged schema only
+# ---------------------------------------------------------------------------
+
+
+def test_check_schemas_transient_exempt_from_overlay_required(tmp_path):
+    """An overlay that marks ``owner`` required must not reach transient working
+    docs: a transient doc without ``owner`` produces no schema issue."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    _canonical(tmp_path, "doc", extra="owner: alice\n")
+    _transient(tmp_path, "wip")
+
+    issues = _check_schemas(tmp_path)
+
+    transient_issues = [
+        i for i in issues if i.check == "schema" and "transient/wip.md" in i.id
+    ]
+    assert transient_issues == [], transient_issues
+
+
+def test_check_schemas_health_report_shape_survives_required_overlay(tmp_path):
+    """`lore health` writes its own reports into ``codex/transient/`` with only
+    id/title/summary — a required-field overlay must never flag them."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    _transient(tmp_path, "health-2026-06-25T10-00-00")
+
+    issues = _check_schemas(tmp_path)
+
+    report_issues = [i for i in issues if i.check == "schema" and "health-" in i.id]
+    assert report_issues == [], report_issues
+
+
+def test_check_schemas_canonical_still_requires_overlay_field(tmp_path):
+    """The transient exemption is scoped — a canonical doc missing the required
+    custom field is still an error."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    _canonical(tmp_path, "doc")
+    _transient(tmp_path, "wip")
+
+    issues = _check_schemas(tmp_path)
+
+    canonical_issues = [
+        i
+        for i in issues
+        if i.check == "schema"
+        and i.id.endswith("codex/doc.md")
+        and "Missing required property 'owner'" in i.detail
+    ]
+    assert canonical_issues, issues
+
+
+def test_check_schemas_transient_rejects_custom_key(tmp_path):
+    """Custom fields are canonical-codex governance: a transient doc carrying
+    the declared custom key fails against the packaged schema."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}},
+    )
+    _transient(tmp_path, "wip", extra="owner: alice\n")
+
+    issues = _check_schemas(tmp_path)
+
+    transient_issues = [
+        i
+        for i in issues
+        if i.check == "schema"
+        and "transient/wip.md" in i.id
+        and "Unknown property 'owner'" in i.detail
+    ]
+    assert transient_issues, issues
+
+
+def test_check_schemas_transient_still_packaged_validated(tmp_path):
+    """Exempt from the overlay, not from validation — a transient doc missing a
+    packaged required field is still an error."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    _write(
+        tmp_path / ".lore" / "codex" / "transient" / "wip.md",
+        "---\nid: wip\ntitle: WIP\n---\n# Body\n",
+    )
+
+    issues = _check_schemas(tmp_path)
+
+    transient_issues = [
+        i
+        for i in issues
+        if i.check == "schema"
+        and "transient/wip.md" in i.id
+        and "Missing required property 'summary'" in i.detail
+    ]
+    assert transient_issues, issues
+
+
+def test_check_schemas_transient_routes_through_packaged_seam(tmp_path, monkeypatch):
+    """Transient docs resolve ``codex-frontmatter`` through the packaged
+    ``get_validator`` seam; canonical/source docs keep the project-aware seam."""
+    from lore import health
+
+    _make_skeleton(tmp_path)
+    _canonical(tmp_path)
+    _transient(tmp_path, "wip")
+
+    project_calls: list[str] = []
+    plain_calls: list[str] = []
+
+    real_project = health.project_get_validator
+    real_plain = health.get_validator
+
+    def spy_project(kind, project_root):
+        project_calls.append(kind)
+        return real_project(kind, project_root)
+
+    def spy_plain(kind):
+        plain_calls.append(kind)
+        return real_plain(kind)
+
+    monkeypatch.setattr(health, "project_get_validator", spy_project)
+    monkeypatch.setattr(health, "get_validator", spy_plain)
+
+    _check_schemas(tmp_path)
+
+    assert "codex-frontmatter" in plain_calls
+    assert "codex-frontmatter" in project_calls
+
+
+def test_check_schemas_transient_scanned_despite_broken_overlay(tmp_path):
+    """A malformed canonical overlay must not blind the transient subtree — it
+    never used the overlay, so its packaged validation still runs."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"title": {"type": "string"}}},
+    )
+    _write(
+        tmp_path / ".lore" / "codex" / "transient" / "wip.md",
+        "---\nid: wip\ntitle: WIP\n---\n# Body\n",
+    )
+
+    issues = _check_schemas(tmp_path)
+
+    transient_issues = [
+        i
+        for i in issues
+        if i.check == "schema"
+        and "transient/wip.md" in i.id
+        and "Missing required property 'summary'" in i.detail
+    ]
+    assert transient_issues, issues

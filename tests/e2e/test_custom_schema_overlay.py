@@ -260,3 +260,111 @@ def test_codex_create_collision_overlay_clean_error(runner, project_dir):
     ) in result.stderr
     assert "Traceback" not in result.stdout
     assert "Traceback" not in result.stderr
+
+
+# ===========================================================================
+# Overlay scope — transient working docs, and CLI backfill of a custom field
+# ===========================================================================
+
+
+# E2E — `lore health` never flags its own reports under a required overlay
+def test_health_own_reports_survive_required_overlay(runner, project_dir):
+    """`lore health` writes a report into ``codex/transient/`` carrying only
+    id/title/summary. Adding a required custom field must not turn every past
+    (and every future) report into a schema error."""
+    first = runner.invoke(main, ["health"])
+    assert first.exit_code == 0, first.stdout
+
+    reports = list((project_dir / ".lore" / "codex" / "transient").glob("health-*.md"))
+    assert reports, "health did not write a report"
+
+    _write_overlay(
+        project_dir,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    # Backfill the one seeded canonical doc so only the report could fail.
+    runner.invoke(main, ["codex", "edit", "codex", "--set", "owner=alice"])
+
+    result = runner.invoke(main, ["health", "--scope", "schemas"])
+
+    assert "Schema validation: 0 errors" in result.stdout, result.stdout
+    assert result.exit_code == 0, result.stdout
+
+
+# E2E — transient docs are creatable without the required custom field
+def test_codex_new_transient_ignores_required_custom_field(runner, project_dir):
+    """A required custom field governs canonical docs; a transient working doc
+    (PRD, tech spec, report) is created without it."""
+    _write_overlay(
+        project_dir,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    src = project_dir / "wip.md"
+    _write(src, "---\nid: wip\ntitle: WIP\nsummary: s\n---\n# Body\n")
+
+    result = runner.invoke(
+        main, ["codex", "new", "wip", "--group", "transient", "-f", str(src)]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert (project_dir / ".lore" / "codex" / "transient" / "wip.md").exists()
+
+
+# E2E — canonical docs still enforce the required custom field
+def test_codex_new_canonical_still_requires_custom_field(runner, project_dir):
+    """The transient exemption is scoped — a canonical doc still needs it."""
+    _write_overlay(
+        project_dir,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+    src = project_dir / "doc.md"
+    _write(src, "---\nid: doc\ntitle: Doc\nsummary: s\n---\n# Body\n")
+
+    result = runner.invoke(
+        main, ["codex", "new", "doc", "--group", "vision", "-f", str(src)]
+    )
+
+    assert result.exit_code != 0, result.stdout
+    assert "Missing required property 'owner'" in result.stderr
+
+
+# E2E — `lore codex edit --set` can write a declared custom field
+def test_codex_edit_set_writes_custom_field(runner, project_dir):
+    """Field-edit mode resolves the merged schema, so the documented backfill
+    (`--set owner=...`) works instead of failing Unknown property."""
+    _write_overlay(
+        project_dir,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}},
+    )
+    _clean_canonical_doc(project_dir)
+
+    result = runner.invoke(
+        main, ["codex", "edit", "clean-doc", "--set", "owner=alice"]
+    )
+
+    assert result.exit_code == 0, result.stderr
+    text = (project_dir / ".lore" / "codex" / "clean-doc.md").read_text()
+    assert yaml.safe_load(text.split("---\n")[1])["owner"] == "alice"
+
+
+# E2E — `--set` on a transient doc still refuses the custom field
+def test_codex_edit_set_custom_field_rejected_on_transient(runner, project_dir):
+    """Transient docs validate against the packaged schema in field-edit mode."""
+    _write_overlay(
+        project_dir,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}},
+    )
+    _write(
+        project_dir / ".lore" / "codex" / "transient" / "wip.md",
+        "---\nid: wip\ntitle: WIP\nsummary: s\n---\n# Body\n",
+    )
+
+    result = runner.invoke(main, ["codex", "edit", "wip", "--set", "owner=alice"])
+
+    assert result.exit_code != 0, result.stdout
+    assert "Unknown property 'owner'" in result.stderr

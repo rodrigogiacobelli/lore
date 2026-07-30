@@ -163,3 +163,103 @@ def test_update_document_rejects_undeclared_key(tmp_path):
     with pytest.raises(ValueError) as exc:
         update_document(tmp_path, "owned", _doc("owned", onwer="bob"))
     assert "Unknown property 'onwer'" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# transient/* is out of overlay scope — packaged schema only
+# ---------------------------------------------------------------------------
+
+
+def test_create_document_transient_ignores_overlay_required(tmp_path):
+    """A required custom field must not block creating a transient working doc
+    — overlays govern canonical codex docs only."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+
+    result = create_document(tmp_path, "wip", _doc("wip"), group="transient")
+
+    assert (tmp_path / ".lore" / "codex" / "transient" / "wip.md").exists()
+    assert result["id"] == "wip"
+
+
+def test_create_document_transient_nested_group_ignores_overlay_required(tmp_path):
+    """The exemption covers the whole transient subtree, not just its root."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+
+    create_document(tmp_path, "wip", _doc("wip"), group="transient/feat-x")
+
+    assert (
+        tmp_path / ".lore" / "codex" / "transient" / "feat-x" / "wip.md"
+    ).exists()
+
+
+def test_create_document_canonical_still_requires_overlay_field(tmp_path):
+    """The exemption is scoped — a canonical doc still needs the custom field."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+
+    with pytest.raises(ValueError) as exc:
+        create_document(tmp_path, "doc", _doc("doc"), group="vision")
+    assert "Missing required property 'owner'" in str(exc.value)
+
+
+def test_create_document_transient_rejects_custom_key(tmp_path):
+    """A transient doc validates against the packaged schema, so a declared
+    custom key is still an unknown property there."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}},
+    )
+
+    with pytest.raises(ValueError) as exc:
+        create_document(
+            tmp_path, "wip", _doc("wip", owner="alice"), group="transient"
+        )
+    assert "Unknown property 'owner'" in str(exc.value)
+
+
+def test_create_document_transient_survives_collision_overlay(tmp_path):
+    """A malformed overlay never reaches transient docs — creating one still
+    works while the canonical path raises ``OverlayError``."""
+    _make_skeleton(tmp_path)
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"title": {"type": "string"}}},
+    )
+
+    create_document(tmp_path, "wip", _doc("wip"), group="transient")
+
+    assert (tmp_path / ".lore" / "codex" / "transient" / "wip.md").exists()
+
+
+def test_update_document_transient_ignores_overlay_required(tmp_path):
+    """Editing a transient doc does not demand the required custom field."""
+    _make_skeleton(tmp_path)
+    create_document(tmp_path, "wip", _doc("wip"), group="transient")
+    _write_overlay(
+        tmp_path,
+        "codex-frontmatter",
+        {"properties": {"owner": {"type": "string"}}, "required": ["owner"]},
+    )
+
+    update_document(tmp_path, "wip", _doc("wip", summary="updated"))
+
+    text = (tmp_path / ".lore" / "codex" / "transient" / "wip.md").read_text()
+    meta = yaml.safe_load(text.split("---\n")[1])
+    assert meta.get("summary") == "updated"

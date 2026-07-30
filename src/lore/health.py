@@ -570,7 +570,7 @@ def _check_schemas(
                 schema_id=schema_id,
             ))
 
-        # --- per-file kind override for sources under the codex entity root ---
+        # --- per-file kind overrides under the codex entity root ---
         # (Tech Spec FR-10 Critical decision: in-loop dispatch, not a new
         # _SCHEMA_KINDS row.)
         sources_override: tuple[str, str, "Draft202012Validator"] | None = None
@@ -598,21 +598,63 @@ def _check_schemas(
                     schema_id=source_schema_id,
                 ))
         sources_dir = entity_root / "sources"
-        # --- END ---
-
-        if validator is None and sources_override is None:
-            continue
+        transient_dir = entity_root / "transient"
 
         candidates = _resolve_schema_candidates(entity_root, glob)
+
+        # Overlays are canonical-codex governance. Transient working docs —
+        # including the reports `lore health` writes itself — validate against
+        # the packaged schema alone, so a newly required custom field never
+        # turns them into errors. Resolved only when the subtree has files, so
+        # projects without one keep a single validator lookup.
+        transient_override: tuple[str, str, "Draft202012Validator"] | None = None
+        if entity_label == "codex" and any(
+            p.is_relative_to(transient_dir) for p in candidates
+        ):
+            packaged_schema_id = f"lore://schemas/{schema_kind}"
+            try:
+                packaged_validator = get_validator(schema_kind)
+                transient_override = (
+                    entity_label,
+                    str(packaged_validator.schema.get("$id", packaged_schema_id)),
+                    packaged_validator,
+                )
+            except Exception as exc:
+                issues.append(HealthIssue(
+                    severity="error",
+                    entity_type=entity_label,
+                    id=packaged_schema_id,
+                    check="scan_failed",
+                    detail=f"{packaged_schema_id}: {exc}",
+                    schema_id=packaged_schema_id,
+                ))
+        # --- END ---
+
+        if (
+            validator is None
+            and sources_override is None
+            and transient_override is None
+        ):
+            continue
 
         for filepath in candidates:
             if not filepath.is_file():
                 continue
 
-            is_source_file = (
-                entity_label == "codex" and filepath.is_relative_to(sources_dir)
+            is_transient_file = (
+                entity_label == "codex" and filepath.is_relative_to(transient_dir)
             )
-            if is_source_file:
+            is_source_file = (
+                entity_label == "codex"
+                and not is_transient_file
+                and filepath.is_relative_to(sources_dir)
+            )
+            if is_transient_file:
+                if transient_override is None:
+                    continue
+                active_label, active_schema_id, active_validator = transient_override
+                active_kind = schema_kind
+            elif is_source_file:
                 if sources_override is None:
                     continue
                 active_label, active_schema_id, active_validator = sources_override

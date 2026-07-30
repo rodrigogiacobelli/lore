@@ -117,7 +117,12 @@ _KINDS: dict[str, _KindConfig] = {
 # ---------------------------------------------------------------------------
 
 
-def _coerce_scalar_for_schema(schema_kind: str, field: str, raw_str: str) -> object:
+def _coerce_scalar_for_schema(
+    schema_kind: str,
+    field: str,
+    raw_str: str,
+    project_root: Path | None = None,
+) -> object:
     """Coerce a CLI-supplied string to the right Python type per the schema.
 
     String-typed fields: passthrough.
@@ -127,8 +132,16 @@ def _coerce_scalar_for_schema(schema_kind: str, field: str, raw_str: str) -> obj
     Array-of-structured (items have ``type: object`` or ``$ref``):
         rejected — CLI must use ``-f``.
     Unknown field: passthrough (let schema validation reject downstream).
+
+    With ``project_root`` the merged (packaged + overlay) schema is consulted,
+    so a custom field declared in ``.lore/custom-schemas/`` coerces by its own
+    declared type rather than falling through as an unknown field.
     """
-    schema = _schemas.load_schema(schema_kind)
+    schema = (
+        _schemas.resolve_merged_schema(schema_kind, project_root)
+        if project_root is not None
+        else _schemas.load_schema(schema_kind)
+    )
     props = schema.get("properties", {})
     spec = props.get(field)
     if spec is None:
@@ -347,7 +360,10 @@ def update_frontmatter_fields(
         if callable(cfg.schema_kind)
         else cfg.schema_kind
     )
-    issues = _schemas.validate_entity(schema_kind, mutated)
+    # Overlays govern canonical codex docs and sources; transient working docs
+    # (and every non-codex kind) resolve the packaged schema.
+    overlay_root = _codex_mod._overlay_root(project_root, filepath)
+    issues = _schemas.validate_entity(schema_kind, mutated, project_root=overlay_root)
     if issues:
         raise ValueError("\n".join(i.message for i in issues))
 

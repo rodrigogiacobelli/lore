@@ -17,8 +17,10 @@ binds:
 - src/lore/health.py
 - src/lore/paths.py
 - src/lore/codex.py
+- src/lore/frontmatter_edit.py
 - src/lore/api.py
 - tests/unit/test_schemas.py
+- tests/unit/test_frontmatter_edit_overlay.py
 - tests/unit/test_health_schemas.py
 - tests/unit/test_health_schemas_binds.py
 - tests/unit/test_health_schemas_us007.py
@@ -28,7 +30,7 @@ binds:
 - tests/e2e/test_health_schemas_us005.py
 - tests/e2e/test_health_schemas_us007.py
 - tests/e2e/test_health_schemas_us008.py
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config"]
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient"]
 ---
 
 # Schemas Module Internals
@@ -87,7 +89,7 @@ Pure-data validator. Given a kind and a parsed mapping, returns a list of `(rule
 
 The validator is compiled once per kind and reused across all files of that kind within a `health_check()` invocation. This keeps the PRD's ≤200 ms overhead budget on a typical project intact.
 
-**`project_root` keyword (overlay-aware path).** When `project_root` is passed and `kind` is overlay-eligible (`codex-frontmatter`, `codex-source-frontmatter`), `validate_entity` validates against the **merged** validator from `project_validator_for(kind, project_root)` (packaged default + the project overlay at `.lore/custom-schemas/<kind>.yaml`) instead of the packaged validator. When `project_root` is `None` (the default) or the kind is not overlay-eligible, it falls through to today's packaged behaviour — byte-for-byte identical. The keyword is additive (a minor bump under ADR-010); existing callers are unaffected. `lore codex` create/edit pass `project_root=project_root`, so a declared custom key is accepted at write time consistently with the health audit. If overlay construction fails, `validate_entity` raises `OverlayError` (see "Project-local schema overlays" below) rather than returning issues.
+**`project_root` keyword (overlay-aware path).** When `project_root` is passed and `kind` is overlay-eligible (`codex-frontmatter`, `codex-source-frontmatter`), `validate_entity` validates against the **merged** validator from `project_validator_for(kind, project_root)` (packaged default + the project overlay at `.lore/custom-schemas/<kind>.yaml`) instead of the packaged validator. When `project_root` is `None` (the default) or the kind is not overlay-eligible, it falls through to today's packaged behaviour — byte-for-byte identical. The keyword is additive (a minor bump under ADR-010); existing callers are unaffected. `lore codex` create/edit pass `project_root=_overlay_root(project_root, <path>)` — the private `codex._overlay_root(project_root, filepath)` helper, which returns `project_root` for canonical and `sources/` docs and `None` for anything under `.lore/codex/transient/` — so a declared custom key is accepted at write time consistently with the health audit, while a transient working doc validates against the packaged schema alone (`decisions-019-overlay-scope-stops-at-transient`). `create_document` computes its target path *before* validating precisely so the transient decision can be made pre-write. If overlay construction fails, `validate_entity` raises `OverlayError` (see "Project-local schema overlays" below) rather than returning issues.
 
 ### `validate_entity_file(path: Path, kind: str) -> list[HealthIssueTuple]`
 
@@ -138,9 +140,23 @@ A catastrophic failure loading the schema resource itself (e.g. the wheel is cor
 
 **Overlay-aware routing.** For the two codex kinds (`codex-frontmatter`, `codex-source-frontmatter`) `_check_schemas` resolves its validator through the project-aware health seam `project_get_validator(kind, project_root)` (re-exporting `project_validator_for`) so the merged validator is used; every other kind still routes through the kind-only `get_validator(kind)` seam. Both are internal module-level monkeypatch seams (neither is public API), split by kind: project-aware for the two codex kinds, kind-only for the rest. A malformed overlay raises `OverlayError`, which the existing `try/except Exception` around validator construction turns into a single `scan_failed` issue naming the overlay — other kinds and checks continue. See "Project-local schema overlays" below and `conceptual-workflows-health`.
 
+Under the codex entity root the per-file dispatch is **three-way**, decided inside the walk loop (no extra `_SCHEMA_KINDS` row):
+
+| File location | Validator used |
+|---|---|
+| `.lore/codex/transient/**` | `transient_override` — the **packaged** validator from the kind-only `get_validator(schema_kind)` seam |
+| `.lore/codex/sources/**` | `sources_override` — the merged `codex-source-frontmatter` validator |
+| everything else | the merged `codex-frontmatter` validator |
+
+`transient_override` is resolved **lazily**: it is built only when the resolved candidate list actually contains a file under `transient/`, so a project with no transient subtree keeps a single validator lookup. Because it comes from the packaged seam, a malformed overlay does not blind the subtree — the transient files still validate while the canonical kind reports its single `scan_failed`. The transient branch is tested first; if a branch's validator is `None` (its construction failed), that file is skipped rather than validated against the wrong schema.
+
 ## Project-local schema overlays
 
 A project may extend the two codex frontmatter schemas with its own **add-only overlay** at `.lore/custom-schemas/<kind>.yaml`, where `<kind>` ∈ {`codex-frontmatter`, `codex-source-frontmatter`} for v1. The overlay adds new typed frontmatter properties (and optionally marks them required) while the packaged core fields stay authoritative and untouched. With no overlay file present, behaviour is byte-for-byte identical to the packaged-only path. The classification of an overlay as path-discovered project config (not an ID-addressable entity) is `decisions-018-overlays-are-path-discovered-config`.
+
+### Scope of governance
+
+An overlay governs **canonical codex documents and the `sources/` layer only**. Documents under `.lore/codex/transient/` are out of overlay scope and validate against the **packaged** schema alone — at every seam that validates a codex doc: the `lore health` schema scan, `lore codex new`, `lore codex edit -f`, and `lore codex edit --set/--unset/--add/--remove` (`decisions-019-overlay-scope-stops-at-transient`). The exemption removes the *overlay*, never the *validation*: `id`, `title`, and `summary` are still required and `additionalProperties` is still `false`, so a transient doc missing `summary` is still a health error, and a transient doc that *carries* a declared custom key is rejected as an unknown property. Custom fields are canonical-codex governance. An overlay `required` entry therefore never fires on a transient doc — which is what stops `lore health` from failing on the reports it writes itself into `.lore/codex/transient/health-<timestamp>.md`. Every seam routes through `codex._overlay_root(project_root, filepath)`; no seam open-codes the decision. The path predicates are `paths.codex_transient_dir(root)` and `paths.is_transient_codex_path(root, filepath)`.
 
 ### Resolver surface
 
@@ -170,6 +186,16 @@ An overlay is a JSON-Schema fragment: a top-level mapping with `properties` (obj
 - **Codex create/edit** let `OverlayError` propagate unchanged out of `create_document` / `update_document` — because it subclasses `ValueError`, it rides their existing "raises `ValueError` on schema failure" contract. Ordinary validation failures (typo, missing required) still return the `list[SchemaIssue]` that create/edit join into a `ValueError`.
 
 Overlays are parsed with `yaml.safe_load` only (NFR Security) and cannot weaken packaged invariants (add-only), bounding blast radius.
+
+### Field-edit mode as an overlay consumer
+
+`frontmatter_edit.update_frontmatter_fields` — behind `lore codex edit --set/--unset/--add/--remove` and `lore.api.update_frontmatter_fields` — is the third overlay consumer alongside health and codex create/edit. It resolves its overlay root the same way every other seam does, `codex._overlay_root(project_root, filepath)`, and passes the result to `validate_entity(schema_kind, mutated, project_root=overlay_root)`. Consequences:
+
+- A field edit that sets a **declared custom key** on a canonical doc validates against the merged schema and succeeds. This is what makes the backfill `lore health` prescribes possible from the CLI: when a project newly marks a custom field `required`, `lore codex edit <doc> --set owner=alice` is the fix. Before this, field-edit mode validated against the packaged schema only and failed with `Unknown property 'owner'` even though the overlay declared it.
+- On a transient doc `_overlay_root` returns `None`, so the packaged schema applies and a custom key is rejected — same rule as every other seam.
+- `update_frontmatter_fields` can therefore raise `OverlayError` (a `ValueError`, so it rides the function's existing `ValueError` contract) when the project overlay is malformed.
+
+The CLI-side scalar coercion follows the same schema. `frontmatter_edit._coerce_scalar_for_schema(schema_kind, field, raw_str, project_root=None)` takes an optional fourth argument; when a `project_root` is passed it consults `resolve_merged_schema(schema_kind, project_root)` instead of `load_schema(schema_kind)`, so a custom **array**, **integer**, or **boolean** field coerces by its declared type rather than arriving at validation as a raw string. `cli.py` passes it for `kind == "codex"` only — the sole overlay-eligible kind. Net effect: `lore codex edit my-doc --set owner=alice --set tags=a,b` writes `tags` as a list.
 
 ## Codex Frontmatter Fields
 
@@ -249,7 +275,7 @@ only.
 
 - `schemas/__init__.py` imports **only** stdlib (`importlib.resources`, `os`, `pathlib`, `copy`), `yaml`, `jsonschema`, `lore.frontmatter`, and `lore.paths` (for the overlay path helpers). It has zero imports from any entity module (`doctrine.py`, `knight.py`, etc.), so the create-time validators can import it without creating a cycle. `lore.paths` has no cycle back into schemas.
 - The packaged schema YAML files are static resources. They are never written to and never fetched over the network — `$schema` and `$id` URIs are metadata only.
-- **Project-local schema overlays are supported** for the two codex kinds via the resolver above (`.lore/custom-schemas/<kind>.yaml`, add-only, strict). This reverses the previous "no runtime override path" posture. The override is add-only and defaults-authoritative — an overlay can never redefine, relax, or remove a packaged field — so the packaged schemas remain the single source of truth for the core shape. Overlays for other entity kinds (knight, artifact, doctrine) and per-doc-type overlays remain post-MVP.
+- **Project-local schema overlays are supported** for the two codex kinds via the resolver above (`.lore/custom-schemas/<kind>.yaml`, add-only, strict). This reverses the previous "no runtime override path" posture. The override is add-only and defaults-authoritative — an overlay can never redefine, relax, or remove a packaged field — so the packaged schemas remain the single source of truth for the core shape. It is also **scope-bounded**: overlays reach canonical codex docs and `sources/` only, never `.lore/codex/transient/**`, where the packaged schema is the whole contract (ADR-019). Overlays for other entity kinds (knight, artifact, doctrine) and per-doc-type overlays remain post-MVP.
 
 ## Packaging
 

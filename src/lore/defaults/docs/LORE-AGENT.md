@@ -86,7 +86,7 @@ A workflow template stored as YAML under `.lore/doctrines/`. Generates a Quest's
 
 ### Codex
 
-Typed markdown docs under `.lore/codex/` describing facts about the system as it exists today. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a markdown body. The codex is a graph: `related` links connect docs both ways. A codex doc links to the rites it governs via `rites:` — the edge runs codex→rite only, never the reverse. See `.lore/codex/codex.md` for the layout, three content classes, impacts engine, and naming rules. (`lore codex list` / `lore codex search` / `lore codex show` / `lore codex new` / `lore codex edit` / `lore codex delete` / `lore codex map` / `lore codex chaos`)
+Typed markdown docs under `.lore/codex/` describing facts about the system as it exists today. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a markdown body — plus any project-local custom fields declared in a `.lore/custom-schemas/<kind>.yaml` overlay, which apply to canonical docs and `sources/` but never to `transient/`. The codex is a graph: `related` links connect docs both ways. A codex doc links to the rites it governs via `rites:` — the edge runs codex→rite only, never the reverse. See `.lore/codex/codex.md` for the layout, three content classes, impacts engine, and naming rules. (`lore codex list` / `lore codex search` / `lore codex show` / `lore codex new` / `lore codex edit` / `lore codex delete` / `lore codex map` / `lore codex chaos`)
 
 ### Glossary
 
@@ -173,7 +173,7 @@ Primitives for reading project state before you act:
 | `new-watcher`    | Draft and create a new watcher                                     |
 | `new-artifact`   | Draft and create a new artifact file                               |
 | `new-rite`       | Draft or update a rite and link the codex docs that govern it      |
-| `new-custom-schema` | Add custom frontmatter keys to a codex schema via a `.lore/custom-schemas/<kind>.yaml` overlay |
+| `new-custom-schema` | Add custom frontmatter keys via a `.lore/custom-schemas/<kind>.yaml` overlay — for canonical codex docs and sources |
 | `explore-codex`  | Search, map, and traverse the codex                                |
 | `update-codex`   | Edit codex docs directly outside the feature-implementation flow   |
 | `ingest-source`  | Capture an upstream source under `codex/sources/`                  |

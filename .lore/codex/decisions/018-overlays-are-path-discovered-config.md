@@ -9,6 +9,7 @@ summary: ADR classing a .lore/custom-schemas/<kind>.yaml overlay as a user-owned
 related:
 - decisions-006-id-references
 - decisions-013-toml-for-config-yaml-for-glossary
+- decisions-019-overlay-scope-stops-at-transient
 - tech-arch-schemas
 ---
 
@@ -52,6 +53,9 @@ Concretely:
 - An overlay lives at the fixed path `.lore/custom-schemas/<kind>.yaml`, where
   `<kind>` matches a packaged schema kind (`codex-frontmatter`,
   `codex-source-frontmatter` for v1). It is discovered by filename, zero config.
+  Which *documents* that overlay then governs is settled separately by ADR-019
+  (`decisions-019-overlay-scope-stops-at-transient`): canonical codex docs and
+  the `sources/` layer, never `.lore/codex/transient/`.
 - An overlay has **no** `lore <x> show <id>` retrieval path and is **not** a node
   in the codex graph (no `id`/`title`/`summary` frontmatter, no `related`/`binds`
   edges). `lore impacts`, `lore codex map`, and the codex link-integrity checks

@@ -10,7 +10,7 @@ binds:
 - tests/e2e/test_health_schemas.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
@@ -108,7 +108,7 @@ Per-kind coverage:
 - **`doctrine-design-frontmatter`** — frontmatter of every `.lore/doctrines/**/*.design.md` validated against `lore://schemas/doctrine-design-frontmatter`.
 - **`knight`** — frontmatter of every `.lore/knights/**/*.md` validated against `lore://schemas/knight-frontmatter`.
 - **`watcher`** — every `.lore/watchers/**/*.yaml` validated against `lore://schemas/watcher-yaml`.
-- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related`, `binds`, and `rites` arrays accepted; mapping form rejected). A malformed `rites:` (non-array, duplicates, empty string) is a schema error with `entity_type="codex"`. Source docs under `.lore/codex/sources/` are validated against `lore://schemas/codex-source-frontmatter` via the in-loop per-file override. Both codex kinds are **overlay-aware**: when the project ships a `.lore/custom-schemas/<kind>.yaml` overlay, the validator is the merged schema (packaged default + overlay), so declared custom keys pass while undeclared keys (e.g. a typo) still error — see "Project-local schema overlays" below.
+- **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related`, `binds`, and `rites` arrays accepted; mapping form rejected). A malformed `rites:` (non-array, duplicates, empty string) is a schema error with `entity_type="codex"`. Source docs under `.lore/codex/sources/` are validated against `lore://schemas/codex-source-frontmatter` via the in-loop per-file override. Docs under `.lore/codex/transient/` are validated against the **packaged** `lore://schemas/codex-frontmatter` via a second in-loop per-file override — never the merged one (`decisions-019-overlay-scope-stops-at-transient`). Both codex kinds are **overlay-aware** outside `transient/`: when the project ships a `.lore/custom-schemas/<kind>.yaml` overlay, the validator is the merged schema (packaged default + overlay), so declared custom keys pass while undeclared keys (e.g. a typo) still error — see "Project-local schema overlays" below.
 - **`artifact`** — frontmatter of every `.lore/artifacts/**/*.md` validated against `lore://schemas/artifact-frontmatter`.
 - **`glossary`** — the single file `.lore/codex/glossary.yaml` (full-YAML, not frontmatter) validated against `lore://schemas/glossary`. Unique among schema kinds: a literal file glob, not a `**/*.yaml` walk.
 - **`main-rite`** — every `.lore/rites/main/**/*.yaml` (full-YAML, recursive) validated against `lore://schemas/main-rite`. Missing required fields (`id, title, summary, trigger, nodes, conclusions`) → error.
@@ -126,9 +126,11 @@ Files that the existing entity loaders today silently skip (unpaired doctrine de
 
 A project may add custom frontmatter keys to its codex docs by declaring them once in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`). For the two codex kinds the schema audit resolves its validator through the project-aware health seam `project_get_validator(kind, project_root)` (re-exporting `schemas.project_validator_for`); the other seven kinds use the kind-only `get_validator(kind)` seam. Both are internal module-level monkeypatch seams (neither is public API); the kind split — project-aware for the two codex kinds, kind-only for the rest — is the routing rule. The merged validator adds the overlay's declared properties (and any overlay `required` entries) onto the packaged schema while keeping `additionalProperties: false`. Effect on the audit:
 
-- A doc carrying a **declared** custom key (e.g. `owner:` named in the overlay) passes.
+- A **canonical or source** doc carrying a **declared** custom key (e.g. `owner:` named in the overlay) passes.
 - An **undeclared** key — including a typo of a declared key (`onwer:`) — still errors as `additionalProperties`, now listing the custom key among the allowed keys.
-- A doc missing an overlay-`required` key errors as `required`, exactly like a missing packaged field.
+- A **canonical or source** doc missing an overlay-`required` key errors as `required`, exactly like a missing packaged field.
+- A doc under `.lore/codex/transient/` is **out of overlay scope** (`decisions-019-overlay-scope-stops-at-transient`): an overlay `required` field never fires on it, and because the packaged schema keeps `additionalProperties: false`, a transient doc that *carries* a declared custom key is rejected as `Unknown property`. Transient docs are exempt from the overlay, not from validation — a transient doc missing `summary` is still a schema error.
+- A **malformed** overlay does not blind the transient subtree: it never consulted the overlay, so its packaged validation still runs while the canonical kind reports its single `scan_failed` (below).
 - With **no** overlay present, output is byte-for-byte identical to the packaged-only behaviour.
 
 A **malformed overlay** — unparseable YAML, non-mapping top-level, a property colliding with a packaged field, or a `required` entry not declared in the overlay — raises `OverlayError` during validator construction. `_check_schemas` catches it in its existing validator-construction `try/except` and emits **one** `scan_failed` error naming the overlay (`severity="error"`, `check="scan_failed"`, `detail="<overlay-path>: <reason>"`, `schema_id="lore://schemas/<kind>"`); the per-file loop for that kind is skipped, every other kind and check still runs, and no stack trace escapes `lore health`. The overlay file itself is project config, not a codex entity, and is never walked as a `.md` doc (`decisions-018-overlays-are-path-discovered-config`). The resolver and merge semantics live in `tech-arch-schemas`.
@@ -188,6 +190,8 @@ All checkers return a list of `HealthIssue` objects. The system partitions them 
 ### 4. Write markdown report
 
 The system always writes a markdown report to `.lore/codex/transient/health-{timestamp}.md`, even on clean runs. The timestamp uses UTC ISO 8601 with colons replaced by hyphens for filesystem compatibility (e.g., `health-2026-04-09T14-32-00.md`).
+
+**Self-consistency.** Because the report lands in `transient/`, it is overlay-exempt (`decisions-019-overlay-scope-stops-at-transient`): a newly `required` custom field cannot make `lore health` fail on its own output. Before the exemption it did — every previously written report became a `schema` error and each run added one more failing report, so the exit code was a function of how many times health had been run.
 
 Report frontmatter:
 ```yaml
@@ -322,6 +326,7 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |
+| Overlay declares a required field, transient doc lacks it | Not an error — `transient/` is out of overlay scope; the doc is validated against the packaged schema alone |
 | No entities of a type on disk | Clean result for that type (no issues) |
 
 ## Scope Isolation

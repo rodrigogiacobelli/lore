@@ -73,6 +73,21 @@ def custom_schema_path(root: Path, kind: str) -> Path:
     return custom_schemas_dir(root) / f"{kind}.yaml"
 
 
+def codex_transient_dir(root: Path) -> Path:
+    return root / ".lore" / "codex" / "transient"
+
+
+def is_transient_codex_path(root: Path, filepath: Path) -> bool:
+    """Return True when ``filepath`` sits inside the codex transient subtree.
+
+    Transient docs are in-flight working documents — PRDs, tech specs, maps,
+    and the reports ``lore health`` writes itself — deleted when a feature
+    ships. Custom-schema overlays never govern them; callers use this to fall
+    back to the packaged schema.
+    """
+    return filepath.is_relative_to(codex_transient_dir(root))
+
+
 _ENTITY_LOCATION_BASES: dict[str, tuple[str, ...]] = {
     "knight": (".lore", "knights"),
     "doctrine": (".lore", "doctrines"),

@@ -1145,24 +1145,27 @@ def _dispatch_field_edit(
         "codex-frontmatter" if kind == "codex" else raw_schema_kind
     )
     coerce = _fm_edit_mod._coerce_scalar_for_schema
+    # Codex is the only overlay-eligible kind — consult the merged schema so a
+    # custom field coerces by its declared type.
+    coerce_root = project_root if kind == "codex" else None
 
     try:
         set_dict: dict = {}
         for raw in set_kvs:
             key, value = _split_kv(raw)
-            set_dict[key] = coerce(schema_kind, key, value)
+            set_dict[key] = coerce(schema_kind, key, value, coerce_root)
 
         add_dict: dict = {}
         for raw in add_kvs:
             key, value = _split_kv(raw)
             # Validate field shape: must be a scalar-array; reject structured.
-            coerce(schema_kind, key, value)
+            coerce(schema_kind, key, value, coerce_root)
             add_dict.setdefault(key, []).append(value.strip())
 
         remove_dict: dict = {}
         for raw in remove_kvs:
             key, value = _split_kv(raw)
-            coerce(schema_kind, key, value)
+            coerce(schema_kind, key, value, coerce_root)
             remove_dict.setdefault(key, []).append(value.strip())
 
         result = update_frontmatter_fields(
