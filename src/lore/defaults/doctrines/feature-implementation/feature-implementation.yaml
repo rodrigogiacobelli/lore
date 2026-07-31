@@ -434,6 +434,8 @@ steps:
       These are not optional — missing them is a coverage gap that must be flagged.
 
       Retrieve the template: `lore artifact show fi-codex-change-proposal`
+      Retrieve the voice rules: `lore artifact show codex-voice`
+      Every draft in the proposal is written in final codex voice — not fixed up later.
 
       Produce the proposal:
       - List every document to create — include a full draft or detailed outline
@@ -467,6 +469,8 @@ steps:
       - Update whole file: `lore codex edit <id> -f <draft>`.
       - Update single field: `lore codex edit <id> --set KEY=VALUE` (or `--add KEY=VALUE` / `--remove KEY=VALUE` for list fields like `related` or `binds`, `--unset KEY` to drop one).
       - Delete: `lore codex delete <id>`.
+
+      Then run `lore health --scope voice` and clear or justify every warning.
 
       Post a board message to the tech-notes-draft mission listing all codex document IDs
       created, updated, or retired — by codex ID only, never by file path:

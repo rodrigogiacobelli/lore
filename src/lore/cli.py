@@ -4090,7 +4090,7 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
-_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings", "rites")
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings", "rites", "voice")
 
 
 @main.command("health")
@@ -4105,7 +4105,7 @@ _VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "sche
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
 @click.pass_context
 def health_cmd(ctx, scope, extra_scopes, json_mode):
-    """Audit all seven file-based entity types and report issues."""
+    """Audit the file-based entity types plus the schemas, bindings, and voice scopes."""
     import datetime
 
     from lore.api import _health as _health_mod

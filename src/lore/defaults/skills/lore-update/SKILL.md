@@ -74,6 +74,8 @@ A raw `diff` locates changed regions but is noisy against a customized file — 
 
 Never copy the `id:` frontmatter line — the seed carries `id: example-codex`, the project file carries `id: codex`. Leave the project's `id` as-is.
 
+Merged prose obeys `lore artifact show codex-voice` — read it before writing. Merging a version bump is where changelog narration leaks in: carry the *fact* into the project file, never the delta. Write "`binds:` maps a doc to the code files it governs", not "this release added `binds:`".
+
 If `.lore/codex/codex.md` does not exist, `lore init` already seeded a fresh one — nothing to reconcile.
 
 ### 4. Part 2 — reconcile the agent instruction file
@@ -106,9 +108,12 @@ Before writing anything, show the user a concise plan: for each file, which sect
 
 ```
 lore health
+lore health --scope voice
 ```
 
 Must exit 0. Re-read both edited files to confirm they are coherent — no duplicated sections, no orphaned headings, frontmatter intact.
+
+The second run isolates the voice warnings on your merged prose — they report warnings, never errors, so a full-scope run buries them. A warning on `.lore/codex/codex.md` usually means a merged sentence narrated the upgrade instead of stating the mechanic.
 
 ### 7. Report
 

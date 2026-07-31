@@ -57,7 +57,7 @@ When one or more `--filter GROUP` tokens are supplied, the validated artifact li
 - Each supplied token is split on `/`; the artifact's `group` is split on `/`. The token matches when its segments are a proper prefix of the artifact's segments. For example, `--filter default` matches `default`, `default/codex`, and `default/transient`; `--filter codex/templates` matches only the `codex/templates` subtree.
 - The hyphen-delimited input grammar (`default-codex`) is no longer accepted — see conceptual-workflows-filter-list for the breaking-change specification.
 - Artifacts with `group == ""` (root-level files, directly under `.lore/artifacts/`) are **always** included regardless of filter tokens.
-- Unrecognised tokens produce no error — they simply match nothing.
+- Unrecognised tokens produce no error — they match nothing.
 - When `--filter` is not provided, all validated artifacts are returned (existing behaviour preserved).
 
 The `valid` count and skipped-file behaviour are unaffected by the filter — validation runs on all discovered files before the filter is applied.

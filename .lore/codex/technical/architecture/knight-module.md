@@ -22,21 +22,19 @@ related:
 
 This module provides filesystem operations for knight files. It mirrors `doctrine.py`
 in structure: a dedicated module for file-based entity operations, imported by `cli.py`
-only. It ships as part of the ADR-012 refactor (REFACTOR-2), replacing inline file
-operations that were previously embedded directly in `cli.py`.
+only.
 
 ## Purpose
 
-Before this module existed, knight file operations — globbing the directory, reading
-files, resolving knight names to paths — were implemented inline in `cli.py` at multiple
-call sites. REFACTOR-2 extracts these operations into a single authoritative location,
-following the Single Responsibility principle (ADR-012).
+`knight.py` is the single authoritative location for knight file operations — globbing
+the directory, reading files, resolving knight names to paths. `cli.py` holds none of
+that logic, following the Single Responsibility principle (ADR-012).
 
 ## Public Interface
 
 ### `create_knight(knights_dir: Path, name: str, content: str, *, group: str | None = None) -> dict`
 
-Creates a new knight file under `knights_dir`. Introduced this release — previously the create logic was inlined in `cli.py`. The CLI handler (`cli.knight_new`) is now a thin wrapper.
+Creates a new knight file under `knights_dir`. The CLI handler (`cli.knight_new`) is a thin wrapper over it.
 
 - **Input:** `knights_dir` — the `.lore/knights/` directory; `name` — the knight filename stem; `content` — the full markdown body to write; `group` — an optional slash-delimited subdirectory path, or `None` for the knights root.
 - **Validation order (all before any write):**
@@ -73,9 +71,8 @@ Resolves a knight name to its file path.
 - **Output:** `Path` to the knight file if found; `None` if not found.
 - **Path-traversal guard:** If `name` contains `/` or `\\`, raises `ValueError`
   immediately. This guard prevents directory traversal attacks where a crafted name
-  such as `"../sensitive"` could escape the knights directory. The guard previously
-  lived inline in `cli.py`; it now lives here so that any Python caller (not just
-  the CLI) gets the same protection.
+  such as `"../sensitive"` could escape the knights directory. It lives in this module,
+  so every Python caller gets the same protection, not the CLI alone.
 - **Legitimate subdirectories:** A knight stored in a subdirectory (e.g.,
   `default/constable.md`) is still resolved correctly — the name `"constable"` (the
   stem) is valid and does not contain path separators. The guard rejects path separators
@@ -95,9 +92,6 @@ a CLI argument) is protected by this guard automatically.
 | `cli.py` — `knight_list` command | `list_knights` | Display all available knights |
 | `cli.py` — `knight_show` command | `find_knight` | Show one knight's content |
 | `cli.py` — `_show_mission` | `find_knight` | Embed knight content in mission display |
-
-Four call sites in `cli.py` that previously inlined knight resolution logic were
-replaced by `knight.find_knight` calls in REFACTOR-2.
 
 ## Module Imports / Dependencies
 

@@ -38,7 +38,7 @@ Mission objects are immutable — attempting to assign to any field raises `Froz
 
 A Mission may carry a `mission_type` — a short label that classifies the work according to the team's own vocabulary. Lore stores and exposes this value but does not interpret it or change behaviour based on it. What the label means, and how an orchestrator or consuming tool should act on it, is entirely up to the team.
 
-There is no fixed set of permitted values. Teams use whatever labels fit their process: `knight`, `constable`, `human`, `review`, `approval`, `spike`, `qa`, or anything else. The field is optional — a Mission with no type set is equally valid, and is simply displayed without a type bracket.
+There is no fixed set of permitted values. Teams use whatever labels fit their process: `knight`, `constable`, `human`, `review`, `approval`, `spike`, `qa`, or anything else. The field is optional — a Mission with no type set is equally valid, and is displayed without a type bracket.
 
 When a type is set, it appears in brackets in listings and the ready queue (for example `[review]`), and as a `Type:` line in the mission detail view. When no type is set, these display elements are omitted entirely.
 

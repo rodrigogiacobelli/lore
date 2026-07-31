@@ -67,7 +67,7 @@ When one or more `--filter GROUP` tokens are supplied, the parsed watcher list i
 - Each supplied token is split on `/`; the watcher's `group` is split on `/`. The token matches when its segments are a proper prefix of the watcher's segments. For example, `--filter feature-implementation` matches both `feature-implementation` and any nested subgroup like `feature-implementation/ci`.
 - The hyphen-delimited input grammar (`default-ci`) is no longer accepted — see conceptual-workflows-filter-list for the breaking-change specification.
 - Watchers with `group == ""` (root-level files, directly under `.lore/watchers/`) are **always** included regardless of filter tokens.
-- Unrecognised tokens produce no error — they simply match nothing.
+- Unrecognised tokens produce no error — they match nothing.
 - When `--filter` is not provided, all watchers are returned (existing behaviour preserved).
 
 Optional fields (`watch_target`, `interval`, `action`) are unaffected by filtering — the same fallback rules apply to all returned watchers.

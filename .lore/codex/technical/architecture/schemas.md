@@ -35,7 +35,7 @@ related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "
 
 # Schemas Module Internals
 
-**Source module:** `src/lore/schemas/__init__.py` (the module logic; previously a flat `schemas.py`, now a package because the YAML resources live as sibling files in the same directory)
+**Source module:** `src/lore/schemas/__init__.py` (the module logic; a package rather than a flat module because the YAML resources live as sibling files in the same directory)
 **Resource dir:** `src/lore/schemas/*.yaml` (packaged inside the wheel via hatchling `package-data`)
 
 This module is the single authoritative home for the JSON Schemas that define the shape of every on-disk Lore entity. It is consumed by both the create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, and `artifact.py` **and** by the audit-time `_check_schemas` checker in `health.py`. No schema content is duplicated anywhere else in the codebase — this is the DRY guarantee required by FR-19/FR-20 of the schema validation feature.
@@ -122,7 +122,7 @@ The existing private create-time validators in `doctrine.py`, `knight.py`, `watc
 | `artifact.create_artifact` frontmatter re-check | `validate_entity("artifact", meta)` |
 | `rite.create_rite`/`update_rite` body check | `validate_entity("main-rite", data)` / `validate_entity("shared-step", data)` |
 
-One schema, one contract, enforced at both write time and audit time. Any drift in the future is a DRY violation by definition.
+One schema, one contract, enforced at both write time and audit time. Drift between the two is a DRY violation by definition.
 
 ## Reuse at Audit Time
 

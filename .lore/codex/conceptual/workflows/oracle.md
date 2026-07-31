@@ -28,7 +28,7 @@ related:
 
 ### 1. Delete and recreate the reports directory
 
-`generate_reports` in `lore.oracle` calls `shutil.rmtree(reports_dir)` then `reports_dir.mkdir(parents=True)`. Any custom files previously placed in `.lore/reports/` are lost.
+`generate_reports` in `lore.oracle` calls `shutil.rmtree(reports_dir)` then `reports_dir.mkdir(parents=True)`. Any custom files in `.lore/reports/` are lost.
 
 ### 2. Write `summary.md`
 

@@ -1,4 +1,5 @@
-"""Health check module — audits all five file-based entity types."""
+"""Health check module — audits the file-based entity types, plus the schemas,
+bindings, and voice scopes."""
 
 import dataclasses
 import re
@@ -70,7 +71,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites", "voice")
 
 # Schema-validated entity kinds. Each tuple is:
 #   (entity_type label used on HealthIssue,
@@ -1224,6 +1225,265 @@ def _check_rites(project_root: Path) -> list[HealthIssue]:
     return issues
 
 
+# Voice checks. Spec: `lore artifact show codex-voice`.
+#
+# Each entry is (issue id, detail label, pattern). The patterns are deliberately
+# narrow — a noisy voice linter gets ignored, so recall is traded for precision
+# (see the tuning notes on the individual alternatives).
+_VOICE_PATTERNS: tuple[tuple[str, str, "re.Pattern[str]"], ...] = (
+    (
+        "voice_past_narration",
+        "past-tense change narration (V1, V2)",
+        re.compile(
+            r"\bpreviously\b"
+            r"|\bformerly\b"
+            # "used to be" only. Bare "used to" is overwhelmingly the
+            # "employed in order to" sense ("the regex used to match paths").
+            r"|\bused to be\b"
+            # "no longer exists" is the one "no longer" form that loses no fact
+            # about today when deleted. "no longer visible/supported/set" all
+            # state present behaviour and must not fire. Subordinate uses are
+            # suppressed separately — see _VOICE_SUBORDINATE_EXEMPT.
+            r"|\bno longer exists?\b"
+            # Perfect passive, but only for verbs that can only be describing
+            # the system's own history. The generic change verbs (moved, added,
+            # removed, folded, replaced) read as ordinary process description
+            # inside a conditional — "safe to delete after its facts have been
+            # folded into stable docs" is not narration — so they are left out.
+            r"|\b(?:has|have|had) been "
+            r"(?:renamed|eliminated|superseded|retired|absorbed)\b"
+            r"|\b(?:was|were) renamed\b"
+            r"|\bintroduced (?:in )?this release\b"
+            r"|\bprior to (?:this|the) (?:release|change|version)\b"
+            r"|\bin an earlier (?:release|version)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "voice_expiry_hedge",
+        "expiry hedge (V3)",
+        re.compile(
+            r"\bcurrently\b"
+            r"|\bfor now\b"
+            r"|\bat (?:the )?time of writing\b"
+            r"|\bat present\b"
+            r"|\bfor the (?:time being|moment)\b"
+            r"|\bso far\b"
+            r"|\bas of (?:today|now|this writing)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "voice_forward_promise",
+        "future-work promise (V4)",
+        re.compile(
+            r"\bwill be (?:added|introduced|supported|implemented|available"
+            r"|provided|extended|removed|renamed|replaced|deprecated)\b"
+            # "planned" as a promise, not as a gerund object ("work being
+            # planned") or a comparison ("as planned").
+            r"|(?<!being )(?<!as )\bplanned\b"
+            r"|\bin (?:the |a )?future\b"
+            r"|\bfuture (?:release|version|work|iteration|milestone)s?\b"
+            r"|\bcoming soon\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "voice_dangling_deixis",
+        "reference that resolves outside the document (V5)",
+        re.compile(
+            r"\bas (?:mentioned|described|noted|discussed|shown|stated|explained"
+            r"|outlined) (?:above|below|earlier|previously)\b"
+            r"|\bsee (?:above|below)\b"
+            r"|\bthis release\b"
+            # "the new <x>" only for system nouns. "the new file/document/
+            # entry/value" is routinely a procedural referent resolvable inside
+            # the sentence ("update the line in schema.sql to the new value")
+            # and must not fire.
+            r"|\bthe new (?:flag|option|command|subcommand|scope|token"
+            r"|check|behaviour|behavior|format|schema|module|function"
+            r"|method|class|parameter|argument|column|entity|layer|rule"
+            r"|endpoint|api)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "voice_sales_register",
+        "sales register (V9)",
+        re.compile(
+            r"\bpowerful\b"
+            r"|\bseamless(?:ly)?\b"
+            r"|\brobust(?:ly|ness)?\b"
+            r"|\bcutting[-\s]edge\b"
+            r"|\beffortless(?:ly)?\b"
+            r"|\bsimply\b"
+            # "just" excluding its comparative/temporal senses, which are not
+            # the sales register: "just as", "just before", "just-in-time".
+            r"|\bjust\b(?![-\s](?:as|before|after|like|now|in)\b)",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+# Codex layer directories that opt out of a given voice check. Spec table:
+# "Which Rules Apply Where" in `lore artifact show codex-voice`.
+_VOICE_SKIP_LAYERS: dict[str, frozenset[str]] = {
+    "voice_past_narration": frozenset({"decisions", "transient", "sources", "vision"}),
+    "voice_expiry_hedge": frozenset({"transient", "sources", "vision"}),
+    "voice_forward_promise": frozenset({"transient", "sources", "vision"}),
+    "voice_dangling_deixis": frozenset({"sources", "vision"}),
+    "voice_sales_register": frozenset({"sources", "vision"}),
+}
+
+# Phrases that narrate a change in a main clause but state a present fact in a
+# subordinate one. "The `bootstrap/` subdirectory no longer exists" is
+# narration; "if the Knight file no longer exists, `lore show` warns" is a fact
+# about today. A subordinator anywhere before the match suppresses the row.
+_VOICE_SUBORDINATE_EXEMPT = re.compile(r"\bno longer exists?\b", re.IGNORECASE)
+_SUBORDINATOR_PATTERN = re.compile(
+    r"\b(?:if|when|once|after|unless|until|whether|should|while|where)\b",
+    re.IGNORECASE,
+)
+
+_INLINE_CODE_PATTERN = re.compile(r"`+[^`]*`+")
+_FRONTMATTER_KEY_PATTERN = re.compile(r"^([A-Za-z_][\w-]*):[ \t]*(.*)$")
+_CODE_FENCE_PATTERN = re.compile(r"^\s*(`{3,}|~{3,})")
+_BLOCK_SCALAR_HEADERS = frozenset({">", "|", ">-", "|-", ">+", "|+"})
+
+
+def _voice_lintable_lines(text: str) -> list[tuple[int, str]]:
+    """Return ``(line_number, text)`` for every line a voice check may read.
+
+    Drops YAML frontmatter (keeping only the ``summary`` value, inline or block
+    scalar), fenced code blocks, and inline code spans. Line numbers are 1-based
+    against the original file, so a dropped line leaves a gap.
+    """
+    out: list[tuple[int, str]] = []
+    in_frontmatter = False
+    in_summary = False
+    fence: str | None = None
+
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        stripped = raw.strip()
+
+        if lineno == 1 and stripped == "---":
+            in_frontmatter = True
+            continue
+
+        if in_frontmatter:
+            if stripped == "---":
+                in_frontmatter = False
+                in_summary = False
+                continue
+            key_match = _FRONTMATTER_KEY_PATTERN.match(raw)
+            if key_match:
+                key, value = key_match.group(1), key_match.group(2)
+                in_summary = key == "summary"
+                if in_summary and value and value not in _BLOCK_SCALAR_HEADERS:
+                    out.append((lineno, value))
+                continue
+            if in_summary:
+                out.append((lineno, raw))
+            continue
+
+        fence_match = _CODE_FENCE_PATTERN.match(raw)
+        if fence_match:
+            token = fence_match.group(1)[0]
+            if fence is None:
+                fence = token
+            elif fence == token:
+                fence = None
+            continue
+        if fence is not None:
+            continue
+
+        out.append((lineno, _INLINE_CODE_PATTERN.sub(" ", raw)))
+
+    return out
+
+
+def _check_voice(project_root: Path) -> list[HealthIssue]:
+    """Audit canonical codex prose against the codex voice rules.
+
+    Spec: ``lore artifact show codex-voice``. Five mechanical checks —
+    ``voice_past_narration`` (V1, V2), ``voice_expiry_hedge`` (V3),
+    ``voice_forward_promise`` (V4), ``voice_dangling_deixis`` (V5), and
+    ``voice_sales_register`` (V9) — each skipped in the layers whose purpose
+    is the construct it flags (``_VOICE_SKIP_LAYERS``). V6, V7, V8, and V10
+    need judgement a pattern match cannot supply and have no check.
+
+    Every row is a ``warning`` and no voice id sits in
+    ``_ESCALATED_WARNING_CHECKS``, so the scope never raises the exit code.
+
+    Not read: frontmatter values other than ``summary``, fenced code blocks,
+    inline code spans, and the generated ``transient/health-*.md`` reports —
+    a report quoting a violation has not committed one.
+
+    Rows are ordered by codex id ascending, then line number, then the
+    ``_VOICE_PATTERNS`` declaration order. Never prints, never raises.
+    """
+    codex_dir = project_root / ".lore" / "codex"
+    if not codex_dir.is_dir():
+        return []
+
+    found: list[tuple[str, int, int, str, str]] = []
+
+    for filepath in sorted(codex_dir.rglob("*.md")):
+        if not filepath.is_file():
+            continue
+        rel = filepath.relative_to(codex_dir)
+        layer = rel.parts[0] if len(rel.parts) > 1 else ""
+        if layer == "transient" and filepath.name.startswith("health-"):
+            continue
+        try:
+            text = filepath.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        fm = _parse_frontmatter(filepath)
+        doc_id = str(fm["id"]) if fm and fm.get("id") else str(rel)
+
+        active = [
+            (order, check, label, pattern)
+            for order, (check, label, pattern) in enumerate(_VOICE_PATTERNS)
+            if layer not in _VOICE_SKIP_LAYERS[check]
+        ]
+        if not active:
+            continue
+
+        seen: set[tuple[int, str, str]] = set()
+        for lineno, line in _voice_lintable_lines(text):
+            for order, check, label, pattern in active:
+                for match in pattern.finditer(line):
+                    phrase = match.group(0)
+                    if _VOICE_SUBORDINATE_EXEMPT.fullmatch(phrase) and (
+                        _SUBORDINATOR_PATTERN.search(line[: match.start()])
+                    ):
+                        continue
+                    key = (lineno, check, phrase.lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    found.append((
+                        doc_id,
+                        lineno,
+                        order,
+                        check,
+                        f'line {lineno}: "{phrase}" — {label}',
+                    ))
+
+    return [
+        HealthIssue(
+            severity="warning",
+            entity_type="codex",
+            id=doc_id,
+            check=check,
+            detail=detail,
+        )
+        for doc_id, _lineno, _order, check, detail in sorted(found)
+    ]
+
+
 def _humanize_timestamp(timestamp: str) -> str:
     """Convert a filename-safe timestamp like 2026-04-09T14-32-00 to 2026-04-09T14:32:00."""
     date_part, sep, time_part = timestamp.partition("T")
@@ -1368,6 +1628,7 @@ def health_check(
         "glossary": lambda: _check_glossary(project_root),
         "bindings": lambda: _check_bindings(project_root),
         "rites": lambda: _check_rites(project_root),
+        "voice": lambda: _check_voice(project_root),
     }
 
     seen: set[HealthIssue] = set()

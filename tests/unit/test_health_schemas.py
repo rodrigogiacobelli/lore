@@ -228,13 +228,13 @@ def test_schemas_in_all_scopes_list():
 def test_schemas_is_last_in_all_scopes():
     """Tech Notes: schemas registered last among the original seven scope tokens.
 
-    Note: bindings (US-001) and rites (US-006) were appended after schemas, so
-    schemas is no longer at a fixed tail index; the durable invariant is that
-    schemas still ships in the default-all scope set and precedes the later
-    additions (bindings, then rites last).
+    Note: bindings (US-001), rites (US-006), and voice were appended after
+    schemas, so schemas is no longer at a fixed tail index; the durable
+    invariant is that schemas still ships in the default-all scope set and
+    precedes the later additions (bindings, then rites, then voice last).
     """
     assert "schemas" in _ALL_SCOPES
-    assert _ALL_SCOPES[-1] == "rites"
+    assert _ALL_SCOPES[-1] == "voice"
     assert _ALL_SCOPES.index("schemas") < _ALL_SCOPES.index("bindings")
 
 

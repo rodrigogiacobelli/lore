@@ -78,7 +78,7 @@ discarded. `group` is derived from the document's directory path via
 2. Load the codex index once via `_scan_codex_robust(codex_dir)`. Build a
    `dict[str, dict]` keyed by `id`.
 3. If `start_id` is absent from the index, return `None`.
-4. Build directional adjacency via `_build_adjacency(index, docs)` (see below) —
+4. Build directional adjacency via `_build_adjacency(index, docs)` —
    one pass, two `dict[str, set[str]]` maps for outbound and inbound edges.
 5. Initialise the BFS state:
    - `visited: set[str] = {start_id}` — the seed is visited but never emitted.
@@ -109,8 +109,7 @@ discarded. `group` is derived from the document's directory path via
   guaranteeing the result contains only outbound-reachable nodes (and vice
   versa).
 - **Default body short-circuit** — `full=False` never reads document bodies.
-  This closes the previously-deferred N+1 `read_document` perf note for the
-  default code path. `--full` retains the per-node parse cost.
+  `--full` retains the per-node parse cost.
 
 ### Complexity
 

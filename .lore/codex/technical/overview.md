@@ -78,7 +78,7 @@ The exact pragma statements are documented in ref-lore_db-core (lore codex show 
 The `--no-auto-close` flag behaves differently on `lore new quest` vs `lore edit`:
 
 - On **`lore new quest`**: `--no-auto-close` is marked `hidden=True` in `cli.py` (line 197) and does not appear in `--help` output. This is intentional — auto-close is disabled by default for new quests (`DEFAULT 0` in the schema), so the flag serves no purpose.
-- On **`lore edit`**: `--no-auto-close` is a visible flag (line 1331). This is the correct mechanism to explicitly disable auto-close on an existing quest that previously had `--auto-close` enabled.
+- On **`lore edit`**: `--no-auto-close` is a visible flag (line 1331). This is the correct mechanism to explicitly disable auto-close on an existing quest that has `--auto-close` enabled.
 
 The source documentation (`docs/cli.md`) presents `--no-auto-close` as a user-visible flag in both contexts. The migrated documentation (this file and ref-lore_cli-commands (lore codex show ref-lore_cli-commands)) resolves this inconsistency by noting the hidden status explicitly.
 

@@ -8,6 +8,7 @@ related:
 - conceptual-workflows-glossary
 - conceptual-entities-rite
 - decisions-014-link-direction
+- decisions-020-codex-voice-is-enforced
 ---
 
 # Codex
@@ -33,7 +34,7 @@ Documentation is divided into layers. Each layer has one job.
 | Operations | `operations/` | How is this developed, deployed, and maintained? |
 | Transient | `transient/` | In-flight working documents for the current feature cycle. Deleted when the feature ships. |
 
-The glossary lives as a single YAML file at `.lore/codex/glossary.yaml`, — see conceptual-entities-glossary`.
+The glossary lives as a single YAML file at `.lore/codex/glossary.yaml` — see conceptual-entities-glossary.
 
 **Conceptual docs describe the system from the outside.** No file paths, no schema columns, no API endpoints. If a business analyst can read it and understand it without knowing the tech stack, it belongs in conceptual.
 
@@ -114,6 +115,12 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 
 `standards/` contains the project's coding conventions, design principles, and framework usage rules. Standards are ongoing, enforced guidelines — not one-time decisions. A decision in `decisions/` may produce a standard in `standards/`. Decisions explain *why*; standards explain *how to comply*.
 
+## Voice
+
+Every canonical codex document speaks with one voice: present tense about current state, written for a reader who arrives cold with no conversation behind them. The rules live in one file. Run `lore artifact show codex-voice` before writing or editing anything under `.lore/codex/` — it holds the rule table, the two tests that settle a borderline sentence, and the per-layer table naming which rules bind which layer (`decisions/` and `transient/` get different tense budgets; `sources/` is exempt).
+
+`lore health --scope voice` checks the mechanical rules and reports each hit as a warning; it never affects the exit code (`decisions-020-codex-voice-is-enforced`). Four of the ten rules need judgment no pattern match supplies, so a clean run is not a pass — read those four yourself before you close a document.
+
 ## What NOT to Put in the Codex
 
 - Git history, commit messages, or who changed what — use `git log`
@@ -122,6 +129,8 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 - In-progress task state or mission notes — use the task manager
 - Anything already captured in `AGENTS.md` or `CLAUDE.md`
 - Duplicate facts — if a fact exists in one file, link to it; do not repeat it
+- Changelog narration — what a document said before, or what a release altered; a stable doc states what is true now, and `CHANGELOG.md` plus `git log` hold the rest
+- Promises of work not yet built — those belong in `transient/` or in a quest, never in a stable layer
 
 ## Cross-References
 

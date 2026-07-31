@@ -73,7 +73,7 @@ absent ──→ seeded skeleton ──→ user-edited
 | `seeded skeleton` | File exists with header comment + `items: []`. Schema-valid. Auto-surface produces no `## Glossary` block (no items match). | Maintainer adds items by editing the file. |
 | `user-edited` | File contains one or more items. Auto-surface matches canonical keywords and aliases against codex bodies; `lore health` validates the file shape and intra-file collisions. | Maintainer adds, edits, or removes items by editing the file. `lore init` is idempotent — a re-init does NOT overwrite a user-edited file. |
 
-The Glossary has no soft-delete. Renames or removals are not migrations — dangling references in other Codex documents simply stop matching, with no error.
+The Glossary has no soft-delete. Renames or removals are not migrations — dangling references in other Codex documents stop matching, with no error.
 
 ## How It Is Surfaced
 

@@ -19,6 +19,7 @@ related:
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-018-overlays-are-path-discovered-config
 - decisions-019-overlay-scope-stops-at-transient
+- decisions-020-codex-voice-is-enforced
 - conceptual-workflows-codex-map
 - conceptual-workflows-codex-chaos
 - conceptual-workflows-filter-list
@@ -147,7 +148,7 @@ Default output is a list-shape table — columns ID, GROUP, TITLE, SUMMARY, same
 | `--depth-out N` only | `N` | `0` |
 | `--depth-in N` only | `0` | `N` |
 | `--depth-out A --depth-in B` | `A` | `B` |
-| `--depth N` + `--depth-in M` or `--depth-out M` | error — exit 2, see below |
+| `--depth N` + `--depth-in M` or `--depth-out M` | error — Click `UsageError`, exit 2 |
 
 All three depth flags are `click.IntRange(min=0)`. `--full` is a flag (no value); it switches the default neighbour table to the legacy full-body output and composes with directional flags. The seed is never present in the output under any flag combination.
 
@@ -194,7 +195,15 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits all seven file-based entity types, JSON-Schema-validates entity files, and audits codex `binds:` reference integrity and codex `rites:` reference integrity. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`. The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. See conceptual-workflows-health.
+Audits the seven file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, and audits canonical codex prose against the voice rules. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
+
+```
+lore health --scope voice
+lore health --scope codex voice
+```
+
+The `voice` scope emits warnings only — every `voice_*` row is a `warning` and none escalates, so `--scope voice` never changes the exit code (`decisions-020-codex-voice-is-enforced`). It reports five checks (`voice_past_narration`, `voice_expiry_hedge`, `voice_forward_promise`, `voice_dangling_deixis`, `voice_sales_register`) over canonical codex layers, skipping `sources/` and `vision/` outright; `lore artifact show codex-voice` is the normative rule set.
+ The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. See conceptual-workflows-health.
 
 ## Shape — command tree
 
@@ -225,7 +234,7 @@ lore impacts   <codex-id|path> [--direct-links]
 lore glossary  {list|show|search}
 lore board     {add|delete}
 lore oracle
-lore health
+lore health   [--scope SCOPE ...]
 ```
 
 ## JSON envelope contract

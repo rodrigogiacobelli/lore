@@ -226,6 +226,7 @@ steps:
       Read the PRD: `lore codex show <prd-id>`
       Read both context maps and the docs they reference.
       Read the settled Tech Spec including its ADR & Standards Audit: `lore codex show <tech-spec-id>`
+      Retrieve the voice rules before drafting: `lore artifact show codex-voice`
 
       Run `lore codex list` and read every document that this feature might affect.
 
@@ -245,6 +246,8 @@ steps:
         (`lore artifact list`)
       - Update existing documents with the specific changes needed
       - Retire obsolete documents
+
+      Then run `lore health --scope voice` and clear or justify every warning.
 
       Post a board message to group-stories listing all codex document IDs created, updated,
       or retired — by codex ID only, never by file path:

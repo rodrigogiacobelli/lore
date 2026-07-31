@@ -1911,7 +1911,9 @@ def test_health_check_scope_codex_only_check_codex_runs(lore_dir):
 def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
     """health_check scope=None is equivalent to the full _ALL_SCOPES list.
 
-    Updated by US-004: _ALL_SCOPES now includes 'schemas'.
+    Updated by US-004: _ALL_SCOPES now includes 'schemas'. The explicit list is
+    now spelled out in full (glossary, bindings, rites, voice included) so the
+    equivalence holds whatever those checkers find.
     Exercises: lore codex show conceptual-workflows-health
     """
     # Inject watcher error to produce non-empty results
@@ -1923,7 +1925,10 @@ def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
     report_none = health_check(lore_dir, scope=None)
     report_all = health_check(
         lore_dir,
-        scope=["codex", "artifacts", "doctrines", "knights", "watchers", "schemas"],
+        scope=[
+            "codex", "artifacts", "doctrines", "knights", "watchers",
+            "glossary", "schemas", "bindings", "rites", "voice",
+        ],
     )
 
     assert report_none.errors == report_all.errors
@@ -3003,11 +3008,11 @@ def test_schema_kinds_contains_glossary_row():
 
 
 def test_all_scopes_contains_bindings():
-    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 9 (US-006 added rites)."""
+    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 10 (US-006 added rites, then voice)."""
     from lore.health import _ALL_SCOPES
 
     assert "bindings" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 9
+    assert len(_ALL_SCOPES) == 10
 
 
 def test_health_check_scope_bindings_only_routes_to_check_bindings(tmp_path):
@@ -3909,7 +3914,7 @@ def test_health_check_unknown_scope_message_verbatim(tmp_path):
         health_check(root, scope=["xyz"])
     assert str(exc.value) == (
         "Unknown scope: 'xyz'. Valid scopes: codex, artifacts, "
-        "doctrines, knights, watchers, glossary, schemas, bindings, rites."
+        "doctrines, knights, watchers, glossary, schemas, bindings, rites, voice."
     )
 
 

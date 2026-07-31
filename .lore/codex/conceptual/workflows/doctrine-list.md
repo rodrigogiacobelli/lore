@@ -66,7 +66,7 @@ When one or more `--filter GROUP` tokens are supplied, the parsed doctrine list 
 - Each supplied token is split on `/`. A doctrine's `group` is split on `/`. The token matches when its segments are a proper prefix of the doctrine's segments. For example, `--filter seo-analysis` matches `seo-analysis` and `seo-analysis/keyword-analysers`; `--filter seo-analysis/keyword-analysers` matches the nested form exactly.
 - The hyphen-delimited input grammar (`default-feature`) is no longer accepted — this is a breaking change. See conceptual-workflows-filter-list for the full specification.
 - Doctrines with `group == ""` (root-level files, directly under `.lore/doctrines/`) are **always** included regardless of filter tokens.
-- Unrecognised tokens produce no error — they simply match nothing.
+- Unrecognised tokens produce no error — they match nothing.
 - When `--filter` is not provided, all doctrines are returned.
 
 See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.

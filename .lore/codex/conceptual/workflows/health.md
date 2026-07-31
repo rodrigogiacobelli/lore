@@ -1,26 +1,32 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — full-scan or scoped audit of all seven file-based entity types (codex, artifacts, doctrines, knights, watchers, glossary, rites), error/warning reporting, markdown report write to codex/transient, --scope filtering, --json output, exit code contract, and Python API via health_check(). Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), and the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks.
+summary: What the system does internally when lore health runs — a full-scan or scoped audit across two kinds of scope. Seven scopes name a file-based entity type (codex, artifacts, doctrines, knights, watchers, glossary, rites); three cut across them (schemas, bindings, voice). Covers error/warning reporting, the markdown report written to codex/transient, --scope filtering, --json output, the exit-code contract, and the Python API via health_check(). Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks, and the voice scope's five warning-only prose checks over the canonical codex layers.
 binds:
 - src/lore/health.py
 - src/lore/cli.py
 - tests/e2e/test_health.py
 - tests/e2e/test_health_glossary.py
 - tests/e2e/test_health_schemas.py
+- tests/e2e/test_health_bindings.py
+- tests/e2e/test_health_rites.py
+- tests/e2e/test_health_voice.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+- tests/unit/test_health_voice.py
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "decisions-020-codex-voice-is-enforced", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
 
-`lore health` audits all seven file-based entity types in a Lore project — codex, artifacts, doctrines, knights, watchers, the Glossary (lore codex show conceptual-entities-glossary), and Rites (lore codex show conceptual-entities-rite) — and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove the project's knowledge base is internally consistent.
+`lore health` audits a Lore project's knowledge base and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove that knowledge base internally consistent.
+
+Its scopes divide into two kinds. **Seven name a file-based entity type**: codex, artifacts, doctrines, knights, watchers, the Glossary (lore codex show conceptual-entities-glossary), and Rites (lore codex show conceptual-entities-rite). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
 
 ## Preconditions
 
 - The Lore project has been initialised (`.lore/` directory exists).
-- The caller may optionally specify one or more entity types via `--scope`.
+- The caller may optionally specify one or more scopes via `--scope`.
 
 ## Invocation
 
@@ -34,11 +40,13 @@ lore health --scope bindings
 lore health --scope bindings codex
 lore health --scope rites
 lore health --scope codex rites
+lore health --scope voice
+lore health --scope codex voice
 lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, and `rites`.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, and `voice`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. The report file is always written regardless of `--json`.
 
@@ -46,14 +54,14 @@ lore health --scope codex --json
 
 ### 1. Resolve scope
 
-The system determines which entity types to audit:
-- No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, and `rites`.
-- `--scope TYPE [TYPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`.
+The system determines which scopes to run:
+- No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, `rites`, and `voice`.
+- `--scope SCOPE [SCOPE ...]`: only the listed scopes are checked; all others are skipped entirely.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`.
 
-### 2. Run per-entity checkers
+### 2. Run per-scope checkers
 
-Each in-scope entity type is checked independently. A failure in one checker (e.g., the watchers directory is missing) does not abort other checkers — the failure is recorded as a `scan_failed` error and scanning continues.
+Each in-scope checker runs independently. A failure in one checker (e.g., the watchers directory is missing) does not abort other checkers — the failure is recorded as a `scan_failed` error and scanning continues.
 
 #### Codex checks
 
@@ -63,7 +71,7 @@ Each in-scope entity type is checked independently. A failure in one checker (e.
 
 #### Artifact checks
 
-- **Missing required frontmatter** (error): any `.md` file under `.lore/artifacts/` missing `id`, `title`, or `summary`. Reports the first absent field. These files are currently silently skipped by `lore artifact list` — `lore health` makes the gap visible.
+- **Missing required frontmatter** (error): any `.md` file under `.lore/artifacts/` missing `id`, `title`, or `summary`. Reports the first absent field. `lore artifact list` silently skips these files — `lore health` makes the gap visible.
 
 #### Doctrine checks
 
@@ -183,6 +191,30 @@ Every rite issue is a `HealthIssue(severity, entity_type, id, check, detail, sch
 
 `--scope rites` runs only these rite checks. `--scope codex rites` runs codex reference-integrity AND rite checks (multi-scope per ADR-012); the `dangling_codex_rite` check fires under both. `lore health` with no `--scope` runs rites as part of the default-all-scopes execution.
 
+#### Voice checks (scope: `voice`)
+
+The voice scope audits canonical codex prose against the codex voice rules. Those rules are normative in one place: `lore artifact show codex-voice` holds the rule table, the two tests that settle a borderline sentence, and the worked examples. This section describes what the checker matches and how it reports; it does not restate the rules. `decisions-020-codex-voice-is-enforced` records the decision behind the artifact and the severity contract below.
+
+The checker is `health._check_voice(project_root)`. It walks `.lore/codex/**/*.md` once and reads the `summary` frontmatter value plus the body. It does not read any other frontmatter value, fenced code blocks, inline code spans, or the generated `transient/health-*.md` reports — a report that quotes a violation has not committed one. Every issue is a `HealthIssue(severity="warning", entity_type="codex", id=<codex-id>, check=<voice check name>, detail='line <n>: "<phrase>" — <label>')` with `schema_id`, `rule`, and `pointer` all `null`. Rows sort by codex id, then line number, then the order the patterns are declared in.
+
+Five checks run. Each is skipped in the layers whose purpose is the construct it flags:
+
+| Check | Rules | Skipped in |
+|---|---|---|
+| `voice_past_narration` | V1, V2 | `decisions/`, `transient/`, `sources/`, `vision/` |
+| `voice_expiry_hedge` | V3 | `transient/`, `sources/`, `vision/` |
+| `voice_forward_promise` | V4 | `transient/`, `sources/`, `vision/` |
+| `voice_dangling_deixis` | V5 | `sources/`, `vision/` |
+| `voice_sales_register` | V9 | `sources/`, `vision/` |
+
+A skip is a property of the layer directory, not of the document. No frontmatter key, comment marker, or filename pattern exempts an individual file (`decisions-020-codex-voice-is-enforced` constraint 3). Four of the ten voice rules — V6, V7, V8, and V10 — need judgment no pattern match supplies, and no check covers them.
+
+**Severity: warnings only.** No `voice_*` check emits an error, and no `voice_*` id sits in `_ESCALATED_WARNING_CHECKS`, so `--scope voice` never raises the exit code. `decisions-020-codex-voice-is-enforced` fixes that as a contract: six matched rules cannot assert a verdict on four that need a reader, and a heuristic that breaks a build teaches authors to drop the scope from their `--scope` list. Promoting any `voice_*` issue to an error takes its own ADR. A voice warning is a prompt to read the flagged sentence against the two tests in the artifact, not proof of a defect.
+
+**`vision/` is skipped, not exempt.** All five checks skip the layer because no rule has been decided for a document that states intent about a system nobody has built. `decisions-020-codex-voice-is-enforced` records the skip as an open question: a `vision/` document raises no voice warning and receives no voice guarantee. Ending the skip takes a decision on whether such a document marks intent explicitly or drops its forward-looking prose.
+
+`--scope voice` runs only these checks. `--scope codex voice` runs codex reference-integrity AND voice checks (multi-scope per ADR-012). `lore health` with no `--scope` runs voice as part of the default-all-scopes execution.
+
 ### 3. Collect results
 
 All checkers return a list of `HealthIssue` objects. The system partitions them into errors and warnings and assembles a `HealthReport`.
@@ -191,7 +223,7 @@ All checkers return a list of `HealthIssue` objects. The system partitions them 
 
 The system always writes a markdown report to `.lore/codex/transient/health-{timestamp}.md`, even on clean runs. The timestamp uses UTC ISO 8601 with colons replaced by hyphens for filesystem compatibility (e.g., `health-2026-04-09T14-32-00.md`).
 
-**Self-consistency.** Because the report lands in `transient/`, it is overlay-exempt (`decisions-019-overlay-scope-stops-at-transient`): a newly `required` custom field cannot make `lore health` fail on its own output. Before the exemption it did — every previously written report became a `schema` error and each run added one more failing report, so the exit code was a function of how many times health had been run.
+**Self-consistency.** Because the report lands in `transient/`, it is overlay-exempt (`decisions-019-overlay-scope-stops-at-transient`): an overlay `required` custom field never makes `lore health` fail on its own output, however many reports have accumulated on disk. The exit code is independent of how many times `lore health` has run.
 
 Report frontmatter:
 ```yaml
@@ -307,6 +339,7 @@ report = health_check(project_root=Path("."), scope=["doctrines", "watchers"])
 report = health_check(project_root=Path("."), scope=["bindings"])
 report = health_check(project_root=Path("."), scope=["rites"])
 report = health_check(project_root=Path("."), scope=["codex", "rites"])
+report = health_check(project_root=Path("."), scope=["voice"])
 
 report.has_errors       # bool
 report.errors           # tuple[HealthIssue, ...]
@@ -314,7 +347,7 @@ report.warnings         # tuple[HealthIssue, ...]
 report.issues           # tuple[HealthIssue, ...] — errors then warnings
 ```
 
-`health_check()` never prints to stdout or stderr. The report file is written by the CLI handler after calling `health_check()`, not inside `health_check()` itself. Python API callers that do not want the file side effect simply do not call `_write_report`.
+`health_check()` never prints to stdout or stderr. The report file is written by the CLI handler after calling `health_check()`, not inside `health_check()` itself. Python API callers that do not want the file side effect omit the `_write_report` call.
 
 `health_check` is in `lore.models.__all__`. `HealthIssue` and `HealthReport` are also in `__all__`.
 
@@ -322,7 +355,8 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Unknown `--scope` token | Exit 1 with usage error: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, schemas, glossary, bindings, rites.` |
+| Value passed to `--scope` outside the token set | The flag is `click.Choice`-guarded, so Click raises `BadParameter` (a `UsageError` subclass) before the handler body runs. Exit **2**, stderr: `Error: Invalid value for '--scope': 'xyz' is not one of 'codex', 'artifacts', 'doctrines', 'knights', 'watchers', 'schemas', 'glossary', 'bindings', 'rites', 'voice'.` Adding a token to the set is non-breaking; rewording the message or changing the exit code is a breaking contract change (`decisions-017-constrained-flags-use-click-choice`, conceptual-workflows-error-handling). |
+| Unknown token in the positional `extra_scopes` argument | The positional argument carries no `click.Choice`, so the token reaches `health_check(scope=...)`, which raises `ValueError`. The handler rewrites the prefix and exits **1**, stderr: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, glossary, schemas, bindings, rites, voice.` This is the only path that produces the exit-1 `Invalid scope:` text. |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |
@@ -331,7 +365,7 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 
 ## Scope Isolation
 
-When `--scope` is provided, only the named entity types are checked. No other entity types are scanned. Example: `lore health --scope watchers` never reads codex, artifact, doctrine, or knight files.
+When `--scope` is provided, only the named scopes run. Nothing outside them is scanned. Example: `lore health --scope watchers` never reads codex, artifact, doctrine, or knight files.
 
 ## Out of Scope
 

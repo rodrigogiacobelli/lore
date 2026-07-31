@@ -29,7 +29,7 @@ related:
 Consequences:
 
 - **Identity preserved.** `lore.api.create_quest is lore.db.create_quest` (and likewise for every other re-export). Tests, monkeypatches, and `inspect`-based tooling all see the same function object.
-- **No behavioural drift.** The facade cannot diverge from the operational modules behind it because it adds no behaviour. ADR-011's CLI/Python parity is enforced at the operational layer; the facade simply exposes that surface.
+- **No behavioural drift.** The facade cannot diverge from the operational modules behind it because it adds no behaviour. ADR-011's CLI/Python parity is enforced at the operational layer; the facade exposes that surface.
 - **Refactor freedom below the line.** Splitting `db.py`, renaming `codex.py`, or merging modules requires only that `api.py` keeps re-exporting the same names. No public API change. No semver bump.
 
 ## Three-Section `__all__` Layout

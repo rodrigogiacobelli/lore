@@ -46,7 +46,7 @@ When one or more `--filter GROUP` tokens are supplied, the scanned document list
 
 - Documents whose `group` exactly equals a supplied token **or** starts with `token + "-"` are included. For example, `--filter conceptual` returns documents with group `conceptual` as well as `conceptual-workflows`, `conceptual-reference`, and any other subgroup whose name starts with `conceptual-`.
 - Documents with `group == ""` (root-level files, directly under `.lore/codex/`) are **always** included regardless of filter tokens.
-- Unrecognised tokens produce no error — they simply match nothing.
+- Unrecognised tokens produce no error — they match nothing.
 - When `--filter` is not provided, all documents are returned (existing behaviour preserved).
 
 See conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) for the full filter behaviour specification.

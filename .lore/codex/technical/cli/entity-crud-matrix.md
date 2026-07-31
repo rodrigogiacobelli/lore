@@ -3,7 +3,7 @@ id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
 summary: Maps every Lore entity to its available CLI CRUD and traversal operations
   with the exact command for each. Highlights gaps — Codex has no CLI write path;
-  Glossary is read-only via CLI (single file, no group hierarchy); Artifact gained
+  Glossary is read-only via CLI (single file, no group hierarchy); Artifact has
   `edit` and `delete` write paths (full CRUD parity with knight/doctrine/watcher);
   Board has no standalone list or update; Quest/Mission have no search;
   lore deps is documented but unimplemented.
@@ -11,7 +11,7 @@ summary: Maps every Lore entity to its available CLI CRUD and traversal operatio
   GROUP... (slash-delimited segment-prefix matching) and all four entity `new`
   commands (doctrine, knight, watcher, artifact) support --group GROUP for nested
   creation. Glossary list does NOT accept --filter — single file with no groups.
-  Rite gained full CRUD plus search but uses a flat namespace — no --group/--filter;
+  Rite has full CRUD plus search but uses a flat namespace — no --group/--filter;
   --shared selects the shared-step subfolder instead.
 binds:
 - src/lore/cli.py
@@ -71,9 +71,9 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 | Entity | `new` accepts `--group`? | Helper called | Notes |
 |--------|--------------------------|---------------|-------|
 | **Doctrine** | yes | `lore.doctrine.create_doctrine(..., group=...)` | Subtree-wide duplicate check via `rglob`; mkdir before write. |
-| **Knight** | yes | `lore.knight.create_knight(knights_dir, name, content, group=...)` | `create_knight` introduced this release — previously inline in `cli.py`. |
-| **Watcher** | yes | `lore.watcher.create_watcher(watchers_dir, name, content, group=...)` | YAML parse-check still runs before write. |
-| **Artifact** | yes | `lore.artifact.create_artifact(artifacts_dir, name, content, group=...)` | New helper; first artifact write path. Strict frontmatter required. |
+| **Knight** | yes | `lore.knight.create_knight(project_root, name, content, group=...)` | Frontmatter is schema-validated against `lore://schemas/knight-frontmatter` before the subtree-wide duplicate check. |
+| **Watcher** | yes | `lore.watcher.create_watcher(project_root, name, content, group=...)` | YAML parse-check runs before write. |
+| **Artifact** | yes | `lore.artifact.create_artifact(project_root, name, content, group=...)` | Strict frontmatter required — `id`, `title`, `summary` all present. |
 
 `--group` is slash-delimited (`a/b/c`), validated by `lore.validators.validate_group`, and omitted means the entity root. Duplicate detection is always subtree-wide regardless of group. CLI handlers are thin wrappers — all validation, mkdir, and writing happens inside the core helpers, giving identical behaviour to the Python API (`group=` kwarg).
 
@@ -81,7 +81,7 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 
 | Command | Description |
 |---------|-------------|
-| `lore health [--scope TYPE [TYPE ...]] [--json]` | Audit all seven file-based entity types (or a subset via `--scope`) and report errors/warnings. Exits `1` on any error, `0` on clean or warnings-only. Writes a markdown report to `.lore/codex/transient/` on every run. |
+| `lore health [--scope SCOPE [SCOPE ...]] [--json]` | Audit the project's knowledge base and report errors/warnings. Seven scopes name a file-based entity type; three cut across them — `schemas` (file shape), `bindings` (codex↔code `binds:`), `voice` (canonical codex prose, warnings only). Omitting `--scope` runs every scope. Exits `1` on any error, `0` on clean or warnings-only. Writes a markdown report to `.lore/codex/transient/` on every run. See conceptual-workflows-health. |
 
 ## Surfacing Operations
 

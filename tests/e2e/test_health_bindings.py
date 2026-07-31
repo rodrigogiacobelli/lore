@@ -103,7 +103,7 @@ def test_help_lists_bindings_scope(project_dir, runner):
     assert res.exit_code == 0, res.output
     # Click renders Choice as [a|b|c]; assert the full token block appears.
     assert (
-        "[codex|artifacts|doctrines|knights|watchers|schemas|glossary|bindings|rites]"
+        "[codex|artifacts|doctrines|knights|watchers|schemas|glossary|bindings|rites|voice]"
         in res.stdout
     )
 

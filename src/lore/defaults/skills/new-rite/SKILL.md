@@ -122,6 +122,8 @@ Linking is one-directional, codex → rite (ADR-014): a codex doc names the rite
 lore codex edit <doc-id> --add rites=<rite-id>
 ```
 
+This is a frontmatter-only edit — it writes no prose. If you also touch the doc's body, read `lore artifact show codex-voice` first and add `--scope voice` to the health run below.
+
 Then re-run `lore health` to confirm no dangling `rites:` reference. The link is a secondary discovery path — agents still find the rite via `lore rite list`, so an unlinked main rite is fine (not a health warning).
 
 ## Notes

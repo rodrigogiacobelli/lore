@@ -31,7 +31,7 @@ enforced declaratively with `click.Choice`, so passing an out-of-set token
 `UsageError` — which prints `Error: Invalid value for '--scope': 'xyz' is not
 one of '...'` to stderr and exits with **code 2**.
 
-This behaviour was never written down. It simply fell out of using
+This behaviour was never written down. It fell out of using
 `click.Choice`, and downstream authors learned it only by reading existing
 commands. That implicitness caused a concrete failure: during the Rites feature,
 the spec pipeline proposed replacing `click.Choice` with a hand-rolled validator

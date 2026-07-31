@@ -53,7 +53,7 @@ Commands:
   artifact  Access project artifacts — reusable template files stored...
   board     Manage board messages for quests and missions.
   watcher   Manage watcher definitions stored in .lore/watchers/.
-  health    Audit all six file-based entity types and report issues.
+  health    Audit the file-based entity types plus the schemas, bindings,...
 ```
 
 ## Entities
@@ -161,7 +161,7 @@ Primitives for reading project state before you act:
 - **`lore impacts <path>`** — which codex docs govern this file. Run before editing code.
 - **`lore impacts <codex-id>`** — which files a doc binds. Run when assessing a doc's reach.
 - **`lore glossary` / `lore glossary search <q>`** — project vocabulary.
-- **`lore health`** — audit codex, schemas, bindings, glossary. Run after structural changes.
+- **`lore health`** — audit codex, rites, schemas, bindings, glossary, voice. Run after structural changes.
 
 ## Available skills
 

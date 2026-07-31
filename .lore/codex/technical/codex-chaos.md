@@ -94,7 +94,7 @@ discovery across the connected neighbourhood regardless of link direction.
 `chaos_documents` solves this with a pre-pass that treats all declared edges as
 undirected: `A → B` is registered as both A ∈ neighbours(B) and B ∈ neighbours(A).
 This ensures that a document reachable via an inbound link is included in the walk
-candidate set, not just documents reachable via outbound links.
+candidate set, not only documents reachable via outbound links.
 
 `map_documents` walks the same adjacency via the shared `_build_adjacency`
 helper, but keeps the two directions separate so it can budget outbound and

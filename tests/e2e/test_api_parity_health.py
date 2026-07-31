@@ -88,3 +88,74 @@ class TestHealthCliEnvelopeUsesFacade:
             "cli.py imports from lore.health directly; route via lore.api"
         )
         assert "import lore.health" not in src
+
+
+class TestHealthVoiceScopeParity:
+    """CLAUDE.md guardrail: the ``voice`` scope works as CLI and Python API alike."""
+
+    @staticmethod
+    def _seed(project_dir: Path) -> None:
+        """Write one canonical doc carrying a violation of each voice rule."""
+        (project_dir / ".lore" / "codex" / "tech-parser.md").write_text(
+            "---\n"
+            "id: tech-parser\n"
+            "title: tech-parser\n"
+            "summary: A parser.\n"
+            "---\n"
+            "The parser previously read each file twice.\n"
+            "The flag currently accepts one token.\n"
+            "Validation will be added in a later release.\n"
+            "As mentioned above, the new flag takes a token.\n"
+            "The resolver is robust and simply works.\n",
+            encoding="utf-8",
+        )
+
+    def test_voice_scope_accepted_by_the_op_fn(self, project_dir):
+        from lore import api
+
+        report = api.health_check(project_dir, scope=["voice"])
+        assert report.has_errors is False
+        assert report.errors == ()
+
+    def test_voice_rows_match_cli_json_envelope(self, runner, project_dir):
+        import dataclasses
+
+        from lore import api
+        from lore.cli import main
+
+        self._seed(project_dir)
+
+        api_rows = [
+            dataclasses.asdict(i)
+            for i in api.health_check(project_dir, scope=["voice"]).issues
+        ]
+        result = runner.invoke(main, ["--json", "health", "--scope", "voice"])
+        cli_rows = json.loads(result.stdout)["issues"]
+
+        assert api_rows == cli_rows
+        assert {r["check"] for r in api_rows} == {
+            "voice_past_narration",
+            "voice_expiry_hedge",
+            "voice_forward_promise",
+            "voice_dangling_deixis",
+            "voice_sales_register",
+        }
+
+    def test_voice_warnings_keep_both_surfaces_at_exit_zero(self, runner, project_dir):
+        from lore import api
+        from lore.cli import main
+
+        self._seed(project_dir)
+
+        assert api.health_check(project_dir, scope=["voice"]).has_errors is False
+        result = runner.invoke(main, ["--json", "health", "--scope", "voice"])
+        assert json.loads(result.stdout)["has_errors"] is False
+        assert result.exit_code == 0, result.output
+
+    def test_voice_scope_is_in_both_token_lists(self):
+        """``cli._VALID_SCOPES`` and ``health._ALL_SCOPES`` each carry the token."""
+        from lore.cli import _VALID_SCOPES
+        from lore.health import _ALL_SCOPES
+
+        assert "voice" in _VALID_SCOPES
+        assert "voice" in _ALL_SCOPES

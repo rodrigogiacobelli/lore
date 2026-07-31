@@ -8,7 +8,42 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+### Added
+
+#### `lore health --scope voice` — codex voice linting
+
+A tenth `--scope` token that audits canonical codex prose against the codex voice rules (`lore artifact show codex-voice`). Because `health_check`'s accepted scope values are public API, the added token is an additive, minor-bump change per standards-public-api-stability.
+
+- **Five mechanical checks** — `voice_past_narration` (V1, V2: "previously", "formerly", "used to be", "has been renamed", "no longer exists"), `voice_expiry_hedge` (V3: "currently", "for now", "at the time of writing", "so far"), `voice_forward_promise` (V4: "will be added", "planned", "in the future"), `voice_dangling_deixis` (V5: "as mentioned above", "the new `<x>`", "this release"), and `voice_sales_register` (V9: "powerful", "seamless", "robust", "cutting-edge", "effortless", "simply", "just"). V6, V7, V8, and V10 need judgement a pattern match cannot supply and have no check.
+- **Warnings only** — every row is a `warning` and no voice id is escalated, so the scope never changes the exit code. `lore health --scope voice` on a codex full of violations still exits 0.
+- **Per-layer rule budgets** — each check is skipped in the layers whose purpose is the construct it flags: `decisions/` may narrate prior state, `transient/` may narrate and promise, `sources/` carries verbatim upstream text, and `vision/` is deferred until the rule is settled.
+- **Regions the linter does not read** — frontmatter values other than `summary`, fenced code blocks, inline code spans, and the `transient/health-*.md` reports `lore health` writes itself. A report quoting a violation has not committed one.
+- **Patterns tuned against known false positives** — "no longer" describing present state ("the parent is no longer visible") and subordinate uses ("if the Knight file no longer exists") do not fire; nor do the "employed in order to" sense of "used to", generic change verbs in a conditional perfect passive ("after its facts have been folded"), procedural "the new value"/"the new file", "work being planned", or the temporal senses of "just".
+
+#### `codex-voice` — the codex voice rules, shipped as an artifact
+
+A new design-document artifact defines the single voice every canonical codex document speaks in, retrieved with `lore artifact show codex-voice`. It ships with the package, so `lore init` seeds it into every project alongside `doctrine-design`, `glossary-design`, `inquest-design`, and `rite-design`.
+
+- **The artifact** — `lore-design-documents/codex-voice.md`. Ten rules, two tests that settle borderline sentences (does it mean anything to a reader who never saw a previous version; is a fact about today lost if you delete it), and a table giving each codex layer its own rule budget. The rules live here and nowhere else: every skill, knight, doctrine, and codex document references the artifact by ID rather than restating it.
+- **Seeded skills** — the five skills that author or edit canonical codex prose now retrieve the rules before drafting and run `lore health --scope voice` before finishing: `update-codex`, `ingest-source`, `refresh-source`, `lore-update`, and `new-rite`. Skills that write only to `transient/` or write no codex files are deliberately untouched, `inquest` most notably: its verdicts are narratives about work already done, which the tense rules exist to keep out of canonical layers.
+- **Tech Writer knight** — gains a `## Voice` section built in the shape of its existing glossary gate, and a rule requiring `lore health --scope voice` to pass before any codex mission closes.
+- **Doctrines** — the codex-authoring steps in `feature-implementation`, `quick-feature-implementation`, and `tdd-feature` retrieve the rules at draft time and gate on the check before posting their completion board message.
+- **Codex change proposal template** — gains a `## Voice Check` section for recording the judgement calls the automated scope cannot make.
+- **Seeded codex guide** — the `codex.md` template every new project reads first gains a voice section and adds change narration and forward promises to its list of what does not belong in a codex.
+- **The decision** — recorded as `decisions-020-codex-voice-is-enforced`, covering why enforcement is warnings rather than errors, why each layer gets the budget it does, and why the rules ship as an artifact instead of a `standards/` document.
+
 ### Fixed
+
+#### `lore health --scope` flag form in the source-ingest skills
+
+`ingest-source` and `refresh-source` instructed agents to run `lore health --scope codex --scope schemas`, the repeated-flag form that `decisions-012-multi-value-cli-param-convention` explicitly names as wrong. Both now use the space-separated form the convention requires.
+
+#### Codex documentation corrections found while applying the voice rules
+
+- **`lore health` unknown-scope behaviour** — `conceptual-workflows-health` documented a single exit-1 error for an unrecognised `--scope` value, describing the hand-rolled validator that `decisions-017-constrained-flags-use-click-choice` rejected. The two real paths are now documented separately: a value outside the `click.Choice` set exits 2 with Click's message, while an unknown token in the positional argument exits 1.
+- **Stale scope list in the Python API reference** — `ref-lore_api-core` omitted `rites` from `health_check`'s valid scope tokens, shipped incomplete since that scope was added.
+- **Wrong signatures in the CLI entity matrix** — `tech-cli-entity-crud-matrix` documented `create_knight`, `create_watcher`, and `create_artifact` as taking a directory as their first argument; all three take `project_root`.
+- **Nonexistent references in the Artifact entity doc** — `conceptual-entities-artifact` claimed two shipped namespaces where there are four, and named three artifact IDs and three doctrines that no longer exist.
 
 #### Custom codex frontmatter schema overlays — scope corrections
 

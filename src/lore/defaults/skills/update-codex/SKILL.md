@@ -15,6 +15,12 @@ If the request is "document an entire feature's worth of changes", stop and sugg
 
 You also **own keeping it current**. When a change introduces a new convention, a new layer or subdirectory, a new doc category, or a new project-wide rule that future doc edits must follow, update `codex.md` so the next reader (human or agent) finds the rule from the top. **codex.md is lean by design** — do not bloat it with per-doc summaries, per-feature notes, or content that belongs in the docs themselves. Only structural or rule-level changes warrant an edit. The same dedup and discovery rules below apply to codex.md itself.
 
+Every canonical doc also speaks with one voice. **Read the rules before you draft** — which tense each layer gets, and the two tests that settle the rest:
+
+```
+lore artifact show codex-voice
+```
+
 ## Steps
 
 ### 1. Clarify the change
@@ -159,10 +165,10 @@ Body rules:
 Run:
 
 ```
-lore health --scope codex
+lore health --scope codex voice
 ```
 
-Must report `Health check passed.` Fix any error before declaring done.
+Must report `Health check passed.` Fix any error before declaring done. `voice` reports warnings, never errors — read each one and either rewrite the sentence or confirm it passes the two tests in `codex-voice`.
 
 Re-run the original `lore codex search <keyword>` and confirm the new or updated doc appears. If it does not, the discoverability words are wrong — fix the summary or body until search finds it.
 

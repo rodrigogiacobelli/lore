@@ -47,7 +47,7 @@ The mission is fetched within a `BEGIN IMMEDIATE` transaction. If not found, an 
 
 Within the transaction:
 - `status` is set to `closed`
-- `block_reason` is set to `NULL` (cleared if the mission was previously blocked)
+- `block_reason` is set to `NULL` (cleared if the mission was blocked)
 - `closed_at` and `updated_at` are set to the current UTC timestamp
 
 ### 5. Cascade: auto-unblock dependents

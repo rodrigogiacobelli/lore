@@ -28,6 +28,7 @@ related:
 - conceptual-entities-glossary
 - conceptual-workflows-glossary
 - decisions-013-toml-for-config-yaml-for-glossary
+- decisions-020-codex-voice-is-enforced
 ---
 
 # Lore Python API — core surface
@@ -70,7 +71,7 @@ related:
 
 - **`impacts(token, *, project_root, direct_links=False) -> ImpactsResult`.** The Python mirror of `lore impacts` (conceptual-workflows-impacts). `ImpactsResult` is a tagged-union dataclass — `kind == "codex"` populates `codex_items: tuple[CodexBinding, ...]`; `kind == "code"` populates `code_items: tuple[CodeBinding, ...]`. Errors surface as `ImpactsError` (subclass of `ValueError`) — unknown codex id, path outside repo, `..` traversal. The function takes `project_root: Path` (NOT `codex_dir`) because path-seed lookups normalise against the repo root, not the codex subdir.
 
-- **Direct-Python `create_mission(project_root, title)` auto-attaches.** Calling `create_mission` from `lore.api` with no `quest_id` argument and exactly one open quest in the project now attaches the new mission to that sole-open-quest. Previously the direct-Python path produced a standalone mission while only the CLI handler inferred the parent. The behaviour is now identical across CLI and Python (ADR-011 parity — FLAG #4 in the facade Review Ledger).
+- **Direct-Python `create_mission(project_root, title)` auto-attaches.** Calling `create_mission` from `lore.api` with no `quest_id` argument and exactly one open quest in the project attaches the new mission to that sole-open-quest. The CLI handler and the direct-Python path infer the parent identically (ADR-011 parity — FLAG #4 in the facade Review Ledger).
 
 ## Shape — entity matrix
 
@@ -143,8 +144,10 @@ Validates entity existence inside the same `BEGIN IMMEDIATE` as the insert. Vali
 
 ## Diagnostic operations
 
-`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, and audits codex `binds:` reference integrity. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`. `None` runs every scope.
+`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, audits codex `binds:` and `rites:` reference integrity, and audits canonical codex prose against the voice rules. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. `None` runs every scope.
 
 `HealthIssue` is a frozen dataclass with `severity`, `entity_type`, `id`, `check`, `detail`, plus three optional fields populated only on schema checks: `schema_id`, `rule`, `pointer`. `HealthIssue.from_dict(d)` round-trips JSON output and tolerates legacy payloads without the schema fields.
 
 The `bindings` scope emits two check names: `dead_binding` (severity `error`, dead literal `binds:` path) and `empty_glob_binding` (severity `warning`, glob `binds:` matching zero files). Both rows carry `entity_type="codex"`, `id=<codex-entry-id>`, and `schema_id`/`rule`/`pointer` all `None`. Realm filters by `issue.check` to message authoring knights before dispatch (ADR-011 parity with the CLI). See conceptual-workflows-health (lore codex show conceptual-workflows-health).
+
+The `voice` scope emits five check names — `voice_past_narration`, `voice_expiry_hedge`, `voice_forward_promise`, `voice_dangling_deixis`, `voice_sales_register` — all with severity `warning`, `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `None`. No `voice_*` row ever sets `has_errors`; a caller that wants a voice gate applies its own threshold over `report.warnings` (`decisions-020-codex-voice-is-enforced`). `lore artifact show codex-voice` is the normative rule set.

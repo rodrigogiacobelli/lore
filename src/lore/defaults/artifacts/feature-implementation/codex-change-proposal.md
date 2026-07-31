@@ -20,6 +20,8 @@ summary: Template for the Tech Writer to propose additions, updates, or deletion
 
 _Summary of what this feature changes in the project's documented understanding. One paragraph._
 
+_Every draft below is written in final codex voice — retrieve the rules with `lore artifact show codex-voice`._
+
 ---
 
 ## Documents to Create
@@ -69,6 +71,14 @@ _Verify that the proposed changes do not contradict existing codex documents._
 
 - _{Doc A}_ — _{no conflict / updated to align}_
 - _{Doc B}_ — _{no conflict / updated to align}_
+
+---
+
+## Voice Check
+
+_Confirm every draft above passes the Fresh-Reader and Sentence Deletion tests. Record any judgment call the automated scope cannot check._
+
+- _{Draft ID}_ — _{judgment call, or "clean"}_
 
 ---
 

@@ -1602,7 +1602,7 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 
 - **`QuestStatus`** — `OPEN`, `IN_PROGRESS`, `CLOSED`.
 - **`MissionStatus`** — `OPEN`, `IN_PROGRESS`, `BLOCKED`, `CLOSED`.
-- **`DependencyType`** — currently only `"blocks"`.
+- **`DependencyType`** — one value: `"blocks"`.
 
 ### Domain dataclasses
 

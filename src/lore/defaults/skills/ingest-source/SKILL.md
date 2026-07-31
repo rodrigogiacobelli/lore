@@ -51,6 +51,12 @@ lore artifact show glossary-design
 
 The Glossary is for small, project-specific terms only. Entities, named workflows, generic IT vocabulary, and future-scope ideas belong in entity docs, workflow docs, ADRs, standards docs, or nowhere — not the glossary.
 
+The snapshot body is exempt from voice rules — it is verbatim upstream text. The canonical additions you propose here are not. Read the rules before drafting them:
+
+```
+lore artifact show codex-voice
+```
+
 ### 6. Apply approved edits
 
 Drive every canonical-doc change through the CLI — do NOT write codex files by hand. The CLI normalises frontmatter and runs schema validation; hand-edits skip both.
@@ -103,10 +109,10 @@ If step 6 identified zero canonical docs to edit, pause and ask the user: either
 Run:
 
 ```
-lore health --scope codex --scope schemas
+lore health --scope codex schemas voice
 ```
 
-Expected output: `Health check passed. No issues found.` If schema errors reference the new snapshot, check `related` is present and non-empty and contains only existing codex IDs. If `canonical_links_to_source` fires on a canonical doc, that canonical doc's `related` was polluted with the source ID — remove it.
+Expected output: `Health check passed. No issues found.` `voice` reports warnings, never errors, and skips `sources/` entirely — any warning it raises is on a canonical doc you edited in step 6. If schema errors reference the new snapshot, check `related` is present and non-empty and contains only existing codex IDs. If `canonical_links_to_source` fires on a canonical doc, that canonical doc's `related` was polluted with the source ID — remove it.
 
 ### 9. Report
 

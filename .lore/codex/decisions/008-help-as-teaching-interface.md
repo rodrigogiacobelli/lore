@@ -2,7 +2,7 @@
 id: decisions-008-help-as-teaching-interface
 title: CLI --help is the primary teaching interface for AI agents
 summary: 'ADR establishing that Lore''s --help output must teach agents how the tool
-  works — entities, concepts, and workflow — not just describe syntax. Enrichment
+  works — entities, concepts, and workflow — not only describe syntax. Enrichment
   is scoped to top-level and command-group levels only. JSON --help is deferred (implementation
   cost exceeds benefit). LORE-AGENT.md is reduced to a concise basics guide. board
   command enrichment deferred until spec-mission-board ships.
@@ -41,7 +41,7 @@ type field means.
 
 ## Decision
 
-Lore's `--help` output must teach agents how the tool works, not just how to
+Lore's `--help` output must teach agents how the tool works, not only how to
 call it.
 
 **Scope of enrichment:**

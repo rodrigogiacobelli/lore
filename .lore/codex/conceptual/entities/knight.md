@@ -27,7 +27,7 @@ The separation between Mission and Knight is:
 
 A worker agent reads both: the Mission tells it what to build, the Knight tells it how to behave while building it.
 
-A Knight is optional — the Mission description alone should be sufficient to complete the work. The Knight makes execution more consistent and robust across tasks.
+A Knight is optional — the Mission description alone should be sufficient to complete the work. The Knight makes execution more consistent across tasks.
 
 ## Python API
 

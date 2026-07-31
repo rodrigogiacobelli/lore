@@ -26,7 +26,7 @@ The public surface of a layer is a facade over its internals. It should be simpl
 
 If a name is in `lore.api.__all__`, it is public. Renaming, removing, or changing its interface requires a version bump (see `decisions-010-public-api-stability`).
 
-If a name is not in `lore.api.__all__`, it is internal. It may be refactored, renamed, or removed freely without a version bump — including renaming or splitting the module it currently lives in.
+If a name is not in `lore.api.__all__`, it is internal. It may be refactored, renamed, or removed freely without a version bump — including renaming or splitting the module that holds it.
 
 Never expose internal implementation details through `lore.api.__all__`. If a caller needs something, add a clean interface, populate the validators / operational layer behind the facade with it, and re-export the name from `lore.api` — never give callers direct access to a submodule.
 

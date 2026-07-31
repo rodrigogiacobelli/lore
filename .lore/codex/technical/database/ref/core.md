@@ -59,7 +59,7 @@ This doc captures the design choices that the schema cannot express and the rule
 
 - **All timestamps are ISO 8601 UTC with `Z` suffix.** Generated via `datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")`. Application-managed only — agents never set `created_at`, `updated_at`, `closed_at`, `deleted_at`.
 
-- **ID generation: 4→5→6 hex with collision retry.** IDs come from `uuid4().hex[:4]` with retry to length 5 then 6 on collision. Six-char collision raises. Mission IDs are hierarchical (`q-a1b2/m-f3c1`); standalone missions use just `m-<hash>`. Generation and insert run in the same `BEGIN IMMEDIATE` transaction.
+- **ID generation: 4→5→6 hex with collision retry.** IDs come from `uuid4().hex[:4]` with retry to length 5 then 6 on collision. Six-char collision raises. Mission IDs are hierarchical (`q-a1b2/m-f3c1`); standalone missions use `m-<hash>`. Generation and insert run in the same `BEGIN IMMEDIATE` transaction.
 
 ## Shape
 

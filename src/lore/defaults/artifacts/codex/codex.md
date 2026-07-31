@@ -14,7 +14,7 @@ Everything is reachable from the CLI — every command group accepts `--help`.
 
 ## The codex
 
-`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other fields, unless the project declares them in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (the `new-custom-schema` skill). Overlays cover canonical docs and `sources/` only; `transient/` docs always validate against the packaged schema.
+`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other fields, unless the project declares them in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (the `new-custom-schema` skill). Overlays cover canonical docs and `sources/` only; `transient/` docs always validate against the packaged schema. `lore health --scope voice` audits the prose inside those bodies against the codex voice rules (`lore artifact show codex-voice`).
 
 Docs live under subdirectories that scope intent. The set below is what `lore init` *expects* a fresh project to use; the dirs are created on demand by `lore codex new --group <subdir>`.
 
@@ -67,9 +67,27 @@ lore codex edit <name> -f <file>              # replace body from a file
 lore codex delete <name>
 ```
 
-Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`. `lore health --scope codex` rejects extras — except keys the project declares in a `.lore/custom-schemas/<kind>.yaml` overlay, which do not apply under `transient/`.
+Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`. `lore health --scope codex` rejects extras — except keys the project declares in a `.lore/custom-schemas/<kind>.yaml` overlay, which do not apply under `transient/`. `lore health --scope voice` audits what you write in the body.
 
 Do not write codex files by hand with `cat >` or an editor — drive every change through the CLI so frontmatter normalisation and validation run. For the full discovery → classify → dedup → apply → verify workflow, read the `update-codex` skill.
+
+### Voice
+
+Every canonical codex doc speaks with one voice: present tense about current state, written for a reader who arrives cold with no conversation behind them. The rules live in one file:
+
+```
+lore artifact show codex-voice
+```
+
+Read it before writing or editing any doc under `.lore/codex/`. It holds the ten rules, the two tests that settle a borderline sentence, and the per-layer table naming which rules bind which layer — `decisions/` and `transient/` get different tense budgets, `sources/` is exempt, `vision/` is skipped.
+
+Then check your work:
+
+```
+lore health --scope voice
+```
+
+It pattern-matches the mechanical rules and reports each hit as a warning. The scope never changes the exit code, and four of the ten rules need judgment no pattern supplies — a clean run is not a pass. Read those four yourself before you close a doc.
 
 ## The glossary
 
@@ -148,6 +166,8 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 - In-progress task state or mission notes — use Lore's task entities
 - Anything already captured in `AGENTS.md` or `CLAUDE.md`
 - Duplicate facts — if a fact exists in one file, link to it via `related`; do not repeat it
+- Changelog narration — what a doc said before, or what a release altered; a stable doc states what is true now, and `CHANGELOG.md` plus `git log` hold the rest
+- Promises of work not yet built — those belong in `transient/` or in a task entity, never in a stable layer
 
 ## Naming conventions
 

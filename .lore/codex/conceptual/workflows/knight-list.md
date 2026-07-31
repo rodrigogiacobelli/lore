@@ -61,7 +61,7 @@ When one or more `--filter GROUP` tokens are supplied, the collected knight list
 - Each supplied token is split on `/` and the knight's `group` is split on `/`. The token matches when its segments are a proper prefix of the knight's segments. For example, `--filter feature-implementation` matches both `feature-implementation` and `feature-implementation/reviewers`; `--filter feature-implementation/reviewers` matches only the nested form.
 - The hyphen-delimited input grammar (`feature-implementation-sub`) is no longer accepted — see conceptual-workflows-filter-list for the breaking-change specification.
 - Knights with `group == ""` (root-level files, directly under `.lore/knights/`) are **always** included regardless of filter tokens.
-- Unrecognised tokens produce no error — they simply match nothing.
+- Unrecognised tokens produce no error — they match nothing.
 - When `--filter` is not provided, all knights are returned (existing behaviour preserved).
 
 Fallback values (`id` = stem, `summary` = "") apply to the full list before filtering; filtering does not affect how individual knight metadata is resolved.

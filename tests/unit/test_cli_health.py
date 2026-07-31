@@ -18,7 +18,7 @@ import click
 
 
 def test_valid_scopes_tuple_shape():
-    """US-001 unit — `_VALID_SCOPES` token tuple; US-006 appended `rites` last."""
+    """US-001 unit — `_VALID_SCOPES` token tuple; `voice` appended last after `rites`."""
     from lore.cli import _VALID_SCOPES
 
     assert _VALID_SCOPES == (
@@ -31,9 +31,10 @@ def test_valid_scopes_tuple_shape():
         "glossary",
         "bindings",
         "rites",
+        "voice",
     )
-    assert _VALID_SCOPES[-1] == "rites"
-    assert len(_VALID_SCOPES) == 9
+    assert _VALID_SCOPES[-1] == "voice"
+    assert len(_VALID_SCOPES) == 10
 
 
 def test_health_cmd_scope_choice_matches_valid_scopes():

@@ -34,7 +34,7 @@ Lore is dumb infrastructure. The `mission_type` field is stored and exposed, nev
 
 Lore stores the value and returns it in command output (`lore show`, `lore ready`, `lore missions`, `lore oracle` reports). The consuming tool reads the type and decides what to do.
 
-Today, that consuming tool is an AI agent following instructions in `AGENTS.md`. The instructions describe the dispatch loop: read `lore ready`, check the type, and act according to the team's workflow convention. In future, Realm will replace those instructions with programmatic dispatch.
+Today, that consuming tool is an AI agent following instructions in `AGENTS.md`. The instructions describe the dispatch loop: read `lore ready`, check the type, and act according to the team's workflow convention.
 
 ## Rationale
 
@@ -60,4 +60,4 @@ Today, that consuming tool is an AI agent following instructions in `AGENTS.md`.
 
 **Lore auto-claims `constable` missions.** Rejected because auto-claiming is an orchestration decision. Lore does not know when the orchestrator is ready to handle a constable task. The orchestrator reads `lore ready`, sees the type, and decides.
 
-**Dispatch logic lives in a Lore plugin or extension point.** Rejected as premature. Today's use case is fully served by AGENTS.md instructions. Realm will provide programmatic dispatch in future. No plugin architecture is needed at this stage.
+**Dispatch logic lives in a Lore plugin or extension point.** Rejected as premature. Today's use case is fully served by AGENTS.md instructions. No plugin architecture is needed at this stage.

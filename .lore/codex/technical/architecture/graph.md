@@ -59,7 +59,7 @@ for missions at the same topological level (same in-degree after BFS processing)
 
 ## Caller Responsibility
 
-The caller (currently `_show_quest` in `cli.py`) must filter edges to **intra-quest
+The caller — `_show_quest` in `cli.py` — must filter edges to **intra-quest
 pairs** before passing them to this function. Specifically:
 
 - Include only edges where both `from_id` and `to_id` belong to the same quest.

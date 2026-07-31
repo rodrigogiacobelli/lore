@@ -93,7 +93,7 @@ Pinning the classification protects that decision.
 | Option | Why rejected |
 |--------|-------------|
 | **Treat overlays as ADR-006 entities and add `lore schema show`** | Directly contradicts the PRD's Out-of-Scope "no `lore schema ...` group." Adds a retrieval surface for a file that needs none; overlays are resolved by the validator, never shown to an agent by ID. |
-| **Amend ADR-006 to list overlays as an exception** | ADR-006 is about entities that *have* a `show <id>` command. Overlays do not; they are not exceptions to the rule, they are simply a different class (config), already covered by the ADR-013 precedent. An exception clause would muddy ADR-006's clean entity scope. |
+| **Amend ADR-006 to list overlays as an exception** | ADR-006 is about entities that *have* a `show <id>` command. Overlays do not; they are not exceptions to the rule, they are a different class (config), already covered by the ADR-013 precedent. An exception clause would muddy ADR-006's clean entity scope. |
 | **Leave the classification implicit** | The Tech Spec already had to assert "Honors ADR-006" without a governing record. Leaving it implicit invites the two failure modes above (false violation reading, or a rejected `lore schema show` addition). |
 | **Make overlays codex docs (give them `id`/`related`)** | Overlays are JSON-Schema fragments, not documentation. They carry no narrative, link to nothing, and must not appear in `lore codex list` / `map` / `impacts`. Forcing codex frontmatter onto them is a category error. |
 

@@ -18,20 +18,16 @@ related: ["tech-arch-source-layout", "tech-arch-knight-module", "tech-arch-valid
 **Source module:** `src/lore/frontmatter.py`
 
 This module provides shared frontmatter parsing for markdown files with YAML front
-matter. It ships as part of the ADR-012 refactor (REFACTOR-3 and REFACTOR-4), replacing
-near-identical private parsing functions that existed separately in `codex.py`
-(`_parse_doc`) and `artifact.py` (`_parse_artifact`).
+matter.
 
 ## Purpose
 
-Before this module existed, both `codex.py` and `artifact.py` independently parsed YAML
-frontmatter from markdown files. The two implementations were nearly identical (INF-19
-in the adversarial review). REFACTOR-3/4 extract the shared logic into a single
-authoritative module, following the DRY principle (ADR-012).
+`frontmatter.py` is the single authoritative parser for YAML frontmatter in markdown
+files. Both `codex.py` and `artifact.py` import it rather than carrying a parser of
+their own, following the DRY principle (ADR-012).
 
-Additionally, both modules previously read each file twice — once to extract metadata
-for scan operations, and again to retrieve the body for show operations. The
-`parse_frontmatter_doc_full` function eliminates the double-read.
+`parse_frontmatter_doc_full` reads a file exactly once and returns both the metadata
+and the body, so a caller that needs both does not open the file twice.
 
 ## Public Interface
 

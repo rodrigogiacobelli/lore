@@ -4,8 +4,10 @@ title: Artifact
 summary: >
   What an Artifact is — a reusable template file stored in .lore/artifacts/
   and accessed by stable ID via the read-only CLI (list + show). Covers the
-  artifact lifecycle, the two shipped namespaces (transient/ and codex/), and
-  what agents and maintainers do with artifacts.
+  artifact lifecycle, the four namespaces lore init seeds under
+  .lore/artifacts/default/ (codex/, feature-implementation/,
+  lore-design-documents/, rites/), and what agents and maintainers do with
+  artifacts.
 related:
   - conceptual-entities-doctrine
   - conceptual-entities-knight
@@ -14,6 +16,7 @@ related:
   - tech-arch-initialized-project-structure
   - ref-lore_cli-commands
   - conceptual-relationships-artifact--doctrine
+  - decisions-020-codex-voice-is-enforced
 ---
 
 # Artifact
@@ -57,15 +60,19 @@ Artifact files are managed directly on disk. There is no CLI command to create o
 
 ## Shipped Namespaces
 
-`lore init` seeds artifact templates into `.lore/artifacts/default/`, placing two subdirectories inside it:
+`lore init` seeds artifact templates into `.lore/artifacts/default/`, placing four subdirectories inside it:
 
-- **`default/transient/`** — Blank scaffold templates for producing documents during an agent pipeline: `transient-business-spec`, `transient-full-spec`, `transient-user-story`. These are the canonical starting points for creating specs and user stories. Agents retrieve them with `lore artifact show transient-business-spec` (and the analogous IDs). Do not read these files from disk directly.
+- **`default/feature-implementation/`** — Blank scaffold templates for the documents an agent pipeline produces: `fi-prd`, `fi-prd-draft`, `fi-tech-spec`, `fi-tech-spec-draft`, `fi-user-story`, `fi-user-story-index`, `fi-context-map`, `fi-codex-change-proposal`, and the two divergent-brainstorm passes `fi-crazy-prd` and `fi-crazy-tech-spec`. Agents retrieve them with `lore artifact show fi-prd` (and the analogous IDs). Doctrine step notes name these IDs, and `lore health` resolves every `fi-` token in a step note against the artifact index.
 
 - **`default/codex/`** — Example codex documents demonstrating well-formed entries across entity, technical, and operations layers. All IDs in this namespace are prefixed `example-` to prevent collision with IDs in the project's own `.lore/codex/`. These serve as reference material for agents producing new codex entries.
 
-The `default/` directory is listed in `.lore/.gitignore` so Lore-seeded artifacts are not committed to user repositories. User-created artifact files placed directly in `.lore/artifacts/` or any subdirectory outside `default/` are git-tracked normally.
+- **`default/lore-design-documents/`** — Authoring guides and gates for Lore's own entity types: `codex-voice`, `doctrine-design`, `glossary-design`, `inquest-design`, and `rite-design`. These hold rules rather than blanks — an agent retrieves one to read before authoring, not to fill it in. `codex-voice` is the normative statement of the voice every canonical codex document uses and the rule set `lore health --scope voice` checks (`decisions-020-codex-voice-is-enforced`).
 
-The `bootstrap/` subdirectory that previously existed alongside these namespaces has been eliminated. Its orientation guidance was absorbed into the Codex doctrines (`codex-greenfield`, `codex-brownfield-no-docs`, `codex-brownfield-migration`), which now reference artifact IDs directly in their step notes where a template is needed.
+- **`default/rites/`** — Copy-paste skeletons for the two rite shapes: `rite-main` (the node-graph main rite) and `rite-shared-step` (the pure, single-exit shared step).
+
+That an artifact can carry a rule set rather than a blank scaffold is the reason the voice rules ship as an artifact instead of a `standards/` document: `standards/` is project-owned territory, and an artifact reaches every project through `lore init` (`decisions-020-codex-voice-is-enforced`).
+
+The `default/` directory is listed in `.lore/.gitignore` so Lore-seeded artifacts are not committed to user repositories. User-created artifact files placed directly in `.lore/artifacts/` or any subdirectory outside `default/` are git-tracked normally.
 
 ## What Users Do with Artifacts
 

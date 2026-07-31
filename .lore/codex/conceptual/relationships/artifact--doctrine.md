@@ -22,7 +22,7 @@ The Artifact whose ID appears in a Doctrine step's `notes` field. The Artifact p
 
 ### Referring Doctrine Step (author of guidance)
 
-The step that names an Artifact ID in its `notes`. Step notes are free-form text; an Artifact ID is just one kind of content that may appear there. Multiple Artifact IDs can appear in one set of notes.
+The step that names an Artifact ID in its `notes`. Step notes are free-form text; an Artifact ID is one kind of content that may appear there. Multiple Artifact IDs can appear in one set of notes.
 
 ## Data on the Connection
 

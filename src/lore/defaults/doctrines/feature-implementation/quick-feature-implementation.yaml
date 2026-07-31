@@ -208,11 +208,14 @@ steps:
       Every new CLI command needs a workflow doc — this is not optional.
 
       Identify every codex document to create, update, or retire.
+      Retrieve the voice rules before drafting: `lore artifact show codex-voice`
       Apply changes directly — no proposal step. Use the CRUD commands (never raw file writes):
       - Create: `lore codex new <id> -f <draft>` (pass `--group <subdir>` to nest, `--type <type>` for non-default doc types). Use `lore artifact list` to find the right template before drafting.
       - Update whole file: `lore codex edit <id> -f <draft>`.
       - Update single field: `lore codex edit <id> --set KEY=VALUE` (or `--add KEY=VALUE` / `--remove KEY=VALUE` for list fields like `related` or `binds`, `--unset KEY` to drop one).
       - Delete: `lore codex delete <id>`.
+
+      Then run `lore health --scope voice` and clear or justify every warning.
 
       Post a board message to tech-notes listing all codex document IDs
       created, updated, or retired — by codex ID only, never by file path:

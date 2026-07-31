@@ -82,7 +82,7 @@ Summary of usage within `generate_reports()`:
 | Quest-scoped mission filename | `make_entity_slug(m_part, mission["title"]) + ".md"` where `m_part` is the ID component after `/` | Full `{m_part}-{slug}` |
 | Standalone mission filename | `make_entity_slug(mission_id, mission["title"]) + ".md"` | Full `{mission_id}-{slug}` |
 
-For quest-scoped missions, `m_part` is derived by splitting on `/`: `mission_id.split("/")[-1]` — this strips the `q-xxxx/` prefix and leaves just `m-yyyy`.
+For quest-scoped missions, `m_part` is derived by splitting on `/`: `mission_id.split("/")[-1]` — this strips the `q-xxxx/` prefix and leaves `m-yyyy`.
 
 ## Report File Formats
 

@@ -78,7 +78,7 @@ When a Doctrine is read, both files are validated. Validation is performed by th
 
 ## Soft-Delete Semantics
 
-Soft-delete for the two-file model is Post-MVP. There is no `lore doctrine delete` CLI command. When soft-delete is implemented, both files (`.yaml` and `.design.md`) will be renamed atomically.
+`lore doctrine delete <name>` soft-deletes a Doctrine by renaming both partner files: `<name>.yaml` becomes `<name>.yaml.deleted` and `<name>.design.md` becomes `<name>.design.md.deleted`. `doctrine.delete_doctrine` raises `ValueError` when neither file exists.
 
 ## Example
 

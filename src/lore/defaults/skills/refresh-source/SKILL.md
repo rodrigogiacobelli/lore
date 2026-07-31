@@ -67,6 +67,12 @@ lore artifact show glossary-design
 
 The Glossary is for small, project-specific terms only. Entities, named workflows, generic IT vocabulary, and future-scope ideas belong elsewhere — not the glossary.
 
+A diff-driven edit is the easiest place to leak a delta into a canonical doc. Write what is true after the change, never what changed — read the rules first:
+
+```
+lore artifact show codex-voice
+```
+
 ### 9. Overwrite the snapshot (rewriting `related` from scratch)
 
 Drive the snapshot rewrite through the CLI. Two paths, pick the cleaner one:
@@ -99,10 +105,10 @@ If the user vetoed all proposed edits in step 7, the prior `related` list may st
 ### 10. Verify via `lore health`
 
 ```
-lore health --scope codex --scope schemas
+lore health --scope codex schemas voice
 ```
 
-Expected output: `Health check passed. No issues found.`
+Expected output: `Health check passed. No issues found.` `voice` reports warnings, never errors, and skips `sources/` entirely — any warning it raises is on a canonical doc you edited in step 8.
 
 ### 11. Report
 
