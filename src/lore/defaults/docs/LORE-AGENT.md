@@ -161,7 +161,7 @@ Primitives for reading project state before you act:
 - **`lore impacts <path>`** — which codex docs govern this file. Run before editing code.
 - **`lore impacts <codex-id>`** — which files a doc binds. Run when assessing a doc's reach.
 - **`lore glossary` / `lore glossary search <q>`** — project vocabulary.
-- **`lore health`** — audit codex, rites, schemas, bindings, glossary, voice. Run after structural changes.
+- **`lore health`** — audit codex, rites, schemas, bindings, glossary, voice. Run after structural changes. It writes no report file unless `health-report-retention` in `.lore/config.toml` is `"latest"` or `"all"`.
 
 ## Available skills
 

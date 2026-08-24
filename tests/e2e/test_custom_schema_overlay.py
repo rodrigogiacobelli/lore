@@ -272,6 +272,11 @@ def test_health_own_reports_survive_required_overlay(runner, project_dir):
     """`lore health` writes a report into ``codex/transient/`` carrying only
     id/title/summary. Adding a required custom field must not turn every past
     (and every future) report into a schema error."""
+    # health-report-retention defaults to "none"; this scenario is about the
+    # report file itself, so opt the project into persistence.
+    (project_dir / ".lore" / "config.toml").write_text(
+        'health-report-retention = "all"\n'
+    )
     first = runner.invoke(main, ["health"])
     assert first.exit_code == 0, first.stdout
 

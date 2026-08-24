@@ -5,7 +5,8 @@ summary: What `lore init` creates on disk — the .lore/ directory layout, file 
   AGENTS.md placement, and gitignore contents. Includes the artifacts/ directory seeded
   on init, the .lore/codex/CODEX.md root and .lore/codex/glossary.yaml skeleton (the two
   files lore init seeds under .lore/codex/), and the .lore/config.toml project config
-  seed (TOML, generic from day one).
+  seed (TOML, generic from day one) with its two known root keys
+  show-glossary-on-codex-commands and health-report-retention.
 binds:
 - src/lore/init.py
 - src/lore/paths.py
@@ -22,6 +23,7 @@ related:
 - conceptual-workflows-glossary
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-018-overlays-are-path-discovered-config
+- decisions-021-health-reports-are-ephemeral-by-default
 - tech-arch-schemas
 - conceptual-workflows-health
 ---
@@ -85,7 +87,14 @@ your-project/
 
 **`.lore/codex/`** is **not** seeded with default content on init, with **two narrow exceptions** per ADR-013 (lore codex show decisions-013-toml-for-config-yaml-for-glossary): `lore init` writes `.lore/codex/CODEX.md` (the project codex root, copied from the packaged `example-codex` artifact with its `id` rewritten to `codex`) and `.lore/codex/glossary.yaml` (header comment + `items: []`) directly when absent. Both seeds are idempotent — re-init never overwrites a user-edited file. Neither lives under a `default/` subtree because both hold user-owned content. Aside from these two files, `.lore/codex/` is populated by agents running codex doctrines or written manually.
 
-**`.lore/config.toml`** is the project-level configuration file (TOML, parsed via stdlib `tomllib`). `lore init` seeds it idempotently with `show-glossary-on-codex-commands = true` and a header comment. The loader accepts arbitrary additional keys without error (forward-compatible). Missing or malformed config falls back to documented defaults silently (missing) or with one stderr warning (malformed). User-tracked: the gitignore template carries `!config.toml` so the file is committed alongside other project state. See decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary).
+**`.lore/config.toml`** is the project-level configuration file (TOML, parsed via stdlib `tomllib`). It holds two known root-level keys, both seeded idempotently by `lore init` at their default values behind a header comment:
+
+| Key | Type | Default | Governs |
+|-----|------|---------|---------|
+| `show-glossary-on-codex-commands` | bool | `true` | Whether `lore codex show` appends a `## Glossary` block (conceptual-workflows-glossary) |
+| `health-report-retention` | `"none"` \| `"latest"` \| `"all"` | `"none"` | Whether `lore health` persists its markdown report into `.lore/codex/transient/`, and how many survive (conceptual-workflows-health, decisions-021-health-reports-are-ephemeral-by-default) |
+
+The loader accepts arbitrary additional keys without error (forward-compatible) and preserves them in `Config.extras`. Missing config falls back to the defaults silently; malformed TOML, a known key of the wrong type, and a constrained key holding an out-of-set value each fall back with one stderr warning. Because a known key defaults on its own, a config file written by an older Lore keeps working unchanged. User-tracked: the gitignore template carries `!config.toml` so the file is committed alongside other project state. See decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary).
 
 **`.lore/custom-schemas/`** holds optional project-local schema overlays — add-only YAML files at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`) that extend the packaged codex frontmatter schemas with custom keys. It is **not** seeded by `lore init` — its absence is the zero-overlay baseline (validation behaves exactly as packaged). The `new-custom-schema` skill creates the directory and the overlay on first use. Overlays are user-owned, path-discovered config — addressed by their canonical path, never by ID (decisions-018-overlays-are-path-discovered-config; lore codex show decisions-018-overlays-are-path-discovered-config). An overlay's governance scope is canonical codex docs and `codex/sources/**` only — it never reaches `codex/transient/**`, where the packaged schema alone applies at every seam (decisions-019-overlay-scope-stops-at-transient; lore codex show decisions-019-overlay-scope-stops-at-transient). Like `config.toml` and the glossary, overlays are tracked: the gitignore template un-ignores `custom-schemas/`. The merged-schema resolver and merge semantics live in tech-arch-schemas (lore codex show tech-arch-schemas). See conceptual-workflows-health (lore codex show conceptual-workflows-health) for how a malformed overlay surfaces as a `scan_failed` issue.
 

@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Callable
 
 import yaml
 
+from lore.config import load_config
+
 # Re-exported at module scope so tests can monkeypatch `health.get_validator`
 # and `_check_schemas` can resolve its default via `sys.modules[__name__]`.
 from lore.schemas import _validator_for as get_validator  # noqa: F401
@@ -51,8 +53,10 @@ class HealthReport:
         errors: Issues with severity ``error`` (or escalated warnings).
         warnings: Non-error issues.
         report_path: Filesystem path of the markdown report when
-            ``health_check`` was called with ``write_report=True``; otherwise
-            ``None``.
+            ``health_check`` was called with ``write_report=True`` *and* the
+            effective retention policy persisted it (``latest`` or ``all``);
+            ``None`` under a read-only audit or the ``none`` policy, which
+            writes nothing.
         schemas_ran: ``True`` when the run included the ``schemas`` or
             ``glossary`` scope (drives schema-summary rendering on the CLI).
     """
@@ -72,6 +76,12 @@ class HealthReport:
 
 
 _ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites", "voice")
+
+# Report persistence policies, in the order the error message lists them.
+#   none   — write nothing (default; pre-existing reports are left alone)
+#   latest — prune every prior report, then write the new one
+#   all    — write the new report, prune nothing
+_RETENTION_VALUES = ("none", "latest", "all")
 
 # Schema-validated entity kinds. Each tuple is:
 #   (entity_type label used on HealthIssue,
@@ -1535,6 +1545,22 @@ def _render_schema_section(issues: tuple[HealthIssue, ...]) -> str:
     return "\n## Schema validation\n\n" + "\n".join(kind_blocks)
 
 
+def _prune_reports(transient_dir: Path) -> None:
+    """Delete every ``health-*.md`` sitting directly in ``transient_dir``.
+
+    Non-recursive: nested directories and every non-health transient document
+    are left untouched. Fail-soft — a file that cannot be unlinked is skipped
+    so an undeletable stale report never aborts an audit.
+    """
+    if not transient_dir.is_dir():
+        return
+    for filepath in transient_dir.glob("health-*.md"):
+        try:
+            filepath.unlink()
+        except OSError:
+            continue
+
+
 def _write_report(
     report: HealthReport,
     codex_dir: Path,
@@ -1569,6 +1595,7 @@ def health_check(
     *,
     write_report: bool = False,
     timestamp: str | None = None,
+    retention: str | None = None,
 ) -> HealthReport:
     """Audit file-based entity types and return a :class:`HealthReport`.
 
@@ -1580,16 +1607,24 @@ def health_check(
             those two.
         scopes: Alias for ``scope`` (kept for US-004 signature parity). When
             both are passed, ``scopes`` wins.
-        write_report: When ``True``, writes the markdown report to
-            ``<project>/.lore/codex/transient/health-<timestamp>.md`` and
-            sets ``HealthReport.report_path``. Default ``False`` is a
-            pure read-only audit.
+        write_report: When ``True``, offers the markdown report to the
+            retention policy, which decides whether it reaches
+            ``<project>/.lore/codex/transient/health-<timestamp>.md``.
+            Default ``False`` is a pure read-only audit that never touches
+            disk and never reads the project config.
         timestamp: ``%Y-%m-%dT%H-%M-%S`` UTC stamp used in the report
             filename. Only consulted when ``write_report=True``; defaults
             to "now" when omitted.
+        retention: Persistence policy — ``"none"`` (write nothing, leaving
+            prior reports alone), ``"latest"`` (prune every prior report,
+            then write) or ``"all"`` (write, prune nothing). ``None``
+            (default) resolves the policy from the project's
+            ``health-report-retention`` config key, which itself defaults to
+            ``"none"``. Only consulted when ``write_report=True``.
 
     Raises:
-        ValueError: When ``scope``/``scopes`` contains an unknown token.
+        ValueError: When ``scope``/``scopes`` contains an unknown token, or
+            ``retention`` is not one of ``none``, ``latest``, ``all``.
 
     Never prints to stdout or stderr.
     """
@@ -1603,6 +1638,13 @@ def health_check(
                 + "."
             )
     active_scope = list(_ALL_SCOPES) if selected is None else list(selected)
+
+    if retention is not None and retention not in _RETENTION_VALUES:
+        raise ValueError(
+            f"Unknown retention: '{retention}'. Valid values: "
+            + ", ".join(_RETENTION_VALUES)
+            + "."
+        )
 
     if project_root is None:
         from lore.root import find_project_root
@@ -1666,12 +1708,18 @@ def health_check(
     )
 
     if write_report:
-        if timestamp is None:
-            import datetime
-            timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
-                "%Y-%m-%dT%H-%M-%S"
-            )
-        report_path = _write_report(report, codex_dir, timestamp, schemas_ran=schemas_ran)
-        report = dataclasses.replace(report, report_path=report_path)
+        policy = retention
+        if policy is None:
+            policy = load_config(project_root).health_report_retention
+        if policy != "none":
+            if timestamp is None:
+                import datetime
+                timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+                    "%Y-%m-%dT%H-%M-%S"
+                )
+            if policy == "latest":
+                _prune_reports(codex_dir / "transient")
+            report_path = _write_report(report, codex_dir, timestamp, schemas_ran=schemas_ran)
+            report = dataclasses.replace(report, report_path=report_path)
 
     return report

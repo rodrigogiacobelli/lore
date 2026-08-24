@@ -1,7 +1,7 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — a full-scan or scoped audit across two kinds of scope. Seven scopes name a file-based entity type (codex, artifacts, doctrines, knights, watchers, glossary, rites); three cut across them (schemas, bindings, voice). Covers error/warning reporting, the markdown report written to codex/transient, --scope filtering, --json output, the exit-code contract, and the Python API via health_check(). Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks, and the voice scope's five warning-only prose checks over the canonical codex layers.
+summary: What the system does internally when lore health runs — a full-scan or scoped audit across two kinds of scope. Seven scopes name a file-based entity type (codex, artifacts, doctrines, knights, watchers, glossary, rites); three cut across them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention policy that decides whether a markdown report reaches codex/transient (none by default, latest, or all), --scope filtering, --json output, the exit-code contract, and the Python API via health_check() with its write_report, timestamp, and retention keywords. Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks, and the voice scope's five warning-only prose checks over the canonical codex layers.
 binds:
 - src/lore/health.py
 - src/lore/cli.py
@@ -11,10 +11,11 @@ binds:
 - tests/e2e/test_health_bindings.py
 - tests/e2e/test_health_rites.py
 - tests/e2e/test_health_voice.py
+- tests/e2e/test_health_retention.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
 - tests/unit/test_health_voice.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "decisions-020-codex-voice-is-enforced", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "decisions-020-codex-voice-is-enforced", "decisions-021-health-reports-are-ephemeral-by-default", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
 ---
 
 # `lore health` Behaviour
@@ -48,7 +49,9 @@ lore health --scope codex --json
 
 `--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, and `voice`.
 
-`--json` prints machine-readable JSON to stdout instead of the human-readable table. The report file is always written regardless of `--json`.
+`--json` prints machine-readable JSON to stdout instead of the human-readable table. Whether a report file is written is decided by the `health-report-retention` config key, not by `--json` — the two are independent.
+
+`lore health` has no retention flag. The persistence policy is project config, read inside `health_check` (`decisions-021-health-reports-are-ephemeral-by-default`).
 
 ## Steps
 
@@ -219,11 +222,25 @@ A skip is a property of the layer directory, not of the document. No frontmatter
 
 All checkers return a list of `HealthIssue` objects. The system partitions them into errors and warnings and assembles a `HealthReport`.
 
-### 4. Write markdown report
+### 4. Apply the report retention policy
 
-The system always writes a markdown report to `.lore/codex/transient/health-{timestamp}.md`, even on clean runs. The timestamp uses UTC ISO 8601 with colons replaced by hyphens for filesystem compatibility (e.g., `health-2026-04-09T14-32-00.md`).
+`health_check` offers the assembled report to the retention policy, which decides whether it reaches disk. `lore health` always makes the offer (`write_report=True`); a Python caller makes it by passing `write_report=True` itself.
 
-**Self-consistency.** Because the report lands in `transient/`, it is overlay-exempt (`decisions-019-overlay-scope-stops-at-transient`): an overlay `required` custom field never makes `lore health` fail on its own output, however many reports have accumulated on disk. The exit code is independent of how many times `lore health` has run.
+The policy comes from the root-level `health-report-retention` key in `.lore/config.toml`, read by `health_check` and by nothing else (`decisions-021-health-reports-are-ephemeral-by-default`, `decisions-011-api-parity-with-cli`). It takes three values:
+
+| Value | What `health_check` does | `HealthReport.report_path` |
+|-------|--------------------------|----------------------------|
+| `none` (default) | Writes no file. Reports already under `.lore/codex/transient/` are left where they are. | `None` |
+| `latest` | Unlinks every `health-*.md` sitting directly in `.lore/codex/transient/`, then writes the report for this run. Exactly one report survives. | Path of the written report |
+| `all` | Writes the report and prunes nothing, so reports accumulate. | Path of the written report |
+
+A missing config file, unparseable TOML, a non-string value, or a string outside the three tokens all resolve to `none` — see `conceptual-workflows-glossary` for the loader's warning contract. A `retention=` argument passed to `health_check` overrides the config key; a token outside the set raises `ValueError` (see Error Paths).
+
+Pruning under `latest` is non-recursive and confined to the `health-*.md` glob: nested directories and every other transient document are untouched. An unlink that fails is skipped, so an undeletable stale report never aborts an audit.
+
+When the policy writes, the file lands at `.lore/codex/transient/health-{timestamp}.md`, on clean runs as well as failing ones. The timestamp uses UTC ISO 8601 with colons replaced by hyphens for filesystem compatibility (e.g., `health-2026-04-09T14-32-00.md`). `health_check` resolves the timestamp itself when the caller omits it; `lore health` passes its own.
+
+**Self-consistency.** Because a written report lands in `transient/`, it is overlay-exempt (`decisions-019-overlay-scope-stops-at-transient`): an overlay `required` custom field never makes `lore health` fail on its own output, however many reports sit on disk. The exit code is independent of how many times `lore health` has run.
 
 Report frontmatter:
 ```yaml
@@ -235,8 +252,6 @@ summary: lore health report generated at 2026-04-09T14:32:00 UTC
 Report body on issues found: a markdown table with columns Severity, Entity Type, ID, Check, Detail, followed by a `## Schema validation` section listing every schema error grouped by `kind` then file path. When there are zero schema errors, the section reads `No schema errors.`.
 
 Report body on clean run: `No issues found.`
-
-No retention policy is enforced — reports accumulate.
 
 ### 5. Render output
 
@@ -330,7 +345,7 @@ Clean run:
 ## Python API
 
 ```python
-from lore.models import health_check, HealthReport, HealthIssue
+from lore.api import health_check, HealthReport, HealthIssue
 from pathlib import Path
 
 report = health_check(project_root=Path("."), scope=None)
@@ -341,15 +356,21 @@ report = health_check(project_root=Path("."), scope=["rites"])
 report = health_check(project_root=Path("."), scope=["codex", "rites"])
 report = health_check(project_root=Path("."), scope=["voice"])
 
+# Report persistence — keyword-only, all three default off/None.
+report = health_check(project_root=Path("."), write_report=True)                     # policy from config
+report = health_check(project_root=Path("."), write_report=True, retention="latest") # policy from the caller
+report = health_check(project_root=Path("."), write_report=True, timestamp="2026-04-09T14-32-00")
+
 report.has_errors       # bool
 report.errors           # tuple[HealthIssue, ...]
 report.warnings         # tuple[HealthIssue, ...]
 report.issues           # tuple[HealthIssue, ...] — errors then warnings
+report.report_path      # Path | None — the written report, or None
 ```
 
-`health_check()` never prints to stdout or stderr. The report file is written by the CLI handler after calling `health_check()`, not inside `health_check()` itself. Python API callers that do not want the file side effect omit the `_write_report` call.
+`health_check()` never prints to stdout or stderr. `write_report` defaults to `False`, which is a read-only audit: no file is written, no directory is created, and `.lore/config.toml` is never read. Passing `write_report=True` hands the report to the retention policy described under "Apply the report retention policy" — `retention=None` (the default) resolves it from config, an explicit token overrides config. `report_path` is the path of the written report, or `None` when nothing was written.
 
-`health_check` is in `lore.models.__all__`. `HealthIssue` and `HealthReport` are also in `__all__`.
+`health_check`, `HealthIssue`, and `HealthReport` are all in `lore.api.__all__` — the public surface per `decisions-010-public-api-stability`. `lore.models` hosts the dataclasses internally and does not export them. Adding the `retention` keyword changes no name in `__all__`, so the surface is unchanged.
 
 ## Error Paths
 
@@ -359,7 +380,11 @@ report.issues           # tuple[HealthIssue, ...] — errors then warnings
 | Unknown token in the positional `extra_scopes` argument | The positional argument carries no `click.Choice`, so the token reaches `health_check(scope=...)`, which raises `ValueError`. The handler rewrites the prefix and exits **1**, stderr: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, glossary, schemas, bindings, rites, voice.` This is the only path that produces the exit-1 `Invalid scope:` text. |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
-| Report directory missing | Created if absent (`.lore/codex/transient/` is created on first run) |
+| `retention=` argument outside `none`, `latest`, `all` | `health_check` raises `ValueError: Unknown retention: 'xyz'. Valid values: none, latest, all.` The raise is unconditional — it fires even when `write_report=False` — and mirrors the unknown-scope raise. No CLI path reaches it: `lore health` never passes `retention` |
+| `health-report-retention` in `.lore/config.toml` holds a non-string, or a string outside the token set | Falls back to `none` after one stderr warning from `load_config`. The audit runs and exits normally |
+| Report directory missing when the policy writes | Created if absent (`.lore/codex/transient/` is created on the first run that persists a report) |
+| Report directory missing when the policy is `latest` | Pruning is a no-op; the write then creates the directory |
+| `health-*.md` cannot be unlinked under `latest` | That file is skipped and pruning continues. The report for this run is still written; the audit result is unaffected |
 | Overlay declares a required field, transient doc lacks it | Not an error — `transient/` is out of overlay scope; the doc is validated against the packaged schema alone |
 | No entities of a type on disk | Clean result for that type (no issues) |
 

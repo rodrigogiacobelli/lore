@@ -1173,18 +1173,21 @@ classify_token("src/lore/api.py")  # -> "path"
 
 ### `health_check`
 
-Audit all six file-based entity types and return a `HealthReport`. Pure read-only by default — `write_report=True` writes a markdown report into `.lore/codex/transient/`.
+Audit all six file-based entity types and return a `HealthReport`. Pure read-only by default — `write_report=True` offers the markdown report to the retention policy, which decides whether it reaches `.lore/codex/transient/`.
 
 ```python
-health_check(project_root: Path | None = None, scope: list[str] | None = None, scopes: list[str] | None = None, *, write_report: bool = False, timestamp: str | None = None) -> HealthReport
+health_check(project_root: Path | None = None, scope: list[str] | None = None, scopes: list[str] | None = None, *, write_report: bool = False, timestamp: str | None = None, retention: str | None = None) -> HealthReport
 ```
+
+`retention` is one of `"none"`, `"latest"`, `"all"`. `None` (the default) resolves the policy from the `health-report-retention` key in `.lore/config.toml`, itself defaulting to `"none"`. `retention` and `timestamp` are read only when `write_report=True`; with `write_report=False` nothing is written, no directory is created, and the config file is never read. Under `"latest"`, every `health-*.md` directly in `.lore/codex/transient/` is unlinked before the write. See `decisions-021-health-reports-are-ephemeral-by-default`.
 
 Returns a `HealthReport(errors, warnings, report_path, schemas_ran)`. Never prints.
 
-Raises: `ValueError` when `scope`/`scopes` contains an unknown token.
+Raises: `ValueError` when `scope`/`scopes` contains an unknown token, or when `retention` is outside `none`, `latest`, `all` — the latter regardless of `write_report`.
 
 ```python
 report = health_check(pr, scope=["codex"])
+report = health_check(pr, write_report=True, retention="latest")
 ```
 
 ### `validate_entity`
@@ -1420,13 +1423,13 @@ run_init()
 
 ### `load_config`
 
-Load `<root>/.lore/config.toml` into a `Config`. Fail-soft: missing file or malformed TOML returns defaults with a one-time stderr line; unknown keys are preserved in `Config.extras`.
+Load `<root>/.lore/config.toml` into a `Config`. Fail-soft: a missing file returns defaults silently; malformed TOML returns defaults with a one-time stderr line; a known key of the wrong type, or a constrained string key holding a value outside its token set, falls back to that key's default with a one-time stderr line while every other key parses normally. Unknown keys are preserved in `Config.extras`.
 
 ```python
 load_config(root: Path) -> Config
 ```
 
-Returns a `Config(show_glossary_on_codex_commands, extras)`.
+Returns a `Config(show_glossary_on_codex_commands, health_report_retention, extras)`.
 
 Raises: none — all failure modes fall back to defaults.
 
@@ -1621,7 +1624,7 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 
 ### Health and validation dataclasses
 
-- **`HealthReport(errors, warnings, report_path, schemas_ran)`** — `errors` and `warnings` are `tuple[HealthIssue, ...]`.
+- **`HealthReport(errors, warnings, report_path, schemas_ran)`** — `errors` and `warnings` are `tuple[HealthIssue, ...]`. `report_path` is `Path | None`: the path of the markdown report when `health_check` ran with `write_report=True` *and* the effective retention policy persisted it (`latest` or `all`), otherwise `None` — a read-only audit and the `none` policy both leave it unset. `schemas_ran` is `True` when the run included the `schemas` or `glossary` scope.
 - **`HealthIssue(severity, entity_type, id, check, detail, schema_id, rule, pointer)`** — one issue row.
 - **`SchemaIssue(rule, pointer, message)`** — one schema validation failure.
 
@@ -1633,7 +1636,7 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 
 ### Config
 
-- **`Config(show_glossary_on_codex_commands, extras)`** — `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
+- **`Config(show_glossary_on_codex_commands, health_report_retention, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
 
 ### Exceptions
 

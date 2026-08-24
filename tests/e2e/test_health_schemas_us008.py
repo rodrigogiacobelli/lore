@@ -84,6 +84,16 @@ def _inject_doctrine_design_missing_summary(project_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _retain_health_reports(project_dir):
+    """Every test in this module reads the generated report file, so opt the
+    project into ``health-report-retention = "all"`` — the default is
+    ``"none"``, which keeps no report on disk."""
+    (project_dir / ".lore" / "config.toml").write_text(
+        'health-report-retention = "all"\n'
+    )
+
+
 @pytest.fixture()
 def project_clean(project_dir):
     """Fresh init project — zero schema errors expected."""

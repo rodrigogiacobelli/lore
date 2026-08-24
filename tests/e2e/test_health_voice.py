@@ -425,6 +425,11 @@ def test_voice_ignores_its_own_generated_health_report(project_dir, runner):
     next run — and every run would add one more self-referential row.
     """
     write_codex(project_dir, "tech-parser", ALL_FIVE_VIOLATIONS)
+    # health-report-retention defaults to "none" — this scenario needs the
+    # report on disk to prove the linter skips its own output.
+    (project_dir / ".lore" / "config.toml").write_text(
+        'health-report-retention = "all"\n'
+    )
 
     first = runner.invoke(main, ["health", "--scope", "voice"])
     assert "voice_sales_register" in first.stdout, first.stdout

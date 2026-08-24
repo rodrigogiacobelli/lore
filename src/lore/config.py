@@ -21,7 +21,7 @@ import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 from lore.paths import config_path
 
@@ -33,15 +33,32 @@ from lore.paths import config_path
 # Single source of truth for every known root-level setting. To add a new
 # setting:
 #   1. add a typed field to :class:`Config` with its default value;
-#   2. add one entry here mapping the kebab-case TOML key to the snake_case
-#      attribute name;
-#   3. (if non-bool) extend the type-check branch in :func:`load_config`.
+#   2. add one entry to :data:`_FROM_TOML` mapping the kebab-case TOML key to
+#      the snake_case attribute name;
+#   3. add one entry to :data:`_EXPECTED_TYPE` naming the accepted Python type;
+#   4. (constrained strings only) add one entry to :data:`_ALLOWED_VALUES`
+#      listing every accepted token, in the order the warning should print.
 #
 # Unknown root keys (and nested tables) are preserved verbatim in
 # ``Config.extras`` for forward compatibility — never silently dropped.
 
 _FROM_TOML: dict[str, str] = {
     "show-glossary-on-codex-commands": "show_glossary_on_codex_commands",
+    "health-report-retention": "health_report_retention",
+}
+
+# Accepted Python type per known key. A value of any other type is rejected
+# with a one-time ``invalid type ... (expected <name>)`` warning and the key
+# falls back to its default.
+_EXPECTED_TYPE: dict[str, type] = {
+    "show-glossary-on-codex-commands": bool,
+    "health-report-retention": str,
+}
+
+# Accepted tokens for constrained string keys. Keys absent from this table
+# take any value of the right type.
+_ALLOWED_VALUES: dict[str, tuple[str, ...]] = {
+    "health-report-retention": ("none", "latest", "all"),
 }
 
 
@@ -57,6 +74,10 @@ class Config:
     Attributes:
         show_glossary_on_codex_commands: Whether ``lore codex show`` should
             auto-surface a glossary footer. Default ``True``.
+        health_report_retention: How ``lore health`` persists its markdown
+            report — ``"none"`` (write nothing), ``"latest"`` (keep only the
+            newest report) or ``"all"`` (keep every report). Default
+            ``"none"``: no local persistence.
         extras: Forward-compatibility bucket. Any root-level key not listed
             in :data:`_FROM_TOML` (including whole TOML tables) is preserved
             here verbatim, so projects that adopt a newer ``config.toml``
@@ -64,6 +85,7 @@ class Config:
     """
 
     show_glossary_on_codex_commands: bool = True
+    health_report_retention: str = "none"
     extras: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -112,6 +134,10 @@ def load_config(root: Path) -> Config:
         and emits a one-time
         ``lore: invalid type for <key> at <path> (expected <type>); using default``
         stderr line; other keys parse normally.
+      * Constrained string key with an out-of-set value → that key falls back
+        to its default and emits a one-time
+        ``lore: invalid value for <key> at <path> (expected one of: ...); using default``
+        stderr line; other keys parse normally.
       * Unknown root keys / tables → preserved in :attr:`Config.extras`.
     """
     path = config_path(root)
@@ -125,18 +151,28 @@ def load_config(root: Path) -> Config:
         _warn_once(f"lore: invalid config at {path}: {exc} (using defaults)")
         return DEFAULT_CONFIG
 
-    kwargs: dict[str, object] = {}
+    # ``Any`` (not ``object``): the values are splatted into :class:`Config`,
+    # whose fields have heterogeneous types.
+    kwargs: dict[str, Any] = {}
     extras: dict[str, object] = {}
     for key, value in data.items():
         attr = _FROM_TOML.get(key)
         if attr is None:
             extras[key] = value
             continue
-        # Known key — type-check before accepting. Currently every known
-        # field is bool; extend this branch when adding non-bool settings.
-        if not isinstance(value, bool):
+        # Known key — type-check, then value-check, before accepting.
+        expected = _EXPECTED_TYPE[key]
+        if not isinstance(value, expected):
             _warn_once(
-                f"lore: invalid type for {key} at {path} (expected bool); using default"
+                f"lore: invalid type for {key} at {path} "
+                f"(expected {expected.__name__}); using default"
+            )
+            continue
+        allowed = _ALLOWED_VALUES.get(key)
+        if allowed is not None and value not in allowed:
+            _warn_once(
+                f"lore: invalid value for {key} at {path} "
+                f"(expected one of: {', '.join(allowed)}); using default"
             )
             continue
         kwargs[attr] = value

@@ -20,6 +20,7 @@ related:
 - decisions-018-overlays-are-path-discovered-config
 - decisions-019-overlay-scope-stops-at-transient
 - decisions-020-codex-voice-is-enforced
+- decisions-021-health-reports-are-ephemeral-by-default
 - conceptual-workflows-codex-map
 - conceptual-workflows-codex-chaos
 - conceptual-workflows-filter-list
@@ -172,7 +173,7 @@ Enforced in two places: Click `IntRange(min=30, max=100)` and `lore.validators.v
 
 ### `lore codex show` glossary auto-surface
 
-Matches against canonical keywords AND aliases (token-run, canonical-only). Surfaces a `## Glossary` block at the bottom of each shown document. `--skip-glossary` per-call suppresses it. `.lore/config.toml` `[codex] glossary_autosurface = false` disables globally. See conceptual-workflows-glossary.
+Matches against canonical keywords AND aliases (token-run, canonical-only). Surfaces a `## Glossary` block at the bottom of each shown document. `--skip-glossary` per-call suppresses it. The root-level `show-glossary-on-codex-commands = false` in `.lore/config.toml` disables it globally. See conceptual-workflows-glossary.
 
 ### `lore impacts` token classification
 
@@ -204,6 +205,8 @@ lore health --scope codex voice
 
 The `voice` scope emits warnings only — every `voice_*` row is a `warning` and none escalates, so `--scope voice` never changes the exit code (`decisions-020-codex-voice-is-enforced`). It reports five checks (`voice_past_narration`, `voice_expiry_hedge`, `voice_forward_promise`, `voice_dangling_deixis`, `voice_sales_register`) over canonical codex layers, skipping `sources/` and `vision/` outright; `lore artifact show codex-voice` is the normative rule set.
  The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. See conceptual-workflows-health.
+
+The command has no retention flag. Whether a markdown report is persisted to `.lore/codex/transient/health-<timestamp>.md` is decided by the root-level `health-report-retention` key in `.lore/config.toml` — `none` (default, no file), `latest` (prune prior `health-*.md`, then write), `all` (write, prune nothing). The handler always calls `health_check(write_report=True, timestamp=...)` and passes no `retention`; `health_check` reads the key, so a Python caller gets the same policy (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default`). Persistence is independent of `--json` and never affects the exit code.
 
 ## Shape — command tree
 

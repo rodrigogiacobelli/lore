@@ -202,3 +202,264 @@ def test_from_toml_mapping_kebab_to_snake():
     # conceptual-workflows-glossary — _FROM_TOML mapping (Unit row 12)
     from lore.config import _FROM_TOML
     assert _FROM_TOML["show-glossary-on-codex-commands"] == "show_glossary_on_codex_commands"
+
+
+# ---------------------------------------------------------------------------
+# health-report-retention — new constrained-string setting
+#
+# Spec: tech spec "Health report retention policy".
+# Contract: "none" (default) | "latest" | "all"; anything else falls back to
+# "none" with one fail-soft stderr warning.
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_health_report_retention_absent_defaults_to_none(tmp_path, capsys):
+    """Key absent from an otherwise valid config → default ``"none"``."""
+    _write_config(tmp_path, "show-glossary-on-codex-commands = true\n")
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == "none"
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("value", ["none", "latest", "all"])
+def test_load_config_health_report_retention_accepts_each_allowed_value(
+    tmp_path, capsys, value
+):
+    """Each of the three allowed tokens parses straight through."""
+    _write_config(tmp_path, f'health-report-retention = "{value}"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == value
+    assert capsys.readouterr().err == ""
+
+
+def test_load_config_health_report_retention_parses_alongside_glossary_key(
+    tmp_path, capsys
+):
+    """Both known keys parse in the same file without interfering."""
+    _write_config(
+        tmp_path,
+        "show-glossary-on-codex-commands = false\n"
+        'health-report-retention = "latest"\n',
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.show_glossary_on_codex_commands is False
+    assert cfg.health_report_retention == "latest"
+    assert cfg.extras == {}
+    assert capsys.readouterr().err == ""
+
+
+def test_load_config_health_report_retention_wrong_type_warns_expected_str(
+    tmp_path, capsys
+):
+    """Integer value → default + one ``invalid type ... (expected str)`` line."""
+    _write_config(tmp_path, "health-report-retention = 3\n")
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == "none"
+    err = capsys.readouterr().err
+    assert "lore: invalid type for health-report-retention at" in err
+    assert "(expected str); using default" in err
+    assert str(tmp_path / ".lore" / "config.toml") in err
+    assert err.count("lore: invalid type for health-report-retention at") == 1
+
+
+def test_load_config_health_report_retention_bool_is_wrong_type(tmp_path, capsys):
+    """``true`` is not a string — the bool check stays strict for the str key."""
+    _write_config(tmp_path, "health-report-retention = true\n")
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == "none"
+    err = capsys.readouterr().err
+    assert "lore: invalid type for health-report-retention at" in err
+    assert "(expected str); using default" in err
+
+
+def test_load_config_health_report_retention_wrong_type_does_not_rewarn(
+    tmp_path, capsys
+):
+    """The per-process latch is shared — second call is silent."""
+    _write_config(tmp_path, "health-report-retention = 3\n")
+    _ = load_config(tmp_path)
+    capsys.readouterr()
+    cfg2 = load_config(tmp_path)
+    assert cfg2.health_report_retention == "none"
+    assert capsys.readouterr().err == ""
+
+
+def test_load_config_health_report_retention_out_of_set_warns_invalid_value(
+    tmp_path, capsys
+):
+    """Out-of-set token → default + one ``invalid value ...`` line."""
+    _write_config(tmp_path, 'health-report-retention = "weekly"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == "none"
+    err = capsys.readouterr().err
+    assert "lore: invalid value for health-report-retention at" in err
+    assert "(expected one of: none, latest, all); using default" in err
+    assert str(tmp_path / ".lore" / "config.toml") in err
+    assert err.count("lore: invalid value for health-report-retention at") == 1
+
+
+def test_load_config_health_report_retention_out_of_set_is_not_a_type_warning(
+    tmp_path, capsys
+):
+    """A correctly typed but disallowed value must NOT report a type error."""
+    _write_config(tmp_path, 'health-report-retention = "weekly"\n')
+    load_config(tmp_path)
+    err = capsys.readouterr().err
+    assert "invalid type for health-report-retention" not in err
+
+
+def test_load_config_health_report_retention_out_of_set_does_not_rewarn(
+    tmp_path, capsys
+):
+    """Out-of-set warning also flips the shared per-process latch."""
+    _write_config(tmp_path, 'health-report-retention = "weekly"\n')
+    _ = load_config(tmp_path)
+    capsys.readouterr()
+    cfg2 = load_config(tmp_path)
+    assert cfg2.health_report_retention == "none"
+    assert capsys.readouterr().err == ""
+
+
+def test_load_config_health_report_retention_is_case_sensitive(tmp_path, capsys):
+    """``"All"`` is not ``"all"`` — no silent normalisation."""
+    _write_config(tmp_path, 'health-report-retention = "All"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == "none"
+    assert "lore: invalid value for health-report-retention at" in capsys.readouterr().err
+
+
+def test_load_config_health_report_retention_invalid_does_not_block_other_keys(
+    tmp_path, capsys
+):
+    """A rejected retention value must not stop the glossary key from parsing."""
+    _write_config(
+        tmp_path,
+        'health-report-retention = "weekly"\n'
+        "show-glossary-on-codex-commands = false\n",
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.health_report_retention == "none"
+    assert cfg.show_glossary_on_codex_commands is False
+
+
+def test_load_config_glossary_key_invalid_does_not_block_retention(tmp_path, capsys):
+    """Symmetric case — a rejected bool key must not stop the retention key."""
+    _write_config(
+        tmp_path,
+        'show-glossary-on-codex-commands = "yes"\n'
+        'health-report-retention = "all"\n',
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.show_glossary_on_codex_commands is True
+    assert cfg.health_report_retention == "all"
+    err = capsys.readouterr().err
+    assert "(expected bool); using default" in err
+
+
+def test_load_config_glossary_wrong_type_message_still_says_expected_bool(
+    tmp_path, capsys
+):
+    """The existing bool wording is untouched by the generalised type table."""
+    _write_config(tmp_path, "show-glossary-on-codex-commands = 3\n")
+    cfg = load_config(tmp_path)
+    assert cfg.show_glossary_on_codex_commands is True
+    err = capsys.readouterr().err
+    assert "lore: invalid type for show-glossary-on-codex-commands at" in err
+    assert "(expected bool); using default" in err
+    assert "expected str" not in err
+
+
+def test_load_config_glossary_key_has_no_allowed_value_constraint(tmp_path, capsys):
+    """The allowed-value table is per-key — a bool key never gets a value warning."""
+    _write_config(tmp_path, "show-glossary-on-codex-commands = false\n")
+    cfg = load_config(tmp_path)
+    assert cfg.show_glossary_on_codex_commands is False
+    assert "invalid value for" not in capsys.readouterr().err
+
+
+def test_load_config_both_keys_invalid_warns_exactly_once(tmp_path, capsys):
+    """The latch caps the process at ONE config warning across warning kinds."""
+    _write_config(
+        tmp_path,
+        'show-glossary-on-codex-commands = "yes"\n'
+        'health-report-retention = "weekly"\n',
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.show_glossary_on_codex_commands is True
+    assert cfg.health_report_retention == "none"
+    err = capsys.readouterr().err
+    assert err.count("lore: invalid") == 1
+
+
+def test_load_config_health_report_retention_never_leaks_into_extras(tmp_path):
+    """A known key never lands in the forward-compat bucket."""
+    _write_config(tmp_path, 'health-report-retention = "all"\n')
+    cfg = load_config(tmp_path)
+    assert "health-report-retention" not in cfg.extras
+    assert cfg.extras == {}
+
+
+def test_load_config_rejected_retention_value_never_leaks_into_extras(tmp_path, capsys):
+    """A rejected value falls back to the default — it is not stashed in extras."""
+    _write_config(tmp_path, 'health-report-retention = "weekly"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.extras == {}
+    capsys.readouterr()
+
+
+def test_load_config_rejected_retention_type_never_leaks_into_extras(tmp_path, capsys):
+    """Same for a wrong-typed value."""
+    _write_config(tmp_path, "health-report-retention = 3\n")
+    cfg = load_config(tmp_path)
+    assert cfg.extras == {}
+    capsys.readouterr()
+
+
+def test_load_config_missing_file_health_report_retention_is_none(tmp_path, capsys):
+    """Missing config file → DEFAULT_CONFIG carrying ``"none"``."""
+    cfg = load_config(tmp_path)
+    assert cfg == DEFAULT_CONFIG
+    assert cfg.health_report_retention == "none"
+    assert capsys.readouterr().err == ""
+
+
+def test_load_config_malformed_toml_health_report_retention_is_none(tmp_path, capsys):
+    """Malformed TOML → DEFAULT_CONFIG carrying ``"none"``."""
+    _write_config(tmp_path, 'health-report-retention = "all"\nnot = valid = toml\n')
+    cfg = load_config(tmp_path)
+    assert cfg == DEFAULT_CONFIG
+    assert cfg.health_report_retention == "none"
+    assert "lore: invalid config at" in capsys.readouterr().err
+
+
+def test_default_config_health_report_retention_is_none():
+    """The default singleton carries ``"none"`` — no local persistence."""
+    assert DEFAULT_CONFIG.health_report_retention == "none"
+
+
+def test_config_health_report_retention_field_default():
+    """The dataclass field itself defaults to ``"none"``."""
+    assert Config().health_report_retention == "none"
+
+
+def test_config_health_report_retention_is_frozen():
+    """The new field is immutable like the rest of the frozen dataclass."""
+    cfg = Config()
+    with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+        cfg.health_report_retention = "all"  # type: ignore[misc]
+
+
+def test_config_field_order_places_retention_before_extras():
+    """Field order: ``show_glossary...`` → ``health_report_retention`` → ``extras``."""
+    names = [f.name for f in dataclasses.fields(Config)]
+    assert names == [
+        "show_glossary_on_codex_commands",
+        "health_report_retention",
+        "extras",
+    ]
+
+
+def test_from_toml_maps_health_report_retention():
+    """``_FROM_TOML`` gains the kebab → snake entry."""
+    from lore.config import _FROM_TOML
+    assert _FROM_TOML["health-report-retention"] == "health_report_retention"

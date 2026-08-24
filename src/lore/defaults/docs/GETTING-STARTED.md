@@ -34,7 +34,7 @@ The full skills table lives in `.lore/LORE-AGENT.md` — single source of truth 
 
 - **`.lore/codex/codex.md`** — project-wide rules and conventions. Agents read this first.
 - **`.lore/codex/glossary.yaml`** — controlled vocabulary. Run `lore artifact show glossary-design` before adding entries.
-- **`.lore/config.toml`** — generic project config (e.g. glossary auto-surface toggle).
+- **`.lore/config.toml`** — generic project config. `show-glossary-on-codex-commands` (default `true`) toggles the glossary footer on `lore codex show`; `health-report-retention` (default `"none"`) decides whether `lore health` keeps its markdown report — `"none"` writes no file, `"latest"` keeps only the newest, `"all"` keeps every one.
 
 ## Verify
 

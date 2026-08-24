@@ -6,6 +6,8 @@ Workflow: conceptual-workflows-health (lore codex show conceptual-workflows-heal
 import shutil
 from unittest.mock import patch
 
+import pytest
+
 from lore.cli import main
 from lore.health import health_check
 from lore.api import HealthReport
@@ -33,6 +35,17 @@ def _write_doctrine_pair(project_dir, stem, yaml_content, design_content):
     base.parent.mkdir(parents=True, exist_ok=True)
     (base.parent / (base.name + ".design.md")).write_text(design_content)
     (base.parent / (base.name + ".yaml")).write_text(yaml_content)
+
+
+def _persist_health_reports(project_dir):
+    """Opt a project into ``health-report-retention = "all"``.
+
+    The default retention policy is ``"none"`` — ``lore health`` keeps no file
+    on disk. Tests that read the generated report must ask for persistence.
+    """
+    (project_dir / ".lore" / "config.toml").write_text(
+        'health-report-retention = "all"\n'
+    )
 
 
 def _write_watcher(project_dir, filename, content):
@@ -345,6 +358,11 @@ class TestHealthScopeInvalidToken:
 
 class TestHealthScopeReportFileWritten:
     """lore health --scope codex writes a report file under .lore/codex/transient/."""
+
+    @pytest.fixture(autouse=True)
+    def _retain_reports(self, project_dir):
+        """These assertions read the report file — persistence must be on."""
+        _persist_health_reports(project_dir)
 
     def test_health_scope_codex_creates_report_file(self, runner, project_dir):
         """lore health --scope codex creates a health-*.md file in transient dir."""
@@ -1544,6 +1562,11 @@ class TestHealthWatcherInvalidYaml:
 class TestHealthReportFileWrittenWithErrors:
     """US-014 Scenario 1: Run with errors → report file written with issues in markdown table."""
 
+    @pytest.fixture(autouse=True)
+    def _retain_reports(self, project_dir):
+        """These assertions read the report file — persistence must be on."""
+        _persist_health_reports(project_dir)
+
     def test_health_errors_run_creates_report_file(self, runner, project_dir):
         """lore health with errors creates a health-*.md file in .lore/codex/transient/."""
         _write_doctrine_pair(
@@ -1607,6 +1630,11 @@ class TestHealthReportFileWrittenWithErrors:
 class TestHealthReportFileWrittenCleanRun:
     """US-014 Scenario 2: Clean run → report file written with 'No issues found.'"""
 
+    @pytest.fixture(autouse=True)
+    def _retain_reports(self, project_dir):
+        """These assertions read the report file — persistence must be on."""
+        _persist_health_reports(project_dir)
+
     def test_health_clean_run_creates_report_file(self, runner, project_dir):
         """lore health on a clean project creates a health-*.md file in .lore/codex/transient/."""
         result = runner.invoke(main, ["health"])
@@ -1633,6 +1661,11 @@ class TestHealthReportFileWrittenCleanRun:
 class TestHealthReportFileWrittenJsonFlag:
     """US-014 Scenario 3: --json run → report file still written."""
 
+    @pytest.fixture(autouse=True)
+    def _retain_reports(self, project_dir):
+        """These assertions read the report file — persistence must be on."""
+        _persist_health_reports(project_dir)
+
     def test_health_json_flag_still_creates_report_file(self, runner, project_dir):
         """lore health --json creates a health-*.md file (report not suppressed by --json)."""
         runner.invoke(main, ["health", "--json"])
@@ -1646,6 +1679,11 @@ class TestHealthReportFileWrittenJsonFlag:
 
 class TestHealthReportFilenameFormat:
     """US-014 Scenario 4: Report filename matches UTC timestamp format."""
+
+    @pytest.fixture(autouse=True)
+    def _retain_reports(self, project_dir):
+        """These assertions read the report file — persistence must be on."""
+        _persist_health_reports(project_dir)
 
     def test_health_report_filename_matches_timestamp_pattern(self, runner, project_dir):
         """lore health: report filename matches health-YYYY-MM-DDTHH-MM-SS.md pattern."""
@@ -1666,6 +1704,11 @@ class TestHealthReportFilenameFormat:
 
 class TestHealthReportFileFrontmatter:
     """US-014 Scenario 5: Report file has valid frontmatter with id, title, and summary."""
+
+    @pytest.fixture(autouse=True)
+    def _retain_reports(self, project_dir):
+        """These assertions read the report file — persistence must be on."""
+        _persist_health_reports(project_dir)
 
     def test_health_report_file_has_yaml_frontmatter_with_required_keys(self, runner, project_dir):
         """lore health: report file has YAML frontmatter containing id, title, and summary."""

@@ -37,7 +37,7 @@ The read commands and the auto-surface share a single normaliser implemented in 
 
 - The Lore project has been initialised (`.lore/` exists).
 - `.lore/codex/glossary.yaml` exists (created by `lore init` as a skeleton; user-edited thereafter).
-- Optional: `.lore/config.toml` exists. If absent or missing the relevant key, defaults apply (`show-glossary-on-codex-commands = true`).
+- Optional: `.lore/config.toml` exists. If absent or missing the relevant key, defaults apply (`show-glossary-on-codex-commands = true`). Each known key defaults on its own, so a file carrying one key is complete.
 
 ## Invocation
 
@@ -131,6 +131,8 @@ The existing `lore codex show` pipeline runs unchanged (lore codex show conceptu
 
 `lore.config.load_config(project_root)` returns a `Config` dataclass. `show-glossary-on-codex-commands` (default `true`) controls auto-surface globally. The `--skip-glossary` flag on `lore codex show` overrides per call. Effective rule: `show_glossary = config.show_glossary_on_codex_commands and not skip_glossary`.
 
+`.lore/config.toml` holds two known root keys. `show-glossary-on-codex-commands` is the one this workflow reads; `health-report-retention` belongs to `lore health` and is documented in `conceptual-workflows-health` and `decisions-021-health-reports-are-ephemeral-by-default`. Both are parsed by the same `load_config` call, so the two share one fail-soft contract and one warning latch: `load_config` emits at most one warning per process across every key, and an invalid `health-report-retention` value therefore silences the warning a malformed `show-glossary-on-codex-commands` would otherwise raise in the same run. Each key falls back to its own default independently — a rejected value never affects the other key's parse.
+
 If `show_glossary` is `False`, auto-surface is skipped entirely — no glossary block in text mode, `"glossary": []` in JSON mode.
 
 ### 3. Match
@@ -201,7 +203,8 @@ This is the reliability bar: a malformed glossary MUST NOT break `lore codex sho
 | Missing keyword on `show` | `lore glossary show` | Fail-fast: first missing aborts; stderr `Error: glossary keyword "<kw>" not found.` | 1 |
 | Missing `.lore/config.toml` | any | `load_config` returns `DEFAULT_CONFIG` silently | 0 |
 | Malformed `.lore/config.toml` | any | One-time stderr warning `lore: invalid config at .lore/config.toml: <reason> (using defaults)`; defaults applied | 0 |
-| Wrong-type known config key | any | One-time stderr warning naming the key; default substituted | 0 |
+| Wrong-type known config key | any | One-time stderr warning `lore: invalid type for <key> at <path> (expected <type>); using default`; that key's default substituted, other keys parse normally | 0 |
+| Out-of-set value on a constrained string config key | any | One-time stderr warning `lore: invalid value for <key> at <path> (expected one of: ...); using default`; that key's default substituted, other keys parse normally | 0 |
 
 ## Out of Scope
 

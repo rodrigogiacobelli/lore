@@ -7,7 +7,7 @@ binds:
 - src/lore/cli.py
 - tests/e2e/test_lore_init.py
 - tests/unit/test_lore_init.py
-related: ["tech-arch-initialized-project-structure", "tech-arch-agents-md", "conceptual-workflows-health", "tech-arch-schemas", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary"]
+related: ["tech-arch-initialized-project-structure", "tech-arch-agents-md", "conceptual-workflows-health", "tech-arch-schemas", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-021-health-reports-are-ephemeral-by-default"]
 ---
 
 # `lore init` Behaviour
@@ -68,7 +68,7 @@ For the specification of the generated `AGENTS.md` content and structure, see te
 
 - **`.lore/codex/CODEX.md`** — if absent, written by copying the packaged source `src/lore/defaults/artifacts/codex/CODEX.md` and rewriting its `id:` line from `example-codex` to `codex`. Schema-valid against `lore://schemas/codex`. If the file already exists, this step is skipped — even when its content has been edited. This is the second narrow exception to the rule that `lore init` does NOT seed `.lore/codex/` (decisions-013-toml-for-config-yaml-for-glossary, lore codex show decisions-013-toml-for-config-yaml-for-glossary).
 - **`.lore/codex/glossary.yaml`** — if absent, written with a two-line header comment + `items: []`. Schema-valid against `lore://schemas/glossary` (validated by `lore health --scope schemas` on a freshly-init'd project — a hard acceptance criterion). If the file already exists, this step is skipped — even when its content has been edited. This is **one of two** narrow exceptions to the rule that `lore init` does NOT seed `.lore/codex/` (decisions-013-toml-for-config-yaml-for-glossary, lore codex show decisions-013-toml-for-config-yaml-for-glossary).
-- **`.lore/config.toml`** — if absent, written with a header comment + `show-glossary-on-codex-commands = true`. Designed as a generic project-config surface from day one (the loader accepts arbitrary additional keys forward-compatibly). If the file already exists, this step is skipped — even when its content has been edited.
+- **`.lore/config.toml`** — if absent, written with a header comment documenting every known key, followed by both keys set to their defaults: `show-glossary-on-codex-commands = true` and `health-report-retention = "none"`. The seeded values match the loader's own defaults, so deleting a line changes nothing. Designed as a generic project-config surface from day one (the loader accepts arbitrary additional keys forward-compatibly). If the file already exists, this step is skipped — even when its content has been edited, so a project that predates a key keeps its file and the loader supplies that key's default.
 
 All three writes are idempotent: a maintainer's edits to any of these files survive every subsequent `lore init`. The init summary prints `Created codex/CODEX.md`, `Created codex/glossary.yaml`, and `Created config.toml` for newly created files; nothing is printed when a file is left untouched.
 

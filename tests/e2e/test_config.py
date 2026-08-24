@@ -140,3 +140,88 @@ def test_config_path_helper(project_dir):
     # conceptual-workflows-glossary — Scenario 9 (config_path resolution)
     from lore.paths import config_path
     assert config_path(project_dir) == project_dir / ".lore" / "config.toml"
+
+
+# ---------------------------------------------------------------------------
+# health-report-retention — Python-API parity on a real project root
+#
+# Spec: tech spec "Health report retention policy". ADR-011: the policy is
+# resolved from config by the Python API, not by the CLI layer.
+# ---------------------------------------------------------------------------
+
+
+def _write_config(project_dir, content):
+    """Overwrite ``.lore/config.toml`` under a real project root."""
+    (project_dir / ".lore").mkdir(parents=True, exist_ok=True)
+    (project_dir / ".lore" / "config.toml").write_text(content)
+
+
+def test_python_api_health_report_retention_missing_file_is_none(project_dir, capsys):
+    # health-report-retention — no config at all → "none" (no local persistence)
+    from lore.config import load_config
+    _ensure_no_config(project_dir)
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention == "none"
+    assert capsys.readouterr().err == ""
+
+
+def test_python_api_health_report_retention_key_absent_is_none(project_dir, capsys):
+    # health-report-retention — config present but key absent → "none"
+    from lore.config import load_config
+    _write_config(project_dir, "show-glossary-on-codex-commands = true\n")
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention == "none"
+    assert capsys.readouterr().err == ""
+
+
+def test_python_api_health_report_retention_all(project_dir, capsys):
+    # health-report-retention — explicit "all" parses through
+    from lore.config import load_config
+    _write_config(project_dir, 'health-report-retention = "all"\n')
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention == "all"
+    assert cfg.extras == {}
+    assert capsys.readouterr().err == ""
+
+
+def test_python_api_health_report_retention_latest(project_dir, capsys):
+    # health-report-retention — explicit "latest" parses through
+    from lore.config import load_config
+    _write_config(project_dir, 'health-report-retention = "latest"\n')
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention == "latest"
+    assert capsys.readouterr().err == ""
+
+
+def test_python_api_health_report_retention_out_of_set_warns(project_dir, capsys):
+    # health-report-retention — fail-soft on an out-of-set token
+    from lore.config import load_config
+    _write_config(project_dir, 'health-report-retention = "weekly"\n')
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention == "none"
+    err = capsys.readouterr().err
+    assert "lore: invalid value for health-report-retention at" in err
+    assert "(expected one of: none, latest, all); using default" in err
+    assert str(project_dir / ".lore" / "config.toml") in err
+
+
+def test_python_api_health_report_retention_wrong_type_warns(project_dir, capsys):
+    # health-report-retention — fail-soft on a non-string value
+    from lore.config import load_config
+    _write_config(project_dir, "health-report-retention = 3\n")
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention == "none"
+    err = capsys.readouterr().err
+    assert "lore: invalid type for health-report-retention at" in err
+    assert "(expected str); using default" in err
+
+
+def test_python_api_seeded_config_parses_to_a_valid_retention(project_dir, capsys):
+    """``lore init``'s seeded config must parse cleanly — no warning, valid token.
+
+    ADR-006: assert the parsed *behaviour*, never the exact seed text.
+    """
+    from lore.config import load_config
+    cfg = load_config(project_dir)
+    assert cfg.health_report_retention in ("none", "latest", "all")
+    assert capsys.readouterr().err == ""

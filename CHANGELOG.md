@@ -32,6 +32,20 @@ A new design-document artifact defines the single voice every canonical codex do
 - **Seeded codex guide** — the `codex.md` template every new project reads first gains a voice section and adds change narration and forward promises to its list of what does not belong in a codex.
 - **The decision** — recorded as `decisions-020-codex-voice-is-enforced`, covering why enforcement is warnings rather than errors, why each layer gets the budget it does, and why the rules ship as an artifact instead of a `standards/` document.
 
+### Changed
+
+#### `lore health` no longer writes a report file by default
+
+Every `lore health` run wrote a timestamped markdown report to `.lore/codex/transient/health-<timestamp>.md`, and those reports piled up in the transient codex layer until someone deleted them by hand. A new `health-report-retention` root key in `.lore/config.toml` now governs that persistence, and its default is `"none"`.
+
+- **BREAKING: no report file is written unless the project opts in.** A project that depends on `.lore/codex/transient/health-*.md` appearing — a script that reads the newest report, a step that cites one — must set `health-report-retention = "all"` in `.lore/config.toml` to keep the old behaviour. Upgrading does not add the key to an existing `.lore/config.toml`, so an absent key means `"none"`. Console output, `--json` output, flags, and exit codes are unchanged; `HealthReport.report_path` is `None` whenever nothing was written.
+- **Three policies** — `"none"` (default) writes nothing and leaves pre-existing reports alone; `"latest"` deletes every `health-*.md` sitting directly in `.lore/codex/transient/`, then writes the new one, so exactly one report survives; `"all"` writes a new timestamped report and prunes nothing, the previous behaviour. Pruning is non-recursive and matches `health-*.md` only — nested directories and every other transient document are untouched, and a file that cannot be unlinked is skipped rather than aborting the audit.
+- **Every failure mode falls back to `"none"`** — key absent, config file missing, malformed TOML, a non-string value, or a string outside the three tokens. A wrong type emits the existing one-time `invalid type` stderr warning; an out-of-set value emits `lore: invalid value for health-report-retention at <path> (expected one of: none, latest, all); using default`. Neither aborts the run, and every other config key still parses.
+- **`Config.health_report_retention`** — new `str` field on the exported `Config` dataclass, default `"none"`. Additive, so a minor bump per standards-public-api-stability; `lore.api.__all__` itself is unchanged.
+- **`health_check(..., retention=...)`** — new keyword argument on the exported `health_check`, consulted only when `write_report=True`. `None` (default) resolves the policy from the project config; `"none"`, `"latest"`, or `"all"` overrides it; any other value raises `ValueError`. Additive, so a minor bump.
+- **`lore init` seeds the key** — a fresh `.lore/config.toml` carries `health-report-retention = "none"` under a header comment naming the three policies. Existing config files are left untouched, as before.
+- **Seeded docs follow** — `GETTING-STARTED.md` now names both known config keys, `LORE-AGENT.md` tells agents that `lore health` writes no report unless retention is enabled, and the `new-custom-schema` skill qualifies its claim that health reports live under `transient/`.
+
 ### Fixed
 
 #### `lore health --scope` flag form in the source-ingest skills

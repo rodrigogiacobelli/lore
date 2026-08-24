@@ -18,7 +18,12 @@ _CONFIG_SKELETON = (
     "# Project-level Lore configuration.\n"
     "# Known keys (additional keys are accepted and ignored):\n"
     "#   show-glossary-on-codex-commands : bool, default true\n"
+    '#   health-report-retention         : "none" | "latest" | "all", default "none"\n'
+    "#       none   - lore health writes no report file (console/API output only)\n"
+    "#       latest - keep only the newest report, pruning older ones\n"
+    "#       all    - keep every report\n"
     "show-glossary-on-codex-commands = true\n"
+    'health-report-retention = "none"\n'
 )
 
 

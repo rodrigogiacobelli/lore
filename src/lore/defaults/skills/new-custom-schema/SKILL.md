@@ -22,7 +22,7 @@ Overlays are discovered by filename — `<kind>.yaml` — with no config. For v1
 
 Ask the author which kind they want to extend. If an overlay file for that kind already exists, read it (`cat`) and extend it — add to its `properties`/`required` rather than overwriting. Each kind gets at most one overlay file.
 
-**Transient docs are out of scope.** Neither overlay reaches `.lore/codex/transient/` — the in-flight working docs (PRDs, tech specs, context maps, and the reports `lore health` writes there itself). They validate against the packaged schema alone, so a `required` custom field never blocks the spec pipeline and never turns a past health report into an error. The flip side: a transient doc may not *carry* a custom field either — it fails `Unknown property`. Custom fields are governance for permanent codex knowledge. Fixed by ADR-019; the scope is not configurable.
+**Transient docs are out of scope.** Neither overlay reaches `.lore/codex/transient/` — the in-flight working docs (PRDs, tech specs, context maps, and the reports `lore health` writes there itself when `health-report-retention` is `"latest"` or `"all"`). They validate against the packaged schema alone, so a `required` custom field never blocks the spec pipeline and never turns a past health report into an error. The flip side: a transient doc may not *carry* a custom field either — it fails `Unknown property`. Custom fields are governance for permanent codex knowledge. Fixed by ADR-019; the scope is not configurable.
 
 ### 2. Collect the fields
 

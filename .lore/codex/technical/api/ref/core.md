@@ -29,6 +29,7 @@ related:
 - conceptual-workflows-glossary
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-020-codex-voice-is-enforced
+- decisions-021-health-reports-are-ephemeral-by-default
 ---
 
 # Lore Python API — core surface
@@ -145,6 +146,8 @@ Validates entity existence inside the same `BEGIN IMMEDIATE` as the insert. Vali
 ## Diagnostic operations
 
 `health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, audits codex `binds:` and `rites:` reference integrity, and audits canonical codex prose against the voice rules. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. `None` runs every scope.
+
+`health_check` takes three keyword-only report arguments: `write_report` (default `False`), `timestamp`, and `retention`. `write_report=False` is a read-only audit that touches no file and never reads `.lore/config.toml`. `write_report=True` offers the report to the retention policy — `retention=None` resolves it from the `health-report-retention` config key (default `"none"`, so a caller that passes only `write_report=True` still gets no file), while an explicit `"none"` / `"latest"` / `"all"` overrides the project. Any other `retention` token raises `ValueError`, whatever `write_report` holds. Resolution lives in `health_check` rather than the CLI, so a Realm or script caller gets the project's policy without reading config itself (ADR-011 parity; `decisions-021-health-reports-are-ephemeral-by-default`). `HealthReport.report_path` names the written file, or is `None` when nothing was written.
 
 `HealthIssue` is a frozen dataclass with `severity`, `entity_type`, `id`, `check`, `detail`, plus three optional fields populated only on schema checks: `schema_id`, `rule`, `pointer`. `HealthIssue.from_dict(d)` round-trips JSON output and tolerates legacy payloads without the schema fields.
 
