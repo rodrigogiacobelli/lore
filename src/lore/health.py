@@ -290,7 +290,7 @@ def _check_doctrines(
     artifacts_dir: Path,
 ) -> list[HealthIssue]:
     """Audit doctrines for orphaned files, broken knight refs, and broken artifact refs."""
-    from lore.knight import _find_knight as find_knight
+    from lore.knight import _knight_ref_stem, _resolve_knight_ref
     project_root = knights_dir.parent.parent
 
     issues: list[HealthIssue] = []
@@ -359,9 +359,10 @@ def _check_doctrines(
                 # Knight ref check
                 knight_name = step.get("knight")
                 if knight_name:
-                    # Strip .md suffix if present (some doctrines use filename form)
-                    knight_stem = knight_name[:-3] if knight_name.endswith(".md") else knight_name
-                    knight_path = find_knight(project_root, knight_stem)
+                    # Doctrines write the group-qualified filename form
+                    # ("tdd-feature/scout.md") as well as a bare name.
+                    knight_path = _resolve_knight_ref(project_root, knight_name)
+                    knight_stem = _knight_ref_stem(knight_name)
                     if knight_path is None and not _is_knight_soft_deleted(knights_dir, knight_stem):
                         issues.append(HealthIssue(
                             severity="error",
@@ -393,7 +394,7 @@ def _check_doctrines(
 def _check_knights(knights_dir: Path, project_root: Path) -> list[HealthIssue]:
     """Audit knight refs from active missions."""
     from lore.db import list_missions
-    from lore.knight import _find_knight as find_knight
+    from lore.knight import _knight_ref_stem, _resolve_knight_ref
 
     issues: list[HealthIssue] = []
 
@@ -412,12 +413,13 @@ def _check_knights(knights_dir: Path, project_root: Path) -> list[HealthIssue]:
             knight_to_missions.setdefault(knight_name, []).append(mission["id"])
 
     for knight_name, mission_ids in knight_to_missions.items():
-        # Strip .md suffix if present
-        knight_stem = knight_name[:-3] if knight_name.endswith(".md") else knight_name
-        knight_path = find_knight(project_root, knight_stem)
+        # A mission's knight field carries whatever the doctrine wrote —
+        # usually the group-qualified filename form.
+        knight_path = _resolve_knight_ref(project_root, knight_name)
         if knight_path is not None:
             continue
 
+        knight_stem = _knight_ref_stem(knight_name)
         if _is_knight_soft_deleted(knights_dir, knight_stem):
             continue
 

@@ -135,11 +135,15 @@ def _coerce_scalar_for_schema(
 
     With ``project_root`` the merged (packaged + overlay) schema is consulted,
     so a custom field declared in ``.lore/custom-schemas/`` coerces by its own
-    declared type rather than falling through as an unknown field.
+    declared type rather than falling through as an unknown field. The gate is
+    the same one ``schemas.validate_entity`` applies, so coercion and
+    validation never resolve different schemas: a kind outside
+    ``schemas._OVERLAY_KINDS`` uses the packaged schema whatever is passed
+    here. Use :func:`_coercion_context` to resolve both arguments.
     """
     schema = (
         _schemas.resolve_merged_schema(schema_kind, project_root)
-        if project_root is not None
+        if project_root is not None and schema_kind in _schemas._OVERLAY_KINDS
         else _schemas.load_schema(schema_kind)
     )
     props = schema.get("properties", {})
@@ -176,6 +180,50 @@ def _coerce_scalar_for_schema(
         return [el.strip() for el in raw_str.split(",") if el.strip()]
     # Unknown/unsupported type — passthrough; schema validate will judge.
     return raw_str
+
+
+def _coercion_context(
+    project_root: Path, kind: str, name: str
+) -> tuple[str, Path | None]:
+    """Resolve ``(schema_kind, overlay_root)`` for CLI scalar coercion.
+
+    The schema comes from the entity's own location on disk, so a codex doc
+    under ``sources/`` coerces against ``codex-source-frontmatter`` — the same
+    schema :func:`update_frontmatter_fields` then validates it with.
+
+    The overlay root comes from ``codex._overlay_root`` (ADR-019 Constraint 1:
+    no seam open-codes the transient boundary) and is dropped for any kind
+    outside ``schemas._OVERLAY_KINDS``, which is where the overlay-eligible set
+    lives. ``None`` means "packaged schema only".
+
+    A name that does not locate — missing, ambiguous, or traversal-guarded —
+    falls back to the kind's default schema with no overlay root;
+    :func:`update_frontmatter_fields` owns the resulting error.
+    """
+    cfg = _KINDS[kind]
+    try:
+        filepath = cfg.locator(project_root, name)
+    except ValueError:
+        filepath = None
+
+    if filepath is None:
+        schema_kind = (
+            _codex_mod._DOC_TYPE_SCHEMAS["codex"]
+            if callable(cfg.schema_kind)
+            else cfg.schema_kind
+        )
+        return schema_kind, None
+
+    if callable(cfg.schema_kind):
+        doc_type = _codex_mod._resolve_doc_type_from_path(project_root, filepath)
+        schema_kind = _codex_mod._DOC_TYPE_SCHEMAS[doc_type]
+    else:
+        schema_kind = cfg.schema_kind
+
+    overlay_root = _codex_mod._overlay_root(project_root, filepath)
+    if schema_kind not in _schemas._OVERLAY_KINDS:
+        overlay_root = None
+    return schema_kind, overlay_root
 
 
 # ---------------------------------------------------------------------------

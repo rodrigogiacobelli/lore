@@ -8,7 +8,7 @@ per amendment Section A1; subdir derivation goes through
 ``lore.paths.entity_location``.
 """
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -120,6 +120,50 @@ def _find_knight(project_root: Path, name: str) -> Path | None:
         return matches[0]
 
     return None
+
+
+def _knight_ref_stem(ref: str) -> str:
+    """Return the bare file stem of a stored knight reference.
+
+    ``tdd-feature/defaults-reviewer.md`` -> ``defaults-reviewer``.
+    """
+    return PurePosixPath(ref.replace("\\", "/")).stem
+
+
+def _resolve_knight_ref(project_root: Path, ref: str) -> Path | None:
+    """Resolve a *stored* knight reference to its file path (internal).
+
+    Accepts the group-qualified form a doctrine writes into a mission's
+    ``knight`` field and into a doctrine step's ``knight`` key —
+    ``tdd-feature/defaults-reviewer.md`` — as well as the bare
+    ``defaults-reviewer`` that ``_find_knight`` takes.
+
+    ``_find_knight`` guards a *user-supplied* name and so rejects path
+    separators outright. A stored reference legitimately carries its group, so
+    this resolver accepts separators and refuses instead any reference that
+    would climb out of ``.lore/knights/``. Ungrouped lookup is delegated back
+    to ``_find_knight`` so both paths agree on what resolves.
+
+    Returns None when the reference does not resolve to a file.
+    """
+    knights_dir = entity_location(project_root, "knight")
+    if not knights_dir.exists():
+        return None
+
+    relative = PurePosixPath(ref.replace("\\", "/"))
+    if relative.is_absolute() or ".." in relative.parts:
+        return None
+
+    stem = relative.stem
+    if not stem:
+        return None
+
+    if relative.parent != PurePosixPath("."):
+        grouped = knights_dir / relative.parent / f"{stem}.md"
+        if grouped.exists():
+            return grouped
+
+    return _find_knight(project_root, stem)
 
 
 def create_knight(

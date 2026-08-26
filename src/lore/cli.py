@@ -1630,18 +1630,13 @@ def _dispatch_field_edit(
 
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
-    # For coercion only: codex schema_kind is a callable (doc_type dispatcher);
-    # the on-disk field shapes are identical across codex / codex-source, so
-    # use the default schema string for coercion. Final validation uses the
-    # callable inside update_frontmatter_fields.
-    raw_schema_kind = _fm_edit_mod._KINDS[kind].schema_kind
-    schema_kind = (
-        "codex-frontmatter" if kind == "codex" else raw_schema_kind
+    # Coercion must resolve the same schema validation will: the document's own
+    # kind (a codex doc under sources/ is codex-source), and the overlay root
+    # only where ADR-019 says overlays reach. _coercion_context owns both.
+    schema_kind, coerce_root = _fm_edit_mod._coercion_context(
+        project_root, kind, name
     )
     coerce = _fm_edit_mod._coerce_scalar_for_schema
-    # Codex is the only overlay-eligible kind — consult the merged schema so a
-    # custom field coerces by its declared type.
-    coerce_root = project_root if kind == "codex" else None
 
     try:
         set_dict: dict = {}

@@ -8,6 +8,8 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-26
+
 ### Added
 
 #### Interactive `lore init`
@@ -107,6 +109,14 @@ The status line said `Created lore.db (schema version 1)` while the database car
 
 - **Overlays no longer reach `codex/transient/`** — a custom field, especially a `required` one, was applied to every codex document including the in-flight working docs under `.lore/codex/transient/` and the health reports `lore health` writes there itself. Declaring a required custom field therefore turned every past report into a schema error and every subsequent `lore health` run added one more, while `lore codex new --group transient` refused to create a PRD or tech spec without the field. Overlays now govern canonical codex docs and the `sources/` layer only; transient working docs validate against the packaged schema at every seam (`lore health`, `lore codex new`, `lore codex edit`). A transient doc that carries a declared custom key is still rejected as an unknown property — custom fields are canonical-codex governance.
 - **`lore codex edit --set/--unset/--add/--remove` honours the overlay** — field-edit mode validated against the packaged schema only, so `--set owner=alice` failed with `Unknown property 'owner'` even when the project's overlay declared `owner`. That blocked the backfill `lore health` prescribes when a custom field is newly made required. Field-edit now resolves the same merged schema as every other codex writer (packaged for transient docs), and CLI scalar coercion consults it too, so a custom array, integer, or boolean field coerces by its declared type instead of reaching validation as a raw string.
+
+#### `lore health --scope knights` died on a group-qualified knight reference
+
+A doctrine writes a mission's `knight` field, and a doctrine step's `knight` key, in the group-qualified form `tdd-feature/defaults-reviewer.md`. Both health checks handed that string to the locator that guards a user-supplied name against path traversal, which rejects any name containing a separator, so the whole `knights` scope reported one `scan_failed` and audited nothing for as long as a doctrine-driven mission stayed open — exactly when the audit is worth running. Stored references now resolve through `knight._resolve_knight_ref`, which accepts the group and refuses only a reference that would climb out of `.lore/knights/`; the traversal guard on the user-facing locator is unchanged. An unresolvable grouped reference is now an ordinary `missing_file` finding naming the reference and the missions that hold it.
+
+#### A custom field declared only in a source overlay was never coerced on the CLI
+
+`lore codex edit <source-doc> --set review_year=2026` failed with `'2026' is not of type 'integer'` while the same field declared in `codex-frontmatter.yaml` worked, and while the `lore.api` path accepted a native `int`. Field-edit mode resolved its coercion schema as `codex-frontmatter` for the whole codex kind and passed the project root only for that kind, so a source document never saw its own `codex-source-frontmatter` overlay and the raw string reached a validator that did resolve the real doc type. Coercion now resolves the schema from the document's own location and takes its overlay root from the shared helper ADR-019 names, so the eligible set — canonical codex documents and the `sources/` layer, never `transient/` — is read from one place rather than restated. The two surfaces now write the same frontmatter for the same edit.
 
 ## [0.9.0] - 2026-06-25
 
