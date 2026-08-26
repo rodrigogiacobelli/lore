@@ -6,6 +6,7 @@ Spec: conceptual-workflows-error-handling (lore codex show conceptual-workflows-
 import json
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from lore.cli import main
@@ -714,3 +715,166 @@ class TestMissionsWithSoftDeletedQuest:
         result = runner.invoke(main, ["--json", "missions"])
         data = json.loads(result.output)
         assert any(m["id"] == m_id for m in data["missions"])
+
+
+# ---------------------------------------------------------------------------
+# `lore init` misuse — constrained flags and the `--agent none` rule
+#
+# Spec: interactive-init-us-016 Scenario 6, interactive-init-us-017 Scenarios 1-6.
+#
+# Click routes the usage preamble, the `Try ... --help` hint and the `Error:`
+# line to stderr, so `result.output` carries the whole block and
+# `result.stderr` carries it too; the assertions below name whichever stream
+# the contract is about.
+#
+# Every criterion is a matched pair: the CLI half and the `plan_init` half of
+# the same rule. `--agent none` exclusivity lives in
+# `validators.validate_agent_selection` and both layers call it, so a CLI-only
+# assertion here would recreate the ADR-011 breach the rule was moved to close.
+# ---------------------------------------------------------------------------
+
+
+AGENT_CHOICE_SET = "'agents-md', 'claude', 'cursor', 'gemini', 'none', 'qwen'"
+
+
+def _plan_init(**kwargs):
+    """The Python half of each pair.
+
+    `plan_init` joins `lore.api.__all__` with the rest of the thirteen new
+    names (interactive-init-us-023); the function it will re-export is this
+    one, and the rule under test lives in `validators` either way.
+    """
+    from lore.init import plan_init
+
+    return plan_init(**kwargs)
+
+
+class TestInitConstrainedFlagMisuse:
+    """Every constrained flag exits 2 with Click's wording and writes nothing."""
+
+    CASES = [
+        (["init", "--access", "agentic"], "--access"),
+        (["init", "--skills", "memory", "typo"], "--skills"),
+        (["init", "--on-existing-agent-file", "merge"], "--on-existing-agent-file"),
+        (["init", "--skills-gitignore", "some"], "--skills-gitignore"),
+        (["init", "--on-conflict", "keep-new"], "--on-conflict"),
+        (["init", "--agent", "bogus"], "--agent"),
+    ]
+
+    @pytest.mark.parametrize("argv,flag", CASES, ids=[flag for _, flag in CASES])
+    def test_out_of_set_value_exits_two_and_writes_nothing(
+        self, tmp_path, monkeypatch, argv, flag
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, argv)
+        assert result.exit_code == 2, result.output
+        assert f"Invalid value for '{flag}'" in result.stderr
+        assert not (tmp_path / ".lore").exists()
+
+    def test_the_agent_choice_set_is_the_registry(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--agent", "bogus"])
+        assert result.exit_code == 2
+        assert (
+            f"Error: Invalid value for '--agent': 'bogus' is not one of {AGENT_CHOICE_SET}."
+            in result.stderr
+        )
+
+    def test_the_access_choice_set_is_the_two_modes(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--access", "agentic"])
+        assert result.exit_code == 2
+        assert (
+            "Error: Invalid value for '--access': 'agentic' is not one of 'cli', 'native'."
+            in result.stderr
+        )
+
+    def test_the_skills_choice_set_carries_the_families_and_the_aggregates(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--skills", "memory", "typo"])
+        assert result.exit_code == 2
+        for token in ("'memory'", "'machinery'", "'workflow'", "'all'", "'none'"):
+            assert token in result.stderr
+
+
+class TestAgentNoneExclusivityOnBothSurfaces:
+    """`--agent none` combined with another id — the same rule, both surfaces."""
+
+    MESSAGE = "--agent none cannot be combined with other agents."
+
+    def test_combined_selection_is_a_usage_error_on_the_cli(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(
+            main, ["init", "--agent", "none", "claude"], prog_name="lore"
+        )
+        assert result.exit_code == 2, result.output
+        assert "Usage: lore init [OPTIONS]" in result.output
+        assert "Try 'lore init --help' for help." in result.output
+        assert f"Error: {self.MESSAGE}" in result.stderr
+        assert not (tmp_path / ".lore").exists()
+
+    def test_the_identical_selection_raises_through_plan_init(self, tmp_path):
+        with pytest.raises(ValueError) as excinfo:
+            _plan_init(project_root=tmp_path, agents=["none", "claude"])
+        assert str(excinfo.value) == self.MESSAGE
+        assert list(tmp_path.iterdir()) == []
+
+    def test_both_surfaces_use_the_same_message(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--agent", "claude", "none"])
+        with pytest.raises(ValueError) as excinfo:
+            _plan_init(project_root=tmp_path, agents=["claude", "none"])
+        assert str(excinfo.value) in result.stderr
+
+    def test_none_alone_is_accepted_on_the_cli(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--agent", "none", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".lore" / "skills").is_dir()
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_none_alone_is_accepted_through_plan_init(self, tmp_path):
+        plan = _plan_init(project_root=tmp_path, agents=["none"])
+        assert plan.answers.agents == ("none",)
+        assert [target.id for target in plan.targets] == ["none"]
+        assert not any(entry.path.startswith(".claude/") for entry in plan.files)
+
+
+class TestUnknownTokensRejectedOnBothSurfaces:
+    """An unknown agent, access mode or family is refused from either direction."""
+
+    def test_unknown_agent(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--agent", "bogus"])
+        assert result.exit_code == 2
+        assert f"Invalid value for '--agent': 'bogus' is not one of {AGENT_CHOICE_SET}." in (
+            result.stderr
+        )
+        with pytest.raises(ValueError) as excinfo:
+            _plan_init(project_root=tmp_path, agents=["bogus"])
+        assert str(excinfo.value) == (
+            "Unknown agent: 'bogus'. Known agents: "
+            "agents-md, claude, cursor, gemini, none, qwen."
+        )
+
+    def test_unknown_access_mode(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--access", "agentic"])
+        assert result.exit_code == 2
+        assert "Invalid value for '--access'" in result.stderr
+        with pytest.raises(ValueError) as excinfo:
+            _plan_init(project_root=tmp_path, access_mode="agentic")
+        message = str(excinfo.value)
+        assert "agentic" in message and "cli" in message and "native" in message
+
+    def test_unknown_skill_family(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init", "--skills", "memory", "typo"])
+        assert result.exit_code == 2
+        assert "Invalid value for '--skills'" in result.stderr
+        with pytest.raises(ValueError) as excinfo:
+            _plan_init(project_root=tmp_path, skill_families=["memory", "typo"])
+        message = str(excinfo.value)
+        assert "typo" in message and "memory" in message

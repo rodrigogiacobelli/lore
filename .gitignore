@@ -29,3 +29,6 @@ uv.lock
 .idea/
 AGENTS.md
 CLAUDE.md
+
+# Adversarial smoke-test sandbox (untracked)
+.smoke_test/

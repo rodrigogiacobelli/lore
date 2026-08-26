@@ -33,7 +33,24 @@ Read the full doctrine. Note:
 lore list
 ```
 
-Before drafting missions, run `lore glossary list` to align on project vocabulary — use the canonical keywords in titles and descriptions instead of synonyms.
+Before drafting missions, align on the project's vocabulary — use its canonical keywords in titles and descriptions instead of synonyms, so every downstream worker reads the same word for the same thing.
+
+<!-- lore:access cli -->
+```
+lore glossary list
+lore codex search <feature-keyword>
+lore codex show <id1> <id2>
+```
+
+Batch ids into one `lore codex show` call — it deduplicates and appends the glossary terms it matched.
+<!-- lore:access end -->
+<!-- lore:access native -->
+Read `.lore/codex/glossary.yaml` for the vocabulary, then grep `.lore/codex/**/*.md` for the feature and read the candidates directly with your own file tool. Glossary terms are not attached to what you read, so look up an unfamiliar one yourself.
+<!-- lore:access end -->
+
+`lore codex map <id>` and `lore impacts <path-or-id>` stay on the CLI in every mode — no file read reproduces a precomputed traversal or the bidirectional `binds:` index. Run `lore impacts` over the paths the feature touches and name the governing documents in the mission descriptions, so a worker inherits its obligations instead of discovering them.
+
+Doctrines, knights, quests and missions are reached through the Lore CLI in every mode: `lore doctrine show` runs normalisation, step validation and cycle detection, `lore show <mission-id>` splices in the knight persona, and quests and missions are SQLite-backed.
 
 ### 3. Create the quest
 

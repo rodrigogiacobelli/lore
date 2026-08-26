@@ -1,8 +1,8 @@
 ---
 id: tech-overview
 title: Technical Overview
-summary: Technology choices (Python, Click, SQLite WAL, PyYAML, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE), and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry between `lore new quest` and `lore edit`.
-related: ["ref-lore_db-core", "tech-arch-source-layout", "vision-camelot-system", "tech-arch-schemas"]
+summary: Technology choices (Python 3.11+, Click >=8.3, questionary, SQLite WAL, PyYAML, jsonschema, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE), and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry between `lore new quest` and `lore edit`.
+related: ["ref-lore_db-core", "tech-arch-source-layout", "vision-camelot-system", "tech-arch-schemas", "standards-dependency-inversion", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-017-constrained-flags-use-click-choice", "ops-installation"]
 ---
 
 # Technical Overview
@@ -11,13 +11,14 @@ related: ["ref-lore_db-core", "tech-arch-source-layout", "vision-camelot-system"
 
 | Component | Choice |
 |-----------|--------|
-| Language | Python 3.10+ (minimum; uses `match` statements and modern type hints) |
-| CLI framework | Click 8.x |
-| Storage | SQLite 3.35+ (ships with Python 3.10+; uses `RETURNING` clause in INSERT statements for ID confirmation) |
+| Language | Python 3.11+ (minimum; stdlib `tomllib` reads `.lore/config.toml` — decisions-013-toml-for-config-yaml-for-glossary) |
+| CLI framework | Click `>=8.3,<9.0`. The floor is the version `SpaceSeparatedChoice` is exercised against; it hooks Click's private option parser, and an older in-range Click would break the exit-2 contract at runtime rather than at install time (decisions-012-multi-value-cli-param-convention, decisions-017-constrained-flags-use-click-choice) |
+| Interactive prompts | `questionary>=2.0,<3.0` — checkbox, select and confirm prompts for `lore init`. Imported lazily inside `prompts.py`, so no other command pays for `prompt_toolkit` |
+| Storage | SQLite 3.35+ (ships with Python 3.11+; uses `RETURNING` clause in INSERT statements for ID confirmation) |
 | Template format | YAML via PyYAML (for Doctrines) |
 | JSON Schema validation | `jsonschema>=4.18` — Draft 2020-12 validator, pure-Python, MIT. Runtime dependency added for entity-file schema validation used by both `lore health` and create-time validators. See tech-arch-schemas. |
 | IDs | Short random hex (4–6 chars), generated from truncated `uuid4` values, hierarchical with `/` separator |
-| Packaging | Single `uv pip install lore-agent-task-manager`. No extras, no optional dependencies. |
+| Packaging | Single `uv pip install lore-agent-task-manager`. No extras and no optional dependencies — every dependency is required: `click`, `PyYAML`, `jsonschema`, `questionary`. |
 | Public API types | `lore.models` — `@dataclass(frozen=True)` for all boundary entity types. Zero new runtime dependencies. |
 | Type checking | `mypy` in dev dependencies with `[tool.mypy]` strict configuration. `py.typed` PEP 561 marker ships with the package. |
 
@@ -25,7 +26,7 @@ For the full database schema, see ref-lore_db-core (lore codex show ref-lore_db-
 
 ## Module Layering
 
-The codebase follows the dependency hierarchy established by ADR-012:
+The codebase follows the dependency hierarchy `standards-dependency-inversion` establishes — the arrow points inward, and no core module imports the CLI:
 
 ```
 cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* imports)
@@ -46,12 +47,22 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    ├──→  codex.py     ──→  frontmatter.py
    ├──→  impacts.py   ──→  frontmatter.py, codex.py, paths.py, validators.py  (codex<->code surfacing for `lore impacts`)
    ├──→  schemas.py   ──→  frontmatter.py   (loads packaged YAML schemas; no lore.* entity imports)
-   └──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, knight.py, watcher.py, artifact.py, codex.py
+   ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, knight.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py
+   ├──→  prompts.py   ──→  initplan.py      (questionary imported lazily inside each function; no click, no other lore.*)
+   ├──→  agents.py                          (packaged agent registry; yaml + stdlib only)
+   └──→  init.py      ──→  db.py, paths.py, config.py, skills.py, reconcile.py, manifest.py, agents.py
+            skills.py    ──→  initplan.py
+            reconcile.py ──→  initplan.py, manifest.py
+            manifest.py  ──→  initplan.py, paths.py
+            initplan.py                     (foundation: dataclasses, enum, pathlib — no lore.* imports)
 ```
 
 Dependency rules:
 
 - `validators.py` has zero imports from any `lore.*` module. It is the safe foundation.
+- `initplan.py` sits beside it: stdlib only, no `lore.*` imports. It holds the init result types so `reconcile.py` and `skills.py` can construct them without either importing `init.py`.
+- `agents.py` imports `yaml` and stdlib only, so `cli.py` can read the registry at decorator-evaluation time.
+- `prompts.py` is CLI-layer code: it imports `questionary` lazily inside each function and no `lore.*` module except `initplan.py`. It imports no `click`, so it stays testable without a terminal.
 - `db.py` imports `validators` and `ids`; it does not import `cli.py` or `priority.py`
   (the `get_ready_missions` pass-through wrapper was removed in REFACTOR-9).
 - `cli.py` imports `db`, `validators`, `paths`, `knight`, `watcher`, `graph`, `oracle`, `doctrine`,

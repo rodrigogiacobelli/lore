@@ -2,7 +2,7 @@
 id: ops-publish-pypi
 title: Publish to PyPI
 summary: Release runbook for cutting a new version of lore-agent-task-manager
-  to PyPI. Covers the pre-flight checklist, version bump, changelog finalization,
+  to PyPI. Covers the pre-flight checklist (including the legacy-hash refresh), version bump, changelog finalization,
   git tag, build, upload, and post-publish verification. Git tagging alone does
   not publish — PyPI is a separate step that has been missed in past releases.
 related:
@@ -10,6 +10,9 @@ related:
 - ops-git-workflow
 - decisions-002-package-name
 - decisions-010-public-api-stability
+- tech-arch-install-manifest
+- tech-arch-skill-catalogue
+- conceptual-workflows-init-reconcile
 ---
 
 # Publish to PyPI
@@ -25,7 +28,8 @@ The authoritative PyPI package is **`lore-agent-task-manager`**. The PyPI publis
 4. Working tree is clean: `git status` prints nothing.
 5. Tests pass: `uv run pytest`.
 6. `lore health` is green on this repo's own codex.
-7. You have a PyPI account and an API token. Token lives in `~/.pypirc` or is passed via `UV_PUBLISH_TOKEN` / `--token`. If creating a new token, scope it to this project on <https://pypi.org/manage/account/token/>.
+7. `src/lore/defaults/legacy-hashes.json` is current: run `uv run python scripts/update_legacy_hashes.py`, then `git status`. The script hashes every file under `src/lore/defaults/skills/`, prefixes each path with `.lore/skills/`, and unions the result into the file — it never removes a row, because a project may hop several releases and needs every intermediate hash. It is idempotent, so a clean `git status` after running it means the file was already current. Skipping this step means a project upgrading past the release cannot recognise the skills the release shipped, and keeps them instead of reconciling them.
+8. You have a PyPI account and an API token. Token lives in `~/.pypirc` or is passed via `UV_PUBLISH_TOKEN` / `--token`. If creating a new token, scope it to this project on <https://pypi.org/manage/account/token/>.
 
 ## Release runbook
 

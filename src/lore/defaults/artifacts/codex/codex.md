@@ -14,7 +14,7 @@ Everything is reachable from the CLI — every command group accepts `--help`.
 
 ## The codex
 
-`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other fields, unless the project declares them in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (the `new-custom-schema` skill). Overlays cover canonical docs and `sources/` only; `transient/` docs always validate against the packaged schema. `lore health --scope voice` audits the prose inside those bodies against the codex voice rules (`lore artifact show codex-voice`).
+`.lore/codex/` is a graph of typed markdown docs. Every doc has frontmatter (`id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`) and a body. `lore health --scope codex` enforces this — no other fields, unless the project declares them in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (the `update-custom-schema` skill). Overlays cover canonical docs and `sources/` only; `transient/` docs always validate against the packaged schema. `lore health --scope voice` audits the prose inside those bodies against the codex voice rules (`lore artifact show codex-voice`).
 
 Docs live under subdirectories that scope intent. The set below is what `lore init` *expects* a fresh project to use; the dirs are created on demand by `lore codex new --group <subdir>`.
 
@@ -51,7 +51,7 @@ Every codex file belongs to exactly one of three classes, defined by its top-lev
 | `lore codex map <id>`           | bidirectional traversal of `related`, depth-1 by default                     |
 | `lore codex chaos <id>`         | random-walk discovery; `--threshold 30..100` required                        |
 
-Prefer batching IDs in one `show` call over multiple calls. For deeper investigation patterns, read the `explore-codex` skill.
+Prefer batching IDs in one `show` call over multiple calls. For deeper investigation patterns, read the `retrieve-memory` skill.
 
 ## Writing the codex
 
@@ -69,7 +69,7 @@ lore codex delete <name>
 
 Frontmatter is exactly `id`, `title`, `summary`, optional `related`, optional `binds`, optional `rites`. `lore health --scope codex` rejects extras — except keys the project declares in a `.lore/custom-schemas/<kind>.yaml` overlay, which do not apply under `transient/`. `lore health --scope voice` audits what you write in the body.
 
-Do not write codex files by hand with `cat >` or an editor — drive every change through the CLI so frontmatter normalisation and validation run. For the full discovery → classify → dedup → apply → verify workflow, read the `update-codex` skill.
+Do not write codex files by hand with `cat >` or an editor — drive every change through the CLI so frontmatter normalisation and validation run. For the full discovery → classify → dedup → apply → verify workflow, read the `store-memory` skill.
 
 ### Voice
 
@@ -108,7 +108,7 @@ A codex doc may declare `binds: [<path-or-glob>, ...]` in its frontmatter. Each 
 
 Use cases: read governing docs before editing a file; assess a doc's reach across the repo. Absolute paths, `..` segments, and empty strings are rejected by the schema and surfaced by `lore health --scope schemas`.
 
-For workflow details — when to populate `binds:`, glob semantics, examples — read the `update-codex` skill.
+For workflow details — when to populate `binds:`, glob semantics, examples — read the `store-memory` skill.
 
 ### Linking a codex doc to the rites it governs
 
@@ -140,7 +140,7 @@ Sources MUST link outward. Canonical docs MUST NOT include a source ID in their 
 
 Re-ingestion overwrites the snapshot file. No history file. Previous content lives only in git history.
 
-For the ingest-and-distil workflow, use the `ingest-source` skill. To re-pull an existing snapshot and propagate the diff, use `refresh-source`.
+For the ingest-and-distil workflow, and for re-pulling an existing snapshot and propagating the diff, use the `store-memory` skill.
 
 ## Reference docs (`ref-*`)
 
@@ -176,15 +176,15 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 
 ## Skills that deepen this guide
 
-| Skill            | When to use it                                                                |
-|------------------|-------------------------------------------------------------------------------|
-| `explore-codex`  | research a question or map a domain                                           |
-| `update-codex`   | add or change a codex doc outside the feature-implementation flow             |
-| `ingest-source`  | first-time capture of a Jira ticket / transcript / pasted doc                 |
-| `refresh-source` | re-pull an existing source and propagate diffs                                |
-| `new-knight`     | draft and create a knight persona                                             |
-| `new-doctrine`   | draft and create a doctrine                                                   |
-| `new-watcher`    | draft and create a watcher                                                    |
-| `new-artifact`   | draft and create a template artifact                                          |
-| `start-quest`    | turn a doctrine into a quest + missions                                       |
-| `inquest`        | audit finished work for a missed requirement                                  |
+| Skill                  | When to use it                                                          |
+|------------------------|--------------------------------------------------------------------------|
+| `retrieve-memory`      | research a question or map a domain, across the codex and the rites      |
+| `store-memory`         | record a fact, a procedure, or an upstream source into project memory    |
+| `update-knight`        | create or edit a knight persona                                          |
+| `update-doctrine`      | create or edit a doctrine                                                |
+| `update-watcher`       | create or edit a watcher                                                 |
+| `update-artifact`      | create or edit a template artifact                                       |
+| `update-custom-schema` | create or edit a custom-frontmatter overlay                              |
+| `start-quest`          | turn a doctrine into a quest + missions                                  |
+| `inquest`              | audit finished work for a missed requirement                             |
+| `sync-codex-guide`     | reconcile this guide against the freshly seeded template after an upgrade |

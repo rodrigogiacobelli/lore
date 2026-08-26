@@ -229,3 +229,72 @@ def route_entity(eid: str) -> tuple[str, str]:
     raise ValueError(f"Cannot route unrecognised entity ID: '{eid}'")
 
 
+# ---------------------------------------------------------------------------
+# `lore init` answer tokens
+# ---------------------------------------------------------------------------
+#
+# ADR-011: any rule that exists only in the CLI is a bug. The CLI's
+# constrained-flag layer rejects an out-of-set token at the argv boundary with
+# the wording and exit code ADR-017 pins; these four are what make the Python
+# surface reject exactly the same tokens, and `validate_agent_selection` is
+# additionally where the `none` exclusivity rule lives, so that neither layer
+# owns a second copy of it.
+#
+# The two data-driven sets — the agent registry and the skill catalogue — are
+# passed in rather than looked up. `lore.agents` and `lore.skills` read packaged
+# YAML through `jsonschema`, and importing either here would drop this module
+# out of the foundation position `standards-dependency-inversion` gives it (and
+# out of the no-lore-imports invariant `test_validators_has_no_lore_imports`
+# pins). `plan_init` and `cli.py` both hold those sets already.
+
+ACCESS_MODES: tuple[str, ...] = ("cli", "native")
+"""The two access modes. Mirrors ``lore.initplan.AccessMode``, which cannot be
+imported here; a unit test pins the two together so they cannot drift."""
+
+AGENT_NONE = "none"
+"""The registry id meaning "no agent" — exclusive with every other id."""
+
+
+def validate_access_mode(
+    mode: object, accepted: "tuple[str, ...]" = ACCESS_MODES
+) -> str | None:
+    """Return an error string if *mode* is not an access-mode token, else None."""
+    if isinstance(mode, str) and mode in accepted:
+        return None
+    return f"Unknown access mode: '{mode}'. Accepted tokens: {', '.join(accepted)}."
+
+
+def validate_skill_family(family: object, accepted: "tuple[str, ...]") -> str | None:
+    """Return an error string if *family* is not an accepted token, else None.
+
+    *accepted* is the caller's token set — the concrete family ids plus the two
+    aggregates ``all`` and ``none`` where those are legal.
+    """
+    if isinstance(family, str) and family in accepted:
+        return None
+    return f"Unknown skill family: '{family}'. Accepted tokens: {', '.join(accepted)}."
+
+
+def validate_agent_id(agent_id: object, known_ids: "tuple[str, ...]") -> str | None:
+    """Return an error string if *agent_id* is not a registry id, else None."""
+    if isinstance(agent_id, str) and agent_id in known_ids:
+        return None
+    return f"Unknown agent: '{agent_id}'. Known agents: {', '.join(known_ids)}."
+
+
+def validate_agent_selection(
+    agents: "tuple[str, ...] | list[str]", known_ids: "tuple[str, ...]"
+) -> str | None:
+    """Return an error string if *agents* is not a legal selection, else None.
+
+    An unknown id is reported before the exclusivity rule, so a caller fixes the
+    typo it can see rather than a rule it has not reached yet. Duplicates are
+    not an error — two spellings of one selection are one selection.
+    """
+    for agent_id in agents:
+        error = validate_agent_id(agent_id, known_ids)
+        if error is not None:
+            return error
+    if AGENT_NONE in agents and len(set(agents)) > 1:
+        return f"--agent {AGENT_NONE} cannot be combined with other agents."
+    return None

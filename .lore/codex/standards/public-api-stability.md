@@ -57,6 +57,13 @@ __all__ = [
     "ProjectNotFoundError",
     "ConflictingDepthFlags",
     "Config",
+    "AccessMode",
+    "FileAction",
+    "AgentTarget",
+    "PlannedFile",
+    "InitAnswers",
+    "InitPlan",
+    "InitResult",
     # project root
     "find_project_root",
     # validators
@@ -68,6 +75,10 @@ __all__ = [
     "validate_group",
     "validate_quest_id_loose",
     "validate_chaos_threshold",
+    "validate_access_mode",
+    "validate_skill_family",
+    "validate_agent_id",
+    "validate_agent_selection",
     "validate_binds_entry",
     "is_glob_pattern",
     "route_entity",
@@ -175,6 +186,8 @@ __all__ = [
     "resolve_merged_schema",
     "project_validator_for",
     # init / reports / config
+    "plan_init",
+    "apply_init",
     "run_init",
     "generate_reports",
     "load_config",
@@ -207,7 +220,13 @@ Every module under `lore` **other than `lore.api`** is internal. None of the fol
 - `lore.schemas` — JSON Schema loader + entity validators
 - `lore.frontmatter` — shared frontmatter parsing
 - `lore.config` — TOML config loader
-- `lore.init` — `lore init` implementation
+- `lore.init` — `lore init` implementation (`plan_init`, `apply_init`, `run_init`)
+- `lore.initplan` — the frozen init result types re-exported through `lore.api`
+- `lore.agents` — packaged agent-registry loader
+- `lore.skills` — skill catalogue loader and access-mode renderer
+- `lore.manifest` — install-manifest read/write and hashing
+- `lore.reconcile` — desired-vs-recorded-vs-on-disk reconciliation
+- `lore.prompts` — CLI-layer interactive prompts
 - `lore.oracle` — report generation
 - `lore.ids` — hash-based ID generation
 - `lore.root` — project root detection (re-exported through `lore.api` as `find_project_root` and `ProjectNotFoundError`)

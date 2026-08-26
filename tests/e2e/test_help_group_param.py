@@ -133,3 +133,82 @@ def test_list_help_links_to_filter_grammar_doc(runner, cmd):
         or "lore codex show" in result.output
         or "codex.md" in result.output
     )
+
+
+# ---------------------------------------------------------------------------
+# `lore init --help` — the flag surface and the JSON exception
+# Spec: interactive-init-us-016 Scenario 7 (ADR-008 teaching contract)
+# ---------------------------------------------------------------------------
+
+
+INIT_FLAGS = (
+    "--agent",
+    "--access",
+    "--skills",
+    "--on-existing-agent-file",
+    "--skills-gitignore",
+    "--on-conflict",
+    "--yes",
+    "--reconfigure",
+    "--dry-run",
+)
+
+JSON_EXCEPTION_SENTENCE = (
+    "JSON output is not supported for this command. Use the Python API — "
+    "lore.api.plan_init() returns a typed InitPlan describing every create, "
+    "overwrite, removal and conflict without performing any of them."
+)
+
+
+def _init_help(runner) -> str:
+    result = runner.invoke(main, ["init", "--help"])
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
+@pytest.mark.parametrize("flag", INIT_FLAGS)
+def test_init_help_names_every_flag(runner, flag):
+    """Every prompt's flag equivalent is discoverable from the help alone."""
+    assert flag in _init_help(runner)
+
+
+def test_init_help_states_the_json_exception(runner):
+    """ADR-008: help teaches the fact rather than leaving a silently-ignored flag."""
+    collapsed = " ".join(_init_help(runner).split())
+    assert JSON_EXCEPTION_SENTENCE in collapsed
+
+
+def test_init_help_shows_multi_value_flags_in_their_space_separated_form(runner):
+    """ADR-012: the documented form is `--agent ID [ID ...]`, never a repeated flag."""
+    text = _init_help(runner)
+    assert "--agent ID [ID ...]" in text or "ID [ID ...]" in text
+    assert "FAMILY [FAMILY ...]" in text
+    assert "--agent ID --agent" not in text
+
+
+def test_init_help_shows_the_short_yes_flag(runner):
+    assert "-y, --yes" in _init_help(runner)
+
+
+def test_init_help_says_lore_replaces_the_files_it_installed(runner):
+    """ADR-008: the destructive half of a command is taught, never discovered.
+
+    Re-running `lore init` discards an edit to a skill, knight, doctrine,
+    artifact or watcher Lore shipped, and asks nobody first.
+    """
+    collapsed = " ".join(_init_help(runner).split())
+    assert "Lore owns the files it installs" in collapsed
+
+
+def test_init_help_says_where_a_skill_of_your_own_goes(runner):
+    """The convention `default/` states for the other four entity types.
+
+    Knights, doctrines, artifacts and watchers are seeded under a `default/`
+    subdirectory, which tells a reader where the boundary is. Skills install
+    straight into the agent's own directory and have no such marker, so the
+    help is where the boundary has to be stated — losing an edit is the ruling,
+    losing one with no way to avoid the next is not.
+    """
+    collapsed = " ".join(_init_help(runner).split())
+    assert ".claude/skills/<your-own-id>/" in collapsed
+    assert "an id Lore does not ship" in collapsed

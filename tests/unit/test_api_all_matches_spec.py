@@ -59,6 +59,14 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
+    # operational dataclasses — initialisation (interactive-init-us-023)
+    "AccessMode",
+    "FileAction",
+    "AgentTarget",
+    "PlannedFile",
+    "InitAnswers",
+    "InitPlan",
+    "InitResult",
     "GlossaryError",
     "ProjectNotFoundError",
     "ConflictingDepthFlags",
@@ -77,6 +85,11 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "validate_binds_entry",
     "is_glob_pattern",
     "route_entity",
+    # validators — initialisation (interactive-init-us-017)
+    "validate_access_mode",
+    "validate_skill_family",
+    "validate_agent_id",
+    "validate_agent_selection",
     # db: quest CRUD (G17 — get_quest/edit_quest renamed)
     "create_quest",
     "list_quests",
@@ -183,6 +196,8 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "OverlayError",
     # init / reports / config
     "run_init",
+    "plan_init",
+    "apply_init",
     "generate_reports",
     "load_config",
     # paths (G15 — amendment C1)

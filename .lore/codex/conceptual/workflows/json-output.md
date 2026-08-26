@@ -96,6 +96,7 @@ The exit code contract is the same in JSON mode as in text mode:
 
 - `0` — success (or idempotent no-op).
 - `1` — at least one error occurred.
+- `2` — usage error. Click writes these to stderr as plain text, never as a JSON envelope, because the failure happens before the command body runs (conceptual-workflows-error-handling).
 
 For multi-entity commands (`claim`, `done`, `needs`, `unneed`), exit code `1` is used if the `errors` array in the JSON envelope is non-empty.
 
@@ -116,13 +117,18 @@ Rites follow this rule like every other entity — they are discovered recursive
 
 ## Commands That Do Not Support JSON
 
-`lore oracle` does not produce JSON output. The `--json` flag is accepted but has no effect.
+Two commands are outside JSON mode, and they refuse it differently.
 
-`lore init` always produces text output regardless of the flag.
+`lore oracle` **rejects** `--json`. It writes `Error: JSON output is not supported for 'lore oracle'. Oracle generates human-readable markdown reports only.` to stderr and exits 2. No report is generated.
+
+`lore init` **accepts and ignores** `--json`. It prints its text summary and exits 0, so a pipeline that passes the global flag to every command still initialises a project. `lore init --help` states this and points at `lore.api.plan_init()`, which returns a typed `InitPlan` describing every create, overwrite, removal and conflict without performing any of them.
+
+`ref-lore_cli-commands` records this pair as a permanent exception to the rule that every command supports `--json`.
 
 ## Failure Modes
 
 | Failure point | Behaviour | Exit code |
 |---|---|---|
 | Flag placed after subcommand | Flag silently ignored for most commands; accepted and acts correctly for `lore show`, `lore unneed`, `lore artifact list`, `lore knight list`, and `lore doctrine list` | varies |
-| Oracle with --json | Flag ignored; text output produced | 0 |
+| Oracle with --json | Rejected: usage error on stderr, no report written | 2 |
+| Init with --json | Flag ignored; text output produced | 0 |

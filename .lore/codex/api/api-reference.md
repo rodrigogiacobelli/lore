@@ -6,6 +6,9 @@ related:
   - api-guide
   - decisions-010-public-api-stability
   - tech-arch-schemas
+  - conceptual-workflows-lore-init
+  - conceptual-workflows-init-reconcile
+  - tech-arch-agents-md
 ---
 
 # lore.api — Reference
@@ -1387,7 +1390,7 @@ Raises: `ValueError` on unknown entity ID.
 delete_entity(pr, "q-7a3f", cascade=True)
 ```
 
-## 15. Reports
+## 15. Reports and initialisation
 
 ### `generate_reports`
 
@@ -1405,9 +1408,59 @@ Raises: none.
 generate_reports(pr)
 ```
 
+### `plan_init`
+
+Compute what an initialisation would do, without performing it. Reads the project, the packaged agent registry and skill catalogue, and the install manifest; writes nothing.
+
+```python
+plan_init(
+    project_root: Path | None = None,
+    *,
+    agents: list[str] | None = None,
+    access_mode: str | None = None,
+    skill_families: list[str] | None = None,
+    on_existing_agent_file: str = "append",
+    skills_gitignore: str | None = None,
+    on_conflict: str = "skip",
+    reconfigure: bool = False,
+) -> InitPlan
+```
+
+`project_root=None` resolves to `Path.cwd()` — `lore init` is the documented exception to `find_project_root()`, because `.lore/` may not exist yet.
+
+Every keyword defaulting to `None` resolves in this order: explicit argument → `.lore/config.toml` → built-in default. `reconfigure=True` skips the config layer for the four persisted answers. `plan_init` is the only reader of the four `init-*` keys.
+
+`skill_families` accepts the aggregate tokens `"all"` and `"none"` alongside the three family names.
+
+Returns an `InitPlan` whose `files` tuple carries one `PlannedFile` per affected path, sorted by path.
+
+Raises `ValueError` for an unknown agent id, an unknown access-mode / family / conflict token, or `agents` combining `"none"` with another id. When the offending value came from `.lore/config.toml` rather than an argument, the message also names the key holding it and the flag that replaces it — that answer is taken again on every later run, so the way out belongs in the message.
+
+```python
+plan = plan_init(pr, agents=["claude"], access_mode="native", skill_families=["memory", "workflow"])
+plan.counts()          # {"create": 13, "section": 2, "overwrite": 0, "remove": 0, "conflict": 0}
+plan.has_changes       # True
+```
+
+### `apply_init`
+
+Perform an initialisation plan produced by `plan_init`. Writes files in a fixed order, the install manifest last.
+
+```python
+apply_init(plan: InitPlan) -> InitResult
+```
+
+Returns an `InitResult` carrying the status messages, the `PlannedFile` entries applied, the entries skipped (conflicts left alone under `on_conflict="skip"`), and the manifest path.
+
+Raises: none under normal use; filesystem errors propagate. A failed unlink during a removal is reported in `messages` rather than raised.
+
+```python
+result = apply_init(plan_init(pr, agents=["claude"]))
+```
+
 ### `run_init`
 
-Run the full `lore init` sequence in the current working directory. Creates `.lore/`, seeds defaults, initialises the database.
+Run the full `lore init` sequence in the current working directory on the resolved defaults. Equivalent to `apply_init(plan_init()).messages`, as a list.
 
 ```python
 run_init() -> list[str]
@@ -1416,6 +1469,8 @@ run_init() -> list[str]
 Returns a list of human-readable status messages describing each step.
 
 Raises: none under normal use; filesystem errors propagate.
+
+The zero-argument signature is a pinned contract. A caller that needs to choose agents, an access mode or skill families uses `plan_init` and `apply_init`.
 
 ```python
 run_init()
@@ -1514,6 +1569,38 @@ validate_message(message: str) -> str | None
 ```
 
 Returns an error string if `message` is empty/whitespace, else `None`.
+
+### `validate_access_mode`
+
+```python
+validate_access_mode(mode: str) -> str | None
+```
+
+Returns an error string if `mode` is not `"cli"` or `"native"`, else `None`.
+
+### `validate_skill_family`
+
+```python
+validate_skill_family(family: str) -> str | None
+```
+
+Returns an error string if `family` is not one of `"memory"`, `"machinery"`, `"workflow"`, `"all"`, `"none"`, else `None`.
+
+### `validate_agent_id`
+
+```python
+validate_agent_id(agent_id: str) -> str | None
+```
+
+Returns an error string if `agent_id` is absent from the packaged agent registry, else `None`. The message names the known ids.
+
+### `validate_agent_selection`
+
+```python
+validate_agent_selection(agents: list[str]) -> str | None
+```
+
+Returns `"--agent none cannot be combined with other agents."` when the selection pairs `none` with any other id, else `None`. Both `plan_init` and `lore init` call it, so neither owns a second copy of the rule.
 
 ### `validate_entity_id`
 
@@ -1634,9 +1721,19 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 - **`CodexBinding(path, kind)`** — `kind` is `Literal["exact", "glob"]`.
 - **`CodeBinding(id, match, pattern)`** — `match` is `Literal["exact", "glob"]`; `pattern` is the glob pattern when `match="glob"`, else `None`.
 
+### Init dataclasses and enums
+
+- **`AccessMode`** — `StrEnum`: `CLI = "cli"`, `NATIVE = "native"`.
+- **`FileAction`** — `StrEnum`: `CREATE`, `OVERWRITE`, `SECTION`, `REMOVE`, `CONFLICT`, `KEEP`.
+- **`AgentTarget(id, label, instruction_file, skills_dir)`** — one row of the packaged agent registry. `instruction_file` and `skills_dir` are `str | None`, repo-root-relative POSIX paths.
+- **`PlannedFile(path, action, kind, source, digest, detail)`** — one affected path. `path` is repo-root-relative POSIX; `kind` is `"owned"` or `"section"`; `source` names what produced it (`"skill:store-memory"`, `"agent-instructions:claude"`, `"skills-gitignore:claude"`, `"lore-agent"`, plus `"root-gitignore"` on a row an older release recorded and this one removes); `digest` is the sha256 of the rendered bytes, `None` for `REMOVE` and `KEEP`; `detail` carries the retirement reason or the conflict explanation.
+- **`InitAnswers(agents, access_mode, skill_families, on_existing_agent_file, skills_gitignore, on_conflict)`** — the resolved answers a plan was computed from.
+- **`InitPlan(project_root, answers, targets, files, prompts_needed, conflicts, retired_edits)`** — `files` is sorted by path; `prompts_needed` names the conditional prompts this plan justifies; `conflicts` is the `FileAction.CONFLICT` subset and `retired_edits` the `FileAction.KEEP` subset — files edited since install that the plan would overwrite, and files edited since install that the plan would remove. The `on_conflict` answer settles both. Carries `has_changes: bool` and `counts() -> dict[str, int]`.
+- **`InitResult(project_root, messages, applied, skipped, manifest_path)`** — `messages` is the list `run_init()` returns.
+
 ### Config
 
-- **`Config(show_glossary_on_codex_commands, health_report_retention, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
+- **`Config(show_glossary_on_codex_commands, health_report_retention, init_agents, init_access_mode, init_skill_families, init_skills_gitignore, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `init_agents` is a `tuple[str, ...]` defaulting to `()`; `init_access_mode` is a `str` defaulting to `"native"`, one of `"cli"`, `"native"`; `init_skill_families` is a `tuple[str, ...]` defaulting to all three families; `init_skills_gitignore` is a `str` defaulting to `"lore-only"`, one of `"lore-only"`, `"none"`, `"all"`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
 
 ### Exceptions
 

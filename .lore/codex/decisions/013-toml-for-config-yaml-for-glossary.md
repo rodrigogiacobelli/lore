@@ -60,6 +60,7 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 - **YAML for glossary because it is the right tool for codex content.** Lists, multi-line definitions, and consistency with every other codex file outweigh the marginal cost of two formats in one tree.
 - **Direct seeding because `default/` would clobber user content.** The whole point of `default/` is "Lore owns these files; users do not edit them." The glossary and config are the opposite — users own them; Lore must not overwrite them.
 - **Idempotent seeding makes re-init safe.** `lore init` checks for existence and skips the write if the file is present. A maintainer's edits survive every subsequent `lore init`.
+- **The config header is documentation, not configuration.** A comment block listing every known key is only useful while it is complete, and a project that installed Lore before a key existed has a header that omits it. Regenerating the block from the loader's key tables keeps the two in step without a hand-copied second list. Values are what the user owns; the block above them is what Lore owes the user.
 
 ## Alternatives Considered
 
@@ -89,6 +90,8 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 
 1. **Config is TOML, glossary is YAML.** Any new project-level config key uses TOML at `.lore/config.toml`. Any new codex content uses YAML (frontmatter or full file). Mixing the two is a violation.
 2. **`lore init` seeds glossary and config idempotently.** Re-init MUST NOT overwrite either file when present. Implementation: `if not path.exists(): write(...)`.
+   - **One exception, in `.lore/config.toml` only: the known-key comment header.** On a file that already exists, `lore init` replaces the leading contiguous run of `#` lines — from the first line of the file to the first line that is not a comment — and leaves every other byte alone. No setting line, value, ordering, blank line or inline comment is ever rewritten. The header is generated from `config.py`'s own key tables (`standards-dry`), so a project that predates a key finds that key documented after the next `lore init`. Its first line states that it is regenerated, which is the same social contract the `<!-- lore:begin -->` marked blocks carry: inside the block is Lore's, outside is the project's.
+   - The exception does not extend to `.lore/codex/glossary.yaml` or `.lore/codex/CODEX.md`. Both are skipped whole when present.
 3. **No `default/` placement for glossary or config.** Both files live at their canonical paths only. There is no `.lore/codex/default/glossary.yaml` and no `.lore/default/config.toml`.
 4. **Python 3.11 minimum.** `pyproject.toml`'s `requires-python` is `>=3.11`. `tomllib` is the only TOML loader; no `tomli` fallback.
 5. **Schema parity.** `glossary.yaml` is validated by `lore://schemas/glossary` at create time (not applicable — no CLI write path) and at audit time (`lore health --scope schemas` and `lore health --scope glossary`).
@@ -100,3 +103,4 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 |------|--------|------|
 | 2026-04-29 | accepted | Initial decision. Captured in the same release that adds `lore glossary`, `.lore/config.toml`, and the `--skip-glossary` flag on `lore codex show`. |
 | 2026-05-11 | accepted (scope widened) | CODEX.md added as a second user-tracked carve-out under .lore/codex/. See init-seed-codex-md-tech-spec. |
+| 2026-08-25 | accepted (exception recorded) | Constraint 2 gains one exception: `lore init` regenerates the leading comment header of an existing `.lore/config.toml` from `config.py`'s key tables. Setting lines are never rewritten, and the exception reaches neither `glossary.yaml` nor `CODEX.md`. |

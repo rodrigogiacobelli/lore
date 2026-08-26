@@ -1,7 +1,7 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — a full-scan or scoped audit across two kinds of scope. Seven scopes name a file-based entity type (codex, artifacts, doctrines, knights, watchers, glossary, rites); three cut across them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention policy that decides whether a markdown report reaches codex/transient (none by default, latest, or all), --scope filtering, --json output, the exit-code contract, and the Python API via health_check() with its write_report, timestamp, and retention keywords. Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks, and the voice scope's five warning-only prose checks over the canonical codex layers.
+summary: What the system does internally when lore health runs — a full-scan or scoped audit across two kinds of scope. Eight scopes name a file-based entity type (codex, artifacts, doctrines, knights, watchers, glossary, rites, skills); three cut across them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention policy that decides whether a markdown report reaches codex/transient (none by default, latest, or all), --scope filtering, --json output, the exit-code contract, and the Python API via health_check() with its write_report, timestamp, and retention keywords. Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks, the voice scope's five warning-only prose checks over the canonical codex layers, and the skills scope's manifest-driven audit of the installed skills.
 binds:
 - src/lore/health.py
 - src/lore/cli.py
@@ -11,18 +11,19 @@ binds:
 - tests/e2e/test_health_bindings.py
 - tests/e2e/test_health_rites.py
 - tests/e2e/test_health_voice.py
+- tests/e2e/test_health_skills.py
 - tests/e2e/test_health_retention.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
 - tests/unit/test_health_voice.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "decisions-020-codex-voice-is-enforced", "decisions-021-health-reports-are-ephemeral-by-default", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "decisions-020-codex-voice-is-enforced", "decisions-021-health-reports-are-ephemeral-by-default", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-entities-skill", "tech-arch-install-manifest", "tech-arch-skill-catalogue", "conceptual-workflows-init-reconcile"]
 ---
 
 # `lore health` Behaviour
 
 `lore health` audits a Lore project's knowledge base and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove that knowledge base internally consistent.
 
-Its scopes divide into two kinds. **Seven name a file-based entity type**: codex, artifacts, doctrines, knights, watchers, the Glossary (lore codex show conceptual-entities-glossary), and Rites (lore codex show conceptual-entities-rite). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
+Its scopes divide into two kinds. **Eight name a file-based entity type**: codex, artifacts, doctrines, knights, watchers, the Glossary (lore codex show conceptual-entities-glossary), Rites (lore codex show conceptual-entities-rite), and Skills (lore codex show conceptual-entities-skill). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
 
 ## Preconditions
 
@@ -43,11 +44,12 @@ lore health --scope rites
 lore health --scope codex rites
 lore health --scope voice
 lore health --scope codex voice
+lore health --scope skills
 lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, and `voice`.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. Whether a report file is written is decided by the `health-report-retention` config key, not by `--json` — the two are independent.
 
@@ -58,9 +60,9 @@ lore health --scope codex --json
 ### 1. Resolve scope
 
 The system determines which scopes to run:
-- No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, `rites`, and `voice`.
+- No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
 - `--scope SCOPE [SCOPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`.
 
 ### 2. Run per-scope checkers
 
@@ -193,6 +195,35 @@ Every rite issue is a `HealthIssue(severity, entity_type, id, check, detail, sch
 - **Orphan main rite — NOT flagged.** A main rite that no codex `rites:` points to emits **no issue**. It is found via `lore rite list`; `rites:` is secondary discovery (decisions-014-link-direction constraint 4). Same posture as inbound-orphan sources.
 
 `--scope rites` runs only these rite checks. `--scope codex rites` runs codex reference-integrity AND rite checks (multi-scope per ADR-012); the `dangling_codex_rite` check fires under both. `lore health` with no `--scope` runs rites as part of the default-all-scopes execution.
+
+#### Skills checks (scope: `skills`)
+
+The skills scope audits the skills `lore init` installed, against the install manifest and the packaged catalogue. See conceptual-entities-skill (lore codex show conceptual-entities-skill) for the entity and tech-arch-install-manifest (lore codex show tech-arch-install-manifest) for the manifest.
+
+The checker is `health._check_skills(project_root)`. It reads `.lore/.install-manifest.json` and the packaged skill catalogue, and walks **only the paths the manifest names**. It never scans a skills directory looking for files, because a file Lore did not install is not Lore's to report on.
+
+| Check | Severity | Detail |
+|---|---|---|
+| `missing_skill_file` | error | `"<path> — recorded in the install manifest but missing on disk"` |
+| `modified_skill_file` | warning | `"<path> — edited since install; lore init will replace it with the shipped version"` |
+| `retired_skill_present` | warning | `"<id> — retired into <into>; run lore init to reconcile"` |
+| `missing_skill_frontmatter` | error | `"<path> — SKILL.md frontmatter is missing 'name'"` |
+| `skills_scan_failed` | error | `"<manifest-path>: <reason>"` — the manifest exists and does not parse |
+
+Every issue carries `entity_type="skills"`, with `schema_id`, `rule` and `pointer` all `null`, matching every non-schema check.
+
+The severity split follows the existing convention. Lore claiming to have installed a file that is gone is a real inconsistency and flips the exit code; a person editing a skill is legitimate and warns.
+
+**A missing manifest emits nothing.** A `scan_failed` for an absent directory is the convention elsewhere, but a project that predates the manifest is a legitimate state — exactly as an absent `.lore/custom-schemas/` is the zero-overlay baseline (`decisions-018-overlays-are-path-discovered-config`) and an absent glossary is a valid empty glossary. An error here would fail CI on every project that has not re-initialised.
+
+```
+$ lore health --scope skills
+ERROR    skills  .claude/skills/inquest/SKILL.md  missing_skill_file: recorded in the install manifest but missing on disk
+WARNING  skills  .claude/skills/start-quest/SKILL.md  modified_skill_file: edited since install; lore init will replace it with the shipped version
+WARNING  skills  new-doctrine  retired_skill_present: retired into update-doctrine; run lore init to reconcile
+```
+
+Exit 1.
 
 #### Voice checks (scope: `voice`)
 
@@ -370,7 +401,7 @@ report.report_path      # Path | None — the written report, or None
 
 `health_check()` never prints to stdout or stderr. `write_report` defaults to `False`, which is a read-only audit: no file is written, no directory is created, and `.lore/config.toml` is never read. Passing `write_report=True` hands the report to the retention policy described under "Apply the report retention policy" — `retention=None` (the default) resolves it from config, an explicit token overrides config. `report_path` is the path of the written report, or `None` when nothing was written.
 
-`health_check`, `HealthIssue`, and `HealthReport` are all in `lore.api.__all__` — the public surface per `decisions-010-public-api-stability`. `lore.models` hosts the dataclasses internally and does not export them. Adding the `retention` keyword changes no name in `__all__`, so the surface is unchanged.
+`health_check`, `HealthIssue`, and `HealthReport` are all in `lore.api.__all__` — the public surface per `decisions-010-public-api-stability`. Both dataclasses are defined in `health.py`, the module that produces them, and `lore.api` re-exports them under its operational-dataclasses block. Adding the `retention` keyword changes no name in `__all__`, so the surface is unchanged.
 
 ## Error Paths
 

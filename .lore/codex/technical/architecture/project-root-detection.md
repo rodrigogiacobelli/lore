@@ -9,6 +9,8 @@ binds:
 - tests/unit/test_root.py
 related:
 - tech-arch-source-layout
+- conceptual-workflows-lore-init
+- tech-arch-install-manifest
 ---
 
 # Project Root Detection
@@ -44,6 +46,8 @@ This is the exact message raised by `ProjectNotFoundError` in `src/lore/root.py`
 ## `lore init` Special Case
 
 `lore init` does not use `find_project_root()`. It always creates `.lore/` in the current working directory, regardless of whether a parent directory already contains a `.lore/`. Every other command (everything except `lore init` and `--help`) requires a `.lore/` directory to be present and calls `find_project_root()` to locate it.
+
+The Python surface carries the same exception explicitly: `plan_init(project_root=None, ...)` resolves `None` to `Path.cwd()` rather than walking upward, and `apply_init` writes relative to `plan.project_root`. Every path the install manifest records is repo-root-relative POSIX and is resolved against that root, because the manifest names files outside `.lore/` — an agent's skills directory and its instruction file, and, in a project initialised before the block was retired, the project's root `.gitignore`.
 
 ## Path Helpers (`paths.py`)
 

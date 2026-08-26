@@ -1,0 +1,529 @@
+id: tdd-feature-lite
+steps:
+  # ---------------------------------------------------------------------------
+  # MODEL ALLOCATION IS PART OF THIS DOCTRINE. Every knight step's notes open
+  # with a `Dispatch:` line. Pass model and effort explicitly on every dispatch.
+  # Inheriting the session default runs the whole pipeline on one tier and turns
+  # this doctrine into a worse version of `tdd-feature`. The allocation table and
+  # its reasoning live in tdd-feature-lite.design.md.
+  #
+  # PHASE IS NOT PRIORITY. `lore new mission -p` accepts 0-4 only, so phases past
+  # 4 clamp to 4 and `needs` carries the real order. Never pass a phase number
+  # as -p.
+  #
+  # An upstream PRD is optional. When the `draft-prd` skill produced one, the
+  # orchestrator puts its codex ID in the recon and feature-spec mission
+  # descriptions. Without one, the architect writes Part 1 of the spec itself.
+  # ---------------------------------------------------------------------------
+
+  # --- Phase 0: Branch ---
+
+  - id: branch
+    title: Create feature branch off work
+    type: constable
+    priority: 0
+    notes: |
+      Verify the current branch is `work`:
+        git branch --show-current
+
+      If not on `work`, stop and surface to the human.
+
+      Derive the feature slug from the quest title (lowercase, hyphens, no spaces).
+
+      Create the feature branch:
+        git checkout -b feat/<feature-slug>
+
+      Post the branch name and the feature slug to the recon mission board:
+        lore board add <recon-mission-id> "Branch: feat/<feature-slug> | slug: <feature-slug>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 1: Recon ---
+
+  - id: recon
+    title: Map the codex, the binding decisions, and the real code surface
+    type: knight
+    priority: 1
+    needs:
+      - branch
+    knight: tdd-feature-lite/recon.md
+    notes: |
+      Dispatch: Sonnet, or Opus at low effort. Never below Sonnet — a cheap recon that
+      reports alignment it never verified poisons every step after it.
+
+      Your mission description contains the feature request, and a PRD codex ID if one
+      was drafted upstream. Your board carries the branch name and feature slug.
+      If a PRD ID is present, read it first: `lore codex show <prd-id>`
+
+      This is ONE pass, not two. There is no business map and no technical map — there
+      is one recon map, and everything downstream is built on it.
+
+      Search wide:
+        lore codex search <keyword>      2-4 passes with different vocabularies
+        lore codex map <most-relevant-id> --depth 1
+        lore codex chaos <most-relevant-id> --threshold <30-100>
+      Read every document that could matter. Borderline goes in.
+
+      Read the whole decision record:
+        lore codex list
+      Read EVERY document in the `decisions` group and EVERY document in `standards`.
+      For each one that governs a file this feature will touch, write the rule out in
+      ONE LINE beside its id. An id with no rule beside it is a row that teaches nothing,
+      and this table is the spine of the doctrine's decision-adherence chain.
+
+      Anchor on real paths. For every file the feature plausibly touches:
+        lore impacts <path>
+      Fold what it returns into the binding table, then open the file. A path you read
+      about in a document but did not confirm in the tree is Inferred, not Verified.
+
+      Check the vocabulary: `lore glossary list` — flag any term in the request that
+      collides with a `do_not_use` entry.
+
+      Call the lanes. This project's dev lanes are dependency-ordered module groups:
+        foundation — leaf modules with zero or near-zero `lore.*` imports
+                     (validators.py, paths.py, ids.py, frontmatter.py, initplan.py,
+                     graph.py, config.py, root.py, schemas/ and its packaged YAML)
+        core       — storage and business logic (db.py, models.py, priority.py,
+                     migrations/, doctrine.py, knight.py, watcher.py, artifact.py,
+                     codex.py, glossary.py, impacts.py, rites, health.py, oracle.py,
+                     init.py, skills.py, manifest.py, reconcile.py, agents.py)
+        surface    — api.py, cli.py, prompts.py
+      Say which lanes are in scope and which are not. A lane you mark out of scope is a
+      mission that never gets created.
+
+      Retrieve the template: `lore artifact show tfl-recon-map`
+      Write to .lore/codex/transient/<feature-slug>-recon-map.md with frontmatter
+      carrying id, title, and summary. Fill every section, including Verified vs
+      Inferred — a claim is Verified only if you can name the command you ran or the
+      file and line you read.
+
+      Name apparent conflicts between the request and a settled decision. Do NOT
+      resolve them. Resolution belongs to the human gate.
+
+      Post to the feature-spec mission board:
+        lore board add <feature-spec-mission-id> "Recon map: lore codex show <recon-map-id> | PRD: <prd-id or none> | slug: <feature-slug> | lanes in scope: <foundation|core|surface list>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 2: The one planning document ---
+
+  - id: feature-spec
+    title: Write the feature spec — the only planning document this doctrine produces
+    type: knight
+    priority: 2
+    needs:
+      - recon
+    knight: feature-implementation/architect.md
+    notes: |
+      Dispatch: Opus 5 at xhigh effort. This is the single most important step in the
+      doctrine and the only reasoning step in it. It must never inherit the session
+      default — running this step on a cheaper tier silently converts this doctrine
+      into a worse version of `tdd-feature`, because everything the heavy pipeline
+      split into six documents and three review passes now rests here.
+
+      Your board carries the recon map ID, the PRD ID (or none), the feature slug, and
+      the lanes in scope.
+
+      Read the recon map in full: `lore codex show <recon-map-id>`
+      Read every document its section 1 lists.
+      Read the PRD if there is one: `lore codex show <prd-id>` — carry its intent
+      forward into Part 1 rather than rewriting it. Without a PRD, author Part 1
+      yourself.
+
+      Treat the recon map's Verified vs Inferred section as a contract. Anything under
+      Inferred or Unknown that your design depends on, you verify yourself before
+      designing on top of it.
+
+      Retrieve the template: `lore artifact show tfl-feature-spec`
+
+      Write ONE document to .lore/codex/transient/<feature-slug>-spec.md with
+      frontmatter carrying id, title, and summary. There is no PRD, no separate tech
+      spec, no story files, no story index, and no dev-cycle groups — five parts in one
+      file, and Part 5 IS the dispatch order.
+
+      Fill every part:
+      - Part 1 Intent and Requirements — success criteria that are observable, exact
+        commands with exact output for every workflow, numbered requirements, and an
+        Out of Scope section stated firmly enough that a dev knight does not helpfully
+        build past it.
+      - Part 2 Architecture — every decision traced to a requirement; exact Python
+        signatures; exact CLI invocation, human output, `--json` envelope, error text
+        and exit code; and a project-structure table naming every file with the rule
+        that binds it WRITTEN OUT IN FULL. "Follow standards" is not a row. A dev
+        knight must be able to build a whole lane from this document without opening
+        the recon map, the codex, or an ADR.
+      - Part 3 Decision and Standards Impact — carry the recon map's binding table
+        forward and add the obligation each rule places on the dev knight. Write every
+        genuine conflict into the conflicts table with the Resolution cell EMPTY; the
+        human gate fills it. Draft an ADR for each new load-bearing decision this
+        feature makes. List the scribe's expected codex and `src/lore/defaults/`
+        updates.
+      - Part 4 Test Strategy — every Part 1 workflow gets an E2E scenario with exact
+        commands and exact expected output; every module gets unit targets naming what
+        to assert, including the error paths. Never empty, never vague.
+      - Part 5 Implementation Plan — the ordered units per lane, each with its files,
+        the tests that come first, and a "Done when". Mark a lane out of scope as
+        Skipped. Name suggested split points where a lane carries many units.
+
+      For every existing file you plan to modify, run `lore impacts <path>` and read
+      what it returns before finalising a decision about that file.
+
+      No TBD without an explicit justification. No open question left in the document —
+      an open question either gets decided here or becomes a conflicts-table row for
+      the gate.
+
+      Post to the adr-audit mission board:
+        lore board add <adr-audit-mission-id> "Spec: lore codex show <spec-id> | Recon map: <recon-map-id> | PRD: <prd-id or none> | slug: <feature-slug>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 3: Decision audit ---
+
+  - id: adr-audit
+    title: Reconcile the spec — and the code it touches — against the settled decisions
+    type: knight
+    priority: 3
+    needs:
+      - feature-spec
+    knight: tdd-feature/adr-standards-enforcer.md
+    notes: |
+      Dispatch: Opus 5 at medium effort (Sonnet is the floor). This is rule-matching
+      against a settled ruleset, not design — but the ruleset is dense and a miss ships
+      as a violation.
+
+      Your board carries the spec ID, the recon map ID, the PRD ID, and the feature slug.
+      Read the spec in full: `lore codex show <spec-id>`
+      Read the PRD, if any, for deferral boundaries: `lore codex show <prd-id>`
+
+      Run `lore codex list` and read EVERY document in the `decisions` group and every
+      document whose title or summary mentions standards, conventions, contracts, or
+      workflow. Do not sample. The recon map's binding table is a starting point, not
+      a substitute — verify it is complete and add what it missed.
+
+      You have TWO subjects, and the second is why this step still exists in a
+      collapsed doctrine:
+
+      1. THE SPEC. Go decision by decision. Where a line contradicts a settled ADR,
+         rewrite that line in place so it complies and log old -> new with the ADR id.
+         Where a cross-cutting standard demands something the spec omits, fill it
+         directly. Where the spec makes a NEW decision no ADR governs, confirm Part 3
+         drafts an ADR for it. Where the spec builds something the PRD marked deferred,
+         remove or flag it.
+
+      2. THE CODE THE SPEC TOUCHES. Read the existing implementation of every file in
+         the Part 2 project-structure table and check it against the same rules. A
+         breach already in the tree — a validation rule living only in `cli.py` with no
+         core-function counterpart, a codex document contradicting the code it
+         describes — is exactly what the architect cannot see and the dev knight will
+         inherit. Record each one and say whether this feature must fix it or merely
+         must not extend it.
+
+      Enforce, at minimum: API parity (decisions-011, decisions-010) — no logic lives
+      only in the CLI layer and every new public name is in `lore.api.__all__`; exact
+      error message and exit code per failure; exact `--json` envelope; enriched
+      `--help` for new command groups (decisions-008); space-separated multi-value
+      flags (decisions-012); `click.Choice` for constrained flags with exit 2 on an
+      out-of-set value (decisions-017); the TOML/YAML split (decisions-013);
+      by-ID-not-by-path references (decisions-006); link direction (decisions-014);
+      overlay scope stopping at transient (decisions-019); no content tests for seeded
+      defaults (adr-no-default-content-tests).
+
+      Append an "ADR & Standards Audit" section to the spec file recording: Reconciled
+      (old -> new + rule id), Coverage filled, Pre-existing breaches found in the code,
+      Unrecorded decisions, Deferral violations, Escalations. The last line is the
+      verdict: `RECONCILED` or `BLOCKED`.
+
+      Escalate rather than edit only where the fix needs a judgment the decisions do not
+      settle. Never leave a spec that still contradicts a settled decision.
+
+      Post to the spec-gate mission board:
+        lore board add <spec-gate-mission-id> "Spec reconciled (<RECONCILED|BLOCKED>): lore codex show <spec-id> | open conflict rows: <n> | draft ADRs: <n>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 4: The one human gate ---
+
+  - id: spec-gate
+    title: Resolve every conflict, rule on every draft ADR, and release development
+    type: human
+    priority: 4
+    needs:
+      - adr-audit
+    notes: |
+      This is the doctrine's only steering point, and it is deliberately also the
+      pre-development pause. Nothing is dispatched past it until it closes.
+
+      Your board carries the spec ID and the audit verdict.
+      Read the spec: `lore codex show <spec-id>` — including the ADR & Standards Audit
+      section at the bottom.
+
+      Before marking done:
+      - Every row in the Part 3 conflicts table has a Resolution: comply, amend the
+        decision, or supersede it. A blank Resolution cell blocks this gate.
+      - Every draft ADR in Part 3 is approved, amended, or rejected in writing.
+      - Every escalation the audit listed is settled.
+      - If the verdict is `BLOCKED`, it is resolved — not waived.
+      - Confirm the feature branch is `feat/<feature-slug>` off `work`.
+
+      Write your decisions into the spec's Pre-Dev Notes section. That section is what
+      the dev knights read; a decision made only in chat does not reach them.
+
+      Mark done.
+
+  # --- Phase 5-7: Development, one mission per lane, strictly sequential ---
+
+  - id: dev-foundation
+    title: Build the foundation lane — leaf modules with no lore.* dependencies
+    type: knight
+    priority: 4
+    needs:
+      - spec-gate
+    knight: tdd-feature-lite/dev-lane.md
+    notes: |
+      Dispatch: Opus 5 at xhigh effort. You own tests, implementation, and cleanup for a
+      whole lane with no downstream reviewer behind you. There is no Red knight ahead of
+      you and no Refactor knight after you.
+
+      Your board carries the spec ID and the feature slug.
+      Read the spec: `lore codex show <spec-id>` — Parts 2 through 5, the ADR & Standards
+      Audit, and the Pre-Dev Notes the human wrote at the gate. That document is your
+      complete contract; you should not need the recon map or the codex to build.
+
+      YOUR LANE: `src/lore/validators.py`, `paths.py`, `ids.py`, `frontmatter.py`,
+      `initplan.py`, `graph.py`, `config.py`, `root.py`, `src/lore/schemas/` and its
+      packaged YAML resources — plus their tests. These are the leaf modules: they
+      import nothing from `lore.*`, or almost nothing, and everything else imports them.
+      They land first because a signature fixed later is every later lane rebuilt.
+
+      If Part 5 marks the foundation lane Skipped, mark this mission done immediately
+      with no commit and post "no units in this lane" to the next lane's board.
+
+      Build the units in the Part 5 foundation section, in order:
+
+        RED — write every test first, take the assertions from Part 4 and the "Done
+        when" column, then RUN them and watch each fail for the right reason. A test
+        that passes before the code exists is not testing your feature: fix or remove
+        it and say which. `ImportError` is a legitimate red.
+
+        GREEN — the minimum code that turns them green. No error handling no test
+        demands, no code path no test covers.
+
+        CHECK — walk the Part 3 binding table against your actual diff, row by row.
+
+        COMMIT — stage only your lane's files under `src/` and `tests/`. Never
+        `git add -A`, never `git add .`, never stage `.lore/`.
+
+        REFACTOR — naming, duplication, dead code, in production and test code both.
+        Behaviour unchanged; if a refactor breaks a test, revert the refactor.
+
+        CHECK, then COMMIT again.
+
+      Two commits: a working checkpoint and a clean one.
+
+      Gates clean before EACH commit, and never by suppression:
+        uv run pytest
+        uv run ruff check src/ tests/
+        uv run mypy src/
+
+      NEVER weaken, skip, xfail, delete, or mock around a test to reach green, and never
+      edit a test to accommodate code that does not work. There is no separate Red knight
+      enforcing this now — it is yours, and a suite bought that way is worse than a red
+      one because it reports safety that is not there.
+
+      If finishing would require breaking a recorded decision, that decision is not yours
+      to break: `lore block <mission-id> "<rule id, unit, alternatives>"` and stop.
+      Never touch a file belonging to the core or surface lane — surface it instead.
+
+      Post to the dev-core mission board:
+        lore board add <dev-core-mission-id> "Foundation lane shipped: <commit shas> | signatures now available: <names> | divergences from spec: <none|list>"
+
+      Mark done: `lore done <mission-id>`
+
+  - id: dev-core
+    title: Build the core lane — storage, entity modules, and the business logic
+    type: knight
+    priority: 4
+    needs:
+      - dev-foundation
+    knight: tdd-feature-lite/dev-lane.md
+    notes: |
+      Dispatch: Opus 5 at xhigh effort. Same reasoning as the foundation lane, and this
+      lane is usually the largest.
+
+      Your board carries the spec ID, the feature slug, and what the foundation lane
+      shipped.
+      Read the spec: `lore codex show <spec-id>` — Parts 2 through 5, the ADR & Standards
+      Audit, and the Pre-Dev Notes.
+
+      YOUR LANE: `src/lore/db.py`, `models.py`, `priority.py`, `migrations/`,
+      `doctrine.py`, `knight.py`, `watcher.py`, `artifact.py`, `codex.py`, `glossary.py`,
+      `impacts.py`, `health.py`, `oracle.py`, `init.py`, `skills.py`, `manifest.py`,
+      `reconcile.py`, `agents.py` — plus their tests. This is where the behaviour lives.
+
+      Every command's real work belongs here, not in the CLI: decisions-011 makes the CLI
+      a thin formatting wrapper, so a validation rule or a business rule reachable only
+      through `cli.py` is a defect, not a shortcut. Whatever the surface lane will expose,
+      you build here first as a callable function.
+
+      Read the foundation lane's committed code for the real signatures. Where it differs
+      from the spec, the committed code wins — build against reality and record the
+      divergence on your board.
+
+      If Part 5 marks the core lane Skipped, mark this mission done immediately with no
+      commit and pass the board message along.
+
+      Run the same cycle as the foundation lane: red (tests written and observed failing
+      first) -> green -> check the binding table against your real diff -> commit ->
+      refactor -> check -> commit. Two commits. Stage only your lane's files.
+
+      Gates clean before EACH commit, never by suppression:
+        uv run pytest
+        uv run ruff check src/ tests/
+        uv run mypy src/
+
+      NEVER weaken, skip, xfail, delete, or mock around a test to reach green, and never
+      edit a test to accommodate production code. No reviewer downstream catches this.
+
+      If finishing would require breaking a recorded decision, block and hand it up.
+      Never touch `api.py`, `cli.py`, or `prompts.py` — that is the surface lane.
+
+      Post to the dev-surface mission board:
+        lore board add <dev-surface-mission-id> "Core lane shipped: <commit shas> | callable functions and their exact signatures: <list> | exceptions raised: <list> | divergences from spec: <none|list>"
+
+      Mark done: `lore done <mission-id>`
+
+  - id: dev-surface
+    title: Build the surface lane — the Python API facade and the CLI
+    type: knight
+    priority: 4
+    needs:
+      - dev-core
+    knight: tdd-feature-lite/dev-lane.md
+    notes: |
+      Dispatch: Opus 5 at xhigh effort. Same reasoning as the lanes before it.
+
+      Your board carries the spec ID, the feature slug, and the exact signatures the core
+      lane shipped.
+      Read the spec: `lore codex show <spec-id>` — Parts 2 through 5, the ADR & Standards
+      Audit, and the Pre-Dev Notes.
+
+      YOUR LANE: `src/lore/api.py`, `cli.py`, `prompts.py` — plus their tests. Both of
+      Lore's consumers meet the system here: humans through the CLI, Realm through
+      `from lore.api import ...`.
+
+      Lane-specific obligations, all of them recorded decisions:
+      - `api.py` is a pure re-export facade (decisions-010). Zero `def`, zero `class`.
+        Every new public name goes into `__all__`; a name outside `__all__` is internal.
+      - `cli.py` holds no business logic (decisions-011, standards-separation-of-concerns).
+        It parses, calls a core function, and formats. If you find yourself writing a rule
+        here, it belongs in the core lane — surface it rather than writing it.
+      - Every command's exact success output, exact `--json` envelope, exact error text
+        and exact exit code match Part 2 character for character.
+      - Constrained-value flags use `click.Choice`; an out-of-set value is a Click
+        `BadParameter` and exits 2 (decisions-017). Never hand-roll a validator that
+        rewords the message or changes the code.
+      - Multi-value flags are space-separated (decisions-012).
+      - New command groups carry enriched `--help` that teaches the concept, not just the
+        syntax (decisions-008).
+
+      Read the core lane's committed code for the real function signatures and the real
+      exceptions. Where they differ from the spec, code against reality and record the
+      divergence — never rewrite the core lane from here.
+
+      If Part 5 marks the surface lane Skipped, mark this mission done immediately with
+      no commit.
+
+      Run the same cycle: red (tests written and observed failing first) -> green -> check
+      the binding table against your real diff -> commit -> refactor -> check -> commit.
+      Two commits. Stage only your lane's files.
+
+      Gates clean before EACH commit, never by suppression:
+        uv run pytest
+        uv run ruff check src/ tests/
+        uv run mypy src/
+
+      NEVER weaken, skip, xfail, delete, or mock around a test to reach green.
+
+      If finishing would require breaking a recorded decision, block and hand it up.
+
+      Post to the scribe mission board:
+        lore board add <scribe-mission-id> "Surface lane shipped: <commit shas> | new public names in lore.api.__all__: <list> | new or changed commands: <list> | divergences from spec: <none|list>"
+
+      Mark done: `lore done <mission-id>`
+
+  # --- Phase 8: Reconcile the documentation with what actually shipped ---
+
+  - id: scribe
+    title: Reconcile the codex, the approved ADRs, and the seeded defaults with the commits
+    type: knight
+    priority: 4
+    needs:
+      - dev-surface
+    knight: tdd-feature-lite/scribe.md
+    notes: |
+      Dispatch: Sonnet, or Opus at low effort. Prose against settled decisions and a
+      settled diff — no design judgment is required or permitted here.
+
+      Your board carries the spec ID, the feature slug, and what each lane shipped.
+
+      START FROM THE COMMITS, NOT THE SPEC. Read every commit this quest produced:
+        git log --oneline work..HEAD
+        git diff work..HEAD -- src/ tests/
+      Then read the spec (`lore codex show <spec-id>`) as a guide to intent and for the
+      Part 3 worklist. Where the two disagree, the commits win — and the divergence is
+      worth a line in your report. The heavy doctrine documented the plan; you document
+      what shipped.
+
+      Read `.lore/codex/codex.md` for layers and conventions.
+      Read the voice rules before writing a sentence: `lore artifact show codex-voice`.
+      Canonical documents describe the system as it is now — no "previously", no
+      "replaces", no release archaeology.
+
+      Find everything the feature touched:
+        lore codex list
+        lore impacts <path>    for every file the commits changed
+        lore codex search workflow
+      Every new command and every new user-facing flow needs a workflow document. A
+      missing one is a coverage gap you name even when you cannot close it.
+
+      Apply codex changes directly with `lore codex new` / `lore codex edit` /
+      `lore codex delete`; use `--set` / `--add` / `--remove` for single-field edits.
+      Populate `binds:` on any document that governs specific code files. Reference
+      documents by codex ID, never by file path.
+
+      Write the ADRs the human APPROVED at the gate, exactly as approved, in the
+      `decisions` group. Do not invent one, amend one, or reverse one on your own
+      authority. A decision that changed is edited in place with a dated status-history
+      line — never superseded by a new document.
+
+      Run the `glossary-design` gate before any `.lore/codex/glossary.yaml` edit:
+        lore artifact show glossary-design
+      Most candidate terms belong in an entity or workflow doc instead.
+
+      THEN RECONCILE THE SEEDS. Walk `src/lore/defaults/` subtree by subtree — `docs/`,
+      `artifacts/`, `doctrines/`, `knights/`, `skills/`, `watchers/`, `schema.sql`,
+      `gitignore` — and for each ask: did this feature change what that seed represents?
+      A fresh `lore init` must reflect reality. `src/lore/defaults/docs/LORE-AGENT.md` is
+      the seeded counterpart of the repo's agent instruction file: a shared-section edit
+      lands in both or in neither. Default to untouched; move a seed only when reality
+      moved under it. Apply mechanical changes; list anything needing product judgment
+      for the human instead of guessing. Never add tests asserting seed content
+      (adr-no-default-content-tests).
+
+      Before marking done:
+        lore health
+      Clear or justify every finding.
+
+      Commit your work — codex, ADRs, and seeds — separately from the dev lanes:
+        git add .lore/codex/ src/lore/defaults/
+        git commit -m "docs(<feature-slug>): reconcile codex, decisions, and seeded defaults"
+
+      Delete the transient documents this quest produced once their facts live in
+      canonical docs: the recon map and the spec.
+
+      Post the report to the quest board — Created / Updated / Retired codex documents by
+      ID, ADRs written, seeds created/updated/deleted, subtrees considered and left alone,
+      spec-vs-commit divergences, and anything needing human judgment:
+        lore board add <quest-id> "Scribe done. Codex: <ids> | ADRs: <ids> | Seeds: <paths> | Needs human judgment: <none|list>. Branch feat/<feature-slug> ready for human squash-merge into work."
+
+      Mark done: `lore done <mission-id>`

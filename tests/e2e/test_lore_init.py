@@ -3,6 +3,7 @@
 Spec: conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init)
 """
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -637,12 +638,24 @@ def test_agents_md_not_created_at_project_root(runner, project_dir):
     assert not (project_dir / "AGENTS.md").exists()
 
 
-class TestDocsMdSeeding:
-    """lore init seeds .lore/<name>.md for every file in src/lore/defaults/docs/."""
+# ``LORE-AGENT.md`` is no longer one of them: interactive-init-us-007 made it a
+# rendered file and interactive-init-us-015 put it in the install manifest, so
+# it follows the reconciliation rules rather than the verbatim-copy rules. Its
+# own contract is asserted in TestRenderedAgentInstructions and in
+# TestManifestTrackedFilesResistSilentOverwrite below.
+COPIED_DOCS = [p for p in DEFAULTS_DOCS_DIR.glob("*.md") if p.name != "LORE-AGENT.md"]
 
-    @pytest.fixture(params=list(DEFAULTS_DOCS_DIR.glob("*.md")), ids=lambda p: p.name)
+
+class TestDocsMdSeeding:
+    """lore init copies .lore/<name>.md verbatim for each file in defaults/docs/."""
+
+    @pytest.fixture(params=COPIED_DOCS, ids=lambda p: p.name)
     def docs_md_file(self, request):
         return request.param
+
+    def test_the_copied_docs_set_is_not_empty(self):
+        """A narrowed parameter set that emptied itself would prove nothing."""
+        assert COPIED_DOCS
 
     def test_docs_md_created_on_fresh_init(self, runner, project_dir, docs_md_file):
         """Fresh init creates .lore/<name>.md for each file in defaults/docs/."""
@@ -674,6 +687,59 @@ class TestDocsMdSeeding:
         assert docs_md_file.name in result.output
 
 
+class TestManifestTrackedFilesResistSilentOverwrite:
+    """A file the manifest tracks is refreshed, restored — or reported.
+
+    Spec: interactive-init-us-015 (lore codex show interactive-init-us-015);
+    PRD FR-27 "refused means untouched".
+    Anchor: conceptual-workflows-lore-init — idempotency and the conflict gate.
+
+    What the manifest buys is knowing *which* files are Lore's, and the
+    ownership ruling settles what that knowledge is for: these two are Lore's,
+    so an edit to either is replaced and said out loud rather than left in
+    place. FR-27 is untouched by that — it is about a path holding something
+    Lore did not install, which neither of these is.
+    """
+
+    LORE_TRACKED = (".lore/LORE-AGENT.md", ".lore/skills/store-memory/SKILL.md")
+
+    @pytest.mark.parametrize("relative", LORE_TRACKED)
+    def test_a_deleted_file_is_restored_and_reported(self, runner, initialized_dir, relative):
+        target = initialized_dir / relative
+        assert target.is_file()
+        original = target.read_bytes()
+        target.unlink()
+        result = runner.invoke(main, ["init"])
+        assert_exit_ok(result)
+        assert target.read_bytes() == original
+        assert Path(relative).name in result.output
+
+    @pytest.mark.parametrize("relative", LORE_TRACKED)
+    def test_an_edited_file_is_replaced_and_the_write_reported(
+        self, runner, initialized_dir, relative
+    ):
+        target = initialized_dir / relative
+        shipped = target.read_bytes()
+        target.write_bytes(b"# content I wrote myself\n")
+        result = runner.invoke(main, ["init"])
+        assert_exit_ok(result)
+        assert target.read_bytes() == shipped
+        assert "! Kept" not in result.output
+        assert Path(relative).name in result.output
+
+    @pytest.mark.parametrize("relative", LORE_TRACKED)
+    def test_an_untouched_file_is_neither_rewritten_nor_reported(
+        self, runner, initialized_dir, relative
+    ):
+        """Idempotency: a second run with the same answers reports zero changes."""
+        target = initialized_dir / relative
+        before = target.stat().st_mtime_ns
+        result = runner.invoke(main, ["init"])
+        assert_exit_ok(result)
+        assert target.stat().st_mtime_ns == before
+        assert f"Updated {relative.removeprefix('.lore/')}" not in result.output
+
+
 # ---------------------------------------------------------------------------
 # skills/ directory seeding
 # ---------------------------------------------------------------------------
@@ -701,17 +767,24 @@ class TestSkillsSeeding:
             dest = project_dir / ".lore" / "skills" / src_dir.name / "SKILL.md"
             assert dest.read_text().strip(), f"SKILL.md is empty: {src_dir.name}"
 
-    def test_reinit_overwrites_skill_files(self, runner, initialized_dir):
-        """Re-init replaces stale content in SKILL.md files."""
+    def test_reinit_restores_a_deleted_skill_file(self, runner, initialized_dir):
+        """Re-init puts back a SKILL.md that went missing, byte for byte.
+
+        Refreshing an *edited* one is a conflict, not an overwrite — see
+        TestManifestTrackedFilesResistSilentOverwrite. What re-init still owns
+        unconditionally is restoring what is gone.
+        """
         skills_dir = initialized_dir / ".lore" / "skills"
-        for src_dir in (DEFAULTS_DIR / "skills").iterdir():
-            (skills_dir / src_dir.name / "SKILL.md").write_text("# stale skill content\n")
+        originals = {
+            src_dir.name: (skills_dir / src_dir.name / "SKILL.md").read_bytes()
+            for src_dir in (DEFAULTS_DIR / "skills").iterdir()
+        }
+        for name in originals:
+            (skills_dir / name / "SKILL.md").unlink()
         runner.invoke(main, ["init"])
-        for src_dir in (DEFAULTS_DIR / "skills").iterdir():
-            dest = skills_dir / src_dir.name / "SKILL.md"
-            assert "# stale skill content" not in dest.read_text(), (
-                f"SKILL.md not refreshed on reinit: {src_dir.name}"
-            )
+        for name, content in originals.items():
+            dest = skills_dir / name / "SKILL.md"
+            assert dest.read_bytes() == content, f"SKILL.md not restored on reinit: {name}"
 
     def test_fresh_init_output_mentions_created_skill_file(self, runner, tmp_path, monkeypatch):
         """Fresh init stdout mentions at least one skills/ file as created."""
@@ -720,11 +793,20 @@ class TestSkillsSeeding:
         assert_exit_ok(result)
         assert "skills/" in result.output
 
-    def test_reinit_output_mentions_updated_skill_file(self, runner, initialized_dir):
-        """Re-init stdout mentions at least one skills/ file as updated."""
+    def test_reinit_reports_a_skill_it_had_to_write(self, runner, initialized_dir):
+        """Re-init names the skills it wrote — and stays quiet when it wrote none.
+
+        A run that changes nothing reports nothing: that is the idempotency
+        guarantee, so the report has to be provoked by an actual absence.
+        """
+        quiet = runner.invoke(main, ["init"])
+        assert_exit_ok(quiet)
+        assert "skills/" not in quiet.output
+
+        (initialized_dir / ".lore" / "skills" / "store-memory" / "SKILL.md").unlink()
         result = runner.invoke(main, ["init"])
         assert_exit_ok(result)
-        assert "skills/" in result.output
+        assert "skills/store-memory/SKILL.md" in result.output
 
     def test_user_skill_file_outside_default_not_deleted(self, runner, initialized_dir):
         """A user-created skill file not from defaults is preserved across re-init."""
@@ -736,70 +818,12 @@ class TestSkillsSeeding:
 
 
 # ---------------------------------------------------------------------------
-# US-005 / US-006 (codex-sources) — lore init seeds the ingest-source and
-# refresh-source skill dirs; no file is written under .claude/skills/.
-# Spec anchors: codex-sources-us-005 AC Scenarios 1, 2, 5;
-#               codex-sources-us-006 AC Scenario 1;
-#               conceptual-workflows-lore-init §Step "seed skills";
-#               decisions-006-no-seed-content-tests (structural-only).
-# Red state: the default skill files for ingest-source and refresh-source
-# do not exist under src/lore/defaults/skills/ yet — the _copy_defaults_tree
-# call therefore produces no destination files and these tests fail at the
-# existence / frontmatter assertions. The .claude/skills/ negative assertion
-# already holds under the current implementation (no regression risk).
+# The ingest-source and refresh-source seeding scenarios that stood here were
+# removed with their subjects: interactive-init-us-005 absorbs both skills into
+# `store-memory`, so neither directory ships or seeds any more. The generic
+# TestSkillsSeeding class above already proves every shipped skill directory
+# reaches `.lore/skills/`, whatever the current catalogue names.
 # ---------------------------------------------------------------------------
-
-
-class TestInitSeedsIngestSourceSkill:
-    """codex-sources-us-005 — init copies the default ingest-source skill."""
-
-    def _load_frontmatter(self, path: Path) -> dict:
-        import yaml
-
-        text = path.read_text(encoding="utf-8")
-        assert text.startswith("---"), f"{path} missing frontmatter"
-        parts = text.split("---", 2)
-        assert len(parts) >= 3, f"{path} malformed frontmatter"
-        data = yaml.safe_load(parts[1])
-        assert isinstance(data, dict)
-        return data
-
-    def test_init_seeds_ingest_source_skill_file(self, runner, project_dir):
-        """AC Scenario 1 — .lore/skills/ingest-source/SKILL.md exists after init."""
-        path = project_dir / ".lore" / "skills" / "ingest-source" / "SKILL.md"
-        assert path.is_file(), f"missing seeded skill: {path}"
-
-    def test_seeded_ingest_source_skill_frontmatter_name(self, runner, project_dir):
-        """AC Scenario 2 — seeded skill frontmatter has name == 'ingest-source'."""
-        path = project_dir / ".lore" / "skills" / "ingest-source" / "SKILL.md"
-        fm = self._load_frontmatter(path)
-        assert fm.get("name") == "ingest-source"
-
-
-class TestInitSeedsRefreshSourceSkill:
-    """codex-sources-us-006 — init copies the default refresh-source skill."""
-
-    def _load_frontmatter(self, path: Path) -> dict:
-        import yaml
-
-        text = path.read_text(encoding="utf-8")
-        assert text.startswith("---"), f"{path} missing frontmatter"
-        parts = text.split("---", 2)
-        assert len(parts) >= 3, f"{path} malformed frontmatter"
-        data = yaml.safe_load(parts[1])
-        assert isinstance(data, dict)
-        return data
-
-    def test_init_seeds_refresh_source_skill_file(self, runner, project_dir):
-        """AC Scenario 1 — .lore/skills/refresh-source/SKILL.md exists after init."""
-        path = project_dir / ".lore" / "skills" / "refresh-source" / "SKILL.md"
-        assert path.is_file(), f"missing seeded skill: {path}"
-
-    def test_seeded_refresh_source_skill_frontmatter_name(self, runner, project_dir):
-        """AC Scenario 2 — seeded skill frontmatter has name == 'refresh-source'."""
-        path = project_dir / ".lore" / "skills" / "refresh-source" / "SKILL.md"
-        fm = self._load_frontmatter(path)
-        assert fm.get("name") == "refresh-source"
 
 
 class TestInitDoesNotTouchDotClaudeSkills:
@@ -813,21 +837,14 @@ class TestInitDoesNotTouchDotClaudeSkills:
             "lore init wrote under .claude/skills/ — forbidden by FR-19"
         )
 
-    def test_no_ingest_source_under_dot_claude_after_init(self, runner, project_dir):
-        """AC Scenario 5 — no ingest-source artefact anywhere under .claude/."""
+    def test_no_shipped_skill_leaks_under_dot_claude_after_init(self, runner, project_dir):
+        """AC Scenario 5 — no shipped skill artefact anywhere under .claude/."""
         dot_claude = project_dir / ".claude"
-        if dot_claude.exists():
-            assert not any(
-                p.name == "ingest-source" for p in dot_claude.rglob("*")
-            ), "ingest-source leaked into .claude/ tree"
-
-    def test_no_refresh_source_under_dot_claude_after_init(self, runner, project_dir):
-        """AC Scenario 5 — no refresh-source artefact anywhere under .claude/."""
-        dot_claude = project_dir / ".claude"
-        if dot_claude.exists():
-            assert not any(
-                p.name == "refresh-source" for p in dot_claude.rglob("*")
-            ), "refresh-source leaked into .claude/ tree"
+        if not dot_claude.exists():
+            return
+        shipped = {p.name for p in (DEFAULTS_DIR / "skills").iterdir() if p.is_dir()}
+        leaked = {p.name for p in dot_claude.rglob("*")} & shipped
+        assert not leaked, f"{sorted(leaked)} leaked into the .claude/ tree"
 
 
 # ---------------------------------------------------------------------------
@@ -930,3 +947,732 @@ class TestInitSeedsCodexMd:
         assert_exit_ok(show_result)
         # Substring only — no body prose assertion (ADR-006).
         assert show_result.output.strip() != ""
+
+
+# ---------------------------------------------------------------------------
+# The agent instruction text is rendered, not copied.
+# Spec: interactive-init-us-007 (lore codex show interactive-init-us-007)
+# Anchor: conceptual-workflows-lore-init — LORE-AGENT.md rendering.
+#
+# Structure only (ADR-006): row counts, ids, install paths and the absence of
+# generated-region markers. No sentence of the rendered text is pinned.
+# ---------------------------------------------------------------------------
+
+
+SKILLS_TABLE_HEADER = "| Skill | What it does | Where |"
+
+
+def _rendered_table_rows(text: str) -> list[str]:
+    lines = text.splitlines()
+    assert SKILLS_TABLE_HEADER in lines, "the instruction text carries no skills table"
+    start = lines.index(SKILLS_TABLE_HEADER) + 2
+    rows: list[str] = []
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            break
+        rows.append(line)
+    return rows
+
+
+class TestRenderedAgentInstructions:
+    """conceptual-workflows-lore-init — the skills table names the installed set."""
+
+    def test_skills_table_rows_match_the_installed_selection(self):
+        """Scenario 1 — one row per installed skill, pointing at the agent's dir."""
+        from lore import skills
+        from lore.init import render_agent_instructions
+        from lore.initplan import AccessMode
+
+        selected = skills.skills_in_families(("memory", "workflow"))
+        text = render_agent_instructions(
+            skill_ids=selected,
+            install_roots=(Path(".claude/skills"),),
+            access_mode=AccessMode.NATIVE,
+        )
+        rows = _rendered_table_rows(text)
+        assert len(rows) == len(selected) == 5
+        for skill_id in selected:
+            assert any(
+                f"`{skill_id}`" in row and f".claude/skills/{skill_id}/" in row
+                for row in rows
+            ), f"{skill_id} has no row naming its install path"
+        assert "<!-- lore:skills-table" not in text
+        assert "<!-- lore:access" not in text
+
+    def test_no_agent_selected_points_the_table_at_dot_lore_skills(self):
+        """Scenario 2 — the install path follows the target."""
+        from lore import skills
+        from lore.init import render_agent_instructions
+        from lore.initplan import AccessMode
+
+        selected = skills.skills_in_families(("memory", "workflow"))
+        text = render_agent_instructions(
+            skill_ids=selected,
+            install_roots=(Path(".lore/skills"),),
+            access_mode=AccessMode.NATIVE,
+        )
+        rows = _rendered_table_rows(text)
+        assert rows
+        for row in rows:
+            assert ".lore/skills/" in row
+            assert ".claude/skills/" not in row
+
+    def test_instruction_text_differs_between_access_modes(self):
+        """Scenario 3 — the access mode reaches the instruction text."""
+        from lore.init import render_agent_instructions
+        from lore.initplan import AccessMode
+
+        rendered = {
+            mode: render_agent_instructions(
+                skill_ids=("store-memory",),
+                install_roots=(Path(".lore/skills"),),
+                access_mode=mode,
+            )
+            for mode in AccessMode
+        }
+        assert rendered[AccessMode.CLI] != rendered[AccessMode.NATIVE]
+        for text in rendered.values():
+            assert "<!-- lore:access" not in text
+
+    def test_memory_only_selection_yields_a_two_row_table(self):
+        """Scenario 4 — a narrowed family selection narrows the table."""
+        from lore import skills
+        from lore.init import render_agent_instructions
+        from lore.initplan import AccessMode
+
+        memory = skills.skills_in_families(("memory",))
+        other = set(skills.skills_in_families(("machinery", "workflow")))
+        text = render_agent_instructions(
+            skill_ids=memory,
+            install_roots=(Path(".claude/skills"),),
+            access_mode=AccessMode.CLI,
+        )
+        rows = _rendered_table_rows(text)
+        assert len(rows) == 2
+        for row in rows:
+            for excluded in other:
+                assert f"`{excluded}`" not in row
+
+    def test_init_writes_the_rendered_text_to_dot_lore(self, runner, project_dir):
+        """FR-9 parity — .lore/LORE-AGENT.md is written on every run, agent or not."""
+        from lore.paths import lore_agent_path
+
+        target = lore_agent_path(project_dir)
+        assert target.is_file()
+        text = target.read_text(encoding="utf-8")
+        assert "<!-- lore:skills-table" not in text
+        assert "<!-- lore:access" not in text
+        assert _rendered_table_rows(text)
+
+
+# ---------------------------------------------------------------------------
+# The marked block Lore owns inside files the user owns.
+# Spec: interactive-init-us-012 (lore codex show interactive-init-us-012)
+# Anchor: conceptual-workflows-lore-init — instruction-file marker block,
+#         root gitignore block, installed-skill tracking.
+#
+# The story writes its scenarios as `lore init --agent claude ...`. Those flags
+# land with the CLI surface (interactive-init-us-016); until then the identical
+# call is made through the Python surface the flags will fill, which is the
+# surface ADR-011 makes authoritative anyway.
+# ---------------------------------------------------------------------------
+
+LORE_BEGIN = "<!-- lore:begin -->"
+LORE_END = "<!-- lore:end -->"
+
+
+def plan_init(**kwargs):
+    """Thin indirection so this file collects before ``lore.init`` grows the name."""
+    from lore.init import plan_init as _plan_init
+
+    return _plan_init(**kwargs)
+
+
+def apply_init(plan):
+    from lore.init import apply_init as _apply_init
+
+    return _apply_init(plan)
+
+
+def _init_at(root, **answers):
+    """Plan and apply one initialisation at *root*, returning (plan, result)."""
+    plan = plan_init(project_root=root, **answers)
+    return plan, apply_init(plan)
+
+
+class TestExistingInstructionFile:
+    """interactive-init-us-012 — Scenarios 1, 2, 3 and 7."""
+
+    USER_PROSE = "# Acme\n\nHouse rules I wrote months ago.\n"
+
+    def test_append_preserves_every_original_byte(self, tmp_path):
+        """Scenario 1."""
+        claude = tmp_path / "CLAUDE.md"
+        claude.write_text(self.USER_PROSE, encoding="utf-8")
+        _init_at(tmp_path, agents=["claude"], on_existing_agent_file="append")
+        after = claude.read_text(encoding="utf-8")
+        assert after.startswith(self.USER_PROSE)
+        assert LORE_BEGIN in after and LORE_END in after
+        assert (tmp_path / ".lore" / "LORE-AGENT.md").is_file()
+
+    def test_skip_leaves_the_file_byte_identical(self, tmp_path):
+        """Scenario 2."""
+        claude = tmp_path / "CLAUDE.md"
+        claude.write_bytes(self.USER_PROSE.encode("utf-8"))
+        plan, _ = _init_at(tmp_path, agents=["claude"], on_existing_agent_file="skip")
+        assert claude.read_bytes() == self.USER_PROSE.encode("utf-8")
+        assert "CLAUDE.md" not in {entry.path for entry in plan.files}
+        assert (tmp_path / ".lore" / "LORE-AGENT.md").is_file()
+
+    def test_a_second_run_replaces_only_the_block(self, tmp_path):
+        """Scenario 3."""
+        claude = tmp_path / "CLAUDE.md"
+        claude.write_text(self.USER_PROSE, encoding="utf-8")
+        _init_at(tmp_path, agents=["claude"])
+        below = "\nMore prose, added after Lore's block.\n"
+        claude.write_text(claude.read_text(encoding="utf-8") + below, encoding="utf-8")
+        _init_at(tmp_path, agents=["claude"], skill_families=["memory"])
+        after = claude.read_text(encoding="utf-8")
+        assert after.startswith(self.USER_PROSE)
+        assert after.endswith(below)
+        assert after.count(LORE_BEGIN) == 1
+        assert after.count(LORE_END) == 1
+
+    def test_editing_outside_the_markers_is_not_a_conflict(self, tmp_path):
+        """Scenario 7."""
+        claude = tmp_path / "CLAUDE.md"
+        claude.write_text(self.USER_PROSE, encoding="utf-8")
+        _init_at(tmp_path, agents=["claude"])
+        claude.write_text(
+            claude.read_text(encoding="utf-8") + "\nEdited after install.\n",
+            encoding="utf-8",
+        )
+        plan = plan_init(project_root=tmp_path, agents=["claude"])
+        row = next(entry for entry in plan.files if entry.path == "CLAUDE.md")
+        assert row.action.value != "conflict"
+        apply_init(plan)
+        assert "Edited after install." in claude.read_text(encoding="utf-8")
+
+
+class TestTheRootGitignoreIsNeverWritten:
+    """The block Lore used to write there is retired — see FR-11's reversal.
+
+    Every path it named was already ignored by the ``*`` opening
+    `.lore/.gitignore`, so the block decided nothing and cost the project a
+    write into a file it owns. `tests/e2e/test_init_root_gitignore_retired.py`
+    covers the other half: a project that already carries one has it removed.
+    """
+
+    def test_a_user_gitignore_keeps_every_byte(self, tmp_path):
+        gitignore = tmp_path / ".gitignore"
+        user_lines = "node_modules/\n*.log\n"
+        gitignore.write_text(user_lines, encoding="utf-8")
+        _init_at(tmp_path)
+        assert gitignore.read_text(encoding="utf-8") == user_lines
+
+    def test_no_file_is_created_and_no_row_names_it(self, tmp_path):
+        plan, _ = _init_at(tmp_path)
+        assert not (tmp_path / ".gitignore").exists()
+        assert ".gitignore" not in {entry.path for entry in plan.files}
+
+
+class TestSkillsGitignoreE2E:
+    """interactive-init-us-012 — Scenario 6: the token decides the file."""
+
+    def test_lore_only_lists_the_installed_directories(self, tmp_path):
+        from lore import skills as skills_mod
+
+        _init_at(
+            tmp_path,
+            agents=["claude"],
+            skill_families=["memory"],
+            skills_gitignore="lore-only",
+        )
+        listing = tmp_path / ".claude" / "skills" / ".gitignore"
+        assert listing.is_file()
+        entries = [
+            line for line in listing.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        ]
+        installed = sorted(skills_mod.skills_in_families(("memory",)))
+        assert entries == [f"{skill_id}/" for skill_id in installed]
+
+    def test_none_removes_a_previously_written_listing(self, tmp_path):
+        _init_at(tmp_path, agents=["claude"], skills_gitignore="lore-only")
+        listing = tmp_path / ".claude" / "skills" / ".gitignore"
+        assert listing.is_file()
+        _init_at(tmp_path, agents=["claude"], skills_gitignore="none")
+        assert not listing.exists()
+
+    def test_all_replaces_the_listing_with_a_whole_directory_rule(self, tmp_path):
+        _init_at(tmp_path, agents=["claude"], skills_gitignore="lore-only")
+        _init_at(tmp_path, agents=["claude"], skills_gitignore="all")
+        listing = tmp_path / ".claude" / "skills" / ".gitignore"
+        entries = [
+            line
+            for line in listing.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert entries == ["*", "!.gitignore"]
+        # The `all` answer used to reach the native root a second way, through a
+        # `.claude/skills/` line in the root block. Nothing writes that file now.
+        assert not (tmp_path / ".gitignore").exists()
+
+    def test_the_fallback_root_gets_the_same_listing(self, tmp_path):
+        from lore import skills as skills_mod
+
+        _init_at(
+            tmp_path,
+            agents=["gemini"],
+            skill_families=["memory"],
+            skills_gitignore="lore-only",
+        )
+        listing = tmp_path / ".lore" / "skills" / ".gitignore"
+        assert listing.is_file()
+        entries = [
+            line for line in listing.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        ]
+        installed = sorted(skills_mod.skills_in_families(("memory",)))
+        assert entries == [f"{skill_id}/" for skill_id in installed]
+
+
+# ---------------------------------------------------------------------------
+# The answers are recorded in config.toml and reused.
+# Spec: interactive-init-us-013 (lore codex show interactive-init-us-013)
+# Anchor: conceptual-workflows-lore-init — recorded answers.
+# ---------------------------------------------------------------------------
+
+
+class TestAnswersArePersistedAndReused:
+    """interactive-init-us-013 — Scenarios 4 and 5."""
+
+    def test_the_four_answers_are_written_back_and_reused(self, tmp_path):
+        """Scenario 4."""
+        import tomllib
+
+        from lore.config import load_config
+
+        _init_at(
+            tmp_path,
+            agents=["claude"],
+            access_mode="cli",
+            skill_families=["memory", "workflow"],
+            skills_gitignore="none",
+        )
+        raw = tomllib.loads((tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8"))
+        assert raw["init-agents"] == ["claude"]
+        assert raw["init-access-mode"] == "cli"
+        assert raw["init-skill-families"] == ["memory", "workflow"]
+        assert raw["init-skills-gitignore"] == "none"
+
+        before = load_config(tmp_path)
+        _init_at(tmp_path)
+        after = load_config(tmp_path)
+        assert (before.init_agents, before.init_access_mode) == (
+            after.init_agents,
+            after.init_access_mode,
+        )
+        assert before.init_skill_families == after.init_skill_families
+        assert before.init_skills_gitignore == after.init_skills_gitignore
+
+    def test_an_aggregate_token_is_never_persisted(self, tmp_path):
+        """Scenario 5."""
+        import tomllib
+
+        _init_at(tmp_path, skill_families=["all"])
+        raw = tomllib.loads((tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8"))
+        assert raw["init-skill-families"] == ["machinery", "memory", "workflow"]
+        assert "all" not in raw["init-skill-families"]
+
+    def test_a_user_setting_line_survives_the_write_back(self, tmp_path):
+        _init_at(tmp_path)
+        config = tmp_path / ".lore" / "config.toml"
+        config.write_text(
+            config.read_text(encoding="utf-8") + "\nmy-own-key = 42\n", encoding="utf-8"
+        )
+        _init_at(tmp_path, access_mode="cli")
+        text = config.read_text(encoding="utf-8")
+        assert "my-own-key = 42" in text
+        assert 'init-access-mode = "cli"' in text
+        # Settings lines only: the generated header names every known key too
+        # (interactive-init-us-020), and a comment is not a second answer.
+        settings = [line for line in text.splitlines() if not line.startswith("#")]
+        assert sum(line.startswith("init-access-mode") for line in settings) == 1
+
+
+# ---------------------------------------------------------------------------
+# apply_init performs a computed plan; interrupted runs recover.
+# Spec: interactive-init-us-015 (lore codex show interactive-init-us-015)
+# Anchor: conceptual-workflows-lore-init — idempotency, interrupted run
+#         recovery, apply report.
+# ---------------------------------------------------------------------------
+
+
+class TestIdempotency:
+    """interactive-init-us-015 — Scenario 4."""
+
+    def test_a_second_run_reports_zero_reconciled_changes(self, tmp_path):
+        """The reconciled half is idempotent. The seeded tree is refreshed on
+        every run by design, so it is counted rather than claimed to be nothing
+        (`SEED_COUNT`, round 7's N4)."""
+        _init_at(tmp_path, agents=["claude"])
+        plan = plan_init(project_root=tmp_path, agents=["claude"])
+        counts = plan.counts()
+        assert counts.get("create", 0) == 0
+        assert counts.get("section", 0) == 0
+        assert counts.get("overwrite", 0) == 0
+        assert counts.get("remove", 0) == 0
+        assert counts.get("conflict", 0) == 0
+
+    def test_the_manifest_matches_apart_from_its_timestamp(self, tmp_path):
+        import json
+
+        manifest_path = tmp_path / ".lore" / ".install-manifest.json"
+        _init_at(tmp_path, agents=["claude"])
+        first = json.loads(manifest_path.read_text(encoding="utf-8"))
+        _init_at(tmp_path, agents=["claude"])
+        second = json.loads(manifest_path.read_text(encoding="utf-8"))
+        first.pop("generated_at")
+        second.pop("generated_at")
+        assert first == second
+
+
+class TestInterruptedRunRecovery:
+    """interactive-init-us-015 — Scenario 3: the manifest is written last."""
+
+    def test_files_written_before_a_stale_manifest_are_reconciled(self, tmp_path):
+        """The manifest is written last, so the next run finds the disagreement.
+
+        What it does about one is write: the path is Lore's either way, and the
+        bytes this release wants there are the bytes that end up there — which
+        is what makes an interrupted run recoverable in a single re-run.
+        """
+        _init_at(tmp_path, agents=["claude"])
+        # Simulate a run that wrote a skill and died before the manifest.
+        skill = tmp_path / ".claude" / "skills" / "store-memory" / "SKILL.md"
+        recorded_bytes = skill.read_bytes()
+        skill.write_text("# written by the interrupted run\n", encoding="utf-8")
+
+        plan = plan_init(project_root=tmp_path, agents=["claude"])
+        row = next(
+            entry for entry in plan.files
+            if entry.path == ".claude/skills/store-memory/SKILL.md"
+        )
+        assert row.action.value == "overwrite"
+        apply_init(plan)
+        assert skill.read_bytes() == recorded_bytes
+
+        # Resolving the conflict returns the project to zero reconciled changes.
+        skill.write_bytes(recorded_bytes)
+        settled = plan_init(project_root=tmp_path, agents=["claude"])
+        assert [entry for entry in settled.files if entry.reported] == []
+
+
+class TestAFileLoreNeverInstalled:
+    """interactive-init-us-015 / Tech Spec §6.5 — the FR-28 safety property."""
+
+    def test_a_user_authored_file_at_a_desired_path_is_never_overwritten(self, tmp_path):
+        target = tmp_path / ".claude" / "skills" / "store-memory" / "SKILL.md"
+        target.parent.mkdir(parents=True)
+        mine = b"---\nname: store-memory\n---\n\nMy own skill.\n"
+        target.write_bytes(mine)
+        plan, _ = _init_at(tmp_path, agents=["claude"])
+        row = next(
+            entry for entry in plan.files
+            if entry.path == ".claude/skills/store-memory/SKILL.md"
+        )
+        assert row.action.value == "conflict"
+        assert row.detail == "not installed by Lore"
+        assert target.read_bytes() == mine
+
+    def test_a_path_in_neither_set_is_never_touched(self, tmp_path):
+        _init_at(tmp_path, agents=["claude"])
+        stranger = tmp_path / ".claude" / "skills" / "my-own" / "SKILL.md"
+        stranger.parent.mkdir(parents=True)
+        mine = b"mine alone\n"
+        stranger.write_bytes(mine)
+        _init_at(tmp_path, agents=["claude"])
+        assert stranger.read_bytes() == mine
+
+
+class TestChangingTheAccessMode:
+    """Tech Spec §2.1 — flipping --access is a clean overwrite, not a conflict."""
+
+    def test_every_installed_skill_is_an_overwrite_not_a_conflict(self, tmp_path):
+        _init_at(tmp_path, agents=["claude"], access_mode="native")
+        plan = plan_init(project_root=tmp_path, agents=["claude"], access_mode="cli")
+        skill_rows = [entry for entry in plan.files if entry.source.startswith("skill:")]
+        assert skill_rows
+        assert not [row for row in skill_rows if row.action.value == "conflict"]
+        assert [row for row in skill_rows if row.action.value == "overwrite"]
+
+    def test_an_edited_skill_is_rewritten_across_the_flip(self, tmp_path):
+        _init_at(tmp_path, agents=["claude"], access_mode="native")
+        edited = tmp_path / ".claude" / "skills" / "store-memory" / "SKILL.md"
+        edited.write_text("# mine\n", encoding="utf-8")
+        plan = plan_init(project_root=tmp_path, agents=["claude"], access_mode="cli")
+        row = next(
+            entry for entry in plan.files
+            if entry.path == ".claude/skills/store-memory/SKILL.md"
+        )
+        assert row.action.value == "overwrite"
+
+
+# ---------------------------------------------------------------------------
+# The headless guarantees — no terminal, and the permanent `--json` exception
+#
+# Spec: interactive-init-us-016 Scenario 8, interactive-init-us-019 Scenario 4.
+# `conceptual-workflows-lore-init` is this file's one anchor; both scenarios
+# are behaviour that document describes.
+# ---------------------------------------------------------------------------
+
+
+class TestJsonFlagOnInitIsAcceptedAndIgnored:
+    """`lore --json init` is accepted, has no effect, prints text and exits 0.
+
+    The permanent exception recorded in `ref-lore_cli-commands`, pinned here:
+    rejecting it at exit 2 the way `lore oracle` does would turn a working
+    `lore --json init` in someone's CI into a hard failure that initialises
+    nothing.
+    """
+
+    def test_json_flag_exits_zero_and_initialises(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["--json", "init", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".lore" / "lore.db").is_file()
+
+    def test_json_flag_emits_no_json_object(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["--json", "init", "--yes"])
+        assert result.exit_code == 0, result.output
+        with pytest.raises(ValueError):
+            json.loads(result.output)
+        assert "Initialized Lore project:" in result.output
+
+    def test_json_output_matches_the_flagless_run(self, tmp_path, monkeypatch):
+        plain_dir = tmp_path / "plain"
+        json_dir = tmp_path / "json"
+        plain_dir.mkdir()
+        json_dir.mkdir()
+
+        monkeypatch.chdir(plain_dir)
+        plain = CliRunner().invoke(main, ["init", "--yes"])
+        monkeypatch.chdir(json_dir)
+        flagged = CliRunner().invoke(main, ["--json", "init", "--yes"])
+
+        assert plain.exit_code == flagged.exit_code == 0
+        assert plain.output == flagged.output
+
+
+class TestNoTerminalMeansNoPrompt:
+    """FR-9 — absence of a terminal selects defaults silently, never a hang.
+
+    `CliRunner` gives the command a non-tty stdout, which is exactly the
+    condition Realm and CI run under.
+    """
+
+    def test_no_prompt_function_is_called(self, tmp_path, monkeypatch):
+        from lore import prompts
+
+        for name in [n for n in dir(prompts) if n.startswith("ask_")]:
+            monkeypatch.setattr(
+                prompts,
+                name,
+                lambda *a, _n=name, **k: pytest.fail(f"{_n} fired without a terminal"),
+            )
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init"])
+        assert result.exit_code == 0, result.output
+
+    def test_the_default_plan_applies_with_no_summary(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init"])
+        assert result.exit_code == 0, result.output
+        assert "Plan for" not in result.output
+        assert "Apply this plan?" not in result.output
+        assert "Initialized Lore project:" in result.output
+
+    def test_skills_land_under_lore_and_no_instruction_file_is_written(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init"])
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".lore" / "skills").is_dir()
+        assert (tmp_path / ".lore" / "LORE-AGENT.md").is_file()
+        for name in ("CLAUDE.md", "AGENTS.md", "GEMINI.md", "QWEN.md"):
+            assert not (tmp_path / name).exists()
+        assert not (tmp_path / ".claude").exists()
+
+    def test_a_headless_run_never_blocks_on_stdin(self, tmp_path, monkeypatch):
+        """`lore init < /dev/null` completes rather than waiting for an answer."""
+        monkeypatch.chdir(tmp_path)
+        result = CliRunner().invoke(main, ["init"], input="")
+        assert result.exit_code == 0, result.output
+
+
+# ---------------------------------------------------------------------------
+# The regenerated known-key header (interactive-init-us-020, FR-36)
+# Exercises: lore codex show conceptual-workflows-lore-init
+# ---------------------------------------------------------------------------
+
+
+class TestConfigHeaderRegeneration:
+    """`lore init` refreshes the leading comment block and nothing else."""
+
+    @pytest.fixture()
+    def fresh_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def test_absent_config_seeded_with_header_and_defaults(self, runner, fresh_dir):
+        """Scenario 2 — header plus every known key at its default."""
+        import tomllib
+
+        from lore.config import DEFAULT_CONFIG, _FROM_TOML, load_config, render_known_keys_header
+
+        result = runner.invoke(main, ["init", "--yes"])
+        assert result.exit_code == 0, result.output
+
+        text = (fresh_dir / ".lore" / "config.toml").read_text(encoding="utf-8")
+        assert text.startswith(render_known_keys_header())
+        assert set(tomllib.loads(text)) == set(_FROM_TOML)
+
+        # Every key loads back at its default value. The families are compared
+        # as a set: `lore init` rewrites that line with the answer it resolved,
+        # and `skills.resolve_families` sorts what it returns.
+        loaded = load_config(fresh_dir)
+        assert loaded.show_glossary_on_codex_commands is DEFAULT_CONFIG.show_glossary_on_codex_commands
+        assert loaded.health_report_retention == DEFAULT_CONFIG.health_report_retention
+        assert loaded.init_agents == DEFAULT_CONFIG.init_agents
+        assert loaded.init_access_mode == DEFAULT_CONFIG.init_access_mode
+        assert loaded.init_skills_gitignore == DEFAULT_CONFIG.init_skills_gitignore
+        assert sorted(loaded.init_skill_families) == sorted(
+            DEFAULT_CONFIG.init_skill_families
+        )
+
+    def test_existing_config_header_regenerated_and_settings_untouched(
+        self, runner, fresh_dir
+    ):
+        """Scenario 1 — a pre-feature config gains the keys and loses nothing."""
+        from lore.config import render_known_keys_header
+
+        target = fresh_dir / ".lore" / "config.toml"
+        target.parent.mkdir(parents=True)
+        body = (
+            "show-glossary-on-codex-commands = false\n"
+            "\n"
+            'health-report-retention = "all"  # keep every report\n'
+            "my-team-setting = 3\n"
+        )
+        target.write_text(
+            "# Project-level Lore configuration.\n"
+            "# Known keys (additional keys are accepted and ignored):\n"
+            "#   show-glossary-on-codex-commands : bool, default true\n" + body,
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(main, ["init", "--yes"])
+        assert result.exit_code == 0, result.output
+
+        text = target.read_text(encoding="utf-8")
+        header = render_known_keys_header()
+        assert text.startswith(header)
+        # Every line from the first non-comment line onward survives, in order,
+        # byte-identical — the four recorded answers join them at the end.
+        rest = text[len(header):]
+        assert rest.startswith(body), rest
+        for key in ("init-agents", "init-access-mode", "init-skill-families", "init-skills-gitignore"):
+            assert f"{key} = " in rest
+
+    def test_header_covers_every_known_key(self, runner, fresh_dir):
+        """Scenario 3 — the header names exactly what the loader knows."""
+        from lore.config import _FROM_TOML
+
+        result = runner.invoke(main, ["init", "--yes"])
+        assert result.exit_code == 0, result.output
+
+        text = (fresh_dir / ".lore" / "config.toml").read_text(encoding="utf-8")
+        named = {
+            line[4:].split(":", 1)[0].strip()
+            for line in text.splitlines()
+            if line.startswith("#   ") and line[4:5] != " "
+        }
+        assert named == set(_FROM_TOML)
+
+    def test_header_regeneration_is_byte_identical_on_a_second_run(
+        self, runner, fresh_dir
+    ):
+        """Scenario 4 — regeneration is idempotent."""
+        assert runner.invoke(main, ["init", "--yes"]).exit_code == 0
+        first = (fresh_dir / ".lore" / "config.toml").read_text(encoding="utf-8")
+        assert runner.invoke(main, ["init", "--yes"]).exit_code == 0
+        assert (fresh_dir / ".lore" / "config.toml").read_text(encoding="utf-8") == first
+
+    def test_headerless_config_gains_a_header_and_keeps_every_line(
+        self, runner, fresh_dir
+    ):
+        """Scenario 5 — a prepend that loses no line."""
+        from lore.config import render_known_keys_header
+
+        target = fresh_dir / ".lore" / "config.toml"
+        target.parent.mkdir(parents=True)
+        body = "show-glossary-on-codex-commands = true\nmy-team-setting = 3\n"
+        target.write_text(body, encoding="utf-8")
+
+        result = runner.invoke(main, ["init", "--yes"])
+        assert result.exit_code == 0, result.output
+
+        text = target.read_text(encoding="utf-8")
+        assert text.startswith(render_known_keys_header() + body)
+
+
+# ---------------------------------------------------------------------------
+# The database status line (interactive-init-us-022, FR-38)
+# Exercises: lore codex show conceptual-workflows-lore-init
+# ---------------------------------------------------------------------------
+
+
+class TestDatabaseStatusMessage:
+    """The created-database line names the schema version the database carries."""
+
+    @pytest.fixture()
+    def fresh_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def test_init_reports_the_current_schema_version(self, runner, fresh_dir):
+        """Scenario 1 — asserted against the constant, not against a literal."""
+        from lore import db
+
+        result = runner.invoke(main, ["init", "--yes"])
+        assert result.exit_code == 0, result.output
+        assert f"  Created lore.db (schema version {db.SCHEMA_VERSION})" in result.output
+
+    def test_existing_and_corrupt_database_messages_unchanged(
+        self, runner, fresh_dir
+    ):
+        """Scenario 2 — the other two branches are byte-identical to before."""
+        assert runner.invoke(main, ["init", "--yes"]).exit_code == 0
+
+        again = runner.invoke(main, ["init", "--yes"])
+        assert again.exit_code == 0, again.output
+        assert "  Skipped lore.db (already exists)" in again.output
+
+        # Corrupt, as `init_database` defines it: a readable SQLite file with
+        # no `lore_meta` table.
+        db_path = fresh_dir / ".lore" / "lore.db"
+        db_path.unlink()
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("CREATE TABLE stray (id INTEGER)")
+        conn.commit()
+        conn.close()
+
+        corrupt = runner.invoke(main, ["init", "--yes"])
+        assert corrupt.exit_code == 0, corrupt.output
+        assert (
+            "  Warning: Existing database appears corrupted. Reinitialized lore.db"
+            in corrupt.output
+        )

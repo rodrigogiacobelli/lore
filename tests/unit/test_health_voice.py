@@ -73,9 +73,13 @@ def checks(issues) -> set[str]:
 
 
 def test_voice_is_registered_in_all_scopes():
-    """`voice` ships in the default-all scope set, appended after `rites`."""
+    """`voice` ships in the default-all scope set, appended after `rites`.
+
+    `skills` was appended after it (interactive-init-us-021), so the durable
+    invariant is the ordering, not the tail index.
+    """
     assert "voice" in _ALL_SCOPES
-    assert _ALL_SCOPES[-1] == "voice"
+    assert _ALL_SCOPES.index("rites") < _ALL_SCOPES.index("voice")
 
 
 def test_scope_voice_routes_to_check_voice_only(tmp_path):

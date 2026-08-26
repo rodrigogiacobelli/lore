@@ -34,7 +34,7 @@ related:
 
 # Lore Python API — core surface
 
-**Covers:** `lore.api` (the facade), and through it: every CRUD, lifecycle, traversal, validator, schema, health, impacts, priority, and reporting function in `lore-agent-task-manager`. The internal modules behind the facade (`lore.db`, `lore.codex`, `lore.artifact`, `lore.doctrine`, `lore.knight`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, `lore.models`, `lore.health`, `lore.validators`, `lore.schemas`, `lore.init`, `lore.oracle`, `lore.config`, `lore.root`) are not part of the public surface.
+**Covers:** `lore.api` (the facade), and through it: every CRUD, lifecycle, traversal, validator, schema, health, impacts, priority, initialisation, and reporting function in `lore-agent-task-manager`. The internal modules behind the facade (`lore.db`, `lore.codex`, `lore.artifact`, `lore.doctrine`, `lore.knight`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, `lore.models`, `lore.health`, `lore.validators`, `lore.schemas`, `lore.init`, `lore.initplan`, `lore.agents`, `lore.skills`, `lore.manifest`, `lore.reconcile`, `lore.prompts`, `lore.oracle`, `lore.config`, `lore.root`) are not part of the public surface.
 
 **Source of truth:** `src/lore/api.py` — `lore.api.__all__` enumerates the entire public API. Function signatures, type annotations, and exhaustive return-dict structures live in the operational modules behind the facade and in the dataclasses in `lore.models`. The facade itself contains no business logic; see `tech-arch-api-facade`.
 
@@ -55,6 +55,14 @@ related:
 - **Duplicate-name detection is subtree-wide.** `rglob` over the entity root, regardless of `group`. Two doctrines named `foo` cannot coexist in different subdirectories.
 
 - **`lore.api` `db.*` callables return raw `sqlite3.Row` and dict.** Typed models in `lore.models` (re-exported through `lore.api`) are a presentation layer constructed via classmethods (`Quest.from_row`, `Mission.from_row`, `BoardMessage.from_dict`, etc). The DB callables behind the facade never return typed objects.
+
+- **`run_init()` takes no arguments and never will.** It is `apply_init(plan_init()).messages` as a list, and its zero-argument signature is a pinned contract — a positional-argument change is a major bump under `standards-public-api-stability`. A caller that wants to choose agents, an access mode or skill families calls `plan_init(...)` and then `apply_init(plan)`.
+
+- **`plan_init` writes nothing, `apply_init` writes everything.** `plan_init(project_root=None, *, agents=None, access_mode=None, skill_families=None, on_existing_agent_file="append", skills_gitignore=None, on_conflict="skip", reconfigure=False) -> InitPlan` computes the whole change set — every create, overwrite, section, removal and conflict — without touching disk. `apply_init(plan) -> InitResult` performs it. A caller that only wants to know what would happen never calls the second.
+
+- **`plan_init` is the only reader of the four `init-*` config keys.** Each keyword defaulting to `None` resolves argument → `.lore/config.toml` → built-in default, inside `plan_init`. `reconfigure=True` skips the config layer. No other caller — `lore init` included — reads those keys and decides for itself (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default` constraint 2).
+
+- **`plan_init` raises `ValueError` on a token `click.Choice` would reject.** An unknown agent id, an unknown access mode or family token, and `agents=["none", "claude"]` all raise, with the same message text the CLI prints in its usage error. A token a programmer typed is a programming error and raises; a token a project wrote into `.lore/config.toml` is a user error and falls soft to the default with one warning.
 
 - **Knight / Watcher locator helpers reject path-traversal.** `find_knight` and `find_watcher` (both re-exported through `lore.api`) return `Path | None`, but raise `ValueError` for names containing `/` or `\\`. Never glob `.lore/knights/**/*.md` directly.
 
@@ -102,9 +110,9 @@ Y = public function exists in `lore.api.__all__`. — = no concept in this dimen
 
 The facade re-exports the operational surface in named sections; this list mirrors the structure of `__all__` in `src/lore/api.py`. New exports are appended within the relevant section, never sprinkled across sections.
 
-- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineStep`, `Doctrine`, `Knight`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`.
+- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineStep`, `Doctrine`, `Knight`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`, `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`.
 - **Project root** — `find_project_root`.
-- **Validators** — `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_group`, `validate_quest_id_loose`, `validate_chaos_threshold`, `validate_binds_entry`, `is_glob_pattern`, `route_entity`.
+- **Validators** — `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_group`, `validate_quest_id_loose`, `validate_chaos_threshold`, `validate_access_mode`, `validate_skill_family`, `validate_agent_id`, `validate_agent_selection`, `validate_binds_entry`, `is_glob_pattern`, `route_entity`.
 - **DB: quest CRUD** — `create_quest`, `list_quests`, `get_quest`, `edit_quest`, `edit_quest_full`, `delete_quest`, `close_quest`.
 - **DB: mission CRUD** — `create_mission`, `list_missions`, `list_missions_grouped`, `get_mission`, `edit_mission`, `edit_mission_full`, `delete_mission`.
 - **DB: status transitions** — `claim_mission`, `claim_missions`, `close_mission`, `close_entities`, `block_mission`, `unblock_mission`.
@@ -123,7 +131,7 @@ The facade re-exports the operational surface in named sections; this list mirro
 - **Impacts** — `impacts`, `classify_token`.
 - **Health** — `health_check`.
 - **Schemas** — `load_schema`, `validate_entity`, `validate_entity_file`, `resolve_merged_schema`, `project_validator_for`.
-- **Init / reports / config** — `run_init`, `generate_reports`, `load_config`.
+- **Init / reports / config** — `plan_init`, `apply_init`, `run_init`, `generate_reports`, `load_config`.
 
 The authoritative list lives in `src/lore/api.py`. If this doc and the source drift, the source wins; report the drift via `lore health` or a codex update.
 

@@ -9,6 +9,8 @@ related:
 - conceptual-workflows-json-output
 - ref-lore_cli-commands
 - decisions-017-constrained-flags-use-click-choice
+- decisions-012-multi-value-cli-param-convention
+- conceptual-workflows-init-interactive
 ---
 
 # CLI Error Handling
@@ -21,6 +23,7 @@ Lore's CLI follows consistent conventions for surfacing errors to callers. Under
 |---|---|
 | 0 | Success (including idempotent no-ops) |
 | 1 | At least one error occurred |
+| 2 | Usage error — a flag, value or option combination Click refused before the command body ran |
 
 Idempotent successes always return 0, even when no database write occurred (e.g., claiming an already-`in_progress` mission).
 
@@ -60,7 +63,7 @@ Exit code is `1` if `errors` is non-empty.
 
 - `raise click.ClickException(message)`: formats `Error: <message>` to stderr, exits with code 1. Used for programmer-error-level failures (bad priority value).
 - `click.UsageError(message)`: formats `Error: <message>` to stderr with usage hint, exits with code 2. Used for invalid option combinations.
-- `click.Choice` on a constrained-value flag: an out-of-set value raises Click's `BadParameter` (a `UsageError` subclass), formatted `Error: Invalid value for '<flag>': '<value>' is not one of '...'` to stderr, exit code 2. This is the required mechanism for any flag whose value is a fixed token set (e.g. `lore health --scope`) — see decisions-017-constrained-flags-use-click-choice. Adding a new valid token is non-breaking; rewording the message, hand-rolling a custom validator, or changing the exit code is a breaking contract change.
+- `click.Choice` on a constrained-value flag: an out-of-set value raises Click's `BadParameter` (a `UsageError` subclass), formatted `Error: Invalid value for '<flag>': '<value>' is not one of '...'` to stderr, exit code 2. This is the required mechanism for any flag whose value is a fixed token set (e.g. `lore health --scope`, `lore init --access`) — see decisions-017-constrained-flags-use-click-choice. A flag that also takes several space-separated tokens (`lore init --agent`, `lore init --skills`) keeps `click.Choice` as its validator; only the parser differs (decisions-012-multi-value-cli-param-convention). Adding a new valid token is non-breaking; rewording the message, hand-rolling a custom validator, or changing the exit code is a breaking contract change.
 - `click.echo(message, err=True); ctx.exit(1)`: used for entity-not-found and status-transition errors (allows multi-entity commands to continue processing).
 
 ## Project-Not-Found Error
@@ -97,6 +100,10 @@ JSON: `{"error": "...", "deleted_at": "2026-03-24T12:00:00Z"}`.
 |---|---|---|
 | Project not initialised | Error to stderr | 1 |
 | Invalid option combination | `UsageError` to stderr | 2 |
+| Out-of-set value on a constrained flag | `BadParameter` to stderr in Click's standard wording | 2 |
+| `lore init --agent none` combined with another id | `UsageError` to stderr, raised before any I/O | 2 |
+| `lore init` summary declined | `No changes applied.` to stdout; nothing written | 0 |
+| Ctrl-C at a `lore init` prompt | `click.Abort()`; Click prints `Aborted!` to stderr; nothing written | 1 |
 | Entity not found | Error to stderr | 1 |
 | Wrong status for operation | Error to stderr | 1 |
 | DB integrity error | Exception propagates; unhandled error | 1 |

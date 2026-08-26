@@ -21,6 +21,10 @@ from lore.models import (
 from lore.health import HealthIssue, HealthReport
 from lore.schemas import SchemaIssue
 from lore.impacts import CodeBinding, CodexBinding, ImpactsError, ImpactsResult
+from lore.initplan import (
+    AccessMode, FileAction, AgentTarget, PlannedFile,
+    InitAnswers, InitPlan, InitResult,
+)
 
 # --- Project root ---
 from lore.root import find_project_root, ProjectNotFoundError
@@ -35,6 +39,8 @@ from lore.validators import (
     validate_quest_id_loose, validate_chaos_threshold,
     validate_binds_entry, is_glob_pattern, route_entity,
     validate_rite_id,
+    validate_access_mode, validate_skill_family,
+    validate_agent_id, validate_agent_selection,
 )
 
 # --- DB (CRUD + envelopes + bulk ops) ---
@@ -136,7 +142,7 @@ from lore.schemas import (
 )
 
 # --- Project setup / reports ---
-from lore.init import run_init
+from lore.init import run_init, plan_init, apply_init
 from lore.oracle import generate_reports
 
 # --- Config (read-only) ---
@@ -173,6 +179,12 @@ from lore import doctrine as _doctrine  # noqa: F401
 from lore import health as _health  # noqa: F401
 from lore import rite as _rite  # noqa: F401
 from lore.knight import _validate_frontmatter as _validate_frontmatter  # noqa: F401
+from lore import init as _init  # noqa: F401
+from lore import reconcile as _reconcile  # noqa: F401
+from lore import agents as _agents  # noqa: F401
+from lore import db as _db  # noqa: F401
+from lore import skills as _skills  # noqa: F401
+from lore import prompts as _prompts  # noqa: F401
 
 __all__ = [
     # types & enums
@@ -198,6 +210,14 @@ __all__ = [
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
+    # operational dataclasses — initialisation
+    "AccessMode",
+    "FileAction",
+    "AgentTarget",
+    "PlannedFile",
+    "InitAnswers",
+    "InitPlan",
+    "InitResult",
     "GlossaryError",
     "ProjectNotFoundError",
     "ConflictingDepthFlags",
@@ -216,6 +236,11 @@ __all__ = [
     "validate_binds_entry",
     "is_glob_pattern",
     "route_entity",
+    # validators — initialisation (interactive-init-us-017)
+    "validate_access_mode",
+    "validate_skill_family",
+    "validate_agent_id",
+    "validate_agent_selection",
     # db: quest CRUD
     "create_quest",
     "list_quests",
@@ -322,6 +347,8 @@ __all__ = [
     "OverlayError",
     # init / reports / config
     "run_init",
+    "plan_init",
+    "apply_init",
     "generate_reports",
     "load_config",
     # paths (G15 — amendment C1)

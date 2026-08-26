@@ -7,6 +7,8 @@ summary: What a complete Lore-driven workflow looks like when driven by an orche
   user guide.
 related:
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-interactive
+- conceptual-entities-skill
 - conceptual-workflows-quest-crud
 - conceptual-workflows-mission-crud
 - conceptual-workflows-claim
@@ -20,7 +22,7 @@ A complete Lore workflow follows this sequence when an orchestrator manages work
 
 ## Sequence
 
-1. **Project initialisation.** `lore init` creates the project structure — the `.lore/` directory, the database, default doctrines, default knights, and `AGENTS.md`. See conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) for the full behaviour.
+1. **Project initialisation.** `lore init` creates the project structure — the `.lore/` directory, the database, the seeded default doctrines, knights, artifacts and watchers, and the skills the project selected, installed where its coding agent reads them. At a terminal it asks which agents the project uses and how they should reach Lore's local files; in a script it takes flags and defaults and asks nothing. See conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) for the full behaviour and conceptual-workflows-init-interactive (lore codex show conceptual-workflows-init-interactive) for the prompts.
 
 2. **Workflow review (optional).** The orchestrator optionally reads a Doctrine (lore codex show conceptual-entities-doctrine) for workflow guidance. A Doctrine describes the typical steps, ordering, and suggested Knights for a body of work. The orchestrator uses it as a reference — there is no automated expansion.
 

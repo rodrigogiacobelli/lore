@@ -31,11 +31,22 @@ The following design principles are adopted and implemented:
 - **Single file, no server.** SQLite database. No background processes, no ports, no startup/shutdown. `uv tool install` and go.
 - **Short commands.** Most operations are `lore [verb]` or `lore [verb] [thing]`. No flags required for common operations.
 - **Smart defaults.** `lore list` shows open quests. `lore ready` shows the top unblocked mission. The common case requires zero configuration.
-- **JSON output.** All commands support `--json` for programmatic consumption by agents. Human-readable by default.
+- **JSON output.** Every command whose output is data supports `--json` for programmatic consumption by agents. Human-readable by default. A command whose output is a side-effecting human report — `lore init` and `lore oracle` — is the recorded permanent exception (`ref-lore_cli-commands`), and its machine surface is `lore.api`.
 - **Cross-platform.** Targets Linux and Windows. Python and SQLite are cross-platform; no OS-specific code is used.
 - **Metadata is automatic.** Timestamps and status transitions are managed by code, never by the AI. Agents only set business fields (title, description, priority, knight).
 - **Minimise tool calls.** Every CLI invocation costs context window. Commands return all relevant information in one call. Bulk operations (`lore claim`, `lore done`, `lore needs`) accept multiple arguments. Creation commands remain one-at-a-time for accuracy.
 - **Auto-cascade.** Closing a mission automatically unblocks dependents. Quests with `auto_close` enabled are automatically closed when all missions are done.
+
+### The human-first setup command
+
+One class of command is human-first: a **setup command**, run by a person to configure a project on disk. `lore init` is its only member. A setup command may stop and ask the person questions.
+
+Four rules bound the class:
+
+- **TTY gate.** A prompt fires only when `sys.stdout.isatty()` is true. A caller with no terminal — Realm, a CI pipeline, a pipe — is never asked and never blocked. Absence of a terminal selects defaults silently; it is not an error.
+- **Every prompt has a flag.** Each answer a prompt collects is also settable with a command-line flag, so the whole flow is reachable from a script.
+- **Prompting lives in the CLI layer.** The effect of every prompt is a keyword parameter on the business function (`decisions-011-api-parity-with-cli`). A core function never opens a prompt.
+- **Setup commands only.** A command that reads or mutates quests, missions, codex documents or any other stored entity does not prompt. Short commands, smart defaults and minimise-tool-calls govern every command outside this class.
 
 ## Rationale
 
@@ -44,6 +55,7 @@ The following design principles are adopted and implemented:
 - **Single file** eliminates the operational overhead of server management, port conflicts, and process lifetime. SQLite WAL mode provides sufficient concurrency for the single-machine, multi-agent use case.
 - **Minimise tool calls** directly addresses the constraint that every CLI invocation consumes context window. Bulk operations and information-dense responses reduce the number of round trips an agent must make.
 - **Auto-cascade** removes the need for agents to manually update dependent mission statuses, reducing the number of operations required to close out completed work.
+- **The human-first setup command** exists because project setup has a human in the chair and choices only that human can make — which coding agent the project uses, whether its agent reads files directly. Guessing them produces a project that has to be reconfigured by hand, which costs more tool calls than asking once. The TTY gate is what keeps the principle from leaking: an agent caller reaches the same command on the same defaults it always did.
 
 ## The Context-Aware Principle — Unimplemented / Deferred
 
@@ -67,4 +79,15 @@ See: `documentation/user-stories/user-story-30.md`, `documentation/specs/context
 
 **Implicit defaults that change over time.** Rejected. Smart defaults are fixed and documented. Lore does not learn from usage or adjust its defaults based on history. Predictability is more valuable than convenience in an agent-driven context.
 
+**Prompting outside setup.** Rejected. A prompt on a command an agent calls in a loop is a hang with no error message. The gate is the command's purpose, not its caller: `lore init` configures a project once, `lore ready` runs hundreds of times.
+
+**A JSON envelope for every command without exception.** Rejected. `lore init` and `lore oracle` produce a side-effecting human report rather than data, and `lore.api` already exposes the same information as typed values to a Python caller. A second machine contract over the same information is what `standards-dry` exists to prevent.
+
 **Template engine in doctrines.** Rejected. No variable substitution, no inheritance, no composition. Claude interprets doctrine content. Adding a template engine would require Lore to understand and evaluate templates, which violates the dumb infrastructure principle.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-03-31 | accepted | Initial decision. Recorded with the first public release. |
+| 2026-08-25 | accepted (scope widened) | Admits the human-first setup command class, bounded by the TTY gate, a flag for every prompt, and prompting confined to the CLI layer. The JSON-output principle is narrowed to match the permanent `lore init` / `lore oracle` exception `ref-lore_cli-commands` already records. |

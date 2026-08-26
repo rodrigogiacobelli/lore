@@ -1927,7 +1927,7 @@ def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
         lore_dir,
         scope=[
             "codex", "artifacts", "doctrines", "knights", "watchers",
-            "glossary", "schemas", "bindings", "rites", "voice",
+            "glossary", "schemas", "bindings", "rites", "voice", "skills",
         ],
     )
 
@@ -3008,11 +3008,11 @@ def test_schema_kinds_contains_glossary_row():
 
 
 def test_all_scopes_contains_bindings():
-    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 10 (US-006 added rites, then voice)."""
+    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 11 (US-006 added rites, then voice, then skills)."""
     from lore.health import _ALL_SCOPES
 
     assert "bindings" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 10
+    assert len(_ALL_SCOPES) == 11
 
 
 def test_health_check_scope_bindings_only_routes_to_check_bindings(tmp_path):
@@ -3906,15 +3906,17 @@ def test_health_check_unknown_scope_message_verbatim(tmp_path):
     """An unknown scope raises ValueError with the shipped `Unknown scope:` text incl. rites.
 
     The library-level `health_check` keeps its historic `Unknown scope:` wording
-    (the CLI Choice validation is the user-facing guard). `rites` now appears in
-    the listed valid scopes since it was added to `_ALL_SCOPES`.
+    (the CLI Choice validation is the user-facing guard). `rites`, `voice` and
+    `skills` appear in the listed valid scopes since each was added to
+    `_ALL_SCOPES`.
     """
     root = _make_rites_root(tmp_path)
     with pytest.raises(ValueError) as exc:
         health_check(root, scope=["xyz"])
     assert str(exc.value) == (
         "Unknown scope: 'xyz'. Valid scopes: codex, artifacts, "
-        "doctrines, knights, watchers, glossary, schemas, bindings, rites, voice."
+        "doctrines, knights, watchers, glossary, schemas, bindings, rites, "
+        "voice, skills."
     )
 
 
@@ -3973,3 +3975,351 @@ def test_health_check_orphan_shared_step_keeps_exit_zero(tmp_path):
     )
     assert report.has_errors is False
 
+
+
+# ===========================================================================
+# interactive-init-us-021 — `_check_skills`, the skills scope
+# Workflow: conceptual-workflows-health
+# ===========================================================================
+
+
+SKILL_TEXT = "---\nname: inquest\ndescription: audits finished work\n---\n\n# Inquest\n"
+
+
+def _skills_manifest(root: Path, rows: list[dict]) -> Path:
+    """Write an install manifest naming *rows* under *root*."""
+    payload = {
+        "manifest_version": 1,
+        "lore_version": "0.0.0",
+        "catalogue_version": 1,
+        "generated_at": "2026-08-25T00:00:00Z",
+        "answers": {},
+        "targets": {},
+        "files": rows,
+    }
+    target = root / ".lore" / ".install-manifest.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def _installed(
+    root: Path,
+    relative: str,
+    *,
+    text: str = SKILL_TEXT,
+    source: str | None = None,
+    kind: str = "owned",
+    on_disk: bool = True,
+) -> dict:
+    """Write *relative* (unless *on_disk* is False) and return its manifest row."""
+    from lore.manifest import bytes_digest
+
+    if on_disk:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    if source is None:
+        source = f"skill:{pathlib.PurePosixPath(relative).parent.name}"
+    return {
+        "path": relative,
+        "kind": kind,
+        "source": source,
+        "hash": bytes_digest(text.encode("utf-8")),
+    }
+
+
+def test_check_missing_skill_file(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _check_skills
+
+    _skills_manifest(
+        tmp_path,
+        [_installed(tmp_path, ".claude/skills/inquest/SKILL.md", on_disk=False)],
+    )
+
+    issues = _check_skills(tmp_path)
+
+    assert len(issues) == 1, issues
+    assert issues[0].check == "missing_skill_file"
+    assert issues[0].severity == "error"
+    assert issues[0].id == ".claude/skills/inquest/SKILL.md"
+    assert issues[0].detail == "recorded in the install manifest but missing on disk"
+
+
+def test_check_modified_skill_file(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _check_skills
+
+    row = _installed(tmp_path, ".claude/skills/inquest/SKILL.md")
+    (tmp_path / ".claude/skills/inquest/SKILL.md").write_text(
+        SKILL_TEXT + "\nedited\n", encoding="utf-8"
+    )
+    _skills_manifest(tmp_path, [row])
+
+    issues = _check_skills(tmp_path)
+
+    assert [i.check for i in issues] == ["modified_skill_file"]
+    assert issues[0].severity == "warning"
+    assert issues[0].id == ".claude/skills/inquest/SKILL.md"
+    assert issues[0].detail == (
+        "edited since install; lore init will replace it with the shipped version"
+    )
+
+
+def test_check_retired_skill_present(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _check_skills
+
+    _skills_manifest(
+        tmp_path,
+        [
+            _installed(
+                tmp_path,
+                ".claude/skills/new-doctrine/SKILL.md",
+                text="---\nname: new-doctrine\ndescription: d\n---\n",
+            )
+        ],
+    )
+
+    issues = _check_skills(tmp_path)
+
+    assert [i.check for i in issues] == ["retired_skill_present"]
+    assert issues[0].severity == "warning"
+    assert issues[0].id == "new-doctrine"
+    assert issues[0].detail == (
+        "retired into update-doctrine; run lore init to reconcile"
+    )
+
+
+def test_retired_skill_is_reported_once_however_many_files_it_installed(tmp_path):
+    """conceptual-workflows-health — the skills scope.
+
+    The row names the skill, not the file, so a skill with reference files or
+    one installed under two agent roots is still one finding.
+    """
+    from lore.health import _check_skills
+
+    rows = [
+        _installed(
+            tmp_path,
+            path,
+            text="---\nname: new-doctrine\ndescription: d\n---\n",
+            source="skill:new-doctrine",
+        )
+        for path in (
+            ".claude/skills/new-doctrine/SKILL.md",
+            ".claude/skills/new-doctrine/references/notes.md",
+            ".lore/skills/new-doctrine/SKILL.md",
+        )
+    ]
+    _skills_manifest(tmp_path, rows)
+
+    issues = _check_skills(tmp_path)
+
+    assert [i.check for i in issues] == ["retired_skill_present"]
+
+
+def test_check_missing_skill_frontmatter(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _check_skills
+
+    _skills_manifest(
+        tmp_path,
+        [
+            _installed(
+                tmp_path,
+                ".claude/skills/inquest/SKILL.md",
+                text="---\ndescription: nameless\n---\n\n# Inquest\n",
+            )
+        ],
+    )
+
+    issues = _check_skills(tmp_path)
+
+    assert [i.check for i in issues] == ["missing_skill_frontmatter"]
+    assert issues[0].severity == "error"
+    assert issues[0].id == ".claude/skills/inquest/SKILL.md"
+    assert issues[0].detail == "SKILL.md frontmatter is missing 'name'"
+
+
+def test_check_skills_scan_failed(tmp_path):
+    """conceptual-workflows-health — the skills scope.
+
+    The checker catches the unparseable manifest itself, so the reason survives
+    instead of being flattened by the generic `scan_failed` wrapper.
+    """
+    from lore.health import _check_skills
+
+    target = tmp_path / ".lore" / ".install-manifest.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("{not json", encoding="utf-8")
+
+    issues = _check_skills(tmp_path)
+
+    assert len(issues) == 1, issues
+    assert issues[0].check == "skills_scan_failed"
+    assert issues[0].severity == "error"
+    assert issues[0].id == ".lore/.install-manifest.json"
+    assert issues[0].detail
+
+
+def test_check_skills_scan_failed_on_an_unrecognised_manifest_version(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _check_skills
+
+    target = tmp_path / ".lore" / ".install-manifest.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text('{"manifest_version": 99, "files": []}\n', encoding="utf-8")
+
+    issues = _check_skills(tmp_path)
+
+    assert [i.check for i in issues] == ["skills_scan_failed"]
+
+
+def test_absent_manifest_yields_no_issues(tmp_path):
+    """conceptual-workflows-health — the skills scope.
+
+    A project that predates the manifest is a legitimate state, not a failed
+    scan: reporting one would fail CI on every project not yet re-initialised.
+    """
+    from lore.health import _check_skills
+
+    assert _check_skills(tmp_path) == []
+
+
+def test_unrecorded_broken_skill_is_ignored(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _check_skills
+
+    _skills_manifest(tmp_path, [_installed(tmp_path, ".claude/skills/inquest/SKILL.md")])
+    planted = tmp_path / ".claude" / "skills" / "hand-written" / "SKILL.md"
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text("no frontmatter at all\n", encoding="utf-8")
+
+    assert _check_skills(tmp_path) == []
+
+
+def test_every_skills_issue_has_null_schema_fields(tmp_path):
+    """conceptual-workflows-health — issue contracts."""
+    from lore.health import _check_skills
+
+    _skills_manifest(
+        tmp_path,
+        [
+            _installed(tmp_path, ".claude/skills/inquest/SKILL.md", on_disk=False),
+            _installed(
+                tmp_path,
+                ".claude/skills/new-doctrine/SKILL.md",
+                text="---\ndescription: nameless\n---\n",
+            ),
+        ],
+    )
+
+    issues = _check_skills(tmp_path)
+
+    assert issues
+    for issue in issues:
+        assert issue.entity_type == "skills"
+        assert issue.schema_id is None
+        assert issue.rule is None
+        assert issue.pointer is None
+
+
+def test_severity_mapping_for_the_skills_checks(tmp_path):
+    """conceptual-workflows-health — issue contracts.
+
+    Lore claiming to have installed a file that is gone is an inconsistency and
+    flips the exit code; a person editing a skill is legitimate and warns.
+
+    The two access-mode rows are errors on the same reasoning as the first
+    group: neither is an edit anybody made on purpose, and following either
+    means reaching Lore the way the project decided not to. A name that
+    disagrees with its directory warns — the skill is still there and still
+    readable, it is only the harness's invocation that breaks.
+    """
+    from lore.health import _SKILL_CHECK_SEVERITY
+
+    assert _SKILL_CHECK_SEVERITY == {
+        "missing_skill_file": "error",
+        "missing_skill_frontmatter": "error",
+        "skills_scan_failed": "error",
+        "wrong_access_mode": "error",
+        "unrendered_access_marker": "error",
+        "modified_skill_file": "warning",
+        "retired_skill_present": "warning",
+        "skill_name_mismatch": "warning",
+    }
+
+
+def test_section_kind_entries_skip_the_frontmatter_check(tmp_path):
+    """conceptual-workflows-health — the skills scope.
+
+    A `section` entry's hash covers a marked block inside a file the project
+    owns, so neither the whole-file digest nor `SKILL.md` frontmatter says
+    anything true about it.
+    """
+    from lore.health import _check_skills
+
+    row = _installed(
+        tmp_path,
+        ".claude/skills/inquest/SKILL.md",
+        text="---\ndescription: nameless\n---\n",
+        source="skill:inquest",
+        kind="section",
+    )
+    _skills_manifest(tmp_path, [row])
+
+    assert _check_skills(tmp_path) == []
+
+
+def test_check_skills_ignores_entries_that_are_not_skills(tmp_path):
+    """conceptual-workflows-health — the skills scope.
+
+    The scope audits the skill files the manifest records. An instruction-file
+    block or a gitignore block is another scope's business.
+    """
+    from lore.health import _check_skills
+
+    _skills_manifest(
+        tmp_path,
+        [
+            _installed(
+                tmp_path,
+                "CLAUDE.md",
+                source="agent-instructions:claude",
+                kind="section",
+                on_disk=False,
+            ),
+            _installed(
+                tmp_path,
+                ".gitignore",
+                source="root-gitignore",
+                kind="section",
+                on_disk=False,
+            ),
+        ],
+    )
+
+    assert _check_skills(tmp_path) == []
+
+
+def test_all_scopes_contains_skills():
+    """conceptual-workflows-health — the skills scope."""
+    from lore.health import _ALL_SCOPES
+
+    assert "skills" in _ALL_SCOPES
+    assert len(_ALL_SCOPES) == 11
+
+
+def test_health_check_routes_the_skills_scope_to_check_skills(tmp_path):
+    """conceptual-workflows-health — the skills scope."""
+    _skills_manifest(
+        tmp_path,
+        [_installed(tmp_path, ".claude/skills/inquest/SKILL.md", on_disk=False)],
+    )
+
+    report = health_check(tmp_path, scope=["skills"], write_report=False)
+
+    assert [i.check for i in report.issues] == ["missing_skill_file"]
+    assert report.has_errors is True

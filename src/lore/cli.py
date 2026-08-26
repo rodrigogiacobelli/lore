@@ -1,6 +1,7 @@
 """Click command definitions for the Lore CLI."""
 
 import json
+import sys
 from pathlib import Path
 
 import yaml
@@ -13,10 +14,16 @@ from lore.api import (
     create_knight,
     find_project_root,
 )
+from lore.api import _agents as agent_registry
+from lore.api import _db as db_module
 from lore.api import _graph as graph
+from lore.api import _init as init_module
 from lore.api import _knight as knight_module
 from lore.api import _lore_version as __version__
 from lore.api import _paths as paths
+from lore.api import _prompts as prompts
+from lore.api import _reconcile as reconcile
+from lore.api import _skills as skill_catalogue
 from lore.api import _validators as validators
 
 
@@ -231,11 +238,37 @@ def _format_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
+def _report_and_exit(ctx, message: str) -> None:
+    """Print *message* the way a missing project is printed, and exit non-zero.
+
+    One shape for "this is not a working Lore project": the cause and the
+    repair on stderr, `{"error": …}` under `--json`, exit 1. No `Error:` prefix
+    and no usage block — the user did not mistype anything.
+    """
+    if ctx.obj and ctx.obj.get("json"):
+        click.echo(json.dumps({"error": message}), err=True)
+    else:
+        click.echo(message, err=True)
+    ctx.exit(1)
+
+
 class _OrderedGroup(click.Group):
-    """Click group preserving command registration order in help output."""
+    """Click group preserving command registration order in help output.
+
+    Also the one place a missing database becomes a message. Every command that
+    opens one does it through `lore.db.get_connection`, and every one of them is
+    invoked inside this call — so translating the refusal here covers the whole
+    CLI, rather than the handful of commands somebody remembered to wrap.
+    """
 
     def list_commands(self, ctx):
         return list(self.commands.keys())
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except db_module.DatabaseNotFoundError as exc:
+            _report_and_exit(ctx, str(exc))
 
 
 @click.group(cls=_OrderedGroup, invoke_without_command=True)
@@ -273,11 +306,7 @@ def main(ctx, json_mode):
     try:
         ctx.obj["project_root"] = find_project_root()
     except ProjectNotFoundError as e:
-        if json_mode:
-            click.echo(json.dumps({"error": str(e)}), err=True)
-        else:
-            click.echo(str(e), err=True)
-        ctx.exit(1)
+        _report_and_exit(ctx, str(e))
         return
 
     if ctx.invoked_subcommand is None:
@@ -363,15 +392,480 @@ def oracle(ctx):
     click.echo("Reports generated in .lore/reports/")
 
 
+class SpaceSeparatedChoice(click.Option):
+    """Multi-value option using space-separated syntax (ADR-012).
+
+    ``--agent claude codex``, never ``--agent claude --agent codex``. Neither
+    mechanism already in this codebase serves it: ``nargs=-1`` raises
+    ``TypeError: nargs=-1 is not supported for options`` on Click 8.3, and the
+    trailing-variadic-positional trick ``lore health --scope`` uses cannot
+    attribute extra tokens when one command carries two multi-value flags.
+
+    This changes the **parser**, not the validator. ``type=click.Choice(...)``
+    still owns the closed set, so every ADR-017 constraint holds untouched: an
+    out-of-set token — the first one or a greedily consumed one — is a
+    ``BadParameter`` on stderr at exit 2, in Click's standard wording.
+
+    It rides on Click parser internals (``parser._long_opt``,
+    ``parsed.process``, ``state.rargs``, ``state.opts``), verified on 8.3.
+    That is what the ``click>=8.3`` floor in ``pyproject.toml`` guards: a
+    parser hook that silently stopped consuming on an older Click would break
+    the exit-2 contract at runtime rather than at install time.
+    """
+
+    def add_to_parser(self, parser, ctx):
+        super().add_to_parser(parser, ctx)
+        for opt in self.opts:
+            parsed = parser._long_opt.get(opt) or parser._short_opt.get(opt)
+            if parsed is None:
+                continue
+            original = parsed.process
+
+            def process(value, state, _orig=original, _name=self.name):
+                _orig(value, state)
+                extra = []
+                while state.rargs:
+                    nxt = state.rargs[0]
+                    # A bare `-` is a value, not a flag: it reaches click.Choice
+                    # and is rejected there rather than ending consumption.
+                    if nxt.startswith("-") and nxt != "-":
+                        break
+                    extra.append(state.rargs.pop(0))
+                if extra:
+                    current = state.opts.get(_name)
+                    if isinstance(current, list):
+                        current.extend(extra)
+                    else:
+                        state.opts[_name] = (
+                            [current, *extra] if current is not None else list(extra)
+                        )
+
+            parsed.process = process
+
+
+_ACCESS_HELP = (
+    "How agents reach Lore's local files: 'native' uses their own file tools, "
+    "'cli' routes every read and write through `lore ...`. Covers codex, rites "
+    "and the glossary only."
+)
+
+
 @main.command()
+@click.option(
+    "--agent",
+    "agent",
+    cls=SpaceSeparatedChoice,
+    multiple=True,
+    default=None,
+    type=click.Choice(agent_registry.agent_ids()),
+    metavar="ID [ID ...]",
+    help=(
+        "Coding agents to set this project up for, space-separated. "
+        "'none' installs skills under .lore/skills/ with no instruction file "
+        "and cannot be combined with another id."
+    ),
+)
+@click.option(
+    "--access",
+    "access_mode",
+    default=None,
+    type=click.Choice(validators.ACCESS_MODES),
+    help=_ACCESS_HELP,
+)
+@click.option(
+    "--skills",
+    "skill_families",
+    cls=SpaceSeparatedChoice,
+    multiple=True,
+    default=None,
+    type=click.Choice(
+        [*skill_catalogue.family_ids(), skill_catalogue.ALL_FAMILIES, skill_catalogue.NO_FAMILIES]
+    ),
+    metavar="FAMILY [FAMILY ...]",
+    help="Skill families to install, space-separated. 'all' and 'none' are accepted.",
+)
+@click.option(
+    "--on-existing-agent-file",
+    default="append",
+    type=click.Choice(init_module.ON_EXISTING_AGENT_FILE_TOKENS),
+    help=(
+        "What to do with an instruction file that exists and carries no Lore "
+        "markers. .lore/LORE-AGENT.md is written either way."
+    ),
+)
+@click.option(
+    "--skills-gitignore",
+    default=None,
+    type=click.Choice(init_module.SKILLS_GITIGNORE_TOKENS),
+    help=(
+        "How installed skills are tracked in git: 'lore-only' ignores Lore's "
+        "own, 'none' tracks everything, 'all' ignores the whole directory."
+    ),
+)
+@click.option(
+    "--on-conflict",
+    default="skip",
+    type=click.Choice(reconcile.ON_CONFLICT_TOKENS),
+    help=(
+        "What to do with a file Lore did not install sitting where Lore would "
+        "write: 'skip' leaves it alone, 'overwrite' hands the path to Lore. It "
+        "has no say over Lore's own files — those are always replaced."
+    ),
+)
+@click.option(
+    "-y",
+    "--yes",
+    is_flag=True,
+    default=False,
+    help="Accept the resolved answer for every prompt, including the summary confirm.",
+)
+@click.option(
+    "--reconfigure",
+    is_flag=True,
+    default=False,
+    help=(
+        "Ask the four recorded questions again instead of reusing the answers. "
+        "Needs a terminal to ask in: a run that cannot prompt must pass all "
+        "four as flags, or it stops with a usage error."
+    ),
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print the plan and write nothing. Wins over --yes.",
+)
 @click.pass_context
-def init(ctx):
-    """Initialize a Lore project in the current directory."""
-    from lore.api import run_init
-    messages = run_init()
+def init(
+    ctx,
+    agent,
+    access_mode,
+    skill_families,
+    on_existing_agent_file,
+    skills_gitignore,
+    on_conflict,
+    yes,
+    reconfigure,
+    dry_run,
+):
+    """Initialize a Lore project in the current directory.
+
+    When standard output is a terminal, `lore init` asks how the project
+    works, prints every file it would create, replace or remove, and writes
+    nothing until you confirm. Without a terminal — a pipe, a CI job, Realm
+    calling the Python API — no prompt fires and the flags below, the answers
+    recorded in .lore/config.toml and the built-in defaults decide everything.
+
+    Four answers are recorded and reused: the agents, the access mode, the
+    skill families and how installed skills are tracked in git. Pass
+    --reconfigure to be asked again. Asking needs a terminal, so a run without
+    one takes those four from the flags below, then from .lore/config.toml,
+    then from the built-in defaults — and --reconfigure, which only means
+    "ask me again", needs all four as flags or it stops.
+
+    Deselecting every agent uninstalls Lore's skills from every agent
+    directory, so it is never a default: --agent none does it, and so does an
+    empty agent list already recorded in .lore/config.toml. A project that has
+    answered neither — every project upgrading from a release before this one
+    — is set up for whichever agents its own files show it uses.
+
+    Lore owns the files it installs. A skill, knight, doctrine, artifact or
+    watcher Lore shipped is replaced with this release's version however you
+    have edited it, and one this release has retired is removed with its
+    successor named. Knights and the rest are seeded under a default/
+    subdirectory to say so; skills have no such directory, so keep a skill of
+    your own under an id Lore does not ship — .claude/skills/<your-own-id>/, or
+    .lore/skills/<your-own-id>/ — and no run will change or remove it. What
+    Lore replaces and removes is what its own install record says it put there,
+    so a file Lore did not install stays yours whatever it is named, on the
+    tenth run as on the first.
+    Run `lore init --dry-run` to see exactly which files a run would replace.
+
+    \b
+    Every prompt has a flag, so the whole flow is reachable from a script.
+    Multi-value flags take space-separated tokens:
+      lore init --agent claude agents-md --skills memory workflow --yes
+
+    \b
+    JSON output is not supported for this command. Use the Python API —
+    lore.api.plan_init() returns a typed InitPlan describing every create,
+    overwrite, removal and conflict without performing any of them.
+    """
+    answers = {
+        "agents": list(agent) or None,
+        "access_mode": access_mode,
+        "skill_families": list(skill_families) or None,
+        "on_existing_agent_file": on_existing_agent_file,
+        "skills_gitignore": skills_gitignore,
+        "on_conflict": on_conflict,
+    }
+
+    # The `none` exclusivity rule belongs to `validators`, not to argv parsing:
+    # `plan_init` raises the same message from the same call, so a Python
+    # caller and a terminal user get one verdict (ADR-011). This layer only
+    # translates it into the exit-2 usage error ADR-017 pins, before any I/O.
+    if answers["agents"] is not None:
+        problem = validators.validate_agent_selection(
+            answers["agents"], agent_registry.agent_ids()
+        )
+        if problem is not None:
+            raise click.UsageError(problem)
+
+    at_a_terminal = sys.stdout.isatty()
+    interactive = at_a_terminal and not yes
+
+    if reconfigure and not interactive:
+        _reject_reconfigure_with_no_prompt(answers)
+
+    # The first plan is what every prompt is preselected from, so it reads the
+    # recorded answers even under --reconfigure — that flag means "ask me
+    # again", not "forget what I said". A run that will not prompt has just been
+    # told every recorded answer as a flag, so dropping the config layer there
+    # changes nothing and says what it means.
+    plan = _plan_init(answers, reconfigure=reconfigure and not interactive)
+
+    if interactive:
+        plan = _ask_init_questions(ctx, plan, answers, reconfigure=reconfigure)
+
+    if at_a_terminal or dry_run:
+        click.echo(init_module.render_plan(plan))
+        click.echo("")
+
+    if dry_run:
+        click.echo("Dry run — no files written.")
+        return
+
+    if interactive and not _answered(prompts.ask_confirm_plan()):
+        click.echo("No changes applied.")
+        return
+
+    # A file the project owns can carry markers `apply_init` refuses to guess at
+    # — a duplicated pair, an unclosed one — and a path it wants can be a
+    # directory, a link or something the filesystem simply refuses. Every one of
+    # those names the file and the repair, so it is the message a person needs,
+    # not a traceback (conceptual-workflows-error-handling). The bare `OSError`
+    # is the backstop for the refusals no write site can phrase better: a full
+    # disk, a vanished directory. The run stops with the manifest unwritten,
+    # which is the interrupted-run case the next `lore init` reconciles.
+    try:
+        result = init_module.apply_init(plan)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except OSError as exc:
+        raise click.ClickException(_filesystem_refusal(exc)) from exc
+
     click.echo("Initialized Lore project:")
-    for msg in messages:
+    for msg in result.messages:
         click.echo(msg)
+
+
+def _reject_reconfigure_with_no_prompt(answers):
+    """Stop a `--reconfigure` run that has no way to ask the questions again.
+
+    Without a terminal there is no prompt, so there are no new answers — and a
+    flag whose help says it asks a question would instead silently re-resolve
+    all four from the built-in defaults, which is not what anybody typing it
+    meant. The agents answer is the one that used to make that destructive:
+    `plan_init` now derives a project's agents from what it is rather than
+    defaulting to none, but "resolve it again from scratch" is still not
+    "reconfigure", and the other three would move without being asked either.
+
+    A caller that passes all four as flags has supplied the new answers itself
+    and is not asking for a prompt, so that run proceeds. Anything short of
+    that stops here, before any I/O, with the flags it is missing named
+    (ADR-017's exit-2 usage error).
+
+    Which four are missing is `plan_init`'s question, not this layer's:
+    `missing_recorded_answers` answers it for both, and `plan_init` raises on
+    the same condition for a caller with no terminal to be missing. This only
+    translates the parameter names into the flags that set them, and into the
+    exit code a usage error takes.
+    """
+    missing = [
+        init_module.RECORDED_ANSWER_FLAGS[field][1]
+        for field in init_module.missing_recorded_answers(answers)
+    ]
+    if not missing:
+        return
+    raise click.UsageError(
+        "--reconfigure asks the four recorded questions again, and this run has "
+        f"no terminal to ask in. Pass {', '.join(missing)} to answer without a "
+        "prompt, or drop --reconfigure to reuse what .lore/config.toml records."
+    )
+
+
+def _plan_init(answers, *, reconfigure=False):
+    """`plan_init`, with a rejected answer reported the way `apply_init`'s is.
+
+    Every answer this passes is a token `plan_init` may refuse — including the
+    ones nobody typed, which came from `.lore/config.toml` and will come from
+    there again on every later run. Letting that surface as a traceback leaves a
+    project no way back that does not involve a text editor; the message
+    `plan_init` raises names the recorded key and the flag that replaces it.
+    """
+    try:
+        return init_module.plan_init(**answers, reconfigure=reconfigure)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    except OSError as exc:
+        raise click.ClickException(_filesystem_refusal(exc)) from exc
+
+
+def _filesystem_refusal(exc: OSError) -> str:
+    """An `OSError` as a line naming the path, rather than a stack of frames.
+
+    Read-only trees, vanished directories and full disks are ordinary in a real
+    repo and none of them is a Lore defect — but every one of them used to
+    reach the terminal as stdlib frames with an empty stdout, telling nobody
+    which of thirty paths stopped the run.
+    """
+    where = f"{exc.filename}: " if exc.filename else ""
+    return f"{where}{exc.strerror or exc} — fix it, then re-run `lore init`."
+
+
+def _answered(value):
+    """A prompt's answer, or an abort.
+
+    `questionary` returns None when the user presses Ctrl-C. Turning that into
+    `click.Abort` here — and nowhere in `lore.prompts` — is what keeps the
+    prompt module free of any command-framework import.
+    """
+    if value is None:
+        raise click.Abort()
+    return value
+
+
+def _replan(answers, plan):
+    """Recompute *plan* only when a collected answer would change it.
+
+    A person who accepts every preselected answer has told `plan_init` nothing
+    it did not already resolve, so the plan it produced still stands. That is
+    what keeps an interactive run at two plan computations rather than three.
+    """
+    settled = plan.answers
+    comparable = (
+        (answers["agents"], settled.agents, True),
+        (answers["skill_families"], settled.skill_families, True),
+        (answers["access_mode"], str(settled.access_mode), False),
+        (answers["skills_gitignore"], settled.skills_gitignore, False),
+        (answers["on_existing_agent_file"], settled.on_existing_agent_file, False),
+        (answers["on_conflict"], settled.on_conflict, False),
+    )
+    if all(_same(given, resolved, as_set) for given, resolved, as_set in comparable):
+        return plan
+    return _plan_init(answers)
+
+
+def _same(given, resolved, as_set=False):
+    """True when *given* says nothing the resolved answer does not already say.
+
+    A selection is compared as a set: the registry decides the order a plan
+    reports its agents in, and two spellings of one selection are one answer.
+    """
+    if given is None:
+        return True
+    return set(given) == set(resolved) if as_set else given == resolved
+
+
+def _ask_init_questions(ctx, plan, answers, *, reconfigure):
+    """Ask what this run has not been told, in the mission's fixed order.
+
+    The three questions that settle the file set come first, and the plan is
+    then recomputed: which conditional prompts a project state justifies
+    depends on the agents it selected, and `plan_init` is the only thing that
+    may decide that (ADR-011). Every answer collected here is a keyword
+    argument on `plan_init` and nothing else — the CLI asks, it never rules.
+
+    A question is open when nothing has answered it: no flag, and no value
+    recorded in `.lore/config.toml`. `--reconfigure` drops the second half,
+    which is what "ask me again" means.
+    """
+    recorded = (
+        frozenset() if reconfigure else init_module.answered_prompts(plan.project_root)
+    )
+
+    def unanswered(key, prompt=None, needed_by=None):
+        if answers[key] is not None:
+            return False
+        if prompt is not None and prompt in recorded:
+            return False
+        return needed_by is None or prompt in needed_by
+
+    def ask(key, answer):
+        answers[key] = _answered(answer)
+
+    if unanswered("agents", init_module.PROMPT_AGENTS):
+        answers["agents"] = _ask_agents(plan.answers.agents)
+    if unanswered("access_mode", init_module.PROMPT_ACCESS_MODE):
+        ask(
+            "access_mode",
+            prompts.ask_access_mode(current=str(plan.answers.access_mode)),
+        )
+    if unanswered("skill_families", init_module.PROMPT_SKILL_FAMILIES):
+        ask(
+            "skill_families",
+            prompts.ask_skill_families(
+                skill_catalogue.family_ids(), selected=plan.answers.skill_families
+            ),
+        )
+
+    plan = _replan(answers, plan)
+    needed = plan.prompts_needed
+
+    if init_module.PROMPT_EXISTING_AGENT_FILE in needed and not _from_argv(
+        ctx, "on_existing_agent_file"
+    ):
+        ask(
+            "on_existing_agent_file",
+            prompts.ask_existing_agent_file(
+                init_module.unmarked_instruction_files(plan.project_root, plan.targets)
+            ),
+        )
+    if unanswered("skills_gitignore", init_module.PROMPT_SKILLS_GITIGNORE, needed):
+        ask(
+            "skills_gitignore",
+            prompts.ask_skills_gitignore(current=plan.answers.skills_gitignore),
+        )
+    if init_module.PROMPT_ON_CONFLICT in needed and not _from_argv(ctx, "on_conflict"):
+        ask(
+            "on_conflict",
+            prompts.ask_on_conflict(len(reconcile.unsettled(plan.files))),
+        )
+
+    return _replan(answers, plan)
+
+
+def _ask_agents(selected):
+    """Ask which coding agents the project uses, until the answer is a legal one.
+
+    The checkbox offers `none` beside the real agents, so a person can tick
+    `none` and Claude Code in the same answer — a selection `plan_init` refuses.
+    The rule that refuses it lives in `validators` and nowhere else (ADR-011);
+    this reports it and asks again, preselecting what was just chosen so the fix
+    is one keystroke. A person who wants out presses Ctrl-C, which `_answered`
+    turns into an abort.
+    """
+    known = agent_registry.agent_ids()
+    while True:
+        chosen = _answered(
+            prompts.ask_agents(agent_registry.load_registry(), selected=selected)
+        )
+        problem = validators.validate_agent_selection(chosen, known)
+        if problem is None:
+            return chosen
+        click.echo(problem)
+        selected = chosen
+
+
+def _from_argv(ctx, name):
+    """True when *name* came from the command line rather than its Click default.
+
+    The two flags that carry a real default — `--on-existing-agent-file` and
+    `--on-conflict` — arrive with a value whether or not anyone typed one, so
+    "was I told?" cannot be read off the value. Passing a flag suppresses only
+    its own prompt.
+    """
+    return ctx.get_parameter_source(name) == click.core.ParameterSource.COMMANDLINE
 
 
 @main.group()
@@ -4090,7 +4584,7 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
-_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings", "rites", "voice")
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings", "rites", "voice", "skills")
 
 
 @main.command("health")

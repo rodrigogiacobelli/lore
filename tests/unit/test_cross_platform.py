@@ -370,7 +370,7 @@ class TestNoOSSpecificDependencies:
     """Verify pyproject.toml only has cross-platform dependencies."""
 
     def test_only_cross_platform_dependencies(self):
-        """pyproject.toml should only list Click, PyYAML, and standard library."""
+        """pyproject.toml lists only pure-Python, cross-platform requirements."""
         pyproject = (SRC_DIR.parent.parent / "pyproject.toml").read_text()
 
         # Extract dependencies section
@@ -383,12 +383,14 @@ class TestNoOSSpecificDependencies:
             if in_deps:
                 if line.strip() == "]":
                     break
+                if line.strip().startswith("#"):
+                    continue
                 dep = line.strip().strip('",')
                 if dep:
                     deps.append(dep)
 
         # Allowed dependencies (cross-platform)
-        allowed_prefixes = ["click", "pyyaml", "jsonschema"]
+        allowed_prefixes = ["click", "pyyaml", "jsonschema", "questionary"]
         for dep in deps:
             dep_lower = dep.lower()
             assert any(dep_lower.startswith(prefix) for prefix in allowed_prefixes), (

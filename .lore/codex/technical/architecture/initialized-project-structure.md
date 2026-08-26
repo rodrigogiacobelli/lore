@@ -1,12 +1,11 @@
 ---
 id: tech-arch-initialized-project-structure
 title: Initialized Project Structure
-summary: What `lore init` creates on disk — the .lore/ directory layout, file purposes,
-  AGENTS.md placement, and gitignore contents. Includes the artifacts/ directory seeded
-  on init, the .lore/codex/CODEX.md root and .lore/codex/glossary.yaml skeleton (the two
-  files lore init seeds under .lore/codex/), and the .lore/config.toml project config
-  seed (TOML, generic from day one) with its two known root keys
-  show-glossary-on-codex-commands and health-report-retention.
+summary: What `lore init` creates on disk — the .lore/ directory layout and file purposes,
+  the rendered instruction text at .lore/LORE-AGENT.md, the install manifest, the skills
+  that land in each selected agent's directory, the agent instruction files written
+  outside .lore/, and the verbatim .lore/.gitignore template plus the six known keys
+  in .lore/config.toml.
 binds:
 - src/lore/init.py
 - src/lore/paths.py
@@ -18,89 +17,117 @@ binds:
 - tests/e2e/test_lore_init_schema_clean.py
 related:
 - conceptual-workflows-lore-init
-- tech-arch-agents-md
+- conceptual-workflows-init-interactive
+- conceptual-workflows-init-reconcile
 - conceptual-entities-glossary
+- conceptual-entities-skill
 - conceptual-workflows-glossary
+- conceptual-workflows-health
+- tech-arch-agents-md
+- tech-arch-install-manifest
+- tech-arch-skill-catalogue
+- tech-arch-schemas
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-018-overlays-are-path-discovered-config
+- decisions-019-overlay-scope-stops-at-transient
 - decisions-021-health-reports-are-ephemeral-by-default
-- tech-arch-schemas
-- conceptual-workflows-health
 ---
 
 # Initialized Project Structure
 
-Running `lore init` inside a development project creates:
+`lore init` writes inside `.lore/`, and — when the project names a coding agent — into that agent's own directories and instruction file at the project root. It writes nowhere else.
 
 ```
 your-project/
-|- AGENTS.md                  # Agent instructions for Claude Code (created or appended to)
+|- CLAUDE.md                  # A selected agent's instruction file: a marked Lore block appended
+|- .claude/
+|  +-- skills/                # Rendered skills, when the selected agent has a native skills directory
+|     |- .gitignore           # Generated; lists the skills Lore installed here
+|     |- store-memory/
+|     |  |- SKILL.md
+|     |  +-- references/
+|     +-- retrieve-memory/
 +-- .lore/
     |- .gitignore             # Default ignores (seeded by lore init; user-tracked)
-    |- config.toml            # Project config (seeded by lore init if absent; user-tracked, idempotent)
-    |- lore.db                # SQLite database (see database/schema.md)
+    |- .install-manifest.json # Every file lore init wrote, with its hash (generated)
+    |- config.toml            # Project config (seeded if absent; user-tracked; header regenerated)
+    |- lore.db                # SQLite database (see ref-lore_db-core)
+    |- LORE-AGENT.md          # The rendered agent instruction text (always written)
+    |- GETTING-STARTED.md     # Orientation guide, copied verbatim
+    |- skills/                # Rendered skills, when no selected agent has a native skills directory
     |- doctrines/             # Doctrine templates; user-created files live here
     |  +-- default/           # Lore-seeded defaults (gitignored)
-    |     +-- adversarial-spec.yaml
     |- knights/               # Knight persona files; user-created files live here
     |  +-- default/           # Lore-seeded defaults (gitignored)
-    |     |- architect-analyst.md
-    |     |- architect-critic.md
-    |     |- architect-consolidator.md
-    |     |- ba-drafter.md
-    |     |- ba-critic.md
-    |     |- ba-consolidator.md
-    |     |- sys-analyst.md
-    |     |- tech-lead.md
-    |     +-- sys-architect.md
     |- artifacts/             # Artifacts — the shipped development process
     |  +-- default/           # Lore-seeded defaults (gitignored)
-    |     |- transient/       # Spec and story templates produced by the pipeline
-    |     |  |- business-spec.md
-    |     |  |- full-spec.md
-    |     |  +-- user-story.md
-    |     +-- codex/          # Example codex — one well-formed document per layer (example-* IDs)
+    |     |- codex/                   # One well-formed example document per codex layer
+    |     |- feature-implementation/  # Templates the feature pipeline produces and consumes
+    |     |- lore-design-documents/
+    |     +-- rites/
     |- watchers/              # Watcher YAML files; user-created files live here
     |  +-- default/           # Lore-seeded defaults (gitignored)
-    |     +-- change-log-updates.yaml
+    |- rites/                 # Procedural memory (user-tracked)
+    |  |- main/               # Created empty by lore init
+    |  +-- shared/            # Created empty by lore init
     |- reports/               # Generated by `lore oracle` (created on demand, not by init)
-    |- custom-schemas/        # Optional project schema overlays (NOT seeded by init; created on demand by the new-custom-schema skill; user-tracked) (does not govern codex/transient/)
-    |  +-- codex-frontmatter.yaml   # Add-only overlay merged onto the packaged codex schema (one file per kind) (does not govern codex/transient/)
-    +-- codex/                # Project documentation (not seeded by init, EXCEPT for CODEX.md and glossary.yaml)
-       |- CODEX.md             # Project codex root (seeded by lore init if absent; user-tracked, idempotent; id: codex)
-       +-- glossary.yaml       # Project glossary skeleton (seeded by lore init if absent; user-tracked, idempotent)
+    |- custom-schemas/        # Optional project schema overlays (NOT seeded by init; user-tracked)
+    +-- codex/                # Project documentation (not seeded by init, EXCEPT CODEX.md and glossary.yaml)
+       |- CODEX.md            # Project codex root (seeded if absent; user-tracked, idempotent; id: codex)
+       +-- glossary.yaml      # Project glossary skeleton (seeded if absent; user-tracked, idempotent)
 ```
+
+## Files Outside `.lore/`
+
+**The selected agent's instruction file** — `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `QWEN.md` or `.cursor/rules/lore.mdc`, depending on which agents the project selected. Lore appends its instruction text inside `<!-- lore:begin -->` / `<!-- lore:end -->` markers and replaces only that block on later runs. Everything outside the markers belongs to the project and is never touched. `tech-arch-agents-md` holds the registry and the marker mechanism.
+
+**The agent's native skills directory** — `.claude/skills/` for Claude Code. Each installed skill is one subdirectory containing `SKILL.md` and, for skills that ship them, a `references/` directory. An agent with no native skills mechanism receives its skills at `.lore/skills/` instead, and its instruction block points there. `conceptual-entities-skill` holds the destination rules.
+
+**A generated `.gitignore` inside that skills directory** — under the `lore-only` answer, it lists the skill directories Lore installed there so they stay untracked while the project's own skills in the same directory are not ignored.
+
+**The project's root `.gitignore` is not written.** Lore used to append a block there, inside `# lore:begin` / `# lore:end` markers, naming the database and its two siblings, `.lore/reports/` and the install manifest. Every one of those paths is already ignored by the `*` opening `.lore/.gitignore`: delete the whole block from a real project and `git check-ignore -v` reports the identical deciding rule for every path. The block bought nothing and cost the project a write into a file it owns, so no release writes one.
+
+A project initialised before that change still carries the block, inside markers Lore itself wrote — so it is Lore's to take back. On the next `lore init` the marked block is deleted and every line outside the markers is left byte-identical; a `.gitignore` holding nothing but the block and whitespace is one Lore created outright and goes with it. A `.gitignore` carrying no markers, or no `.gitignore` at all, is never read, written or created.
 
 ## File and Directory Purposes
 
-**`AGENTS.md`** is placed at the project root, where Claude Code expects to find it. It contains instructions teaching Claude how to use Lore. If a non-Lore `AGENTS.md` already exists, Lore backs it up to `AGENTS.md.old` and writes a fresh Lore `AGENTS.md`. If a Lore-marked `AGENTS.md` exists, Lore refreshes the content between the markers with the latest version. See tech-arch-agents-md (lore codex show tech-arch-agents-md) for the file's structure and marker mechanism.
+**`.lore/LORE-AGENT.md`** is the rendered agent instruction text: access-mode blocks resolved, skills table generated from the installed set. It is written on every run, whether or not any agent is selected, and it is the only instruction artefact when none is. `tech-arch-agents-md` holds what it contains.
 
-**`.lore/doctrines/`**, **`.lore/knights/`**, **`.lore/artifacts/`**, and **`.lore/watchers/`** each contain a `default/` subdirectory where Lore-seeded files land on `lore init`. User-created files use the flat parent directory (e.g., `.lore/knights/my-knight.md`) and are tracked by git independently of the seeded defaults. On re-init, files inside `default/` are overwritten with the latest versions shipped with Lore. Files in the flat parent directory are never touched by re-init.
+**`.lore/.install-manifest.json`** records every file `lore init` wrote and the hash of its contents, so a later run can tell a file it installed from a file the project authored. It is generated, never edited, and already ignored by the leading `*` in `.lore/.gitignore`. `tech-arch-install-manifest` holds the format and `conceptual-workflows-init-reconcile` the rules it feeds.
 
-**`.lore/watchers/`** stores Watcher YAML files. User-created watchers land directly in `.lore/watchers/`. The Lore-seeded default watcher (`change-log-updates.yaml`) is placed in `.lore/watchers/default/` and gitignored. Both locations are discovered recursively by `lore watcher list` and `lore watcher show`.
+**`.lore/skills/`** holds the rendered skills when no selected agent has a native skills directory — including the case where no agent is selected at all. The `skills/` line in `.lore/.gitignore` ignores the whole tree.
 
-**`.lore/artifacts/`** is the shipped development process. Inside `artifacts/default/`, the `transient/` subdirectory contains the spec and user story templates that the `adversarial-spec` pipeline produces and consumes. The `codex/` subdirectory contains one well-formed example document per codex layer — doctrines and knights reference these by `example-*` ID to illustrate expected output format. Agents access artifacts through CLI commands (`lore artifact list`, `lore artifact show <id>`) — do not read `.lore/artifacts/` files directly. See ADR-006.
+**`.lore/doctrines/`**, **`.lore/knights/`**, **`.lore/artifacts/`** and **`.lore/watchers/`** each contain a `default/` subdirectory where Lore-seeded files land. User-created files use the flat parent directory (e.g. `.lore/knights/my-knight.md`) and are tracked by git independently of the seeded defaults. On re-init, files inside `default/` are overwritten with the versions the installed release ships. Files in the flat parent directory are never touched.
 
-**`.lore/.gitignore`** ignores everything inside `.lore/` except `codex/`, `knights/`, `doctrines/`, `artifacts/`, and `watchers/`, so project documentation, user-created entities, and artifact templates are version-controlled. Within each entity directory, the `default/` subdirectory is re-ignored so Lore-seeded defaults are not committed to user repositories. This means user-created knights, doctrines, artifacts, and watchers in the flat parent directories are tracked by git, while the shipped defaults in `default/` are gitignored.
+**`.lore/artifacts/`** is the shipped development process. `artifacts/default/feature-implementation/` holds the spec and story templates the feature pipeline produces and consumes; `artifacts/default/codex/` holds one well-formed example document per codex layer, referenced by doctrines and knights through `example-*` IDs. Agents reach artifacts with `lore artifact show <id>`, not by path (`decisions-006-id-references`).
 
-**`.lore/reports/`** is **not** created by `lore init`. It is created on demand by `lore oracle`.
+**`.lore/rites/`** holds procedural memory. `lore init` creates `main/` and `shared/` empty; every rite in them is user-authored.
 
-**`.lore/codex/`** is **not** seeded with default content on init, with **two narrow exceptions** per ADR-013 (lore codex show decisions-013-toml-for-config-yaml-for-glossary): `lore init` writes `.lore/codex/CODEX.md` (the project codex root, copied from the packaged `example-codex` artifact with its `id` rewritten to `codex`) and `.lore/codex/glossary.yaml` (header comment + `items: []`) directly when absent. Both seeds are idempotent — re-init never overwrites a user-edited file. Neither lives under a `default/` subtree because both hold user-owned content. Aside from these two files, `.lore/codex/` is populated by agents running codex doctrines or written manually.
+**`.lore/reports/`** is **not** created by `lore init`. `lore oracle` creates it on demand.
 
-**`.lore/config.toml`** is the project-level configuration file (TOML, parsed via stdlib `tomllib`). It holds two known root-level keys, both seeded idempotently by `lore init` at their default values behind a header comment:
+**`.lore/codex/`** is **not** seeded with documentation, with two narrow exceptions (`decisions-013-toml-for-config-yaml-for-glossary`): `lore init` writes `.lore/codex/CODEX.md` — the project codex root, copied from the packaged `example-codex` artifact with its `id` rewritten to `codex` — and `.lore/codex/glossary.yaml` — a header comment plus `items: []`. Both seeds are idempotent: re-init never overwrites an edited file. Neither lives under a `default/` subtree, because both hold user-owned content.
+
+**`.lore/config.toml`** is the project-level configuration file (TOML, parsed with stdlib `tomllib`). It holds six known root-level keys, all seeded at their defaults behind a comment header:
 
 | Key | Type | Default | Governs |
 |-----|------|---------|---------|
 | `show-glossary-on-codex-commands` | bool | `true` | Whether `lore codex show` appends a `## Glossary` block (conceptual-workflows-glossary) |
-| `health-report-retention` | `"none"` \| `"latest"` \| `"all"` | `"none"` | Whether `lore health` persists its markdown report into `.lore/codex/transient/`, and how many survive (conceptual-workflows-health, decisions-021-health-reports-are-ephemeral-by-default) |
+| `health-report-retention` | `"none"` \| `"latest"` \| `"all"` | `"none"` | Whether `lore health` persists its markdown report, and how many survive (conceptual-workflows-health, decisions-021-health-reports-are-ephemeral-by-default) |
+| `init-agents` | list of registry ids | `[]` | Which coding agents `lore init` installs skills and instructions for |
+| `init-access-mode` | `"cli"` \| `"native"` | `"native"` | Whether the installed skills tell agents to use the Lore CLI or their own file tools |
+| `init-skill-families` | list of `"memory"` \| `"machinery"` \| `"workflow"` | all three | Which seeded skill families install |
+| `init-skills-gitignore` | `"lore-only"` \| `"none"` \| `"all"` | `"lore-only"` | How the installed skills are tracked in git |
 
-The loader accepts arbitrary additional keys without error (forward-compatible) and preserves them in `Config.extras`. Missing config falls back to the defaults silently; malformed TOML, a known key of the wrong type, and a constrained key holding an out-of-set value each fall back with one stderr warning. Because a known key defaults on its own, a config file written by an older Lore keeps working unchanged. User-tracked: the gitignore template carries `!config.toml` so the file is committed alongside other project state. See decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary).
+The loader accepts arbitrary additional keys without error and preserves them in `Config.extras`. A missing config falls back to the defaults silently; malformed TOML, a known key of the wrong type, a constrained key holding an out-of-set value, and a list key containing an unknown item each fall back to that key's default with one stderr warning. Because a known key defaults on its own, a config file written by an older Lore keeps working.
 
-**`.lore/custom-schemas/`** holds optional project-local schema overlays — add-only YAML files at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`) that extend the packaged codex frontmatter schemas with custom keys. It is **not** seeded by `lore init` — its absence is the zero-overlay baseline (validation behaves exactly as packaged). The `new-custom-schema` skill creates the directory and the overlay on first use. Overlays are user-owned, path-discovered config — addressed by their canonical path, never by ID (decisions-018-overlays-are-path-discovered-config; lore codex show decisions-018-overlays-are-path-discovered-config). An overlay's governance scope is canonical codex docs and `codex/sources/**` only — it never reaches `codex/transient/**`, where the packaged schema alone applies at every seam (decisions-019-overlay-scope-stops-at-transient; lore codex show decisions-019-overlay-scope-stops-at-transient). Like `config.toml` and the glossary, overlays are tracked: the gitignore template un-ignores `custom-schemas/`. The merged-schema resolver and merge semantics live in tech-arch-schemas (lore codex show tech-arch-schemas). See conceptual-workflows-health (lore codex show conceptual-workflows-health) for how a malformed overlay surfaces as a `scan_failed` issue.
+The file is user-tracked — `.lore/.gitignore` carries `!config.toml`. `lore init` seeds it whole when absent, and on a file that already exists rewrites only the leading run of comment lines, generated from `config.py`'s own key tables. Every setting line, value, blank line and inline comment survives byte-identical.
+
+**`.lore/custom-schemas/`** holds optional project-local schema overlays — add-only YAML files at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`) that extend the packaged codex frontmatter schemas with custom keys. It is **not** seeded by `lore init` — its absence is the zero-overlay baseline. The `update-custom-schema` skill creates the directory and the overlay on first use. Overlays are user-owned, path-discovered config, addressed by their canonical path and never by ID (`decisions-018-overlays-are-path-discovered-config`). An overlay governs canonical codex docs and `codex/sources/**` only; it never reaches `codex/transient/**` (`decisions-019-overlay-scope-stops-at-transient`). The gitignore template un-ignores `custom-schemas/`, so overlays are tracked. `tech-arch-schemas` holds the resolver and merge semantics; `conceptual-workflows-health` holds how a malformed overlay surfaces.
 
 ## `.lore/.gitignore` Contents
 
 ```gitignore
+# Created by Lore automatically.
 *
 !.gitignore
 !config.toml
@@ -120,8 +147,18 @@ doctrines/default/
 !watchers
 !watchers/**
 watchers/default/
+!rites
+!rites/**
+GETTING-STARTED.md
+LORE-AGENT.md
+skills/
 ```
 
-The `!config.toml` rule keeps the user-tracked `.lore/config.toml` under version control (it would otherwise be re-ignored by the leading `*`). The `!custom-schemas` / `!custom-schemas/**` rules do the same for project-local schema overlays at `.lore/custom-schemas/<kind>.yaml` — there is no `default/` subtree to re-ignore because overlays are entirely user-owned. The glossary file at `.lore/codex/glossary.yaml` is already tracked because `!codex` and `!codex/**` un-ignore the entire codex tree.
+The leading `*` ignores every file and subdirectory inside `.lore/`, which is what keeps `lore.db`, `reports/` and `.install-manifest.json` out of version control without naming them. Each `!` line un-ignores a tree the project owns, and each bare path after it re-ignores the Lore-owned part of that tree.
 
-The wildcard ignores every file and subdirectory inside `.lore/`. The `!.gitignore` exception keeps the ignore file itself tracked. The `!codex` and `!codex/**` exceptions allow the documentation directory to be version-controlled. The `!artifacts` and `!artifacts/**` exceptions un-ignore the artifacts directory and all its contents; the subsequent `artifacts/default/` rule then re-ignores the seeded defaults subdirectory, so user-created artifact files at `.lore/artifacts/*.md` are tracked while the shipped defaults at `.lore/artifacts/default/` are not. The same pattern applies to `knights/` and `doctrines/`: the `!knights/**` exception un-ignores all knight files, then `knights/default/` re-ignores the shipped defaults. This lets git track only what the user owns.
+- `!.gitignore` keeps the ignore file itself tracked.
+- `!config.toml` and `!custom-schemas` / `!custom-schemas/**` keep project config and schema overlays tracked. Neither has a `default/` subtree, because both are entirely user-owned.
+- `!codex` / `!codex/**` track the whole documentation tree, which is also what tracks `.lore/codex/glossary.yaml`.
+- `!artifacts/**` then `artifacts/default/` tracks user-created artifacts and ignores the shipped defaults. `knights/`, `doctrines/` and `watchers/` follow the same pair.
+- `!rites` / `!rites/**` tracks procedural memory, which has no `default/` subtree because Lore seeds no rites.
+- `GETTING-STARTED.md`, `LORE-AGENT.md` and `skills/` are re-stated explicitly for readability; the leading `*` already covers them.

@@ -16,6 +16,7 @@ related:
 - standards-public-api-stability
 - ref-lore_api-core
 - tech-arch-source-layout
+- conceptual-workflows-lore-init
 ---
 
 # API Facade Module
@@ -38,9 +39,11 @@ The `__all__` list in `api.py` is laid out in three named sections in a fixed or
 
 1. **Types & enums** — frozen dataclasses and `StrEnum` subclasses sourced from `lore.models`, plus exception classes (`DoctrineError`, `GlossaryError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `ImpactsError`) and the read-only `Config` dataclass.
 
+   A sub-block marked `# --- Operational dataclasses (sourced from their owning modules) ---` sits inside this section for result types that mirror no stored record and therefore live in the module that produces them rather than in `lore.models`: `HealthIssue` and `HealthReport` from `lore.health`, `SchemaIssue` from `lore.schemas`, `CodeBinding` and `ImpactsResult` from `lore.impacts`, and `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan` and `InitResult` from `lore.initplan`. `lore.models` stays the entity-record index — every member there mirrors a DB row or an on-disk file and carries a `from_row` / `from_dict` hydrator.
+
 2. **Project root** — `find_project_root` (from `lore.root`).
 
-3. **Operational callables** — every CRUD, lifecycle, traversal, validator, schema, health, and reporting function consumers may call. Grouped by domain (validators → db quest CRUD → db mission CRUD → db status transitions → db dependencies → db board → db dashboard/stats → db envelopes → priority → knight → doctrine → artifact → watcher → codex → glossary → impacts → health → schemas → init/reports/config) for diff legibility, not import order.
+3. **Operational callables** — every CRUD, lifecycle, traversal, validator, schema, health, and reporting function consumers may call. Grouped by domain (validators → db quest CRUD → db mission CRUD → db status transitions → db dependencies → db board → db dashboard/stats → db envelopes → priority → knight → doctrine → artifact → watcher → codex → glossary → impacts → health → schemas → init/reports/config, where the init block holds `plan_init`, `apply_init` and `run_init`) for diff legibility, not import order.
 
 Each section is bounded by a comment marker. New exports go at the end of their domain block, never sprinkled across sections — this keeps `git diff` against `__all__` reviewable in one screen and ensures consumers reading the source can find names by category.
 
@@ -60,11 +63,16 @@ from lore import glossary as _glossary
 from lore import impacts as _impacts
 from lore import doctrine as _doctrine
 from lore import health as _health
+from lore import prompts as _prompts
+from lore import agents as _agents
+from lore import skills as _skills
 from lore import __version__ as _lore_version
 from lore.knight import _validate_frontmatter as _validate_frontmatter
 ```
 
 Each line carries a `# noqa: F401` because ruff cannot infer re-export intent for renamed imports (only same-name `as` aliases count as PEP 484 explicit re-exports).
+
+`_agents` and `_skills` are needed at `cli.py` **import** time, because `click.Choice` evaluates its set when the decorator runs. `_prompts` must not pull `questionary` into that import: `prompts.py` imports `questionary` lazily inside each function, so `import lore.api` stays cheap for every other command — pulling `prompt_toolkit` into every `lore ready` would cost per-invocation time for no benefit (`decisions-001-dumb-infrastructure`).
 
 **Why they exist:** `cli.py` is a facade consumer too. It needs `paths.knights_dir(root)` style access for filesystem paths and `_validate_frontmatter` for create-time validation, but ADR-010 forbids it from reaching into `lore.<module>` directly — that would normalise the same breach external consumers are banned from. The underscore-aliased re-exports give the CLI (and only the CLI) a stable internal handle.
 

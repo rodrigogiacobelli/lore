@@ -49,6 +49,18 @@ def rites_shared_dir(root: Path) -> Path:
     return root / ".lore" / "rites" / "shared"
 
 
+def skills_dir(root: Path) -> Path:
+    """Return the fallback skills tree.
+
+    Where skills install for an agent with no native skills directory, and for
+    a project that selected no agent at all. ``.lore/.gitignore`` un-ignores
+    this tree the way it does every other user-authorable one; what is tracked
+    inside it is decided by the generated ``.gitignore`` `lore init` writes
+    here, from the ``--skills-gitignore`` answer.
+    """
+    return root / ".lore" / "skills"
+
+
 def db_path(root: Path) -> Path:
     return root / ".lore" / "lore.db"
 
@@ -63,6 +75,26 @@ def codex_md_path(root: Path) -> Path:
 
 def config_path(root: Path) -> Path:
     return root / ".lore" / "config.toml"
+
+
+def lore_agent_path(root: Path) -> Path:
+    """Return the canonical rendered agent-instruction text.
+
+    Written on every ``lore init``, whether or not an agent is selected: it is
+    the one artefact a project always has to wire an agent up by hand, and the
+    same text each selected agent's instruction file carries between markers.
+    """
+    return root / ".lore" / "LORE-AGENT.md"
+
+
+def install_manifest_path(root: Path) -> Path:
+    """Return the install manifest's location.
+
+    A dot-file at the ``.lore/`` root, so the ``*`` opening ``.lore/.gitignore``
+    already ignores it and no gitignore change is needed to keep generated
+    state out of the repository.
+    """
+    return root / ".lore" / ".install-manifest.json"
 
 
 def custom_schemas_dir(root: Path) -> Path:

@@ -50,6 +50,22 @@ Per the `inquest-design` artifact, gather:
 - **The commits** — `git log` and `git show <sha>` for the range that delivered the work. Commit messages reference `US-xxx` story IDs.
 - **The codex obligations** — for every file the work touched, run `lore impacts <path>`. Any codex doc that binds a touched file is a mandate the executing agent was obligated to honor. This is how you find a skipped "the codex says do X".
 
+Read the transient documents in whichever way your project's access mode gives you:
+
+<!-- lore:access cli -->
+```
+lore codex list --filter transient
+lore codex show <transient-id1> <transient-id2>
+```
+
+Batch ids into one call — `show` deduplicates and appends the glossary terms it matched.
+<!-- lore:access end -->
+<!-- lore:access native -->
+List and read `.lore/codex/transient/*.md` directly with your own file tool. Glossary terms are not attached to what you read — look up an unfamiliar one in `.lore/codex/glossary.yaml`.
+<!-- lore:access end -->
+
+`lore impacts` stays on the CLI in every mode: it is a bidirectional index over every `binds:` field in the codex, and no file read reproduces it. `lore codex map <id>` and `lore codex chaos <id>` do too, when you need to see what a mandate connects to. So do quests, missions, board messages, doctrines and knights — they are SQLite-backed or spliced together by the CLI.
+
 ### 4. Trace the custody chain
 
 Apply the methodology: pin the requirement to its origin, then walk each link asking the two-part custody question — present inbound? present outbound? The culprit is the first link where the requirement entered but did not leave. Classify the failure mode.
@@ -58,7 +74,14 @@ Apply the methodology: pin the requirement to its origin, then walk each link as
 
 Write the blame file to `.lore/codex/transient/inquest-<slug>.md` using the verdict template in the `inquest-design` artifact. `<slug>` is a short kebab-case name for the issue.
 
-The verdict is a transient codex doc — frontmatter `id`, `title`, `summary`. It is retrievable with `lore codex show inquest-<slug>` and survives `oracle` runs (unlike `.lore/reports/`, which is wiped on every run).
+The verdict is a transient codex doc — frontmatter `id`, `title`, `summary`. It survives `oracle` runs, unlike `.lore/reports/`, which is wiped on every run.
+
+<!-- lore:access cli -->
+Retrieve it later with `lore codex show inquest-<slug>`.
+<!-- lore:access end -->
+<!-- lore:access native -->
+Retrieve it later by reading `.lore/codex/transient/inquest-<slug>.md` — the path this step just wrote.
+<!-- lore:access end -->
 
 ### 6. Present the verdict
 
@@ -69,4 +92,5 @@ Summarize for the user: the culprit link, the failure mode, the responsible part
 - An inquest assigns blame to a *link*, not always an *agent*. If every executor faithfully honored its instructions and the requirement still vanished, the doctrine is at fault — no step owned the requirement. Say so plainly; that is a doctrine defect, not an agent defect.
 - An **override** — an executor that saw the requirement and explicitly decided against it — may be a legitimate judgment call. Flag it for the human; do not condemn it.
 - One inquest, one requirement. If the work has several missing requirements, run a separate inquest per requirement.
+- A missing procedure the chain should have followed is a signal to record one with `store-memory`, not a finding against an agent that improvised without one.
 - The inquest is read-only on the audited work. It produces one verdict file and changes nothing else.

@@ -67,6 +67,14 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
+    # operational dataclasses — initialisation (interactive-init-us-023)
+    "AccessMode",
+    "FileAction",
+    "AgentTarget",
+    "PlannedFile",
+    "InitAnswers",
+    "InitPlan",
+    "InitResult",
     # exceptions
     "GlossaryError",
     "ProjectNotFoundError",
@@ -87,6 +95,11 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "validate_binds_entry",
     "is_glob_pattern",
     "route_entity",
+    # validators — initialisation (interactive-init-us-017)
+    "validate_access_mode",
+    "validate_skill_family",
+    "validate_agent_id",
+    "validate_agent_selection",
     # db: quest CRUD (G17 — get_quest/edit_quest renamed)
     "create_quest",
     "list_quests",
@@ -194,6 +207,8 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "OverlayError",
     # init / reports / config
     "run_init",
+    "plan_init",
+    "apply_init",
     "generate_reports",
     "load_config",
     # paths (G15 — amendment C1)
@@ -245,6 +260,14 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "CodexBinding": "lore.impacts",
     "ImpactsError": "lore.impacts",
     "ImpactsResult": "lore.impacts",
+    # operational dataclasses — initialisation (interactive-init-us-023)
+    "AccessMode": "lore.initplan",
+    "FileAction": "lore.initplan",
+    "AgentTarget": "lore.initplan",
+    "PlannedFile": "lore.initplan",
+    "InitAnswers": "lore.initplan",
+    "InitPlan": "lore.initplan",
+    "InitResult": "lore.initplan",
     # exceptions
     "GlossaryError": "lore.glossary",
     "ProjectNotFoundError": "lore.root",
@@ -265,6 +288,10 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "validate_binds_entry": "lore.validators",
     "is_glob_pattern": "lore.validators",
     "route_entity": "lore.validators",
+    "validate_access_mode": "lore.validators",
+    "validate_skill_family": "lore.validators",
+    "validate_agent_id": "lore.validators",
+    "validate_agent_selection": "lore.validators",
     # db (G17 — get_*/edit_* renamed to read_*/update_*; *_details to list_*)
     "create_quest": "lore.db",
     "list_quests": "lore.db",
@@ -366,6 +393,8 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "OverlayError": "lore.schemas",
     # init / oracle / config
     "run_init": "lore.init",
+    "plan_init": "lore.init",
+    "apply_init": "lore.init",
     "generate_reports": "lore.oracle",
     "load_config": "lore.config",
     # paths (G15 — amendment C1)

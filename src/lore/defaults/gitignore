@@ -20,6 +20,7 @@ doctrines/default/
 watchers/default/
 !rites
 !rites/**
+!skills
+!skills/**
 GETTING-STARTED.md
 LORE-AGENT.md
-skills/

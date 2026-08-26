@@ -8,6 +8,9 @@ summary: 'What the enriched --help output for each command group must contain �
 related:
 - decisions-008-help-as-teaching-interface
 - ref-lore_cli-commands
+- conceptual-workflows-lore-init
+- conceptual-workflows-init-interactive
+- conceptual-workflows-health
 ---
 
 # Help Output Contract
@@ -119,6 +122,26 @@ Must clarify:
 - Do not store custom files in `.lore/reports/`.
 - Intended for human stakeholders, not agent consumption.
 - JSON output is not supported.
+
+### `lore init --help`
+
+Must describe:
+- Prompting happens only when standard output is a terminal; a caller without one proceeds on flags and recorded answers, and is never asked.
+- Every flag, with the prompt it replaces, so the whole flow is reachable from a script. Multi-value flags are shown in the space-separated form (`--agent claude gemini`), never as repeated flags.
+- That `--dry-run` prints the plan and writes nothing, and that `--reconfigure` re-asks for the answers recorded in `.lore/config.toml` — including that re-asking needs a terminal, so a run without one passes those answers as flags or stops.
+- That JSON output is not supported, and what to use instead:
+
+```
+  JSON output is not supported for this command. Use the Python API —
+  lore.api.plan_init() returns a typed InitPlan describing every create,
+  overwrite, removal and conflict without performing any of them.
+```
+
+Stating the fact is the point: a silently ignored flag is a fact an agent can only discover by trying it, which is what `decisions-008-help-as-teaching-interface` exists to prevent.
+
+### `lore health --help`
+
+Must list every `--scope` token, including `skills`, and state that omitting `--scope` runs them all.
 
 ### `lore ready --help`
 

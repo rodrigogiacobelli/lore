@@ -18,7 +18,7 @@ import click
 
 
 def test_valid_scopes_tuple_shape():
-    """US-001 unit — `_VALID_SCOPES` token tuple; `voice` appended last after `rites`."""
+    """US-001 unit — `_VALID_SCOPES` token tuple; `skills` appended last after `voice`."""
     from lore.cli import _VALID_SCOPES
 
     assert _VALID_SCOPES == (
@@ -32,9 +32,23 @@ def test_valid_scopes_tuple_shape():
         "bindings",
         "rites",
         "voice",
+        "skills",
     )
-    assert _VALID_SCOPES[-1] == "voice"
-    assert len(_VALID_SCOPES) == 10
+    assert _VALID_SCOPES[-1] == "skills"
+    assert len(_VALID_SCOPES) == 11
+
+
+def test_valid_scopes_matches_the_health_scope_vocabulary():
+    """interactive-init-us-021 — one vocabulary, declared in two places.
+
+    `click.Choice` needs a list at decorator time and `health_check` needs the
+    default scan set; a token in one and not the other is a scope reachable
+    from only one surface (ADR-011).
+    """
+    from lore.cli import _VALID_SCOPES
+    from lore.health import _ALL_SCOPES
+
+    assert set(_VALID_SCOPES) == set(_ALL_SCOPES)
 
 
 def test_health_cmd_scope_choice_matches_valid_scopes():

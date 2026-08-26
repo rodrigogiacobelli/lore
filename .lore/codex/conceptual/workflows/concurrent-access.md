@@ -8,6 +8,8 @@ summary: 'What the system does to ensure safe concurrent access — WAL mode, bu
 related:
 - ref-lore_db-core
 - tech-overview
+- conceptual-workflows-lore-init
+- conceptual-workflows-init-reconcile
 ---
 
 # Concurrent Access Safety
@@ -68,7 +70,14 @@ The migration path performs a re-read of `schema_version` after acquiring the `B
 | FK violation on insert | `IntegrityError` propagates | 1 |
 | Concurrent migration (race) | Double-check prevents duplicate migration | — |
 
+## `lore init` Is a Single-Writer Operation
+
+`lore init` writes files as well as database rows, and file writes carry none of the WAL protections above. It is a single-writer operation: nothing coordinates two `lore init` runs against the same project, and nothing needs to, because initialisation is something a person or a deployment does once per project rather than something agents do in a loop.
+
+The safety property that survives an interruption is ordering, not locking. `lore init` writes the install manifest last, so a run killed part-way leaves the previous manifest on disk; the next run finds the already-written files disagreeing with it and reports them as conflicts rather than overwriting them. `conceptual-workflows-init-reconcile` holds the rules.
+
 ## Out of Scope
 
+- Coordination between two concurrent `lore init` runs — initialisation is single-writer by assumption, not by lock.
 - Multi-process write throughput optimisation — the 5-second timeout is sufficient for agent workloads.
 - Network filesystem access — SQLite WAL mode has known issues on NFS; local filesystem is assumed.

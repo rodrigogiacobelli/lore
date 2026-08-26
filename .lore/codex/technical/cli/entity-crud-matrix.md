@@ -28,6 +28,8 @@ related:
 - conceptual-workflows-impacts
 - conceptual-entities-glossary
 - conceptual-workflows-glossary
+- conceptual-entities-skill
+- conceptual-workflows-lore-init
 ---
 
 # CLI Entity CRUD Matrix
@@ -44,6 +46,12 @@ related:
 | **Artifact** | `lore artifact new <name> [--group <path>] --from <body>` | `lore artifact show <id> [id2…]` | `lore artifact list [--filter GROUP...]` | — | — | `lore artifact edit <name>` | `lore artifact delete <name>` |
 | **Rite** | `lore rite new <name> [--shared] --from <body>` | `lore rite show <id> [id2…]` | `lore rite list [--shared]` | `lore rite search <kw>` | — | `lore rite edit <name> [--shared]` | `lore rite delete <name> [--shared]` |
 | **Board Message** | `lore board add <entity_id> "<msg>" [-s sender]` | (inside `lore show`) | (inside `lore show`) | — | — | ✗ (immutable) | `lore board delete <int_id>` |
+
+## Skills Are Deliberately Absent
+
+Skills have no row in the matrix and no `lore skill` command group. They are seeded files a coding agent reads, not entities a caller retrieves by ID. `lore init` installs, updates and removes them; `lore health --scope skills` audits them. Nothing else addresses them.
+
+The absence is a decision, not an omission. Adding a retrieval command would make the CLI a second way to reach a file the agent already has open, and there is no ID space to retrieve from. See conceptual-entities-skill (lore codex show conceptual-entities-skill).
 
 ## Lifecycle Operations
 

@@ -10,6 +10,31 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ### Added
 
+#### Interactive `lore init`
+
+`lore init` asks how the project works, prints every file it would create, replace or remove, and writes nothing until the answer is confirmed. Without a terminal — a pipe, a CI job, Realm calling the Python API — no prompt fires and flags, the recorded answers and the built-in defaults decide everything, which is the behaviour of the previous release.
+
+- **Coding agents are a first-class answer** — `lore init` installs skills and an instruction file for the agents a project names. The shipped registry (`src/lore/defaults/agents.yaml`) covers `agents-md`, `claude`, `cursor`, `gemini`, `qwen`, plus `none`, which installs skills under `.lore/skills/` with no instruction file and cannot be combined with another id. Skills land in each agent's own directory (`.claude/skills/`, …) and the instruction file gains a `<!-- lore:begin -->` marker block that later runs replace in place, leaving every line outside it byte-identical.
+- **Access mode** — installed skills are rendered for one of two audiences. `cli` tells an agent to reach Lore through the `lore` command; `native` tells it to use its own file tools. The choice is resolved once, at install time, from `<!-- lore:access cli -->` / `<!-- lore:access native -->` blocks inside each packaged skill, so an installed `SKILL.md` carries no branch an agent has to interpret.
+- **Full flag surface** — every prompt has a flag, so the whole flow is reachable from a script: `--agent`, `--access`, `--skills`, `--on-existing-agent-file`, `--gitignore/--no-gitignore`, `--skills-gitignore`, `--on-conflict`, `--reconfigure`, `--dry-run`, and `-y/--yes`. `--agent` and `--skills` take space-separated tokens (`lore init --agent claude agents-md --skills memory workflow`), the multi-value form `decisions-012-multi-value-cli-param-convention` requires. `--dry-run` prints the plan and writes nothing, and wins over `--yes`. `lore --json init` stays accepted-and-ignored at exit 0; the typed plan is the Python surface's job.
+- **Install manifest and reconciliation** — `lore init` records what it wrote in `.lore/.install-manifest.json` (path, kind, source, sha256). The next run compares desired against recorded against what is on disk and classifies every path: create, overwrite, remove a file this release no longer ships, or report a conflict where a file has been edited since install. An edited file is never overwritten without `--on-conflict overwrite`, and only bytes Lore wrote and can reproduce are ever removed. A project initialised by an earlier release has no manifest; a shipped legacy-hash table identifies those files instead, so the first upgrade is not one long list of conflicts.
+- **Four recorded answers** — the agents, the access mode, the skill families and the skills-gitignore policy are written to `.lore/config.toml` and reused, so a project is asked once. `--reconfigure` asks again, which needs a terminal to ask in: a run that cannot prompt passes those four as flags or stops at exit 2, because resolving them to their built-in defaults would deselect every agent and uninstall what the project has. A recorded answer that no longer resolves — `init-agents = ["none", "claude"]`, say — is reported with the key holding it and the flag that replaces it, never as a traceback.
+- **Git tracking of installed skills** — `--skills-gitignore` decides whether the skills directory is ignored whole (`all`), tracked whole (`none`), or has only Lore's own installed files ignored (`lore-only`, the default). `--gitignore` adds Lore's generated artefacts — the database, the reports directory, the install manifest — to the project's root `.gitignore` inside a marker block.
+- **New public API names** — `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`, `plan_init`, `apply_init`, `validate_access_mode`, `validate_skill_family`, `validate_agent_id` and `validate_agent_selection` join `lore.api.__all__`. `plan_init()` computes what an initialisation would do and returns a typed `InitPlan` without touching the working tree; `apply_init(plan)` performs one and returns an `InitResult`. Every token the CLI accepts, the Python surface accepts, and the four validators reject exactly what `click.Choice` rejects. Additive: nothing left `__all__` and no signature narrowed. `run_init()` keeps its zero-argument signature and its pre-feature behaviour — no agent, skills under `.lore/skills/`, every family.
+- **Four `Config` fields and four config keys** — `init_agents`, `init_access_mode`, `init_skill_families` and `init_skills_gitignore` on the exported `Config` dataclass, read from the root keys `init-agents`, `init-access-mode`, `init-skill-families` and `init-skills-gitignore`. `plan_init` is their only reader. A list key holding an unknown token drops the whole key to its default with one stderr warning, which is fail-soft parity with the scalar path.
+
+#### `lore health --scope skills` — auditing the installed skills
+
+An eleventh `--scope` token, closing the one entity type `lore init` seeded with no audit surface. Adding a token is additive under `decisions-017-constrained-flags-use-click-choice`; the `click.Choice` mechanism, its wording and its exit-2 contract are untouched.
+
+- **Five checks** — `missing_skill_file` (error: recorded in the manifest, gone from disk), `modified_skill_file` (warning: edited since install), `retired_skill_present` (warning, naming the successor the catalogue records), `missing_skill_frontmatter` (error: a `SKILL.md` whose frontmatter has no `name`), and `skills_scan_failed` (error: the manifest exists and does not parse).
+- **Only the paths the manifest names are walked** — a hand-written skill beside an installed one is never audited, the same discipline reconciliation follows.
+- **A project with no manifest reports nothing** — one that predates the manifest is a legitimate state, so the scope is silent rather than failing CI on every project that has not yet re-initialised.
+
+#### The generated `.lore/config.toml` known-key header
+
+The comment block above the settings is generated from the loader's own registry and regenerated on every `lore init`, so a project initialised before a key existed learns about it. Only the leading contiguous run of `#` lines is replaced: every line from the first setting onward — values, ordering, blank lines, inline comments and keys Lore does not know — is left byte-identical. The block's first line says it is regenerated, which is the same social contract the `<!-- lore:begin -->` marker blocks carry.
+
 #### `lore health --scope voice` — codex voice linting
 
 A tenth `--scope` token that audits canonical codex prose against the codex voice rules (`lore artifact show codex-voice`). Because `health_check`'s accepted scope values are public API, the added token is an additive, minor-bump change per standards-public-api-stability.
@@ -34,6 +59,21 @@ A new design-document artifact defines the single voice every canonical codex do
 
 ### Changed
 
+#### Skill catalogue consolidated — fifteen skills to ten
+
+The shipped skills were named for the entity each one wrote, so a project carried three skills to search its own memory and five to author one. They are consolidated into ten, and every retirement is recorded in a ledger so a project hopping several releases gets each rename explained rather than a file silently vanishing.
+
+- **Merged** — `explore-codex`, `explore-rite` and `explore-codex-rite` into `retrieve-memory`; `update-codex`, `new-rite`, `ingest-source` and `refresh-source` into `store-memory`.
+- **Renamed** — `new-doctrine`, `new-knight`, `new-watcher`, `new-artifact` and `new-custom-schema` to `update-doctrine`, `update-knight`, `update-watcher`, `update-artifact` and `update-custom-schema`; `lore-update` to `sync-codex-guide`, whose agent-file half is now the instruction-file marker block.
+- **Reconciled, never deleted blindly** — `lore init` removes a retired skill only when its bytes are the bytes Lore installed. One that has been edited is reported and kept, naming the skill it retired into.
+- **Three families** — `memory`, `machinery` and `workflow`. `--skills` and `init-skill-families` take family ids, plus the aggregates `all` and `none`, which resolve in the business layer so `plan_init(skill_families=["all"])` and `--skills all` are the same call.
+
+#### Dependency floors
+
+- **`click>=8.0,<9.0` → `click>=8.3,<9.0`.** The space-separated multi-value option class reaches Click parser internals verified on 8.3 alone. On an older in-range Click a parser hook that silently stops consuming the greedy tail would break the exit-2 misuse contract at runtime, on a user's machine, rather than at install time; the floor states the verified range instead.
+- **`questionary>=2.0,<3.0` is a new hard dependency.** It renders the interactive prompts. `lore.prompts` imports it inside its functions rather than at module scope, so no other command pays for it at import time.
+- **Wheel contents** — the build's declared artifacts became `src/lore/defaults/**/*`, so the agent registry, the skill catalogue and the legacy-hash table are guaranteed into the wheel. The previous entry named a file that no longer exists.
+
 #### `lore health` no longer writes a report file by default
 
 Every `lore health` run wrote a timestamped markdown report to `.lore/codex/transient/health-<timestamp>.md`, and those reports piled up in the transient codex layer until someone deleted them by hand. A new `health-report-retention` root key in `.lore/config.toml` now governs that persistence, and its default is `"none"`.
@@ -47,6 +87,10 @@ Every `lore health` run wrote a timestamped markdown report to `.lore/codex/tran
 - **Seeded docs follow** — `GETTING-STARTED.md` now names both known config keys, `LORE-AGENT.md` tells agents that `lore health` writes no report unless retention is enabled, and the `new-custom-schema` skill qualifies its claim that health reports live under `transient/`.
 
 ### Fixed
+
+#### `lore init` reported the wrong database schema version
+
+The status line said `Created lore.db (schema version 1)` while the database carried version 6 — the message was a literal written before five migrations shipped, and nothing connected the two. It interpolates `lore.db.SCHEMA_VERSION`, so the next migration updates it for free. The other two branches (`Skipped lore.db (already exists)` and the corrupted-database warning) are unchanged.
 
 #### `lore health --scope` flag form in the source-ingest skills
 

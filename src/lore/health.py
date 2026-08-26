@@ -75,7 +75,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites", "voice")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites", "voice", "skills")
 
 # Report persistence policies, in the order the error message lists them.
 #   none   — write nothing (default; pre-existing reports are left alone)
@@ -1037,6 +1037,290 @@ def _check_dangling_codex_rites(project_root: Path) -> list[HealthIssue]:
     return issues
 
 
+_SKILL_SOURCE_PREFIX = "skill:"
+
+_SKILL_CHECK_SEVERITY: dict[str, str] = {
+    # Lore claiming to have installed a file that is gone is a real
+    # inconsistency, and a `SKILL.md` an agent cannot identify is unusable.
+    "missing_skill_file": "error",
+    "missing_skill_frontmatter": "error",
+    "skills_scan_failed": "error",
+    # An installed file carrying instructions for the mode this project did not
+    # choose, or the marker grammar `render` resolves away, is not an edit
+    # anybody made on purpose — it is a half-finished conversion, and following
+    # it means reaching Lore the way the project decided not to.
+    "wrong_access_mode": "error",
+    "unrendered_access_marker": "error",
+    # A person editing an installed skill, or keeping a retired one, is
+    # legitimate: `lore init` asks before touching either.
+    "modified_skill_file": "warning",
+    "retired_skill_present": "warning",
+    "skill_name_mismatch": "warning",
+}
+
+
+def _skill_issue(check: str, entity_id: str, detail: str) -> HealthIssue:
+    """Build one skills row, taking its severity from the table above.
+
+    ``schema_id``, ``rule`` and ``pointer`` stay null, as on every non-schema
+    check.
+    """
+    return HealthIssue(
+        severity=_SKILL_CHECK_SEVERITY[check],
+        entity_type="skills",
+        id=entity_id,
+        check=check,
+        detail=detail,
+    )
+
+
+def _skill_id_of(source: str) -> str | None:
+    """Return the skill a manifest entry's ``source`` names, or ``None``.
+
+    ``skill:store-memory`` is a skill file; ``agent-instructions:claude`` and
+    ``lore-agent`` are other files Lore installed and another scope's business.
+    """
+    if not source.startswith(_SKILL_SOURCE_PREFIX):
+        return None
+    return source[len(_SKILL_SOURCE_PREFIX):]
+
+
+def _packaged_relative(path: str, skill_id: str) -> str | None:
+    """The path of *path* within its skill directory, or ``None``.
+
+    An installed path is ``<root>/<skill_id>/<relative>``, and the root varies
+    with the agent — so the skill-relative tail is what names the packaged file
+    the install rendered from.
+    """
+    _, separator, tail = path.partition(f"/{skill_id}/")
+    return tail if separator and tail else None
+
+
+def _wrong_mode(
+    project_root: Path, path: str, skill_id: str, recorded_mode: str | None, digest: str
+) -> str | None:
+    """The access mode *path* was rendered for, when it is not the recorded one.
+
+    A digest mismatch says only "edited". This asks the follow-up question the
+    digest cannot: is this file *this release's own bytes for the other mode*?
+    Pasting one project's render into another, or converting a tree by hand and
+    stopping half way, both land here — and both leave a native-mode agent
+    following CLI instructions or the reverse, which is the one thing the access
+    mode exists to decide.
+
+    Only reached for a file that already failed its digest check, so a clean
+    install never renders anything. ``None`` when the manifest records no mode
+    (a manifest written before the answer existed), when the packaged file is
+    gone, or when the bytes are simply an edit.
+    """
+    from lore import manifest, skills
+    from lore.initplan import AccessMode
+
+    if recorded_mode is None:
+        return None
+    relative = _packaged_relative(path, skill_id)
+    if relative is None:
+        return None
+    for mode in AccessMode:
+        if mode.value == recorded_mode:
+            continue
+        try:
+            candidate = skills.rendered_bytes(skill_id, relative, mode)
+        except (ValueError, OSError):
+            return None
+        if manifest.bytes_digest(candidate) == digest:
+            return mode.value
+    return None
+
+
+def _frontmatter_issues(path: str, text: str, skill_dir: str) -> list[HealthIssue]:
+    """Audit one installed ``SKILL.md``'s frontmatter.
+
+    Both fields, not one. ``name`` is what the check has always covered;
+    ``description`` is the field the harness actually selects a skill on, so a
+    skill missing it is invisible to the agent while every existing check passes
+    — and the name has to equal its directory or the skill cannot be invoked at
+    all.
+    """
+    from lore.frontmatter import parse_frontmatter_text
+
+    record = parse_frontmatter_text(
+        text, required_fields=(), extra_fields=("name", "description")
+    )
+    if record is None:
+        return [
+            _skill_issue(
+                "missing_skill_frontmatter",
+                path,
+                "SKILL.md frontmatter is missing 'name'",
+            )
+        ]
+
+    issues: list[HealthIssue] = []
+    for field in ("name", "description"):
+        value = record.get(field)
+        if not isinstance(value, str) or not value.strip():
+            issues.append(
+                _skill_issue(
+                    "missing_skill_frontmatter",
+                    path,
+                    f"SKILL.md frontmatter is missing '{field}'",
+                )
+            )
+    name = record.get("name")
+    if isinstance(name, str) and name.strip() and name.strip() != skill_dir:
+        issues.append(
+            _skill_issue(
+                "skill_name_mismatch",
+                path,
+                f"frontmatter name is '{name.strip()}' but the directory is "
+                f"'{skill_dir}'; the harness invokes a skill by its directory",
+            )
+        )
+    return issues
+
+
+def _check_skills(project_root: Path) -> list[HealthIssue]:
+    """Audit the skill files ``.lore/.install-manifest.json`` records.
+
+    Eight checks: a recorded file that is gone (``missing_skill_file``), one
+    holding this release's bytes for the other access mode
+    (``wrong_access_mode``), one otherwise edited since install
+    (``modified_skill_file``), one still carrying an unresolved access marker
+    (``unrendered_access_marker``), one whose skill the catalogue has retired
+    (``retired_skill_present``), a ``SKILL.md`` whose frontmatter lacks ``name``
+    or ``description`` (``missing_skill_frontmatter``), one whose ``name``
+    disagrees with its directory (``skill_name_mismatch``), and a manifest that
+    exists and does not parse (``skills_scan_failed``).
+
+    The three added last are all about the access mode and the agent harness,
+    which the digest check can see only as "edited": a file rendered for the
+    wrong mode, a marker the renderer can never emit, and the ``description``
+    field the harness selects skills on. A skill with a broken description is
+    invisible to the agent and, before this, invisible to health as well.
+
+    Walks **only the paths the manifest names** — the same
+    never-touch-what-Lore-did-not-install discipline reconciliation follows, so
+    a hand-written skill beside an installed one is never audited.
+
+    **A missing manifest emits nothing.** A project that predates the manifest
+    is a legitimate state, exactly as an absent ``.lore/custom-schemas/`` is the
+    zero-overlay baseline; reporting a ``scan_failed`` would fail CI on every
+    project that has not yet re-initialised.
+
+    The unparseable case is caught here rather than left to the generic
+    checker wrapper, so the parse reason survives instead of arriving as a bare
+    ``scan_failed``.
+    """
+    import json
+
+    from lore import manifest, skills
+    from lore.paths import install_manifest_path
+
+    manifest_file = install_manifest_path(project_root)
+    if not manifest_file.is_file():
+        return []
+
+    try:
+        # Read and parse here rather than through `manifest.load`, which warns
+        # to stderr and returns None for both the absent and the unparseable
+        # case — this scope has to tell them apart and report the reason.
+        recorded = manifest._parse(
+            json.loads(manifest_file.read_text(encoding="utf-8"))
+        )
+    except (OSError, ValueError) as exc:
+        return [
+            _skill_issue(
+                "skills_scan_failed",
+                manifest_file.relative_to(project_root).as_posix(),
+                str(exc),
+            )
+        ]
+
+    issues: list[HealthIssue] = []
+    retired_reported: set[str] = set()
+    # The mode this install was performed in. Taken from the manifest rather
+    # than from `.lore/config.toml`: the question is whether a file matches the
+    # run that wrote it, and the manifest is the record of that run.
+    recorded_mode = recorded.answers.get("access_mode")
+    if not isinstance(recorded_mode, str):
+        recorded_mode = None
+
+    for entry in recorded.files:
+        skill_id = _skill_id_of(entry.source)
+        if skill_id is None:
+            continue
+
+        target = manifest.resolve_path(project_root, entry.path)
+        if not target.is_file():
+            issues.append(_skill_issue(
+                "missing_skill_file",
+                entry.path,
+                "recorded in the install manifest but missing on disk",
+            ))
+            continue
+
+        # A `section` entry's hash covers a marked block inside a file the
+        # project owns, so neither the whole-file digest nor `SKILL.md`
+        # frontmatter says anything true about it.
+        if entry.kind != "section":
+            digest = manifest.file_digest(target)
+            if digest != entry.hash:
+                # "Edited" is the fallback verdict, not the first one: a file
+                # holding this release's bytes for the *other* access mode is a
+                # half-converted project rather than somebody's edit, and only
+                # one of those is a warning.
+                other_mode = _wrong_mode(
+                    project_root, entry.path, skill_id, recorded_mode, digest
+                )
+                if other_mode is not None:
+                    issues.append(_skill_issue(
+                        "wrong_access_mode",
+                        entry.path,
+                        f"rendered for the '{other_mode}' access mode; this project "
+                        f"records '{recorded_mode}'. Run lore init to convert it",
+                    ))
+                else:
+                    issues.append(_skill_issue(
+                        "modified_skill_file",
+                        entry.path,
+                        "edited since install; lore init will replace it with "
+                        "the shipped version",
+                    ))
+            text = manifest.read_text(target)
+            # Resolving access blocks is the whole of what the mode does at
+            # install time, so a marker surviving in an installed file is
+            # output `render` cannot produce. The one skills check that needs
+            # no hash, no manifest answer and no packaged file to be certain.
+            marker = skills.unresolved_marker(text)
+            if marker is not None:
+                issues.append(_skill_issue(
+                    "unrendered_access_marker",
+                    entry.path,
+                    f"holds a literal {marker!r}; access blocks are resolved at "
+                    "install time, so an installed file can never carry one. "
+                    "Run lore init to re-render it",
+                ))
+            if target.name == skills.SKILL_FILE:
+                issues.extend(
+                    _frontmatter_issues(entry.path, text, target.parent.name)
+                )
+
+        retirement = skills.retirement_for(skill_id)
+        if retirement is not None and skill_id not in retired_reported:
+            # One row per skill, not per file: a skill installs several files
+            # and may install under two agent roots, and `lore init` reconciles
+            # all of them in one move.
+            retired_reported.add(skill_id)
+            issues.append(_skill_issue(
+                "retired_skill_present",
+                skill_id,
+                f"retired into {retirement.into}; run lore init to reconcile",
+            ))
+
+    return issues
+
+
 def _check_rites(project_root: Path) -> list[HealthIssue]:
     """Audit rites: reference integrity, graph well-formedness, orphan asymmetry.
 
@@ -1671,6 +1955,7 @@ def health_check(
         "bindings": lambda: _check_bindings(project_root),
         "rites": lambda: _check_rites(project_root),
         "voice": lambda: _check_voice(project_root),
+        "skills": lambda: _check_skills(project_root),
     }
 
     seen: set[HealthIssue] = set()

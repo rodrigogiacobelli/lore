@@ -40,7 +40,14 @@ related:
 - decisions-014-link-direction
 - decisions-015-rites-writable-file-entity
 - decisions-016-rite-json-envelope-omits-group
+- decisions-017-constrained-flags-use-click-choice
+- decisions-001-dumb-infrastructure
 - tech-arch-schemas
+- tech-arch-agents-md
+- conceptual-workflows-lore-init
+- conceptual-workflows-init-interactive
+- conceptual-workflows-init-reconcile
+- conceptual-entities-skill
 ---
 
 # Lore CLI — commands surface
@@ -76,7 +83,7 @@ Errors always go to stderr. In `--json` mode they go to stderr as JSON: `{"error
 
 ### Global flags
 
-`--json`, `--help`, `--version` are global. `--json` is supported on every command **except** `lore init` and `lore oracle`. The exception is permanent — both produce side-effecting human output (init prints status; oracle writes markdown reports) where JSON adds no value.
+`--json`, `--help`, `--version` are global. `--json` is supported on every command **except** `lore init` and `lore oracle`. The exception is permanent — both produce side-effecting human output (init prints status; oracle writes markdown reports) where JSON adds no value. The two refuse it differently: `lore oracle` rejects the flag with a usage error at exit 2, while `lore init` accepts and ignores it at exit 0, so an existing pipeline that passes the global flag to every command still initialises a project. The machine surface for `lore init` is `lore.api.plan_init()`, which returns a typed `InitPlan` describing every create, overwrite, removal and conflict without performing any of them.
 
 ### Idempotency rules
 
@@ -188,7 +195,29 @@ Matches against canonical keywords AND aliases (token-run, canonical-only). Surf
 
 ### `lore init`
 
-Idempotent. Re-init overwrites Lore-shipped default assets (doctrines, knights, artifacts, gitignore, skills) — user-named files with different names are never touched. AGENTS.md: non-Lore content backed up to `AGENTS.md.old`; Lore-marked content refreshed between markers. Does NOT support `--json`. See tech-arch-agents-md.
+Idempotent. Re-init overwrites Lore-shipped default assets (doctrines, knights, artifacts, gitignore) in their `default/` subtrees; user-named files in the flat parent directories are never touched. Installed skills and instruction-file blocks are reconciled instead of blindly rewritten — see conceptual-workflows-init-reconcile.
+
+Prompts only when standard output is a terminal. Without a terminal it takes flags, then the answers recorded in `.lore/config.toml`, then built-in defaults, and never blocks.
+
+| Flag | Type | Default | Answers |
+|---|---|---|---|
+| `--agent ID [ID ...]` | `SpaceSeparatedChoice` over registry ids | recorded `init-agents`, else none | which coding agents the project uses |
+| `--access {cli,native}` | `click.Choice` | recorded `init-access-mode`, else `native` | whether skills use the Lore CLI or the agent's own tools |
+| `--skills FAMILY [FAMILY ...]` | `SpaceSeparatedChoice` over `memory` `machinery` `workflow` `all` `none` | recorded `init-skill-families`, else all three | which skill families install |
+| `--on-existing-agent-file {append,skip}` | `click.Choice` | `append` | what to do with an instruction file that has no Lore markers |
+| `--skills-gitignore {lore-only,none,all}` | `click.Choice` | recorded `init-skills-gitignore`, else `lore-only` | how installed skills are tracked in git |
+| `--on-conflict {skip,overwrite}` | `click.Choice` | `skip` | what to do with a file Lore did not install, sitting where Lore would write; no say over Lore's own files |
+| `-y, --yes` | flag | off | accept every prompt without asking |
+| `--reconfigure` | flag | off | re-prompt for the four recorded answers; needs a terminal, or all four as flags |
+| `--dry-run` | flag | off | print the plan, write nothing, exit 0 |
+
+`cli.py` reads no config key. Every unset flag arrives as `None` and `plan_init` resolves argument → `.lore/config.toml` → built-in default; the prompts preselect from the plan's own answers (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default` constraint 2).
+
+`--agent none` combined with another id is a usage error at exit 2: `--agent none cannot be combined with other agents.` The rule lives in `validators.validate_agent_selection`, which `plan_init` calls too, so a Python caller is rejected identically. A run whose *recorded* answer breaks that rule — or any other token `plan_init` refuses — exits 1 with the same message plus the config key holding it and the flag that replaces it; it is never a traceback.
+
+`--reconfigure` without a terminal is a usage error at exit 2 unless all four recorded answers arrive as flags: there is no prompt to ask in, and resolving those four to their built-in defaults would deselect every agent and uninstall what the project has.
+
+Does NOT support `--json` — the flag is accepted, has no effect, and the command exits 0. See conceptual-workflows-lore-init, conceptual-workflows-init-interactive, tech-arch-agents-md.
 
 ### `lore oracle`
 
@@ -196,7 +225,7 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits the seven file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, and audits canonical codex prose against the voice rules. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
+Audits the eight file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, audits canonical codex prose against the voice rules, and audits the installed skills against the install manifest. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
 
 ```
 lore health --scope voice
@@ -204,7 +233,7 @@ lore health --scope codex voice
 ```
 
 The `voice` scope emits warnings only — every `voice_*` row is a `warning` and none escalates, so `--scope voice` never changes the exit code (`decisions-020-codex-voice-is-enforced`). It reports five checks (`voice_past_narration`, `voice_expiry_hedge`, `voice_forward_promise`, `voice_dangling_deixis`, `voice_sales_register`) over canonical codex layers, skipping `sources/` and `vision/` outright; `lore artifact show codex-voice` is the normative rule set.
- The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. See conceptual-workflows-health.
+ The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. The `skills` scope reads `.lore/.install-manifest.json` and walks only the paths it names: `missing_skill_file` and `missing_skill_frontmatter` are errors, `modified_skill_file` and `retired_skill_present` are warnings, and a project with no manifest emits nothing. See conceptual-workflows-health.
 
 The command has no retention flag. Whether a markdown report is persisted to `.lore/codex/transient/health-<timestamp>.md` is decided by the root-level `health-report-retention` key in `.lore/config.toml` — `none` (default, no file), `latest` (prune prior `health-*.md`, then write), `all` (write, prune nothing). The handler always calls `health_check(write_report=True, timestamp=...)` and passes no `retention`; `health_check` reads the key, so a Python caller gets the same policy (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default`). Persistence is independent of `--json` and never affects the exit code.
 

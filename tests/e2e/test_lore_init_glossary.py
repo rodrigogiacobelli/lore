@@ -66,17 +66,16 @@ EXPECTED_GLOSSARY_SKELETON = (
     "items: []\n"
 )
 
-EXPECTED_CONFIG_SKELETON = (
-    "# Project-level Lore configuration.\n"
-    "# Known keys (additional keys are accepted and ignored):\n"
-    "#   show-glossary-on-codex-commands : bool, default true\n"
-    '#   health-report-retention         : "none" | "latest" | "all", default "none"\n'
-    "#       none   - lore health writes no report file (console/API output only)\n"
-    "#       latest - keep only the newest report, pruning older ones\n"
-    "#       all    - keep every report\n"
-    "show-glossary-on-codex-commands = true\n"
-    'health-report-retention = "none"\n'
-)
+def expected_config_header() -> str:
+    """The known-key comment block `lore init` generates.
+
+    Built from `lore.config`'s own registry rather than restated here:
+    interactive-init-us-020 makes the loader the single source for it, so a
+    literal copy in this file would be the drift that story removes.
+    """
+    from lore.config import render_known_keys_header
+
+    return render_known_keys_header()
 
 
 def test_init_creates_glossary_yaml_with_exact_skeleton(runner, fresh_dir):
@@ -88,13 +87,32 @@ def test_init_creates_glossary_yaml_with_exact_skeleton(runner, fresh_dir):
     assert p.read_text() == EXPECTED_GLOSSARY_SKELETON
 
 
-def test_init_creates_config_toml_with_exact_skeleton(runner, fresh_dir):
-    """conceptual-workflows-lore-init — Scenario 1 (config half)."""
+def test_init_creates_config_toml_with_the_skeleton_and_the_recorded_answers(
+    runner, fresh_dir
+):
+    """conceptual-workflows-lore-init — Scenario 1 (config half).
+
+    The seeded skeleton is still written whole. It is no longer the *entire*
+    file: interactive-init-us-013 adds the four ``init-*`` keys, which
+    ``lore init`` records so a second run does not ask the same questions again
+    (FR-10). The skeleton is asserted as a prefix and the answers as the rest.
+    """
+    import tomllib
+
     result = runner.invoke(main, ["init"])
     assert result.exit_code == 0, result.output
     p = fresh_dir / ".lore" / "config.toml"
     assert p.is_file()
-    assert p.read_text() == EXPECTED_CONFIG_SKELETON
+    text = p.read_text()
+    assert text.startswith(expected_config_header())
+    assert tomllib.loads(text) == {
+        "show-glossary-on-codex-commands": True,
+        "health-report-retention": "none",
+        "init-agents": [],
+        "init-access-mode": "native",
+        "init-skill-families": ["machinery", "memory", "workflow"],
+        "init-skills-gitignore": "lore-only",
+    }
 
 
 def test_init_stdout_announces_created_glossary_and_config(runner, fresh_dir):
@@ -145,7 +163,22 @@ def test_init_idempotent_does_not_overwrite_user_config(runner, initialised_dir)
 
     result = runner.invoke(main, ["init"])
     assert result.exit_code == 0, result.output
-    assert config_p.read_text() == user_config
+    text = config_p.read_text()
+    # The user's setting line survives byte for byte — that is the ADR-013
+    # guarantee, and it is the whole point of the scenario. What joins it are
+    # the four answers this run resolved: interactive-init-us-013 records them
+    # so the next run does not ask again (FR-10, Tech Spec §9.2), and the
+    # regenerated known-key header above them (interactive-init-us-020).
+    assert text.startswith(expected_config_header() + user_config)
+    assert "show-glossary-on-codex-commands = true" not in text
+    assert sorted(
+        line.split(" =")[0] for line in text.splitlines() if line.startswith("init-")
+    ) == [
+        "init-access-mode",
+        "init-agents",
+        "init-skill-families",
+        "init-skills-gitignore",
+    ]
     assert "Created config.toml" not in result.output
 
 
@@ -286,20 +319,28 @@ def test_init_seeding_step_ordering_docs_before_glossary(runner, fresh_dir):
     assert result.exit_code == 0, result.output
     out = result.output
 
-    # docs/* (LORE-AGENT.md) must be reported before glossary/config seeding.
-    docs_idx = out.find("LORE-AGENT.md")
+    # The docs/ copy must be reported before glossary/config seeding.
+    #
+    # `LORE-AGENT.md` used to name that step. It no longer can: it is rendered
+    # rather than copied, so Tech Spec §6.7 moves it to step 3, after the
+    # skills and after the user-tracked skeletons. `GETTING-STARTED.md` is the
+    # file the docs copy still writes, and the invariant Scenario 8 records —
+    # the docs step precedes the skeletons — is asserted on it. That the
+    # rendered instruction text is still reported at all is asserted below.
+    docs_idx = out.find("GETTING-STARTED.md")
     glossary_idx = out.find("Created codex/glossary.yaml")
     config_idx = out.find("Created config.toml")
 
+    assert "LORE-AGENT.md" in out, f"rendered instruction text unreported:\n{out}"
     assert docs_idx != -1, f"docs seeding output missing from init stdout:\n{out}"
     assert glossary_idx != -1, f"glossary seeding output missing:\n{out}"
     assert config_idx != -1, f"config seeding output missing:\n{out}"
     assert docs_idx < glossary_idx, (
-        f"docs/LORE-AGENT.md (idx={docs_idx}) must precede glossary "
+        f"docs/GETTING-STARTED.md (idx={docs_idx}) must precede glossary "
         f"(idx={glossary_idx}) in init stdout:\n{out}"
     )
     assert docs_idx < config_idx, (
-        f"docs/LORE-AGENT.md (idx={docs_idx}) must precede config "
+        f"docs/GETTING-STARTED.md (idx={docs_idx}) must precede config "
         f"(idx={config_idx}) in init stdout:\n{out}"
     )
 

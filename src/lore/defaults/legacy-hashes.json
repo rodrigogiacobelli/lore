@@ -1,0 +1,180 @@
+{
+  "files": {
+    ".lore/LORE-AGENT.md": [
+      "sha256:08710c77f73452702ab34309e26b9ecae6dad189d4420de444726946d6401822",
+      "sha256:2ac6b4d2e97349e424e65f9eb5040c38fae3b4f40eedbb97d67f83f67a07fd84",
+      "sha256:2acd6cf80eb8ea03128fce402b5e9a2a31997e76470a36ebdbbef307697cb8cf",
+      "sha256:6bafb3343fe22fa2a830f6e446de1ede28cc89720e46a77382a55a07cee38c27",
+      "sha256:a0df959e38b453bd066b9726be41295f6a891b3ea98a301d55e85003cef9b97e",
+      "sha256:e6f7eab271b92a74495e8cbbdf0a097f8fb9bed9194401e211e4fb8abb88d05f"
+    ],
+    ".lore/skills/.gitignore": [
+      "sha256:021aef422cff7a0d28ff6760572d4b7942728f8098abc6076cb5de168e4be197",
+      "sha256:6168963d8c05e39bcc544ba45cc6b63f7fc0ef81723f1cac811463cbfdcc0365",
+      "sha256:62c330d8a7be624a6a09b875233d752d67f7098e3fe02f88fc9d40e3babb510e",
+      "sha256:65132c2833f48bf44aec2e513c0eb8ff5e1ded8f884230eb3bdac208903d2e42",
+      "sha256:7f9dd6bcca7098502645b90337f003e1bffbe652bf609e967ca6461d5cfbf0b5"
+    ],
+    ".lore/skills/explore-codex-rite/SKILL.md": [
+      "sha256:3ef635e9de314c14e9ea7333488cbf88eecf3cbcbbf17dc2448bb40bea9dc63b"
+    ],
+    ".lore/skills/explore-codex/SKILL.md": [
+      "sha256:2b8d7ac3453b13fe5ddf36d3bd2e557061f4e54f1522888441ea6496855c06c6",
+      "sha256:4bf9683f157a5d5009a4bd6486dd7dccd0c720f98db6bc105daac9cd695bf874",
+      "sha256:6bc6b5b9de6b703b3f5d1d372ab0831855e38c5d79f273306d97671f339843d1",
+      "sha256:7a1849965ed0223678c550693b3f117c99b4a09ec6b92a0aee2b00bfd1f7cbfd",
+      "sha256:b405e3f60021707d2bb2e8d5074c3ed59da69e04219c7cad6a0d0794b8307230"
+    ],
+    ".lore/skills/explore-rite/SKILL.md": [
+      "sha256:8a832f7af07e3eba071be8a3e1cf1d0936866041f8521c8767a8e3c3e6df4821"
+    ],
+    ".lore/skills/ingest-source/SKILL.md": [
+      "sha256:1ada7a9561184f0a3fbece3da7964938c9b10d00ef878553b1e087099b3f8de5",
+      "sha256:3b2fbba52ad141e3558eeaf4971b39c6b7e36c52247f33ccb5da1c1abcdf0a76",
+      "sha256:e21b3e7cc1a04d31178241639134cbedf0df3bc489d82dfc44002b407e9338a4",
+      "sha256:e3399c919570e4ad833df5ab90bee1176e65ca6db13d4ebfe81598937c4096eb",
+      "sha256:e92633955a5df4f798ac54e92dbcb6b79e8018d5144ffaf29c912bc9a2d698e1",
+      "sha256:ed971de4fc5384d1039a4358e059690c1c88b4db91367e2e4aaf623d0b5fead5",
+      "sha256:f15fca20cd834e1bcb023b942ff363ea214431754f49c6ea0a53c1fc0957dde7"
+    ],
+    ".lore/skills/inquest/SKILL.md": [
+      "sha256:04c8ff0d2101c560b5afa0763a01efe0f3487710fafae6387fbe7ed104be636e",
+      "sha256:1f11ebcac14100628ab30fa09bc2e5842af4d3515142a1e5f7aa818744b37021",
+      "sha256:62a724e11fb6d38ba7215a68d67222de87c62d110b0d65428ac73c7075746e02",
+      "sha256:aceb7071cbdf834203ec3d962824c2bd6171d33947c7a61e8daad0edde775e3b",
+      "sha256:b3a3395f5d6ec3791ed0b4c84d7705fef262ff89ba47ad3860c3b7a0f985687b",
+      "sha256:d2bcb455821f20a081753a67fe37a1f75cdea9a7e5204bfa281bc0e4c1120976",
+      "sha256:e6b65842e9bb27e75b826a4ab29a2ee41cde0e1015aeac89a2b400ae3590ab30"
+    ],
+    ".lore/skills/lore-update/SKILL.md": [
+      "sha256:1950aecec32909fb3facc887cc0433b5e3a2938ab6332ce49dff4b51d8ce20bf",
+      "sha256:a8c80acaa2806add328310c1f1e071e8cb95ede340a1bc9f47d52cd608dd66c9",
+      "sha256:e9017ff78f8c9cbf0f332907d4c16870ba6f079512047844765e3acb28063118"
+    ],
+    ".lore/skills/new-artifact/SKILL.md": [
+      "sha256:0b2742837c78c74f598942c5efe082260c3e5e5b6dc0e1ab7b2ba2d7564edc05",
+      "sha256:1e4d2bd5475355f11496ad8d4375c4efb2995812ee9f8d8cbc8076cd63e7a4cd",
+      "sha256:d868d4ad846b62d2b29330b7f842051037598d539ee84a457f41f61db21e7127",
+      "sha256:f520b39266861e4d4ae99fe4ab4d39d652fced111954481d5d4faffa5db4c8d9"
+    ],
+    ".lore/skills/new-custom-schema/SKILL.md": [
+      "sha256:3fd06ff2990ac9e643b408ec7790f2abe12c3762e1354fc473b5a5529965dbfc",
+      "sha256:98c0d2ca9fe272b9961760562433bc9d32458679adf329e3feab799ed688119d",
+      "sha256:e8a976540d92161a1c08e900a51a8999865a495fc3eed22c47f97311a473cd7b"
+    ],
+    ".lore/skills/new-doctrine/SKILL.md": [
+      "sha256:29502b4ab0e0424593549cd9310a86aa51c5d2f48ff3bed1668d5c59e19442cf",
+      "sha256:3acda4d9b930957af74faac238f4ac15502df0517c895e82a87d65aee60219a1",
+      "sha256:aeab7c3042d6f657f3146e70f9a72b51c44637fb7248905596ef2550bfa34acd",
+      "sha256:c854887dd9564dc673e3589157d39f1c5062663578c12151127dfbbb2ec84e8a"
+    ],
+    ".lore/skills/new-knight/SKILL.md": [
+      "sha256:2a3a8e80c9d76281516e451bd7c8eb2d9fbf72d6e8081b69f341e42dbcd20e50",
+      "sha256:d52585a96002006032970ef21767a5bfd14406caab2966bdad6fa7ab85eb8bec"
+    ],
+    ".lore/skills/new-rite/SKILL.md": [
+      "sha256:a32e4748e9e0a8c180a14d25ef7b1d8802d328234dbf7461c43ed54d1cc3bdd9",
+      "sha256:cc79529fddb65723e65940989419d93717f43bb58f0959a46756179aaaf21a4f"
+    ],
+    ".lore/skills/new-watcher/SKILL.md": [
+      "sha256:1bf3f77ed4eb40bc327e3fb96a2dcd777941e43f48428d256b5d98d6adc9f3c5",
+      "sha256:e9176f6f18e01f20f200085cab4e319822951a3d1b565d4317da7eabb984ba2c"
+    ],
+    ".lore/skills/refresh-source/SKILL.md": [
+      "sha256:03f6293271f6fee72f1f58061394687d552013812860af2eab4e5985d042a463",
+      "sha256:1b4dedac5374e698c6657a146db7be5e718aeaee6bd7fddf01c6f4e7e18b1734",
+      "sha256:854695695f1ff6ac43a7311dce7dd50e91e131da84165b7679c78f2afa29b146",
+      "sha256:8bdd0c41b59acbc4ca2b5d13023e848695da7a7e29d775606f1a1c96619a036d",
+      "sha256:c5bf264f2d6ea96e6e34804197998a4119e611159fa0ef106054246811f102dd",
+      "sha256:efb882dfe5d0d09878a3f2bfbff97e4d825269fc17bbeb1155ba64ae59617e8c"
+    ],
+    ".lore/skills/retrieve-memory/SKILL.md": [
+      "sha256:42b5b49d03951c4e63ac7dfc231f1cdfb54ace83ff9c981d4b7d13a7e38316c1",
+      "sha256:4be41c21bfcc402ce66e4eac4fc7e77b743ff1476e4761e54aae02c6ce28ea58",
+      "sha256:af458b356e6dc0fe00a7f22e2f6dabe184444bbb29ca7fb324695327894385a4",
+      "sha256:d2f8c920e3d2e2f9e76724b3fff93607d2437e7177cd4727b486ff7f630a8632"
+    ],
+    ".lore/skills/start-quest/SKILL.md": [
+      "sha256:088e1508a39d3f1c7c437cb91d0bc4dc5fe2c4976cfb04681d9ac6ae8843f29a",
+      "sha256:7eaacfa69561798267ff7a020452b47d4bfcb08562d8014a65d5274cc3f43e2d",
+      "sha256:93e9cb011a2fca21337a7815c61fff81cbd83ba8e8455dd9d24b8b92f937ab2a",
+      "sha256:a284c0f0d2160aca2e8baeceb9332852757b25904ea5a4f8188eead62cc39454",
+      "sha256:b58674a4469b1a8505a9637f07183ea92259f51281ebd22b1c27c6b9e1b7f735",
+      "sha256:cf81637332da55fad90fba5f10feb6f9d5b4c998b9ae98e33de99f959b8ce622"
+    ],
+    ".lore/skills/store-memory/SKILL.md": [
+      "sha256:003ee2dad282b2b57fc80ebe547ad9464f6b83e186fabb65eb0bd6b1962c09f0",
+      "sha256:0b90c80eb4339ea3c15499ec3d4ca0ed0799dda1d49e71d67066713c3220db90",
+      "sha256:3613b39d03576c6fcf97a0643879208dbdfc12c0424ebc939b9f02bfb7428d94",
+      "sha256:b66f1522aa736edb77ea9bd2819d53bb8348168c57b28fa2fd03a4ee4f32a3e1",
+      "sha256:d3216f4eff4362560a3566a34e97de45530dc51272bf1ba8fdcdf99487b349ee",
+      "sha256:f655917e8f46e135012f0117c95921f52138e10f134f8f1755b546abc3787099"
+    ],
+    ".lore/skills/store-memory/references/codex-doc.md": [
+      "sha256:40e2308b33e5f7cffd7eaadeb31db1bf44ccc882c957f562c2d0db3beda0f19a",
+      "sha256:9b8b84c31cb9d98da8fa2117fcc13b599fd1047e920477561fd642dd124d16a5",
+      "sha256:f50c95adc70fb6336234db93c3ecac21a64d82f17250e0c2c902f44d0774e6ec"
+    ],
+    ".lore/skills/store-memory/references/rite.md": [
+      "sha256:78e29726f1f95a52562125f23ae6ed89b5b298c6a3f3723555cf810c6c90a58f",
+      "sha256:8011a55ada50943bf43a6cff66dc0a7298a5599b2d37a93df3dc34981ec390c5",
+      "sha256:81e7f14dd77b1638475351c7c036e68f56f1fcec7a34e1f4dacf979acd7ed0d9",
+      "sha256:9241f65152b564deb5509c882023ed2f26c5de215a0252879c8500b82d8b6f3c",
+      "sha256:ccae35fc4be11eaccca92e959b186de9f74ac77c8e5ef37bd0a52a7e42664639"
+    ],
+    ".lore/skills/store-memory/references/source.md": [
+      "sha256:37fb61c57cf7eed76cbefc506a1da61bafc2ae14aaab8205066785217cc40f29",
+      "sha256:54afe437ab2e9705f5f34609e34e7ef2a73090953a128c9d7a2166cd29c1ce6b",
+      "sha256:a2d3c901ecb8cd7cd86b6ad32f5f86c7d2654b15963deccd8e7119ddecb8b603"
+    ],
+    ".lore/skills/sync-codex-guide/SKILL.md": [
+      "sha256:0f47ff5f8d52fbb04cd1588dce342b2242e77eba1bb6e9560d7b8e24967ee681",
+      "sha256:308d8668838f4f4fdb2fa131ef9e756d4ef0b07ee08569a73980b1bb3e34d51f",
+      "sha256:5460370ed5631f234e9788538cfc3e63bee0044a87e3f49a73c7fe1df0e46de4",
+      "sha256:891502ac06e81b0be2e0211d28849e2d2d6c3d53ba2417be6b3df8983f686620",
+      "sha256:a591f3ec5f24bc3ece420154ddf5449dc7b6ccbff658f815bf0b49d52bf22208",
+      "sha256:ab5db270c5be29bf21ba0115f8c943a2196a6ce65420dae226c9ab022225cc01",
+      "sha256:fe699f12753717e3ecfe698eea67a32d15a984705f29e75d398a7c980673457d"
+    ],
+    ".lore/skills/update-artifact/SKILL.md": [
+      "sha256:2047a78b299ea9d152b642c27f3e57e2c656d47f4a6c0ecb6ed6d111da4c11e7",
+      "sha256:35d36dbb2d724cebdfbd6c2f61ba875f3a7c8cede97ca54c49fe094924d4ea78",
+      "sha256:3ef5028944bc5c7264f96fa5e32871fc6a70ac9cf18ea45cc29f37eb6e1e4470",
+      "sha256:ff44c44a99f54e3084ea45cc3ac9064cded0970cdc4d5af4a6f65c3808582875"
+    ],
+    ".lore/skills/update-codex/SKILL.md": [
+      "sha256:346800d603fdfe51126581da7327784b503cc1de06f0a9c345ba104cb0c574c9",
+      "sha256:3bbadef9cbb500649c6813e6857ddef9b120c2a31eeb1db7951d7c60b079f4c0",
+      "sha256:3cc0db59645d13ff08c6c4a35c58ab8aab6f14791852355951539a211097bdc5",
+      "sha256:597f4f862c06fb04615e48bce7924789cc1460551f3c3bd4569013a31cbdcc52",
+      "sha256:e51625e6249d2a2905dbb6d4c39e434b0a2b50c22ac1d3d418e386806864fddb"
+    ],
+    ".lore/skills/update-custom-schema/SKILL.md": [
+      "sha256:0a95834e790d957ee91e2bab3c53511adb6e485eef57e03c1323ec2cc26efda6",
+      "sha256:278b0c1e9982becc3e35241528e392ca0c76fe4184ef2e006daddd38b1c7e2c7",
+      "sha256:97a875422cf1cfa9aaa946a1ddffe8dacb00c29a1202e141e7089fbc5b4a0e1a",
+      "sha256:ced5af784286c40250ace296621ea51f666230dcf554af63bc85fd86b5727835",
+      "sha256:d5808e9e16def6cbde070ecc396df2f7cdf5d66d7cc6ec134a2fdf481e40eacc",
+      "sha256:de797fe1ad7e328a2713c081212a52c9adf72e58379711268f371e2aefe4a3d1"
+    ],
+    ".lore/skills/update-doctrine/SKILL.md": [
+      "sha256:97520d79d4f6fc76e03573fee1c1983af414c4d6e9fc4702671acba93945f9ab",
+      "sha256:9b16276043e5ae0ee1c8476f575fd737758421d2d988e711c591dd3f7453d489",
+      "sha256:e49f7739695ae63faf1baafc92ce6c44b11fe51f78092ad7fef6a1c8a284b041",
+      "sha256:eaba3930146f028c554dd5d0caf7c9ef212060b68edc0c273f4e48693b686326"
+    ],
+    ".lore/skills/update-knight/SKILL.md": [
+      "sha256:097e80ea8cae4b9fb3d532fa723a50482392622076f15d1f381a0636dcfa00df",
+      "sha256:60a6ae11eb3227971494c13bcdc423d30d58fb6155f08b85bd169300dcfaa20c",
+      "sha256:7d7afb4c0f84a5b82b1ce51165013964f6231bcc479dcad137e12000b9b9362c",
+      "sha256:c048c5cbbdf9f61cbf5867b1ecc9d5f88f48345e094ac00abd4171d87bdf56f5"
+    ],
+    ".lore/skills/update-watcher/SKILL.md": [
+      "sha256:4208adbda4aa8153a481d7f0d8566da73f06d7ea17fa37d175ecbc2f94969d39",
+      "sha256:4cda468d9d4f6fe79003d88b18472d4b2a4a974af1b5c75948bd2f9387c3d69e",
+      "sha256:697d17438629b9aa55bd64f37cbb965f9dec2c484da6c9dbc13691da31399260",
+      "sha256:ae26ce992e5aca3525e1f6e65c7bba32edd6003b527feddd62b5f727cc27fea5"
+    ]
+  },
+  "legacy_hashes_version": 1
+}

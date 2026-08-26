@@ -9,7 +9,7 @@ binds:
 - tests/unit/test_validators.py
 - tests/unit/test_validators_binds.py
 - tests/unit/test_validators_is_glob_pattern.py
-related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "standards-dry", "standards-single-responsibility", "tech-arch-schemas", "conceptual-workflows-impacts"]
+related: ["tech-arch-validators", "decisions-011-api-parity-with-cli", "decisions-017-constrained-flags-use-click-choice", "standards-dry", "standards-single-responsibility", "tech-arch-schemas", "conceptual-workflows-impacts", "conceptual-workflows-lore-init", "conceptual-workflows-init-interactive"]
 ---
 
 # Input Validation
@@ -77,6 +77,17 @@ Rejects, each with a specific error message:
 - Segment failing `_NAME_RE` → `Error: invalid group '<value>': segment '<seg>' must start with alphanumeric and contain only letters, digits, hyphens, underscores`
 
 Used by: `lore.doctrine.create_doctrine`, `lore.knight.create_knight`, `lore.watcher.create_watcher`, `lore.artifact.create_artifact`. The CLI handlers are thin wrappers — group validation happens inside the core helpers, not in `cli.py`.
+
+### `validate_access_mode(mode)`, `validate_skill_family(family)`, `validate_agent_id(agent_id)`, `validate_agent_selection(agents)`
+
+The four token checks behind `lore init`. Each takes the same shape as every other validator — error string or `None`.
+
+- `validate_access_mode` accepts `"cli"` and `"native"`.
+- `validate_skill_family` accepts the three family names plus the aggregates `"all"` and `"none"`; the aggregates are expanded in the business layer, so both surfaces accept exactly the same tokens.
+- `validate_agent_id` accepts any id in the packaged agent registry, and its error message names the known ids.
+- `validate_agent_selection` takes the whole list and rejects `none` combined with any other id.
+
+These are the Python half of the two-layer model. `click.Choice` rejects an out-of-set token at the CLI boundary with a usage error at exit 2 (`decisions-017-constrained-flags-use-click-choice`); these four make `plan_init` refuse the same tokens for a caller who never touches the CLI (`decisions-011-api-parity-with-cli`). Neither layer is optional — a rule enforced on one surface only is a rule half the callers can break.
 
 ### `validate_binds_entry(s)` and `is_glob_pattern(s)`
 

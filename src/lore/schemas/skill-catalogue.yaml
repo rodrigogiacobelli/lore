@@ -1,0 +1,72 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/skill-catalogue"
+title: Skill Catalogue
+description: >-
+  Which skills a release ships, which family each belongs to, and where every
+  retired skill went. Shipped as package data
+  (src/lore/defaults/skills-catalogue.yaml), never overlayable by a project.
+  A skill's description is authored once in its own SKILL.md frontmatter and is
+  deliberately absent here.
+type: object
+additionalProperties: false
+required: [version, families, skills]
+properties:
+  version:
+    type: integer
+    minimum: 1
+  families:
+    type: object
+    minProperties: 1
+    propertyNames:
+      pattern: "^[a-z0-9][a-z0-9-]*$"
+    additionalProperties:
+      type: string
+      minLength: 1
+    description: Family id to the one-line description shown at the prompt.
+  skills:
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/skill"
+  retired:
+    type: object
+    additionalProperties:
+      $ref: "#/$defs/retirement"
+    description: >-
+      Append-only. A project hopping several releases needs every intermediate
+      rename explained.
+$defs:
+  skill:
+    type: object
+    additionalProperties: false
+    required: [id, family]
+    properties:
+      id:
+        type: string
+        minLength: 1
+        pattern: "^[a-z0-9][a-z0-9-]*$"
+        description: Skill id. Matches its directory name under defaults/skills/.
+      family:
+        type: string
+        minLength: 1
+        description: A key of the families map.
+      references:
+        type: array
+        uniqueItems: true
+        items:
+          type: string
+          minLength: 1
+        description: Reference file names under the skill's references/ directory.
+  retirement:
+    type: object
+    additionalProperties: false
+    required: [into, reason]
+    properties:
+      into:
+        type: string
+        minLength: 1
+        description: The current skill id that replaced this one.
+      reason:
+        type: string
+        minLength: 1
+        description: Quoted verbatim in the removal report.

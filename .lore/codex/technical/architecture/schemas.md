@@ -1,7 +1,7 @@
 ---
 id: tech-arch-schemas
 title: Schemas Module Internals
-summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the nine schema kinds (glossary, main-rite, and shared-step are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
+summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the nine project schema kinds plus the two packaged-data kinds agents and skill-catalogue (glossary, main-rite, and shared-step are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
 binds:
 - src/lore/schemas/__init__.py
 - src/lore/schemas/doctrine-yaml.yaml
@@ -14,6 +14,8 @@ binds:
 - src/lore/schemas/glossary.yaml
 - src/lore/schemas/main-rite.yaml
 - src/lore/schemas/shared-step.yaml
+- src/lore/schemas/agents.yaml
+- src/lore/schemas/skill-catalogue.yaml
 - src/lore/health.py
 - src/lore/paths.py
 - src/lore/codex.py
@@ -30,7 +32,7 @@ binds:
 - tests/e2e/test_health_schemas_us005.py
 - tests/e2e/test_health_schemas_us007.py
 - tests/e2e/test_health_schemas_us008.py
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient"]
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "tech-arch-agents-md", "tech-arch-skill-catalogue"]
 ---
 
 # Schemas Module Internals
@@ -50,7 +52,7 @@ This module is the single authoritative home for the JSON Schemas that define th
 
 ## Schema Kinds
 
-Nine entity kinds are validated. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
+Nine entity kinds are validated in a project. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
 
 | Kind | Source pattern | Schema `$id` |
 |---|---|---|
@@ -65,6 +67,18 @@ Nine entity kinds are validated. Each kind is a short slug that appears in `Heal
 | `shared-step` | `.lore/rites/shared/*.yaml` (full-YAML) | `lore://schemas/shared-step` |
 
 The `glossary` kind is the first full-YAML kind whose source pattern is a literal single-file path rather than a directory glob. `_check_schemas` treats glob entries with no `*` characters as literal filenames and validates only when `(project_root / ".lore" / root_name / glob).is_file()`. The remaining directory-glob kinds use `rglob(glob)` (frontmatter/`**` kinds) or a flat `*.yaml` walk over their entity directory (`main-rite`, `shared-step`). This isolates the single-file behaviour without changing existing wiring.
+
+### Packaged-data schema kinds — `agents` and `skill-catalogue`
+
+Two kinds validate **package** data rather than project files: `lore://schemas/agents` covers `src/lore/defaults/agents.yaml` (the agent registry) and `lore://schemas/skill-catalogue` covers `src/lore/defaults/skills-catalogue.yaml` (the skill catalogue). Both are full-YAML kinds shipped from `src/lore/schemas/` like every other kind.
+
+They differ from the nine project kinds in three ways:
+
+- **No source pattern under `.lore/`.** Nothing in a project matches them, so `_check_schemas` never walks them and they never appear in `HealthIssue.entity_type`.
+- **Loaded through `load_schema(kind)` only, never through `resolve_merged_schema`.** `.lore/custom-schemas/agents.yaml` is not a recognised overlay path, and the v1 overlay kinds stay exactly as `decisions-018-overlays-are-path-discovered-config` lists them: `codex-frontmatter` and `codex-source-frontmatter`. A project cannot extend either packaged file, because neither is the project's to extend.
+- **A failure is a build defect, not a user error.** `agents.load_registry()` and the catalogue loader raise `RuntimeError` naming the packaged file when it is unparseable or schema-invalid, rather than emitting a health issue.
+
+See `tech-arch-agents-md` and `tech-arch-skill-catalogue` for the two file formats.
 
 ### Rite schema kinds — `main-rite` and `shared-step`
 

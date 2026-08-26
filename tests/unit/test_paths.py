@@ -47,3 +47,68 @@ def test_rites_shared_dir_returns_canonical_location(tmp_path):
     from lore.paths import rites_shared_dir
 
     assert rites_shared_dir(tmp_path) == tmp_path / ".lore" / "rites" / "shared"
+
+
+# ---------------------------------------------------------------------------
+# The install manifest.
+# Workflow: conceptual-workflows-init-reconcile
+# ---------------------------------------------------------------------------
+
+
+def test_install_manifest_path_points_into_dot_lore(tmp_path):
+    from lore.paths import install_manifest_path
+
+    assert install_manifest_path(tmp_path) == tmp_path / ".lore" / ".install-manifest.json"
+
+
+def test_install_manifest_is_a_dot_file_the_lore_gitignore_already_covers(tmp_path):
+    from lore.paths import install_manifest_path, lore_dir
+
+    target = install_manifest_path(tmp_path)
+    assert target.name.startswith(".")
+    assert target.parent == lore_dir(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# The rendered agent instruction text.
+# Spec: interactive-init-us-007
+# Workflow: conceptual-workflows-lore-init (project structure)
+# ---------------------------------------------------------------------------
+
+
+def test_lore_agent_path_points_into_dot_lore(tmp_path):
+    # interactive-init-us-007 — Unit: lore_agent_path -> <root>/.lore/LORE-AGENT.md
+    from lore.paths import lore_agent_path
+
+    assert lore_agent_path(tmp_path) == tmp_path / ".lore" / "LORE-AGENT.md"
+
+
+def test_lore_agent_path_sits_beside_the_other_dot_lore_helpers(tmp_path):
+    # interactive-init-us-007 — the ".lore" literal stays centralised in paths.py.
+    from lore.paths import lore_agent_path, lore_dir
+
+    assert lore_agent_path(tmp_path).parent == lore_dir(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# The skills tree.
+# Spec: interactive-init-us-011 (lore codex show interactive-init-us-011)
+# Anchor: conceptual-workflows-init-interactive — The Prompts, prompt 1 (agents)
+#
+# `.lore/skills/` is where skills land for an agent with no native skills
+# directory, and for a project that selected none at all.
+# ---------------------------------------------------------------------------
+
+
+def test_skills_dir_points_into_dot_lore(tmp_path):
+    # interactive-init-us-011 — Unit: paths.skills_dir -> <root>/.lore/skills
+    from lore.paths import skills_dir
+
+    assert skills_dir(tmp_path) == tmp_path / ".lore" / "skills"
+
+
+def test_skills_dir_sits_beside_the_other_dot_lore_helpers(tmp_path):
+    # interactive-init-us-011 — Unit: the magic string lives in paths.py alone
+    from lore.paths import lore_dir, skills_dir
+
+    assert skills_dir(tmp_path).parent == lore_dir(tmp_path)

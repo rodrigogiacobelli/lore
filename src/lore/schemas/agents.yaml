@@ -1,0 +1,45 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/agents"
+title: Agent Registry
+description: >-
+  The coding agents `lore init` can target. Shipped as package data
+  (src/lore/defaults/agents.yaml), never overlayable by a project.
+type: object
+additionalProperties: false
+required: [version, agents]
+properties:
+  version:
+    type: integer
+    minimum: 1
+  agents:
+    type: array
+    minItems: 1
+    items:
+      $ref: "#/$defs/agent"
+$defs:
+  agent:
+    type: object
+    additionalProperties: false
+    required: [id, label, instruction_file, skills_dir]
+    properties:
+      id:
+        type: string
+        minLength: 1
+        pattern: "^[a-z0-9][a-z0-9-]*$"
+        description: Registry id. The token `--agent` accepts.
+      label:
+        type: string
+        minLength: 1
+        description: What the agent is called at the prompt.
+      instruction_file:
+        type: [string, "null"]
+        minLength: 1
+        description: >-
+          Repo-root-relative POSIX path of the agent's instruction file, or null
+          when the agent has none.
+      skills_dir:
+        type: [string, "null"]
+        minLength: 1
+        description: >-
+          Repo-root-relative POSIX path of the agent's native skills directory,
+          or null when skills go to .lore/skills/.

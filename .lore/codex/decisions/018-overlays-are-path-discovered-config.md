@@ -65,7 +65,7 @@ Concretely:
   `.lore/codex/glossary.yaml` (YAML user vocabulary) under ADR-013
   (`decisions-013-toml-for-config-yaml-for-glossary`): files a team owns and
   edits, referenced by their canonical path.
-- Authoring help is delivered by the `new-custom-schema` scaffolding skill, not
+- Authoring help is delivered by the `update-custom-schema` scaffolding skill, not
   by a CLI entity command. The skill writes the file at the canonical path.
 
 ## Rationale
@@ -112,7 +112,7 @@ Pinning the classification protects that decision.
 ## Constraints Imposed
 
 1. **No `lore schema` command group.** Overlays are never given a `show <id>`
-   retrieval path. Discovery stays convention + the `new-custom-schema` skill +
+   retrieval path. Discovery stays convention + the `update-custom-schema` skill +
    docs.
 2. **Overlays are not codex graph nodes.** They carry no `id`/`related`/`binds`;
    `lore codex map`, `lore impacts`, and codex link-integrity checks ignore them.

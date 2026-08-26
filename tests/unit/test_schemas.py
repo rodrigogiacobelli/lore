@@ -1076,3 +1076,49 @@ class TestSharedStepRejectsOutboundLinks:
             "shared-step", {**CANONICAL_SHARED_STEP, "binds": ["x"]}
         )
         assert "additionalProperties" in _rules(issues)
+
+
+# ---------------------------------------------------------------------------
+# Packaged data kinds — agents registry + skill catalogue.
+#
+# Both describe files that ship inside the wheel, so neither is overlayable:
+# validation goes through load_schema, never through resolve_merged_schema
+# (decisions-018-overlays-are-path-discovered-config).
+# ---------------------------------------------------------------------------
+
+
+PACKAGED_DATA_KINDS = ["agents", "skill-catalogue"]
+
+
+class TestPackagedDataSchemaKinds:
+    def test_each_kind_loads_as_a_draft_2020_schema(self):
+        for kind in PACKAGED_DATA_KINDS:
+            schema = load_schema(kind)
+            assert isinstance(schema, dict), f"{kind}: expected dict"
+            assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+    def test_each_kind_carries_the_canonical_id(self):
+        for kind in PACKAGED_DATA_KINDS:
+            assert load_schema(kind)["$id"] == f"lore://schemas/{kind}"
+
+    def test_each_kind_pins_additional_properties_false_somewhere(self):
+        for kind in PACKAGED_DATA_KINDS:
+            found = any(
+                node.get("additionalProperties") is False
+                for node in _walk_objects(load_schema(kind))
+            )
+            assert found, f"{kind}: no 'additionalProperties: false' survived load"
+
+    def test_each_kind_ships_as_a_package_resource(self):
+        names = {p.name for p in files("lore.schemas").iterdir()}
+        for kind in PACKAGED_DATA_KINDS:
+            assert f"{kind}.yaml" in names, f"missing packaged resource: {kind}.yaml"
+
+    def test_neither_kind_is_registered_as_overlayable(self):
+        from lore.schemas import _OVERLAY_KINDS
+
+        for kind in PACKAGED_DATA_KINDS:
+            assert kind not in _OVERLAY_KINDS, (
+                f"{kind} describes a file inside the wheel — a project must not be able "
+                "to change how it validates"
+            )

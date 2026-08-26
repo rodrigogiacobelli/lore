@@ -44,6 +44,44 @@ their Lore ID, not by path. For example: "retrieve artifact
 `transient-business-spec` with `lore artifact show transient-business-spec`"
 — not "open `.lore/artifacts/transient/business-spec.md`".
 
+### The agent-native carve-out
+
+`lore init` records an **access mode** for the project: `cli` (agents reach
+Lore's local files through `lore` commands) or `native` (agents use their own
+file tools). Under `native`, the by-ID rule is lifted for exactly three
+file-backed knowledge stores:
+
+- **Codex documents** — read and write `.lore/codex/<layer>/<id>.md` directly.
+- **Rites** — read and write `.lore/rites/main/` and `.lore/rites/shared/` directly.
+- **The glossary** — read and write `.lore/codex/glossary.yaml` directly.
+
+`lore health` validates the result in both modes, which is what makes direct
+writes safe: `--scope schemas` for codex frontmatter, `--scope rites` for the
+rite graph, `--scope glossary` for the glossary file.
+
+The rule holds unchanged for everything else, in **both** modes:
+
+- **Artifacts, knights, doctrines, watchers** — by ID through the CLI. Every one
+  of the four hides a `default/` versus flat-directory split, slash-derived
+  groups and `.deleted` soft-delete naming, and `lore doctrine show` additionally
+  runs normalisation, step validation and cycle detection. This is the
+  layout-is-an-implementation-detail argument at its strongest.
+- **Quests, missions, board messages, dependencies** — SQLite-backed; there is no
+  file to read.
+- **`lore codex map`, `lore codex chaos`, `lore impacts`** — a two-budget
+  directional BFS, a random walk with a reachable-subgraph termination ratio, and
+  a bidirectional `binds:` index. No file read reproduces a precomputed
+  traversal, so these stay in both modes.
+- **`lore health`** — it is the validator the native mode leans on.
+
+The test that draws the line: a command stays CLI-only when it does something a
+file tool cannot reproduce. Reading a markdown file is reproducible; traversing a
+graph is not.
+
+An agent working in `native` mode gives up the glossary auto-surface on
+`lore codex show`, multi-ID deduplication, and group derivation. Each seeded
+skill states the cost where the agent reads it.
+
 ## Rationale
 
 **The CLI is the stable interface; file paths are an implementation detail.**
@@ -77,8 +115,9 @@ not to consumers (agents).
   relevant `lore` command, not file paths.
 - All Knight instruction files that direct agents to use templates or other
   entitys must name the entity ID and the retrieval command.
-- `AGENTS.md` (default and project-level) must instruct agents to use CLI
-  commands for entity access.
+- The agent instruction file Lore renders (`.lore/LORE-AGENT.md` and each
+  selected agent's marked block) must instruct agents to use CLI commands for
+  entity access, in the command layer the recorded access mode selects.
 - Writers of new Doctrines and Knights must follow this convention or their
   work is non-conforming.
 - The `lore artifact list` command becomes critical for discovery: agents
@@ -95,3 +134,10 @@ vestigial.
 frontmatter pattern (each file declares its own `id`) is already the
 registry. The CLI reads frontmatter at access time; no separate index is
 needed.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-03-31 | accepted | Initial decision. Recorded with the first public release. |
+| 2026-08-25 | accepted (scope narrowed) | Carve-out added for the `native` access mode: codex documents, rites and the glossary may be read and written with an agent's own file tools, validated afterwards by `lore health`. Artifacts, knights, doctrines, watchers, the graph commands and the SQLite-backed entities keep the by-ID rule in both modes. |

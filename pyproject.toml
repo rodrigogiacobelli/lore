@@ -14,9 +14,13 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "click>=8.0,<9.0",
+    # The space-separated multi-value option class reaches Click parser
+    # internals verified on 8.3; an older in-range Click would break the
+    # exit-2 misuse contract at runtime rather than at install time.
+    "click>=8.3,<9.0",
     "pyyaml>=6.0",
     "jsonschema>=4.18",
+    "questionary>=2.0,<3.0",
 ]
 
 [project.urls]
@@ -31,7 +35,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lore"]
-artifacts = ["src/lore/defaults/AGENTS.md", "src/lore/schemas/*.yaml"]
+artifacts = ["src/lore/defaults/**/*", "src/lore/schemas/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

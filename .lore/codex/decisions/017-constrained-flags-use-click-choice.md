@@ -64,9 +64,17 @@ already owns it.
 **What is allowed:** adding a new valid token to the set (e.g. adding `rites` to
 `--scope`). The token set is expected to grow as the system gains entity types.
 
-**What is a breaking change (needs its own ADR):** changing the enforcement
-mechanism away from `click.Choice`, rewording the invalid-value message, or
-changing the exit code from 2.
+**What is a breaking change:** changing the enforcement mechanism away from
+`click.Choice`, rewording the invalid-value message, or changing the exit code
+from 2. Any of the three is recorded by amending this ADR in place — a body edit
+plus a dated row in the Status History table below. This project does not create
+superseding ADRs and does not mark an ADR superseded.
+
+Changing how Click *parses* the tokens is not a change to this contract.
+`SpaceSeparatedChoice` (`decisions-012-multi-value-cli-param-convention`) is a
+`click.Option` subclass that consumes a space-separated run of tokens while
+leaving `type=click.Choice(...)` as the validator, so all three points above hold
+unchanged for a flag that uses it.
 
 ## Rationale
 
@@ -108,10 +116,12 @@ changing the exit code from 2.
 2. **Out-of-set value → Click `BadParameter`/`UsageError` → stderr → exit 2.**
    This message text and exit code are a contract.
 3. **Adding a valid token is a non-breaking change; changing the mechanism,
-   wording, or exit code requires a superseding ADR.**
+   wording, or exit code requires an in-place amendment to this ADR** — a body
+   edit plus a dated Status History row. Never a superseding ADR.
 
 ## Status History
 
 | Date | Status | Note |
 |------|--------|------|
 | 2026-06-02 | accepted | Recorded after the Rites US-006 cycle surfaced a proposed (and rejected) change to the `lore health --scope` invalid-value contract; pins the previously-implicit `click.Choice` / exit-2 behaviour |
+| 2026-08-25 | accepted (prose corrected) | Constraint 3 asked for a superseding ADR, which this project does not produce; corrected to require an in-place amendment with a Status History row. A parser-level change such as `SpaceSeparatedChoice` is recorded as outside this contract. The decision — `click.Choice`, Click's wording, exit 2 — is unchanged. |

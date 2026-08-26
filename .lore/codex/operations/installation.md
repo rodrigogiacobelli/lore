@@ -10,6 +10,11 @@ related:
 - ops-git-workflow
 - ops-publish-pypi
 - decisions-002-package-name
+- decisions-013-toml-for-config-yaml-for-glossary
+- conceptual-workflows-lore-init
+- conceptual-workflows-init-interactive
+- conceptual-workflows-init-reconcile
+- tech-overview
 ---
 
 # Installation
@@ -50,11 +55,25 @@ pipx install lore-agent-task-manager   # from PyPI
 
 ### Upgrading
 
-When installing from a local clone after making changes, use `--force --reinstall` to ensure uv rebuilds the wheel from source instead of using a cached copy:
+```bash
+uv tool upgrade lore-agent-task-manager
+```
+
+When installing from a local clone after making changes, use `--force --reinstall` so uv rebuilds the wheel from source instead of using a cached copy:
 
 ```bash
 uv tool install . --force --reinstall
 ```
+
+**Re-run `lore init` in each project after upgrading.** The package upgrade changes what Lore ships; `lore init` is what brings a project into line with it — installing skills the release added, removing the ones it retired, and refreshing each agent's instruction block. It prompts only for what it cannot answer from `.lore/config.toml`, shows the full change set before writing anything, and never replaces a file the project edited without asking.
+
+```bash
+cd your-project
+lore init --dry-run     # read the plan first
+lore init
+```
+
+`conceptual-workflows-init-reconcile` holds what happens to a skill the project edited, and `conceptual-workflows-init-interactive` holds the prompts and their flag equivalents.
 
 ### Uninstalling
 
@@ -122,6 +141,6 @@ lore --help
 
 ## Requirements
 
-- **Python 3.10+** (uses `match` statements and modern type hints)
-- **SQLite 3.35+** (ships with Python 3.10+; uses `RETURNING` clause)
-- No native dependencies — pure Python with Click and PyYAML
+- **Python 3.11+** — stdlib `tomllib` reads `.lore/config.toml` (decisions-013-toml-for-config-yaml-for-glossary)
+- **SQLite 3.35+** (ships with Python 3.11+; uses `RETURNING` clause)
+- No native dependencies — pure Python. Four required runtime dependencies, no extras and nothing optional: `click>=8.3,<9.0`, `PyYAML`, `jsonschema>=4.18`, `questionary>=2.0,<3.0`.

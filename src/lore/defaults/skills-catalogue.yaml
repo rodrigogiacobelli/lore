@@ -1,0 +1,63 @@
+# Which skills this release ships, which family each belongs to, and where every
+# retired skill went.
+#
+# A sibling of agents.yaml at the defaults/ root rather than inside skills/, so
+# the skills tree stays exactly one directory per skill and the installer never
+# has to exclude a file.
+#
+# No per-skill description: that is authored once in the skill's own SKILL.md
+# frontmatter. This file carries structure and nothing an agent reads.
+#
+# `retired` is append-only. A project hopping several releases needs every
+# intermediate rename explained, and `reason` is quoted verbatim in the removal
+# report.
+
+version: 2
+
+families:
+  memory: Project memory — codex, rites and glossary, consulted together
+  machinery: Lore's own configuration entities
+  workflow: Multi-step processes over quests and missions
+
+# Rows are grouped by family and alphabetical within it, so the catalogue order
+# a family selection comes back in is already the order it installs in.
+
+skills:
+  - id: retrieve-memory
+    family: memory
+  - id: store-memory
+    family: memory
+    references: [codex-doc.md, rite.md, source.md]
+  - id: update-artifact
+    family: machinery
+  - id: update-custom-schema
+    family: machinery
+  - id: update-doctrine
+    family: machinery
+  - id: update-knight
+    family: machinery
+  - id: update-watcher
+    family: machinery
+  - id: inquest
+    family: workflow
+  - id: start-quest
+    family: workflow
+  - id: sync-codex-guide
+    family: workflow
+
+retired:
+  new-doctrine: {into: update-doctrine, reason: renamed}
+  new-knight: {into: update-knight, reason: renamed}
+  new-watcher: {into: update-watcher, reason: renamed}
+  new-artifact: {into: update-artifact, reason: renamed}
+  new-custom-schema: {into: update-custom-schema, reason: renamed}
+  lore-update:
+    into: sync-codex-guide
+    reason: "renamed; agent-file half replaced by the CLAUDE.md marker block"
+  new-rite: {into: store-memory, reason: merged into store-memory}
+  update-codex: {into: store-memory, reason: merged into store-memory}
+  ingest-source: {into: store-memory, reason: merged into store-memory}
+  refresh-source: {into: store-memory, reason: merged into store-memory}
+  explore-codex: {into: retrieve-memory, reason: merged into retrieve-memory}
+  explore-rite: {into: retrieve-memory, reason: merged into retrieve-memory}
+  explore-codex-rite: {into: retrieve-memory, reason: merged into retrieve-memory}

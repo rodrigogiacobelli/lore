@@ -3,7 +3,7 @@ id: doctrine-design
 title: Doctrine Design
 summary: >
   Template for designing a new doctrine before implementation. Fill in the
-  table and sections, then hand it to an agent with /new-doctrine to generate
+  table and sections, then hand it to an agent with /update-doctrine to generate
   all the required files. Once created, the completed design doc is saved
   alongside its doctrine YAML as <doctrine-name>.design.md.
 ---

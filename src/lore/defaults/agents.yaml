@@ -1,0 +1,43 @@
+# The coding agents `lore init` can target.
+#
+# Adding a newly verified agent convention is one block here and nothing else:
+# no init.py edit, no cli.py edit. Presence in this file is the verification —
+# every row ships a convention someone confirmed, so there is no `verified` key
+# to carry the same value on every row.
+#
+# instruction_file and skills_dir are repo-root-relative POSIX paths. A null
+# skills_dir means the agent has no native skills directory, so its skills go to
+# .lore/skills/.
+
+version: 1
+
+agents:
+  - id: claude
+    label: Claude Code
+    instruction_file: CLAUDE.md
+    skills_dir: .claude/skills
+
+  - id: agents-md
+    label: AGENTS.md — Codex, Cursor, Windsurf, Zed, Amp, OpenCode
+    instruction_file: AGENTS.md
+    skills_dir: null
+
+  - id: gemini
+    label: Gemini CLI
+    instruction_file: GEMINI.md
+    skills_dir: null
+
+  - id: qwen
+    label: Qwen Code
+    instruction_file: QWEN.md
+    skills_dir: null
+
+  - id: cursor
+    label: Cursor — native rules
+    instruction_file: .cursor/rules/lore.mdc
+    skills_dir: null
+
+  - id: none
+    label: None — skills to .lore/skills/, no instruction file
+    instruction_file: null
+    skills_dir: null

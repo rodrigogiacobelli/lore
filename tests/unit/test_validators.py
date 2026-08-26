@@ -532,3 +532,206 @@ def test_validators_has_no_lore_imports():
         if isinstance(node, ast.Import):
             for alias in node.names:
                 assert not alias.name.startswith("lore")
+
+
+def test_access_modes_constant_matches_the_access_mode_enum():
+    """The two token sets are authored twice — pin them so they cannot drift.
+
+    ``validators.py`` may not import ``lore.initplan`` (see
+    ``test_validators_has_no_lore_imports``), so ``ACCESS_MODES`` restates what
+    ``AccessMode`` declares. This test is the join.
+    """
+    from lore.initplan import AccessMode
+    from lore.validators import ACCESS_MODES
+
+    assert set(ACCESS_MODES) == {mode.value for mode in AccessMode}
+
+
+# ---------------------------------------------------------------------------
+# The four initialisation validators — interactive-init-us-017
+#
+# `--agent none` exclusivity is a business rule about a selection, not argv
+# parsing, so it lives here and both `plan_init` and `cli.py` call it
+# (decisions-011-api-parity-with-cli). These tests exercise the rules in
+# isolation; the matched CLI/API pairs live in tests/e2e/test_error_handling.py.
+#
+# Spec: conceptual-workflows-validators — validator contracts
+# ---------------------------------------------------------------------------
+
+
+KNOWN_AGENT_IDS = ("agents-md", "claude", "cursor", "gemini", "none", "qwen")
+ACCEPTED_FAMILIES = ("machinery", "memory", "workflow", "all", "none")
+
+
+class TestValidateAccessMode:
+    """validate_access_mode(mode) → None for the two tokens, a message otherwise."""
+
+    def test_accepts_cli_and_native(self):
+        from lore.validators import validate_access_mode
+
+        assert validate_access_mode("cli") is None
+        assert validate_access_mode("native") is None
+
+    def test_rejects_an_unknown_token_naming_it_and_the_accepted_set(self):
+        from lore.validators import validate_access_mode
+
+        message = validate_access_mode("agentic")
+        assert message is not None
+        assert "agentic" in message
+        assert "cli" in message and "native" in message
+
+    def test_rejects_none_and_a_non_string(self):
+        from lore.validators import validate_access_mode
+
+        assert validate_access_mode(None) is not None
+        assert validate_access_mode(7) is not None
+
+    def test_the_accepted_set_mirrors_the_access_mode_enum(self):
+        """`validators.py` may not import `lore.initplan`; this pins the two together."""
+        from lore.initplan import AccessMode
+        from lore.validators import ACCESS_MODES
+
+        assert set(ACCESS_MODES) == {mode.value for mode in AccessMode}
+
+
+class TestValidateSkillFamily:
+    """validate_skill_family(family, accepted) → None for an accepted token."""
+
+    def test_accepts_every_concrete_family_and_both_aggregates(self):
+        from lore.validators import validate_skill_family
+
+        for token in ACCEPTED_FAMILIES:
+            assert validate_skill_family(token, ACCEPTED_FAMILIES) is None
+
+    def test_rejects_an_unknown_token_naming_it_and_the_accepted_set(self):
+        from lore.validators import validate_skill_family
+
+        message = validate_skill_family("typo", ACCEPTED_FAMILIES)
+        assert message is not None
+        assert "typo" in message
+        for token in ACCEPTED_FAMILIES:
+            assert token in message
+
+    def test_rejects_none_and_a_non_string(self):
+        from lore.validators import validate_skill_family
+
+        assert validate_skill_family(None, ACCEPTED_FAMILIES) is not None
+        assert validate_skill_family(["memory"], ACCEPTED_FAMILIES) is not None
+
+    def test_the_accepted_set_is_the_callers_not_a_hardcoded_one(self):
+        """The catalogue is data; the validator never compiles a family list in."""
+        from lore.validators import validate_skill_family
+
+        assert validate_skill_family("memory", ("workflow",)) is not None
+        assert validate_skill_family("workflow", ("workflow",)) is None
+
+
+class TestValidateAgentId:
+    """validate_agent_id(agent_id, known_ids) → None for a registry id."""
+
+    def test_accepts_every_registry_id(self):
+        from lore import agents
+        from lore.validators import validate_agent_id
+
+        known = agents.agent_ids()
+        for agent_id in known:
+            assert validate_agent_id(agent_id, known) is None
+
+    def test_rejects_an_unknown_id_listing_the_known_ones(self):
+        from lore.validators import validate_agent_id
+
+        message = validate_agent_id("cline", KNOWN_AGENT_IDS)
+        assert message == (
+            "Unknown agent: 'cline'. Known agents: "
+            "agents-md, claude, cursor, gemini, none, qwen."
+        )
+
+    def test_rejects_none_and_a_non_string(self):
+        from lore.validators import validate_agent_id
+
+        assert validate_agent_id(None, KNOWN_AGENT_IDS) is not None
+        assert validate_agent_id(3, KNOWN_AGENT_IDS) is not None
+
+
+class TestValidateAgentSelection:
+    """validate_agent_selection(agents, known_ids) — the `none` exclusivity rule."""
+
+    def test_accepts_the_empty_selection(self):
+        from lore.validators import validate_agent_selection
+
+        assert validate_agent_selection([], KNOWN_AGENT_IDS) is None
+
+    def test_accepts_none_alone(self):
+        from lore.validators import validate_agent_selection
+
+        assert validate_agent_selection(["none"], KNOWN_AGENT_IDS) is None
+
+    def test_accepts_any_combination_of_non_none_ids(self):
+        from lore.validators import validate_agent_selection
+
+        assert validate_agent_selection(["claude", "agents-md"], KNOWN_AGENT_IDS) is None
+        assert (
+            validate_agent_selection(
+                ["claude", "agents-md", "gemini", "qwen", "cursor"], KNOWN_AGENT_IDS
+            )
+            is None
+        )
+
+    def test_rejects_none_combined_in_either_order(self):
+        from lore.validators import validate_agent_selection
+
+        expected = "--agent none cannot be combined with other agents."
+        assert validate_agent_selection(["none", "claude"], KNOWN_AGENT_IDS) == expected
+        assert validate_agent_selection(["claude", "none"], KNOWN_AGENT_IDS) == expected
+
+    def test_an_unknown_id_is_reported_before_the_exclusivity_rule(self):
+        from lore.validators import validate_agent_selection
+
+        message = validate_agent_selection(["none", "cline"], KNOWN_AGENT_IDS)
+        assert message is not None
+        assert message.startswith("Unknown agent: 'cline'.")
+
+    def test_duplicate_ids_are_not_an_error(self):
+        from lore.validators import validate_agent_selection
+
+        assert validate_agent_selection(["claude", "claude"], KNOWN_AGENT_IDS) is None
+        assert validate_agent_selection(["none", "none"], KNOWN_AGENT_IDS) is None
+
+
+class TestTheFourValidatorsFollowTheModuleContract:
+    """Error-message-or-`None`, and no `click` anywhere near it."""
+
+    def test_every_new_validator_returns_none_or_a_string(self):
+        from lore.validators import (
+            validate_access_mode,
+            validate_agent_id,
+            validate_agent_selection,
+            validate_skill_family,
+        )
+
+        outcomes = [
+            validate_access_mode("cli"),
+            validate_access_mode("nope"),
+            validate_skill_family("memory", ACCEPTED_FAMILIES),
+            validate_skill_family("nope", ACCEPTED_FAMILIES),
+            validate_agent_id("claude", KNOWN_AGENT_IDS),
+            validate_agent_id("nope", KNOWN_AGENT_IDS),
+            validate_agent_selection(["claude"], KNOWN_AGENT_IDS),
+            validate_agent_selection(["none", "claude"], KNOWN_AGENT_IDS),
+        ]
+        assert all(item is None or isinstance(item, str) for item in outcomes)
+
+    def test_validators_module_imports_no_click(self):
+        import ast
+        from pathlib import Path
+
+        source = Path(__file__).resolve().parents[2] / "src" / "lore" / "validators.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        offenders = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                offenders += [a.name for a in node.names if a.name.split(".")[0] == "click"]
+            elif isinstance(node, ast.ImportFrom):
+                if (node.module or "").split(".")[0] == "click":
+                    offenders.append(node.module)
+        assert offenders == [], f"validators.py imports click: {offenders}"

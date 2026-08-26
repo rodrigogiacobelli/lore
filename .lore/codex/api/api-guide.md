@@ -6,13 +6,15 @@ related:
   - api-reference
   - decisions-010-public-api-stability
   - decisions-011-api-parity-with-cli
+  - conceptual-workflows-lore-init
+  - conceptual-workflows-init-reconcile
 ---
 
 # lore.api — Public API guide
 
 ## What lore.api is
 
-`lore.api` is the single stable import surface for Lore. ADR-010 fixes the contract at `lore.api.__all__` — 125 names spanning types, validators, and operational callables. Every CLI command routes through this same facade (ADR-011), so a Python caller gets identical behaviour: same validation, same return shape, same state effects.
+`lore.api` is the single stable import surface for Lore. ADR-010 fixes the contract at `lore.api.__all__`, which spans types, validators, and operational callables. The authoritative list lives in `src/lore/api.py`. Every CLI command routes through this same facade (ADR-011), so a Python caller gets identical behaviour: same validation, same return shape, same state effects.
 
 Internal modules (`lore.db`, `lore.codex`, `lore.knight`, …) may be renamed, split, or merged between releases. Consumers that import from them are broken by design. Import from `lore.api` only.
 
@@ -44,6 +46,35 @@ from lore.api import find_project_root
 ```python
 project_root = find_project_root()  # raises ProjectNotFoundError if not in a lore project
 ```
+
+## Initialising a project
+
+Initialisation is the one operation that runs where `.lore/` may not exist, so it does not take a project root from `find_project_root()`. It splits in two: `plan_init` computes, `apply_init` writes.
+
+```python
+from lore.api import plan_init, apply_init
+
+plan = plan_init(Path("/srv/acme"), agents=["claude"], access_mode="native")
+
+plan.has_changes        # False means the project is already correct
+plan.counts()           # {"create": 13, "section": 2, "overwrite": 0, "remove": 0, "conflict": 0}
+for f in plan.conflicts:
+    print(f.path, f.detail)
+
+result = apply_init(plan)
+result.messages         # the same list run_init() returns
+result.skipped          # conflicts left alone under on_conflict="skip"
+```
+
+A caller that only wants to know what would happen calls `plan_init` and stops. Nothing is written until `apply_init`.
+
+`run_init()` is the zero-argument shorthand — `apply_init(plan_init()).messages`, as a list — and its signature is pinned. An orchestrator that upgraded Lore and calls `run_init()` gets the same files it always did.
+
+Each keyword on `plan_init` that defaults to `None` resolves argument → `.lore/config.toml` → built-in default, inside `plan_init`. There is no second reader of those keys, so a Python caller passing nothing gets exactly what a person passing no flag gets.
+
+`plan_init` raises `ValueError` for a token the CLI would reject at exit 2 — an unknown agent id, an unknown access mode or skill family, or `agents=["none", "claude"]`. The four validators behind those checks (`validate_agent_id`, `validate_agent_selection`, `validate_access_mode`, `validate_skill_family`) are exported too, for a caller that wants to check before calling.
+
+No prompt ever fires from `plan_init` or `apply_init`. Prompting lives in the CLI, and every prompt's effect is a keyword on `plan_init` (ADR-011).
 
 ## Per-entity walkthroughs
 

@@ -13,6 +13,24 @@ from lore.ids import generate_id
 SCHEMA_VERSION = 6
 
 
+class DatabaseNotFoundError(Exception):
+    """Raised when a project has a `.lore/` directory and no database in it.
+
+    Not an exotic state: `.lore/lore.db` is generated and gitignored, so every
+    clone of a Lore project is in it until somebody runs `lore init`. What used
+    to happen instead was that ``sqlite3.connect`` created an empty file, the
+    first query hit no ``lore_meta`` table, and a teammate's first command
+    printed a stack trace out of ``_run_migrations``.
+    """
+
+
+DATABASE_NOT_FOUND = (
+    "No Lore database here (.lore/lore.db is missing). It is generated and "
+    'never committed — run "lore init" to create it.'
+)
+"""Names the cause and the repair, in the shape ``ProjectNotFoundError`` uses."""
+
+
 def get_schema_sql() -> str:
     """Read the DDL from the bundled schema.sql file."""
     return resources.files("lore.defaults").joinpath("schema.sql").read_text()
@@ -61,8 +79,16 @@ def get_connection(project_root: Path) -> sqlite3.Connection:
     """Open a connection to the project database with standard pragmas.
 
     Checks schema version and runs any pending migrations before returning.
+
+    Raises ``DatabaseNotFoundError`` when there is no database to open. The
+    check comes before ``sqlite3.connect`` and not after, because connecting
+    *creates* the file: the failing command used to leave a 4096-byte empty
+    database behind on its way down, which is a worse state than the one it
+    was called in.
     """
     db_path = paths.db_path(project_root)
+    if not db_path.is_file():
+        raise DatabaseNotFoundError(DATABASE_NOT_FOUND)
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 5000")
