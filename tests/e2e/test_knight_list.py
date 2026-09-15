@@ -334,7 +334,10 @@ class TestKnightListJsonSchema:
         result = runner.invoke(main, ["--json", "knight", "list"])
         data = json.loads(result.output)
         for knight in data["knights"]:
-            extra = set(knight.keys()) - {"id", "group", "title", "summary"}
+            # nested-projects-spec — FR-16 / D-15
+            extra = set(knight.keys()) - {
+                "id", "group", "title", "summary", "origin",
+            }
             assert not extra
 
     def test_json_no_name_key(self, runner, project_dir):
@@ -455,7 +458,10 @@ class TestLocalJsonFlag:
         assert result.exit_code == 0
         data = json.loads(result.output)
         for knight in data["knights"]:
-            assert set(knight.keys()) == {"id", "group", "title", "summary"}
+            # nested-projects-spec — FR-16 / D-15
+            assert set(knight.keys()) == {
+                "id", "group", "title", "summary", "origin",
+            }
 
     def test_local_json_flag_identical_to_global_flag(self, runner, project_dir):
         # Ref: conceptual-workflows-knight-list step 1 (decision point: flag position)

@@ -315,3 +315,72 @@ class TestApiSurface:
         from lore import api
 
         assert "delete_document" in api.__all__
+
+
+# ---------------------------------------------------------------------------
+# C1 — the read-only rule on the codex write path
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C1
+# Decisions: D-7 (the rule lives in the core, not at the CLI seam), FR-17
+# ---------------------------------------------------------------------------
+
+
+_FOREIGN_MESSAGE = (
+    'Cannot write "camelot:shared-one": '
+    "an entity from another project is read-only."
+)
+
+
+class TestForeignCodexWritesAreRefused:
+    def test_create_document_refuses_a_qualified_name(self, project_root):
+        # nested-projects-spec — FR-17: an inherited entity is read-only
+        from lore.codex import create_document
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            create_document(project_root, "camelot:shared-one", CODEX_DOC)
+
+        assert str(excinfo.value) == _FOREIGN_MESSAGE
+
+    def test_create_document_refuses_before_touching_the_filesystem(
+        self, project_root
+    ):
+        # nested-projects-spec — D-7: the rule is the first statement, so no
+        # directory is created on the way to the refusal
+        from lore.codex import create_document
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            create_document(
+                project_root, "camelot:shared-one", CODEX_DOC, group="new-group"
+            )
+
+        assert not (project_root / ".lore" / "codex" / "new-group").exists()
+
+    def test_update_document_refuses_a_qualified_name(self, project_root):
+        # nested-projects-spec — FR-17
+        from lore.codex import update_document
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            update_document(project_root, "camelot:shared-one", CODEX_DOC)
+
+        assert str(excinfo.value) == _FOREIGN_MESSAGE
+
+    def test_delete_document_refuses_a_qualified_name(self, project_root):
+        # nested-projects-spec — FR-17
+        from lore.codex import delete_document
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            delete_document(project_root, "camelot:shared-one")
+
+        assert str(excinfo.value) == _FOREIGN_MESSAGE
+
+    def test_a_bare_name_is_untouched_by_the_rule(self, project_root):
+        # nested-projects-spec — D-7: only a qualified id is refused
+        from lore.codex import create_document
+
+        env = create_document(project_root, "my-doc", CODEX_DOC)
+
+        assert env["id"] == "my-doc"

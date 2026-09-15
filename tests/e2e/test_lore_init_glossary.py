@@ -95,7 +95,10 @@ def test_init_creates_config_toml_with_the_skeleton_and_the_recorded_answers(
     The seeded skeleton is still written whole. It is no longer the *entire*
     file: interactive-init-us-013 adds the four ``init-*`` keys, which
     ``lore init`` records so a second run does not ask the same questions again
-    (FR-10). The skeleton is asserted as a prefix and the answers as the rest.
+    (FR-10), and nested-projects-spec adds ``project-name`` and
+    ``default-project-scope``, seeded at their defaults with no new question
+    asked (W5). The skeleton is asserted as a prefix and the answers as the
+    rest.
     """
     import tomllib
 
@@ -112,6 +115,8 @@ def test_init_creates_config_toml_with_the_skeleton_and_the_recorded_answers(
         "init-access-mode": "native",
         "init-skill-families": ["machinery", "memory", "workflow"],
         "init-skills-gitignore": "lore-only",
+        "project-name": "",
+        "default-project-scope": "self",
     }
 
 

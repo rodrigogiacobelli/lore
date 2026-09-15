@@ -3,13 +3,16 @@
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 import click
 
 from lore.api import (
+    ForeignEntityError,
     ProjectNotFoundError,
+    UnknownProjectError,
     create_artifact,
     create_knight,
     find_project_root,
@@ -21,6 +24,7 @@ from lore.api import _init as init_module
 from lore.api import _knight as knight_module
 from lore.api import _lore_version as __version__
 from lore.api import _paths as paths
+from lore.api import _projects as projects
 from lore.api import _prompts as prompts
 from lore.api import _reconcile as reconcile
 from lore.api import _skills as skill_catalogue
@@ -130,7 +134,19 @@ def _validate_sender_id(sender, ctx):
 
 
 def _validate_name(name, ctx):
-    """Validate a knight or doctrine name. Returns True if valid, handles error if not."""
+    """Validate a knight or doctrine name. Returns True if valid, handles error if not.
+
+    An origin-qualified name is passed straight through. It can never be a
+    legal entity name — the grammar has no colon — but the answer the caller
+    must see is the core's read-only refusal (FR-17), not a name complaint
+    about an address that was never meant to resolve locally.
+    `projects.reject_foreign` is the single home for that rule and every write
+    function calls it first, so stepping out of the way here is what lets it
+    be heard. Nothing is decided in this file: the same predicate the core
+    refuses on decides who answers.
+    """
+    if projects.is_qualified(name):
+        return True
     json_mode = ctx.obj.get("json", False)
     err = validators.validate_name(name)
     if err:
@@ -238,6 +254,122 @@ def _format_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
+# The origin a project's own rows carry. Presentation only: the value is set
+# in the core, and the CLI compares against it to decide whether a result set
+# needs the ORIGIN column at all.
+_SELF_ORIGIN = "self"
+
+
+def _origins(records: list[dict]) -> list[str]:
+    """The ``origin`` of every record, in row order.
+
+    Paired with `_origin_table`, whose third argument runs alongside its rows.
+    """
+    return [record["origin"] for record in records]
+
+
+def _has_foreign_origin(origins: list[str]) -> bool:
+    """Whether a result set needs the ORIGIN column at all (D-15).
+
+    The one home for FR-16's condition (`standards-dry`). It is asked by the
+    two renderers that own the two table shapes the CLI already prints — the
+    `_format_table` one and the glossary's — so the condition is stated once
+    even where the padding cannot be.
+    """
+    return any(origin != _SELF_ORIGIN for origin in origins)
+
+
+def _origin_table(
+    headers: list[str], rows: list[list[str]], origins: list[str]
+) -> list[str]:
+    """Format a table, prepending an ORIGIN column iff any origin is foreign.
+
+    Wraps `_format_table`, so the padding rules are unchanged and a result set
+    holding only this project's rows renders byte-identically to what the
+    command printed before nested projects existed (D-15, SC-7).
+    """
+    if not _has_foreign_origin(origins):
+        return _format_table(headers, rows)
+    return _format_table(
+        ["ORIGIN", *headers],
+        [[origin, *row] for origin, row in zip(origins, rows)],
+    )
+
+
+# The read commands `--project` is accepted on (FR-13 + FR-13a). Which flags a
+# command takes is argument parsing, so this list is legitimately CLI-only
+# (D-6): a write function has no `scope` parameter at all, so a Python caller
+# cannot express the mistake and there is nothing for a core counterpart to
+# reject. The rule that does need a core home is FR-17, and
+# `projects.reject_foreign` is it.
+_PROJECT_READ_COMMANDS: frozenset[str] = frozenset({
+    "codex list", "codex show", "codex search", "codex map",
+    "doctrine list", "doctrine show",
+    "knight list", "knight show",
+    "artifact list", "artifact show",
+    "watcher list", "watcher show",
+    "rite list", "rite show", "rite search",
+    "glossary list", "glossary search", "glossary show",
+    "impacts",
+})
+
+
+def _scope(ctx: click.Context) -> str | None:
+    """Return the `--project` selector, or None to read the config default.
+
+    The single reader of the stored value. `main()` resolves the flag once and
+    threads it through `ctx.obj`; every scoped read asks here.
+    """
+    return ctx.obj.get("project")
+
+
+def _reject_project_scope(ctx: click.Context, label: str) -> None:
+    """Refuse `--project` on a command that is not a read command (FR-14).
+
+    A usage error at exit 2, following the CLI's existing shape for a flag a
+    command does not take. Under `--json` it is the error envelope on stderr
+    at the same exit code, the precedent `codex map` set for its own
+    handler-raised usage error.
+    """
+    root = ctx.find_root()
+    if root.params.get("project") is None or label in _PROJECT_READ_COMMANDS:
+        return
+    message = f'--project is a read selector; it is not accepted on "{label}".'
+    if root.params.get("json_mode"):
+        click.echo(json.dumps({"error": message}), err=True)
+        ctx.exit(2)
+    raise click.UsageError(message, ctx=ctx)
+
+
+def _gate_subcommand(
+    group: click.Group, ctx: click.Context, *, qualify: bool
+) -> None:
+    """Run the FR-14 gate against the subcommand `group` is about to invoke.
+
+    The gate has to answer before any command body runs, and `Group.invoke`
+    records `ctx.invoked_subcommand` only after it has resolved the command —
+    so the pending name is read from the tokens Click parked on the context.
+    Click 8 splits them across `_protected_args` and `args`; Click 9 leaves
+    them all in `args`, and reading both covers each.
+
+    A subcommand that is itself a group is skipped: it runs this gate on its
+    own subcommand, where the label is complete. A name that matches no
+    command is skipped too, so Click's own "No such command" still answers.
+    """
+    own_name = ctx.info_name or ""
+    pending = [*getattr(ctx, "_protected_args", ()), *ctx.args]
+    if not pending:
+        # An `invoke_without_command` group with nothing after it. The label
+        # is the group's own name, never the literal "glossary None".
+        _reject_project_scope(ctx, own_name)
+        return
+    name = pending[0]
+    command = group.commands.get(name)
+    if command is None or isinstance(command, click.Group):
+        return
+    _reject_project_scope(ctx, f"{own_name} {name}" if qualify else name)
+
+
 def _report_and_exit(ctx, message: str) -> None:
     """Print *message* the way a missing project is printed, and exit non-zero.
 
@@ -258,24 +390,52 @@ class _OrderedGroup(click.Group):
     Also the one place a missing database becomes a message. Every command that
     opens one does it through `lore.db.get_connection`, and every one of them is
     invoked inside this call — so translating the refusal here covers the whole
-    CLI, rather than the handful of commands somebody remembered to wrap.
+    CLI, rather than the handful of commands somebody remembered to wrap. The
+    two nested-projects refusals are translated in the same breath and for the
+    same reason: an unknown `--project` name and a write against a foreign
+    entity are both raised by the core, on any of nineteen or twenty-four
+    commands, and both print one message at one exit code.
     """
 
     def list_commands(self, ctx):
         return list(self.commands.keys())
 
     def invoke(self, ctx):
+        _gate_subcommand(self, ctx, qualify=False)
         try:
             return super().invoke(ctx)
         except db_module.DatabaseNotFoundError as exc:
             _report_and_exit(ctx, str(exc))
+        except (UnknownProjectError, ForeignEntityError) as exc:
+            _report_and_exit(ctx, str(exc))
 
 
-@click.group(cls=_OrderedGroup, invoke_without_command=True)
+class _ScopedGroup(click.Group):
+    """Command group that gates `--project` on its own subcommands (FR-14).
+
+    Set as `cls=` on each of the nine `@main.group()` declarations. The root
+    group carries its own gate in `_OrderedGroup`, because a top-level
+    command's label is the command's name alone.
+    """
+
+    def invoke(self, ctx: click.Context) -> Any:
+        _gate_subcommand(self, ctx, qualify=True)
+        return super().invoke(ctx)
+
+
+@click.group("lore", cls=_OrderedGroup, invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="lore")
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")
+@click.option(
+    "--project",
+    "project",
+    default=None,
+    metavar="NAME",
+    help="Read another project in this tree: a project name, 'all' for the "
+         "whole subtree, or 'self' for this project only. Read commands only.",
+)
 @click.pass_context
-def main(ctx, json_mode):
+def main(ctx, json_mode, project):
     """Lore — Agent Task Manager.
 
     Lore organises agent work into two core entity types:
@@ -294,10 +454,16 @@ def main(ctx, json_mode):
     Artifact — reusable template files referenced by stable ID.
     Watcher  — definitions for agents that monitor and react to project state.
 
+    A directory holding several Lore projects is itself a Lore project: it
+    reads any of them with --project <name> or --project all, and exports
+    documents down to named descendants, which see them origin-qualified as
+    <project>:<id>.
+
     Run any command group with --help for details on that concept.
     """
     ctx.ensure_object(dict)
     ctx.obj["json"] = json_mode
+    ctx.obj["project"] = project
 
     # init and --help don't require a project root
     if ctx.invoked_subcommand in ("init",):
@@ -868,7 +1034,7 @@ def _from_argv(ctx, name):
     return ctx.get_parameter_source(name) == click.core.ParameterSource.COMMANDLINE
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def new(ctx):
     """Create quests and missions.
@@ -1446,10 +1612,13 @@ def missions(ctx, quest_id, show_all):
             click.echo(_format_mission_line(m))
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def knight(ctx):
-    """Manage knight personas — reusable markdown files that tell a worker agent how to approach work (style, constraints, authority). Assign a knight to a mission with 'lore new mission -k <name>.md'. When a worker runs 'lore show <mission-id>', the knight's content is included in the output. Knights encode the 'how'; mission descriptions encode the 'what'."""
+    """Manage knight personas — reusable markdown files that tell a worker agent how to approach work (style, constraints, authority). Assign a knight to a mission with 'lore new mission -k <name>.md'. When a worker runs 'lore show <mission-id>', the knight's content is included in the output. Knights encode the 'how'; mission descriptions encode the 'what'.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
+    """
     pass
 
 
@@ -1466,11 +1635,16 @@ def knight_list(ctx, json_flag, filter_groups, extra_filters):
     json_mode = json_flag or ctx.obj.get("json", False)
 
     combined_filters = list(filter_groups) + list(extra_filters)
-    records = knight_module.list_knights(project_root, filter_groups=combined_filters if combined_filters else None)
+    records = knight_module.list_knights(
+        project_root,
+        filter_groups=combined_filters if combined_filters else None,
+        scope=_scope(ctx),
+    )
 
     if json_mode:
         filtered = [
-            {"id": r["id"], "group": _group_for_json(r["group"]), "title": r["title"], "summary": r["summary"]}
+            {"id": r["id"], "group": _group_for_json(r["group"]), "title": r["title"],
+             "summary": r["summary"], "origin": r["origin"]}
             for r in records
         ]
         click.echo(json.dumps({"knights": filtered}))
@@ -1481,7 +1655,9 @@ def knight_list(ctx, json_flag, filter_groups, extra_filters):
         return
 
     rows = [[r["id"], r["group"], r["title"], r["summary"]] for r in records]
-    for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+    for line in _origin_table(
+        ["ID", "GROUP", "TITLE", "SUMMARY"], rows, _origins(records)
+    ):
         click.echo(line)
 
 
@@ -1494,7 +1670,7 @@ def knight_show(ctx, name):
     json_mode = ctx.obj.get("json", False)
 
     try:
-        record = knight_module.read_knight(project_root, name)
+        record = knight_module.read_knight(project_root, name, scope=_scope(ctx))
     except ValueError:
         record = None
 
@@ -1798,10 +1974,13 @@ def knight_delete(ctx, name):
     click.echo(f"Deleted knight {name}")
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def doctrine(ctx):
-    """Manage doctrine templates — YAML files that describe the step sequence and suggested knights for a standard body of work (e.g. a feature or bugfix workflow). Doctrines have no execution engine; an orchestrator reads them with 'lore doctrine show <name>' and translates the steps into quests and missions as guidance. Doctrines are passive — they do not trigger actions."""
+    """Manage doctrine templates — YAML files that describe the step sequence and suggested knights for a standard body of work (e.g. a feature or bugfix workflow). Doctrines have no execution engine; an orchestrator reads them with 'lore doctrine show <name>' and translates the steps into quests and missions as guidance. Doctrines are passive — they do not trigger actions.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
+    """
     pass
 
 
@@ -1819,7 +1998,11 @@ def doctrine_list(ctx, json_flag, filter_groups, extra_filters):
     json_mode = json_flag or ctx.obj.get("json", False)
 
     combined_filters = list(filter_groups) + list(extra_filters)
-    doctrines = _doctrine_mod.list_doctrines(project_root, filter_groups=combined_filters if combined_filters else None)
+    doctrines = _doctrine_mod.list_doctrines(
+        project_root,
+        filter_groups=combined_filters if combined_filters else None,
+        scope=_scope(ctx),
+    )
 
     if json_mode:
         data = {
@@ -1830,6 +2013,7 @@ def doctrine_list(ctx, json_flag, filter_groups, extra_filters):
                     "title": d["title"],
                     "summary": d.get("summary", ""),
                     "valid": d["valid"],
+                    "origin": d["origin"],
                 }
                 for d in doctrines
             ]
@@ -1850,7 +2034,9 @@ def doctrine_list(ctx, json_flag, filter_groups, extra_filters):
         ]
         for d in doctrines
     ]
-    for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+    for line in _origin_table(
+        ["ID", "GROUP", "TITLE", "SUMMARY"], rows, _origins(doctrines)
+    ):
         click.echo(line)
 
 
@@ -1864,7 +2050,7 @@ def doctrine_show(ctx, name, json_flag):
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
 
-    d = _doctrine_mod.read_doctrine(project_root, name)
+    d = _doctrine_mod.read_doctrine(project_root, name, scope=_scope(ctx))
     if d is None:
         msg = f"Doctrine '{name}' not found"
         if json_flag:
@@ -1883,6 +2069,7 @@ def doctrine_show(ctx, name, json_flag):
             "summary": d["summary"],
             "design": d["design"],
             "steps": d["steps"],
+            "origin": d["origin"],
         }
         click.echo(json.dumps(output))
         return
@@ -2608,7 +2795,7 @@ def _show_quest(ctx, quest_id):
                 click.echo(f"  [{msg['created_at']}] {msg['message']}")
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def rite(ctx):
     """Manage rites — procedural memory ("how to do or diagnose recurring task X").
@@ -2625,6 +2812,8 @@ def rite(ctx):
     into a single document); keyword-browse with `lore rite search <kw>`. Author
     with `lore rite new|edit|delete`. Rites link to nothing — a codex doc points at
     the rites it governs via its `rites: frontmatter field`, never the reverse.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
     """
     pass
 
@@ -2642,20 +2831,21 @@ def rite(ctx):
 @click.argument("extra_filters", nargs=-1)
 @click.pass_context
 def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
-    from lore.api import _rite as _rite_mod
+    from lore.api import list_rites
 
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    rites = _rite_mod.scan_rites(paths.rites_dir(project_root), shared=shared)
 
     combined_filters = list(filter_groups) + list(extra_filters)
     if any(not token.strip("/") for token in combined_filters):
         raise click.ClickException("empty filter token")
-    if combined_filters:
-        rites = [
-            r for r in rites
-            if paths.group_matches_filter(r.get("group", ""), combined_filters)
-        ]
+    rites = list_rites(
+        project_root,
+        shared=shared,
+        filter_groups=combined_filters or None,
+        scope=_scope(ctx),
+    )
+    origins = _origins(rites)
 
     if shared:
         if json_mode:
@@ -2666,6 +2856,7 @@ def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
                         "group": _group_for_json(r.get("group", "")),
                         "title": r.get("title", ""),
                         "summary": r.get("summary", ""),
+                        "origin": r["origin"],
                     }
                     for r in rites
                 ]
@@ -2679,11 +2870,12 @@ def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
             [r["id"], r.get("group", ""), r.get("title", ""), r.get("summary", "")]
             for r in rites
         ]
-        for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+        for line in _origin_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows, origins):
             click.echo(line)
         return
 
     if json_mode:
+        # ADR-016 as revised: `origin` joins `group`, never replaces it.
         data = {
             "rites": [
                 {
@@ -2691,6 +2883,7 @@ def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
                     "group": _group_for_json(r.get("group", "")),
                     "trigger": r.get("trigger", ""),
                     "summary": r.get("summary", ""),
+                    "origin": r["origin"],
                 }
                 for r in rites
             ]
@@ -2704,7 +2897,7 @@ def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
         [r["id"], r.get("group", ""), r.get("trigger", ""), r.get("summary", "")]
         for r in rites
     ]
-    for line in _format_table(["ID", "GROUP", "TRIGGER", "SUMMARY"], rows):
+    for line in _origin_table(["ID", "GROUP", "TRIGGER", "SUMMARY"], rows, origins):
         click.echo(line)
 
 
@@ -2714,18 +2907,21 @@ def rite_list(ctx, shared, json_flag, filter_groups, extra_filters):
 @click.pass_context
 def rite_search(ctx, keyword, json_flag):
     """Keyword-browse main rites by id, title, summary, or trigger."""
-    from lore.api import _rite as _rite_mod
+    from lore.api import search_rites_scoped
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    rites = _rite_mod.search_rites(paths.rites_dir(project_root), keyword)
+    rites = search_rites_scoped(project_root, keyword, scope=_scope(ctx))
 
     if json_mode:
+        # The scoped rows carry `group`; this envelope has never had one and
+        # gains none — `rite search` is outside ADR-016's list.
         data = {
             "rites": [
                 {
                     "id": r["id"],
                     "trigger": r.get("trigger", ""),
                     "summary": r.get("summary", ""),
+                    "origin": r["origin"],
                 }
                 for r in rites
             ]
@@ -2736,7 +2932,9 @@ def rite_search(ctx, keyword, json_flag):
         click.echo(f'No rites matching "{keyword}".')
         return
     rows = [[r["id"], r.get("trigger", ""), r.get("summary", "")] for r in rites]
-    for line in _format_table(["ID", "TRIGGER", "SUMMARY"], rows):
+    for line in _origin_table(
+        ["ID", "TRIGGER", "SUMMARY"], rows, _origins(rites)
+    ):
         click.echo(line)
 
 
@@ -2804,17 +3002,16 @@ def _render_rite_text(rite: dict) -> list[str]:
 @click.pass_context
 def rite_show(ctx, rite_ids, json_flag):
     """Show one or more rites in full, inlining shared steps."""
-    from lore.api import _rite as _rite_mod
+    from lore.api import RiteError, find_rite
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    rdir = paths.rites_dir(project_root)
 
     ids = list(dict.fromkeys(rite_ids))
     resolved: list[dict] = []
     for rid in ids:
         try:
-            resolved.append(_rite_mod.read_rite(rdir, rid))
-        except _rite_mod.RiteError as exc:
+            resolved.append(find_rite(project_root, rid, scope=_scope(ctx)))
+        except RiteError as exc:
             msg = str(exc)
             if json_mode:
                 err: dict = {"error": msg}
@@ -2998,10 +3195,13 @@ def rite_delete(ctx, name, shared, json_flag):
         click.echo(f"Deleted rite {name}")
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def codex(ctx):
-    """Access project documentation — a set of typed markdown files maintained in .lore/codex/. Use 'lore codex list' to see all documents, 'lore codex search <keyword>' to narrow by keyword, and 'lore codex show <id>' to read one or more documents in full. Prefer 'lore codex show id1 id2' over multiple separate calls."""
+    """Access project documentation — a set of typed markdown files maintained in .lore/codex/. Use 'lore codex list' to see all documents, 'lore codex search <keyword>' to narrow by keyword, and 'lore codex show <id>' to read one or more documents in full. Prefer 'lore codex show id1 id2' over multiple separate calls.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
+    """
     pass
 
 
@@ -3017,19 +3217,25 @@ def codex_list(ctx, json_flag, filter_groups, extra_filters):
     from lore.api import list_codex
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
-    codex_dir = paths.codex_dir(project_root)
 
     combined_filters = list(filter_groups) + list(extra_filters)
-    documents = list_codex(project_root, filter_groups=combined_filters if combined_filters else None)
+    # The record carries its own group: only the project that owns a document
+    # can derive one from its path, so a merged listing has to be told (D-8).
+    documents = list_codex(
+        project_root,
+        filter_groups=combined_filters if combined_filters else None,
+        scope=_scope(ctx),
+    )
 
     if json_mode:
         data = {
             "codex": [
                 {
                     "id": d["id"],
-                    "group": _group_for_json(paths.derive_group(d["path"], codex_dir)),
+                    "group": _group_for_json(d["group"]),
                     "title": d["title"],
                     "summary": d["summary"],
+                    "origin": d["origin"],
                 }
                 for d in documents
             ]
@@ -3041,11 +3247,10 @@ def codex_list(ctx, json_flag, filter_groups, extra_filters):
         click.echo("No codex documents found.")
         return
 
-    rows = [
-        [d["id"], paths.derive_group(d["path"], codex_dir), d["title"], d["summary"]]
-        for d in documents
-    ]
-    for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+    rows = [[d["id"], d["group"], d["title"], d["summary"]] for d in documents]
+    for line in _origin_table(
+        ["ID", "GROUP", "TITLE", "SUMMARY"], rows, _origins(documents)
+    ):
         click.echo(line)
 
 
@@ -3058,7 +3263,7 @@ def codex_search(ctx, keyword):
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    documents = search_documents(project_root, keyword)
+    documents = search_documents(project_root, keyword, scope=_scope(ctx))
 
     if json_mode:
         data = {
@@ -3067,6 +3272,7 @@ def codex_search(ctx, keyword):
                     "id": d["id"],
                     "title": d["title"],
                     "summary": d["summary"],
+                    "origin": d["origin"],
                 }
                 for d in documents
             ]
@@ -3078,17 +3284,14 @@ def codex_search(ctx, keyword):
         click.echo(f'No documents matching "{keyword}".')
         return
 
-    col_id = max(max(len(d["id"]) for d in documents), 2)
-    col_title = max(max(len(d["title"]) for d in documents), 5)
-
-    header = (
-        f"  {'ID':<{col_id}}  {'TITLE':<{col_title}}  SUMMARY"
-    )
-    click.echo(header)
-    for d in documents:
-        click.echo(
-            f"  {d['id']:<{col_id}}  {d['title']:<{col_title}}  {d['summary']}"
-        )
+    # D-29: this rendered with its own padding loop, byte-identical to
+    # `_format_table`'s. Going through the shared renderer gives the ORIGIN
+    # column one insertion point instead of two (`standards-dry`).
+    rows = [[d["id"], d["title"], d["summary"]] for d in documents]
+    for line in _origin_table(
+        ["ID", "TITLE", "SUMMARY"], rows, _origins(documents)
+    ):
+        click.echo(line)
 
 
 def _render_glossary_block(items) -> str:
@@ -3130,13 +3333,14 @@ def codex_show(ctx, ids, skip_glossary):
     try:
         envelope = read_documents_with_glossary(
             project_root, unique_ids, skip_glossary=not auto_surface,
+            scope=_scope(ctx),
         )
     except (_glossary.GlossaryError, OSError) as exc:
         # Fail-soft: glossary problems must never block doc display
         # (NFR-Reliability). Re-read documents without glossary surface
         # and carry a stderr warning.
         envelope = read_documents_with_glossary(
-            project_root, unique_ids, skip_glossary=True,
+            project_root, unique_ids, skip_glossary=True, scope=_scope(ctx),
         )
         glossary_warning = f"glossary unavailable: {exc}"
 
@@ -3210,7 +3414,7 @@ def _render_codex_map_default(documents: list[dict], *, json_mode: bool) -> None
     if json_mode:
         data = {"codex": [
             {"id": d["id"], "group": _group_for_json(d["group"]),
-             "title": d["title"], "summary": d["summary"]}
+             "title": d["title"], "summary": d["summary"], "origin": d["origin"]}
             for d in documents
         ]}
         click.echo(json.dumps(data))
@@ -3219,7 +3423,9 @@ def _render_codex_map_default(documents: list[dict], *, json_mode: bool) -> None
         click.echo("No related documents.")
         return
     rows = [[d["id"], d["group"], d["title"], d["summary"]] for d in documents]
-    for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+    for line in _origin_table(
+        ["ID", "GROUP", "TITLE", "SUMMARY"], rows, _origins(documents)
+    ):
         click.echo(line)
 
 
@@ -3275,6 +3481,7 @@ def codex_map(ctx, doc_id, depth, depth_out, depth_in, full):
         documents = map_documents(
             project_root, doc_id,
             depth=eff_depth, depth_out=eff_out, depth_in=eff_in, full=full,
+            scope=_scope(ctx),
         )
     except ConflictingDepthFlags:
         msg = (
@@ -3568,13 +3775,13 @@ def _render_impacts_json(result) -> str:
     """Render *result* as the ``{"impacts": [...]}`` JSON envelope."""
     if result.kind == "codex":
         items: list[dict] = [
-            {"path": b.path, "kind": b.kind}
+            {"path": b.path, "kind": b.kind, "origin": b.origin}
             for b in result.codex_items
         ]
     else:
         items = []
         for b in result.code_items:
-            row: dict = {"id": b.id, "match": b.match}
+            row: dict = {"id": b.id, "match": b.match, "origin": b.origin}
             if b.match == "glob":
                 row["pattern"] = b.pattern
             items.append(row)
@@ -3627,7 +3834,10 @@ def impacts_cmd(ctx, token, direct_links, json_flag):
 
     try:
         result = _impacts.impacts(
-            token, project_root=project_root, direct_links=direct_links
+            token,
+            project_root=project_root,
+            direct_links=direct_links,
+            scope=_scope(ctx),
         )
     except _impacts.ImpactsError as exc:
         if json_mode:
@@ -3676,6 +3886,7 @@ def _glossary_entry_dict(item) -> dict:
         "definition": item.definition,
         "aliases": list(item.aliases),
         "do_not_use": list(item.do_not_use),
+        "origin": item.origin,
     }
 
 
@@ -3692,12 +3903,23 @@ def _truncate_definition(definition: str) -> str:
 
 
 def render_glossary_list_text(items) -> str:
-    """Render the alphabetised KEYWORD/ALIASES/DEFINITION table for `list`/`search`."""
+    """Render the alphabetised KEYWORD/ALIASES/DEFINITION table for `list`/`search`.
+
+    The ORIGIN column follows the same rule `_origin_table` applies — the
+    shared `_has_foreign_origin` — but not the same padding. This table has
+    always printed with single-space gaps and no leading indent, and SC-7
+    requires it keep them, so the two shapes stay two shapes while the
+    condition stays one.
+    """
+    ordered = _sorted_by_keyword(items)
     headers = ["KEYWORD", "ALIASES", "DEFINITION"]
     rows = [
         [item.keyword, _aliases_or_dash(item.aliases), _truncate_definition(item.definition)]
-        for item in _sorted_by_keyword(items)
+        for item in ordered
     ]
+    if _has_foreign_origin([item.origin for item in ordered]):
+        headers = ["ORIGIN", *headers]
+        rows = [[item.origin, *row] for item, row in zip(ordered, rows)]
 
     col_widths = [len(h) for h in headers]
     for row in rows:
@@ -3705,7 +3927,8 @@ def render_glossary_list_text(items) -> str:
             col_widths[i] = max(col_widths[i], len(val))
 
     def _fmt(row):
-        return f"{row[0]:<{col_widths[0]}} {row[1]:<{col_widths[1]}} {row[2]}"
+        padded = [f"{val:<{col_widths[i]}}" for i, val in enumerate(row[:-1])]
+        return " ".join([*padded, row[-1]])
 
     lines = [_fmt(headers)] + [_fmt(row) for row in rows]
     return "\n".join(lines) + "\n"
@@ -3743,7 +3966,7 @@ def _load_glossary_or_fail(ctx):
     """Scan the glossary; on `GlossaryError` emit the standard error and exit 1."""
     from lore.api import GlossaryError, scan_glossary
     try:
-        return scan_glossary(ctx.obj["project_root"])
+        return scan_glossary(ctx.obj["project_root"], scope=_scope(ctx))
     except GlossaryError as e:
         _emit_glossary_error(ctx, f"glossary unavailable: {e}")
         return None  # unreachable: ctx.exit raised
@@ -3757,7 +3980,7 @@ def _emit_glossary_table(ctx, items) -> None:
         click.echo(render_glossary_list_text(items), nl=False)
 
 
-@main.group(invoke_without_command=True)
+@main.group(cls=_ScopedGroup, invoke_without_command=True)
 @click.pass_context
 def glossary(ctx):
     """Access the project glossary — the controlled vocabulary at .lore/codex/glossary.yaml.
@@ -3769,6 +3992,8 @@ def glossary(ctx):
     maintain entries — run 'lore artifact show glossary-design' first to
     confirm the entry belongs in the glossary. See the Glossary section of
     .lore/codex/codex.md.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
     """
     if ctx.invoked_subcommand is None:
         ctx.invoke(glossary_list)
@@ -3811,7 +4036,7 @@ def glossary_search(ctx, query):
         _emit_no_glossary(ctx)
         return
 
-    results = search_glossary(ctx.obj["project_root"], query)
+    results = search_glossary(ctx.obj["project_root"], query, scope=_scope(ctx))
     if not results:
         if ctx.obj.get("json", False):
             click.echo(json.dumps({"glossary": []}))
@@ -3850,7 +4075,7 @@ def glossary_show(ctx, keywords):
     resolved = []
     for kw in keywords:
         try:
-            item = read_glossary_item(project_root, kw)
+            item = read_glossary_item(project_root, kw, scope=_scope(ctx))
         except GlossaryError as e:
             _emit_glossary_error(ctx, f"glossary unavailable: {e}")
             return
@@ -3986,10 +4211,13 @@ def glossary_delete(ctx, keyword):
         click.echo(f'Deleted glossary item "{envelope["keyword"]}".')
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def artifact(ctx):
-    """Access project artifacts — reusable template files stored in .lore/artifacts/ and accessed by stable ID. Use 'lore artifact list' to see available templates and 'lore artifact show <id>' to retrieve content. Always use these commands rather than reading .lore/artifacts/ files directly. Use 'lore artifact new' / 'edit' / 'delete' to maintain entries."""
+    """Access project artifacts — reusable template files stored in .lore/artifacts/ and accessed by stable ID. Use 'lore artifact list' to see available templates and 'lore artifact show <id>' to retrieve content. Always use these commands rather than reading .lore/artifacts/ files directly. Use 'lore artifact new' / 'edit' / 'delete' to maintain entries.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
+    """
     pass
 
 
@@ -4010,9 +4238,15 @@ def artifact_list(ctx, json_flag, filter_groups, extra_filters):
     if any(not token.strip("/") for token in combined_filters):
         raise click.ClickException("empty filter token")
 
-    artifacts = list_artifacts(project_root, filter_groups=combined_filters if combined_filters else None)
+    artifacts = list_artifacts(
+        project_root,
+        filter_groups=combined_filters if combined_filters else None,
+        scope=_scope(ctx),
+    )
 
     if json_mode:
+        # `path` stays out: it points into the owning project's repository,
+        # and agents address an entity by id (`decisions-006-id-references`).
         data = {
             "artifacts": [
                 {
@@ -4020,6 +4254,7 @@ def artifact_list(ctx, json_flag, filter_groups, extra_filters):
                     "group": _group_for_json(a["group"]),
                     "title": a["title"],
                     "summary": a["summary"],
+                    "origin": a["origin"],
                 }
                 for a in artifacts
             ]
@@ -4032,7 +4267,9 @@ def artifact_list(ctx, json_flag, filter_groups, extra_filters):
         return
 
     rows = [[a["id"], a["group"], a["title"], a["summary"]] for a in artifacts]
-    for line in _format_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows):
+    for line in _origin_table(
+        ["ID", "GROUP", "TITLE", "SUMMARY"], rows, _origins(artifacts)
+    ):
         click.echo(line)
 
 
@@ -4047,7 +4284,7 @@ def artifact_show(ctx, ids):
 
     results = []
     for artifact_id in dict.fromkeys(ids):
-        art = read_artifact(project_root, artifact_id)
+        art = read_artifact(project_root, artifact_id, scope=_scope(ctx))
         if art is None:
             if json_mode:
                 click.echo(
@@ -4251,7 +4488,7 @@ def artifact_delete(ctx, name):
     click.echo(f"Deleted artifact {name}")
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def board(ctx):
     """Manage board messages for quests and missions."""
@@ -4330,10 +4567,13 @@ def board_delete(ctx, entity_id, message_id):
 # ---------------------------------------------------------------------------
 
 
-@main.group()
+@main.group(cls=_ScopedGroup)
 @click.pass_context
 def watcher(ctx):
-    """Manage watcher definitions stored in .lore/watchers/."""
+    """Manage watcher definitions stored in .lore/watchers/.
+
+    Pass --project <name> or --project all to read the same entities in another project in this tree.
+    """
     pass
 
 
@@ -4353,7 +4593,11 @@ def watcher_list(ctx, json_mode, filter_groups, extra_filters):
     json_mode = json_mode or ctx.obj.get("json", False)
 
     combined_filters = list(filter_groups) + list(extra_filters)
-    watchers = watcher_module.list_watchers(project_root, filter_groups=combined_filters if combined_filters else None)
+    watchers = watcher_module.list_watchers(
+        project_root,
+        filter_groups=combined_filters if combined_filters else None,
+        scope=_scope(ctx),
+    )
 
     if json_mode:
         watchers_json = [
@@ -4368,7 +4612,7 @@ def watcher_list(ctx, json_mode, filter_groups, extra_filters):
 
     headers = ["ID", "GROUP", "TITLE", "SUMMARY"]
     rows = [[w["id"], w["group"], w["title"], w["summary"]] for w in watchers]
-    for line in _format_table(headers, rows):
+    for line in _origin_table(headers, rows, _origins(watchers)):
         click.echo(line)
 
 
@@ -4384,7 +4628,7 @@ def watcher_show(ctx, name, json_mode):
     json_mode = json_mode or ctx.obj.get("json", False)
 
     try:
-        data = watcher_module.read_watcher(project_root, name)
+        data = watcher_module.read_watcher(project_root, name, scope=_scope(ctx))
     except ValueError as exc:
         if json_mode:
             click.echo(json.dumps({"error": str(exc)}), err=True)
@@ -4405,8 +4649,13 @@ def watcher_show(ctx, name, json_mode):
     if json_mode:
         click.echo(json.dumps(data))
     else:
-        filepath = watcher_module._find_watcher(project_root, name)
-        click.echo(filepath.read_text(), nl=False)
+        # The record is the `--json` envelope and carries no text, so the file
+        # comes from the reader that resolved it — an inherited watcher's file
+        # lives in the project that owns it, not in this one's directory.
+        click.echo(
+            watcher_module.read_watcher_text(project_root, name, scope=_scope(ctx)),
+            nl=False,
+        )
 
 
 @watcher.command(

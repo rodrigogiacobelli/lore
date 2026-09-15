@@ -1127,3 +1127,219 @@ def test_us010_watcher_create_validator_raises_value_error_on_issues(monkeypatch
     with pytest.raises(ValueError) as exc:
         _w_mod._validate_yaml(_us010_valid_watcher_dict())
     assert "oneOf" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# C4 — the scoped watcher read path
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C4
+# Decisions: D-2, D-5/G-1 (`watcher list|show` accept `--project`), D-7, D-10
+# ---------------------------------------------------------------------------
+
+
+class TestScopedListWatchers:
+    def test_an_ancestors_export_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — G-1: exporting a watcher with no read
+        # selector on it makes the export unreadable from the ancestor side
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "drift-guard")
+        tree.watcher(tree.lore, "local-guard")
+
+        records = {w["id"]: w for w in list_watchers(tree.lore)}
+
+        assert records["camelot:drift-guard"]["origin"] == "camelot"
+        assert records["local-guard"]["origin"] == "self"
+
+    def test_a_seeded_default_never_crosses_a_boundary(self, tree):
+        # nested-projects-spec — FR-10/D-10
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "seeded-guard", group="default")
+        tree.watcher(tree.camelot, "drift-guard")
+
+        assert [w["id"] for w in list_watchers(tree.lore)] == ["camelot:drift-guard"]
+
+    def test_the_merged_list_is_sorted_on_the_qualified_id(self, tree):
+        # nested-projects-spec — D-16
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "alpha")
+        tree.watcher(tree.lore, "beta")
+
+        assert [w["id"] for w in list_watchers(tree.lore)] == ["beta", "camelot:alpha"]
+
+    def test_a_soft_deleted_watcher_never_appears(self, tree):
+        # nested-projects-spec — decisions-003-soft-delete-semantics
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "retired")
+        path = tree.camelot / ".lore" / "watchers" / "retired.yaml"
+        path.rename(path.with_suffix(".yaml.deleted"))
+        tree.watcher(tree.camelot, "live")
+
+        assert [w["id"] for w in list_watchers(tree.lore)] == ["camelot:live"]
+
+
+class TestScopedReadWatcher:
+    def test_it_reads_an_inherited_watcher_by_qualified_name(self, tree):
+        # nested-projects-spec — W4
+        from lore.watcher import read_watcher
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "drift-guard", group="ops")
+
+        record = read_watcher(tree.lore, "camelot:drift-guard")
+
+        assert record["id"] == "camelot:drift-guard"
+        assert record["origin"] == "camelot"
+        assert record["group"] == "ops"
+
+    def test_a_bare_name_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        from lore.watcher import read_watcher
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "twin")
+        tree.watcher(tree.lore, "twin")
+
+        assert read_watcher(tree.lore, "twin")["origin"] == "self"
+
+    def test_an_unexported_ancestor_watcher_reads_as_a_miss(self, tree):
+        # nested-projects-spec — C4
+        from lore.watcher import read_watcher
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.watcher(tree.camelot, "drift-guard")
+
+        assert read_watcher(tree.lore, "camelot:drift-guard") is None
+
+    def test_a_local_record_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15
+        from lore.watcher import read_watcher
+
+        tree.watcher(tree.lore, "local-guard")
+
+        assert read_watcher(tree.lore, "local-guard")["origin"] == "self"
+
+
+class TestForeignWatcherWritesAreRefused:
+    def test_create_watcher_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17/D-7
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            create_watcher(tree.lore, "camelot:drift-guard", "id: x\n")
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:drift-guard": '
+            "an entity from another project is read-only."
+        )
+
+    def test_update_watcher_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.projects import ForeignEntityError
+        from lore.watcher import update_watcher
+
+        with pytest.raises(ForeignEntityError):
+            update_watcher(tree.lore, "camelot:drift-guard", "id: x\n")
+
+    def test_delete_watcher_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.projects import ForeignEntityError
+        from lore.watcher import delete_watcher
+
+        with pytest.raises(ForeignEntityError):
+            delete_watcher(tree.lore, "camelot:drift-guard")
+
+
+class TestScopedReadWatcherText:
+    """``read_watcher_text`` — the raw file, resolved through the same scope.
+
+    Spec: ``nested-projects-spec`` — unit S5, on the orchestrator's ruling.
+
+    ``lore watcher show`` prints the watcher's file verbatim, and the record
+    ``read_watcher`` returns carries no text. The text is a second entry shape
+    rather than a tenth key on that record, because the record IS the
+    ``watcher show --json`` envelope: a key added there changes shipped output
+    and is pinned as an exact eight-key set by ``test_watcher_crud_holistic``.
+    """
+
+    def test_it_returns_a_local_watcher_file_verbatim(self, tree):
+        # nested-projects-spec — SC-7: `watcher show` prints the file's bytes,
+        # so the reader must hand back exactly what is on disk
+        from lore.watcher import read_watcher_text
+
+        path = tree.lore / ".lore" / "watchers" / "local-guard.yaml"
+        tree.watcher(tree.lore, "local-guard")
+
+        assert read_watcher_text(tree.lore, "local-guard") == path.read_text(
+            encoding="utf-8"
+        )
+
+    def test_it_reads_an_inherited_watcher_by_qualified_name(self, tree):
+        # nested-projects-spec — W4 / FR-15: the file lives in the ancestor's
+        # repository and is reached by qualified id and nothing else
+        from lore.watcher import read_watcher_text
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "drift-guard", group="ops")
+        path = tree.camelot / ".lore" / "watchers" / "ops" / "drift-guard.yaml"
+
+        assert read_watcher_text(tree.lore, "camelot:drift-guard") == path.read_text(
+            encoding="utf-8"
+        )
+
+    def test_a_bare_name_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        from lore.watcher import read_watcher_text
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.watcher(tree.camelot, "twin")
+        tree.watcher(tree.lore, "twin")
+        local = tree.lore / ".lore" / "watchers" / "twin.yaml"
+
+        assert read_watcher_text(tree.lore, "twin") == local.read_text(encoding="utf-8")
+
+    def test_an_unexported_ancestor_watcher_reads_as_a_miss(self, tree):
+        # nested-projects-spec — C4: a miss, never an error
+        from lore.watcher import read_watcher_text
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.watcher(tree.camelot, "drift-guard")
+
+        assert read_watcher_text(tree.lore, "camelot:drift-guard") is None
+
+    def test_an_unknown_name_reads_as_a_miss(self, tree):
+        from lore.watcher import read_watcher_text
+
+        assert read_watcher_text(tree.lore, "nope") is None
+
+    def test_it_takes_the_scope_keyword(self, tree):
+        # nested-projects-spec — FR-13a: `watcher show` accepts `--project`,
+        # so its text reader resolves the same scope the listing does
+        from lore.watcher import read_watcher_text
+
+        tree.watcher(tree.realm, "realm-guard")
+        path = tree.realm / ".lore" / "watchers" / "realm-guard.yaml"
+
+        assert read_watcher_text(
+            tree.lore, "realm:realm-guard", scope="realm"
+        ) == path.read_text(encoding="utf-8")
+
+    def test_the_record_still_carries_no_text(self, tree):
+        # nested-projects-spec — the reason this is a second function: adding
+        # a key to `read_watcher` would change the `watcher show --json`
+        # envelope, which ships today and is pinned as an exact key set
+        from lore.watcher import read_watcher
+
+        tree.watcher(tree.lore, "local-guard")
+
+        record = read_watcher(tree.lore, "local-guard")
+        assert set(record) == {
+            "id",
+            "group",
+            "title",
+            "summary",
+            "filename",
+            "watch_target",
+            "interval",
+            "action",
+            "origin",
+        }

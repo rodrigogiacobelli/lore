@@ -6,10 +6,19 @@ Workflow: conceptual-workflows-glossary
 This module owns IO and matching for the glossary. Schema validation lives
 in `lore.schemas`; CLI rendering lives in `lore.cli`. Keep it that way —
 see `standards-single-responsibility`.
+
+Post nested-projects: the glossary is exported whole or not at all (D-22) —
+a keyword is natural language matched against document prose, not an id, so
+there is no partial unit to express and an inherited keyword stays bare. On a
+collision the local item wins for the paths that must answer with one item,
+and `scan_glossary` keeps both rows so a listing shows the collision with its
+origins (A-6). `scan_own_glossary` is the unmerged view `lore health` reads:
+a health run validates only the project it runs in (D-21, FR-23).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 from datetime import datetime, timezone
@@ -18,6 +27,7 @@ from typing import Literal
 
 import yaml
 
+from lore import projects, scoped
 from lore.models import GlossaryItem
 from lore.paths import glossary_path
 from lore.schemas import SchemaValidationError, validate_entity, validate_entity_file
@@ -30,8 +40,51 @@ class GlossaryError(Exception):
     """Raised when the glossary file is unreadable or violates the schema."""
 
 
-def scan_glossary(root: Path) -> list[GlossaryItem]:
-    """Return the glossary items in source order, or [] if file missing.
+def scan_glossary(root: Path, *, scope: str | None = None) -> list[GlossaryItem]:
+    """Return the glossary items for every project in scope, in source order.
+
+    This project's items come first, then each in-scope project's, so a
+    collision shows the local definition first and every lookup that must
+    answer with one item answers with it (A-6). An ancestor contributes only
+    when its ``[shared].glossary`` is true; a descendant is never
+    export-filtered (D-4).
+
+    Raises GlossaryError on read error, malformed YAML, or schema violation,
+    and ``UnknownProjectError`` when ``scope`` names no project in scope.
+    """
+    exporting = {
+        ref.root
+        for ref in projects.resolve_scope(root, scope)
+        if ref.relation != scoped.ANCESTOR
+        or projects.exports_glossary(ref.root, root)
+    }
+
+    def read(project_root: Path) -> list[dict]:
+        if project_root not in exporting:
+            return []
+        # The merge addresses rows by an id key; a glossary keyword is not an
+        # id and never gets qualified, so the key is a formality and the item
+        # itself rides along untouched (D-22).
+        return [
+            {"id": item.keyword, "item": item}
+            for item in scan_own_glossary(project_root)
+        ]
+
+    rows = projects.collect(
+        root, scope, read=read, group_key=None, exportable=False
+    )
+    return [
+        dataclasses.replace(row["item"], origin=row["origin"]) for row in rows
+    ]
+
+
+def scan_own_glossary(root: Path) -> list[GlossaryItem]:
+    """Return this project's own glossary items, in source order.
+
+    The unmerged view: the reader :func:`scan_glossary` hands the merge, and
+    the one ``lore health`` audits. An inherited keyword must never reach a
+    health check — ``alias_keyword_collision`` raises the exit code, and a
+    project cannot be failed on state it does not own (D-21, FR-23).
 
     Raises GlossaryError on read error, malformed YAML, or schema violation.
     """
@@ -66,9 +119,15 @@ def _find_match(items: list[GlossaryItem], keyword: str) -> GlossaryItem | None:
     return None
 
 
-def read_glossary_item(root: Path, keyword: str) -> GlossaryItem | None:
-    """Look up an item by exact keyword (case-insensitive). Aliases NOT consulted (FR-7)."""
-    return _find_match(scan_glossary(root), keyword)
+def read_glossary_item(
+    root: Path, keyword: str, *, scope: str | None = None
+) -> GlossaryItem | None:
+    """Look up an item by exact keyword (case-insensitive). Aliases NOT consulted (FR-7).
+
+    On a collision the local item wins: the merged list puts this project's
+    own items first and the first match is returned (A-6).
+    """
+    return _find_match(scan_glossary(root, scope=scope), keyword)
 
 
 def _item_haystacks(item: GlossaryItem) -> list[str]:
@@ -81,13 +140,16 @@ def _item_haystacks(item: GlossaryItem) -> list[str]:
     ]
 
 
-def search_glossary(root: Path, query: str) -> list[GlossaryItem]:
+def search_glossary(
+    root: Path, query: str, *, scope: str | None = None
+) -> list[GlossaryItem]:
     """Return items containing ``query`` (case-insensitive substring) across
-    keyword/aliases/do_not_use/definition. Result alphabetised by casefolded keyword."""
+    keyword/aliases/do_not_use/definition. Result alphabetised by casefolded
+    keyword. Both sides of a collision are returned, each carrying its origin."""
     needle = query.casefold()
     matched = [
         item
-        for item in scan_glossary(root)
+        for item in scan_glossary(root, scope=scope)
         if any(needle in h for h in _item_haystacks(item))
     ]
     matched.sort(key=lambda i: i.keyword.casefold())
@@ -351,9 +413,14 @@ def create_glossary_item(
 
     Raises ``ValueError`` on missing/empty keyword or definition, schema
     violation, duplicate keyword (case-insensitive), or missing glossary file.
+    Raises ``ForeignEntityError`` on an origin-qualified keyword: an
+    inherited term is read-only, and a local item is never created under a
+    name that reads as another project's (FR-17, D-7).
+
     Comments at the top of the file are preserved (Q1 decision); inline
     item-level comments are dropped (documented limitation).
     """
+    projects.reject_foreign(keyword)
     _validate_keyword_format(keyword)
     _validate_definition(definition)
     if aliases is not None:
@@ -398,8 +465,10 @@ def update_glossary_item(
     Returns ``{"keyword": str, "filename": "glossary.yaml"}`` (keyword as stored).
 
     Raises ``ValueError`` on missing file, item not found, schema violation, or
-    a no-op call (every kwarg ``None``).
+    a no-op call (every kwarg ``None``), and ``ForeignEntityError`` on an
+    origin-qualified keyword (FR-17, D-7).
     """
+    projects.reject_foreign(keyword)
     if definition is None and aliases is None and do_not_use is None:
         raise ValueError(
             "update_glossary_item requires at least one field to change."
@@ -441,9 +510,11 @@ def delete_glossary_item(project_root: Path, keyword: str) -> dict:
 
     Returns ``{"keyword": str, "deleted": True, "deleted_at": <UTC ISO str>}``.
 
-    Raises ``ValueError`` only when the glossary file is missing or invalid.
+    Raises ``ValueError`` only when the glossary file is missing or invalid,
+    and ``ForeignEntityError`` on an origin-qualified keyword (FR-17, D-7).
     A missing keyword is NOT an error.
     """
+    projects.reject_foreign(keyword)
     _validate_keyword_format(keyword)
     path, prefix, data = _load_for_write(project_root)
     items: list[dict] = data["items"]
@@ -459,25 +530,44 @@ def delete_glossary_item(project_root: Path, keyword: str) -> dict:
     }
 
 
+def _local_first(items: list[GlossaryItem]) -> list[GlossaryItem]:
+    """Keep the first item per casefolded keyword (A-6).
+
+    The merged list puts this project's own items first, so "first" is
+    "local" — and the auto-surface has to answer a keyword with one item.
+    """
+    seen: set[str] = set()
+    kept: list[GlossaryItem] = []
+    for item in items:
+        key = item.keyword.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(item)
+    return kept
+
+
 def match_glossary(
     bodies: list[str],
     *,
     items: list[GlossaryItem] | None = None,
     root: Path | None = None,
+    scope: str | None = None,
 ) -> list[GlossaryItem]:
     """Return canonical glossary items whose keyword/aliases appear in ``bodies``.
 
     Alphabetised by casefolded keyword, deduplicated. ``do_not_use`` does
     NOT auto-surface (FR-17). Missing glossary file → []. Malformed →
-    propagates ``GlossaryError``.
+    propagates ``GlossaryError``. On a keyword collision the local item is
+    the one that surfaces (A-6).
     """
     if items is None:
         if root is None:
             return []
-        items = scan_glossary(root)
+        items = scan_glossary(root, scope=scope)
     if not items:
         return []
-    lookup = _build_lookup(items, source="canonical")
+    lookup = _build_lookup(_local_first(items), source="canonical")
     matched: dict[int, GlossaryItem] = {}
     for body in bodies:
         tokens = _normalise_tokens(body)

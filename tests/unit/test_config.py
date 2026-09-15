@@ -454,14 +454,21 @@ def test_config_field_order_keeps_extras_last():
 
     ``extras`` is the forward-compatibility bucket and stays the final field so
     a new setting is always appended before it. The list itself grows —
-    interactive-init-us-013 adds the four ``init_*`` answers — so the invariant
-    is the position of the two anchors, not a frozen roster.
+    interactive-init-us-013 adds the four ``init_*`` answers, and
+    nested-projects-spec adds the two table-backed ones — so the invariant is
+    the position of the two anchors, not a frozen roster.
+
+    A setting reaches ``Config`` by one of exactly two routes: a flat root key
+    registered in ``_FROM_TOML``, or a table named in ``_KNOWN_TABLES``. A
+    field arriving by neither is a setting the loader cannot parse.
     """
+    from lore.config import _KNOWN_TABLES
+
     names = [f.name for f in dataclasses.fields(Config)]
     assert names[0] == "show_glossary_on_codex_commands"
     assert names[1] == "health_report_retention"
     assert names[-1] == "extras"
-    assert set(names) - {"extras"} == set(_FROM_TOML.values())
+    assert set(names) - {"extras"} == set(_FROM_TOML.values()) | set(_KNOWN_TABLES)
 
 
 def test_from_toml_maps_health_report_retention():
@@ -933,6 +940,8 @@ def test_recorded_keys_reports_every_known_key_a_full_config_sets(tmp_path, caps
         'init-access-mode = "cli"\n'
         'init-skill-families = ["memory"]\n'
         'init-skills-gitignore = "all"\n'
+        'project-name = "camelot"\n'
+        'default-project-scope = "all"\n'
         "something-else = 3\n",
     )
 
@@ -958,3 +967,452 @@ def test_recorded_keys_applies_the_same_rule_to_every_known_key(
     _write_config(tmp_path, content)
 
     assert recorded_keys(tmp_path) == frozenset()
+
+
+# ---------------------------------------------------------------------------
+# Nested Projects — the two new flat keys and the two new tables.
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — F3, F4
+# Decisions: D-23 (nested-table parsing), D-24 (`project-name` validation),
+#            A-1 (tables for repeating records), decisions-013 (TOML config)
+# ---------------------------------------------------------------------------
+
+
+INVALID_NAME_MESSAGE = (
+    "Invalid name: must start with alphanumeric and contain only "
+    "letters, digits, hyphens, underscores."
+)
+
+
+def _config_path(root: Path) -> Path:
+    return root / ".lore" / "config.toml"
+
+
+# --- project-name ----------------------------------------------------------
+
+
+def test_project_name_parses(tmp_path, capsys):
+    # nested-projects-spec — FR-1: the project names itself
+    _write_config(tmp_path, 'project-name = "camelot"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.project_name == "camelot"
+    assert cfg.extras == {}
+    assert capsys.readouterr().err == ""
+
+
+def test_project_name_defaults_to_the_empty_string(tmp_path, capsys):
+    # nested-projects-spec — FR-1: absent means "the directory's name"
+    _write_config(tmp_path, "")
+    assert load_config(tmp_path).project_name == ""
+    assert capsys.readouterr().err == ""
+
+
+def test_project_name_empty_string_is_a_usable_value(tmp_path, capsys):
+    # nested-projects-spec — D-24: the seeded default must not warn
+    _write_config(tmp_path, 'project-name = ""\n')
+    assert load_config(tmp_path).project_name == ""
+    assert capsys.readouterr().err == ""
+
+
+def test_project_name_wrong_type_falls_back_with_the_exact_line(tmp_path, capsys):
+    # nested-projects-spec — Part 2 config fail-soft table, row 1
+    _write_config(tmp_path, "project-name = 42\n")
+    cfg = load_config(tmp_path)
+    assert cfg.project_name == ""
+    assert capsys.readouterr().err == (
+        f"lore: invalid type for project-name at {_config_path(tmp_path)} "
+        "(expected str); using default\n"
+    )
+
+
+def test_project_name_invalid_value_falls_back_with_the_exact_line(tmp_path, capsys):
+    # nested-projects-spec — Part 2 config fail-soft table, row 2
+    _write_config(tmp_path, 'project-name = "cam:elot"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.project_name == ""
+    assert capsys.readouterr().err == (
+        f"lore: invalid value for project-name at {_config_path(tmp_path)} "
+        f"({INVALID_NAME_MESSAGE}); using default\n"
+    )
+
+
+def test_project_name_is_wired_through_the_value_check_table(tmp_path):
+    # nested-projects-spec — F3: one name grammar, wired in rather than restated
+    from lore.config import _VALUE_CHECK
+    from lore.validators import validate_project_name
+
+    assert _VALUE_CHECK["project-name"] is validate_project_name
+
+
+# --- default-project-scope -------------------------------------------------
+
+
+@pytest.mark.parametrize("token", ["self", "all"])
+def test_default_project_scope_parses_each_token(tmp_path, capsys, token):
+    # nested-projects-spec — FR-2
+    _write_config(tmp_path, f'default-project-scope = "{token}"\n')
+    assert load_config(tmp_path).default_project_scope == token
+    assert capsys.readouterr().err == ""
+
+
+def test_default_project_scope_defaults_to_self(tmp_path, capsys):
+    # nested-projects-spec — FR-2 / A-7: the downward axis is off unless asked
+    _write_config(tmp_path, "")
+    assert load_config(tmp_path).default_project_scope == "self"
+    assert capsys.readouterr().err == ""
+
+
+def test_default_project_scope_out_of_set_falls_back_with_the_exact_line(
+    tmp_path, capsys
+):
+    # nested-projects-spec — Part 2 config fail-soft table, row 3
+    _write_config(tmp_path, 'default-project-scope = "everything"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.default_project_scope == "self"
+    assert capsys.readouterr().err == (
+        f"lore: invalid value for default-project-scope at {_config_path(tmp_path)} "
+        "(expected one of: self, all); using default\n"
+    )
+
+
+def test_default_project_scope_token_set_lives_in_allowed_values(tmp_path):
+    # nested-projects-spec — decisions-017: the token set lives in the loader,
+    # never in a hand-rolled CLI validator
+    from lore.config import _ALLOWED_VALUES
+
+    assert _ALLOWED_VALUES["default-project-scope"] == ("self", "all")
+
+
+# --- the registry tables ---------------------------------------------------
+
+
+def test_both_new_flat_keys_are_registered_everywhere(tmp_path):
+    # nested-projects-spec — F3 / decisions-013
+    from lore.config import _EXPECTED_TYPE, _FROM_TOML, _KEY_DOC
+
+    for key, attr in (
+        ("project-name", "project_name"),
+        ("default-project-scope", "default_project_scope"),
+    ):
+        assert _FROM_TOML[key] == attr
+        assert _EXPECTED_TYPE[key] is str
+        assert key in _KEY_DOC
+
+
+def test_render_known_keys_header_names_both_new_keys():
+    # nested-projects-spec — F3: the generated header teaches the new settings
+    from lore.config import render_known_keys_header
+
+    header = render_known_keys_header()
+    assert header.count("project-name") == 1
+    assert header.count("default-project-scope") == 1
+
+
+def test_render_default_settings_seeds_both_new_keys_at_their_defaults():
+    # nested-projects-spec — W5: `lore init` writes them and asks no question
+    import tomllib
+
+    from lore.config import render_default_settings
+
+    parsed = tomllib.loads(render_default_settings())
+    assert parsed["project-name"] == ""
+    assert parsed["default-project-scope"] == "self"
+
+
+# --- [shared] --------------------------------------------------------------
+
+
+def test_shared_table_parses_into_typed_fields(tmp_path, capsys):
+    # nested-projects-spec — FR-3 / F4
+    from lore.config import SharedExports
+
+    _write_config(
+        tmp_path,
+        "[shared]\nexports = [\"standards-*\", \"tech-db\"]\nglossary = true\n",
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.shared == SharedExports(exports=("standards-*", "tech-db"), glossary=True)
+    assert capsys.readouterr().err == ""
+
+
+def test_shared_glossary_defaults_to_false(tmp_path, capsys):
+    # nested-projects-spec — FR-3: the glossary is opt-in
+    _write_config(tmp_path, '[shared]\nexports = ["a"]\n')
+    cfg = load_config(tmp_path)
+    assert cfg.shared.exports == ("a",)
+    assert cfg.shared.glossary is False
+    assert capsys.readouterr().err == ""
+
+
+def test_shared_absent_is_the_default_shared_exports(tmp_path, capsys):
+    # nested-projects-spec — F4: `Config()` construction is unaffected
+    from lore.config import SharedExports
+
+    _write_config(tmp_path, "")
+    assert load_config(tmp_path).shared == SharedExports()
+    assert SharedExports() == SharedExports(exports=(), glossary=False)
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "content,reason",
+    [
+        ('shared = "everything"\n', "expected a table"),
+        ("shared = [1]\n", "expected a table"),
+        ("[shared]\nexports = 3\n", "exports must be a list of strings"),
+        ("[shared]\nexports = [1, 2]\n", "exports must be a list of strings"),
+        ('[shared]\nglossary = "yes"\n', "glossary must be a boolean"),
+    ],
+)
+def test_malformed_shared_falls_back_with_the_exact_line(
+    tmp_path, capsys, content, reason
+):
+    # nested-projects-spec — Part 2 config fail-soft table, row 4
+    from lore.config import SharedExports
+
+    _write_config(tmp_path, content)
+    cfg = load_config(tmp_path)
+    assert cfg.shared == SharedExports()
+    assert capsys.readouterr().err == (
+        f"lore: invalid [shared] table at {_config_path(tmp_path)} "
+        f"({reason}); using default\n"
+    )
+
+
+# --- [[descendants]] -------------------------------------------------------
+
+
+DESCENDANTS_TOML = """\
+[[descendants]]
+name = "lore"
+path = "lore"
+exports = ["camelot-dispatch-contract"]
+
+[[descendants]]
+name = "realm"
+path = "apps/realm"
+"""
+
+
+def test_descendants_parse_into_a_tuple_of_typed_records(tmp_path, capsys):
+    # nested-projects-spec — FR-4 / F4
+    from lore.config import DescendantExport
+
+    _write_config(tmp_path, DESCENDANTS_TOML)
+    cfg = load_config(tmp_path)
+    assert cfg.descendants == (
+        DescendantExport(
+            name="lore", path="lore", exports=("camelot-dispatch-contract",)
+        ),
+        DescendantExport(name="realm", path="apps/realm", exports=()),
+    )
+    assert capsys.readouterr().err == ""
+
+
+def test_descendants_absent_is_an_empty_tuple(tmp_path, capsys):
+    # nested-projects-spec — F4: `Config()` construction is unaffected
+    _write_config(tmp_path, "")
+    assert load_config(tmp_path).descendants == ()
+    assert capsys.readouterr().err == ""
+
+
+NAME_REASON = "name must be a non-empty string"
+PATH_REASON = "path must be a non-empty string"
+
+
+@pytest.mark.parametrize(
+    "content,reason",
+    [
+        ('descendants = "lore"\n', "expected an array of tables"),
+        ("descendants = [1]\n", "expected an array of tables"),
+        ('[[descendants]]\npath = "lore"\n', NAME_REASON),
+        ('[[descendants]]\nname = 1\npath = "lore"\n', NAME_REASON),
+        ('[[descendants]]\nname = ""\npath = "lore"\n', NAME_REASON),
+        ('[[descendants]]\nname = "lore"\n', PATH_REASON),
+        ('[[descendants]]\nname = "lore"\npath = 1\n', PATH_REASON),
+        ('[[descendants]]\nname = "lore"\npath = ""\n', PATH_REASON),
+        ('[[descendants]]\nname = "lore"\npath = "lore"\nexports = 3\n',
+         "exports must be a list of strings"),
+        ('[[descendants]]\nname = "lore"\npath = "lore"\nexports = ["a", 2]\n',
+         "exports must be a list of strings"),
+    ],
+)
+def test_one_malformed_descendant_drops_the_whole_key_with_the_exact_line(
+    tmp_path, capsys, content, reason
+):
+    # nested-projects-spec — Part 2 config fail-soft table, row 5:
+    # half a selection is not a selection
+    _write_config(tmp_path, content)
+    cfg = load_config(tmp_path)
+    assert cfg.descendants == ()
+    assert capsys.readouterr().err == (
+        f"lore: invalid [[descendants]] entry at {_config_path(tmp_path)} "
+        f"({reason}); using default\n"
+    )
+
+
+def test_one_malformed_entry_drops_its_valid_siblings_too(tmp_path, capsys):
+    # nested-projects-spec — D-23: the WHOLE key falls back, not just the entry
+    _write_config(
+        tmp_path,
+        '[[descendants]]\nname = "lore"\npath = "lore"\n\n[[descendants]]\nname = "realm"\n',
+    )
+    assert load_config(tmp_path).descendants == ()
+    assert "invalid [[descendants]] entry" in capsys.readouterr().err
+
+
+# --- the path-escape refusal (N-5) -----------------------------------------
+
+
+def test_a_descendant_path_that_escapes_the_root_drops_only_that_entry(
+    tmp_path, capsys
+):
+    # nested-projects-spec — Part 2 config fail-soft table, row 6 / N-5:
+    # a security refusal drops one entry; a shape error drops the key
+    from lore.config import DescendantExport
+
+    _write_config(
+        tmp_path,
+        '[[descendants]]\nname = "outside"\npath = "../outside"\n\n'
+        '[[descendants]]\nname = "lore"\npath = "lore"\n',
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.descendants == (DescendantExport(name="lore", path="lore", exports=()),)
+    assert capsys.readouterr().err == (
+        f'lore: descendant path "../outside" at {_config_path(tmp_path)} '
+        "escapes the project root; ignored\n"
+    )
+
+
+def test_an_absolute_descendant_path_is_refused(tmp_path, capsys):
+    # nested-projects-spec — N-5: the config is not a filesystem-read primitive
+    _write_config(tmp_path, '[[descendants]]\nname = "etc"\npath = "/etc"\n')
+    assert load_config(tmp_path).descendants == ()
+    assert 'escapes the project root; ignored' in capsys.readouterr().err
+
+
+# --- extras and forward compatibility --------------------------------------
+
+
+def test_the_two_known_tables_never_land_in_extras(tmp_path, capsys):
+    # nested-projects-spec — D-23(a): two homes for one fact is the
+    # standards-dry failure, and it breaks `Config.extras`' own contract
+    _write_config(tmp_path, '[shared]\nexports = ["a"]\n\n' + DESCENDANTS_TOML)
+    cfg = load_config(tmp_path)
+    assert cfg.extras == {}
+    assert capsys.readouterr().err == ""
+
+
+def test_an_unknown_table_still_lands_in_extras(tmp_path, capsys):
+    # nested-projects-spec — FR-6: forward compatibility is unchanged
+    _write_config(tmp_path, '[shared]\nexports = ["a"]\n\n[future]\nkey = "value"\n')
+    cfg = load_config(tmp_path)
+    assert cfg.extras == {"future": {"key": "value"}}
+    assert capsys.readouterr().err == ""
+
+
+def test_a_malformed_known_table_is_still_not_kept_in_extras(tmp_path, capsys):
+    # nested-projects-spec — D-23(a): a known table is known whether or not it
+    # parses; the fallback is the default, never a verbatim copy
+    _write_config(tmp_path, 'shared = "everything"\n')
+    assert load_config(tmp_path).extras == {}
+    assert "invalid [shared] table" in capsys.readouterr().err
+
+
+# --- recorded_keys ---------------------------------------------------------
+
+
+def test_recorded_keys_counts_a_table_that_parses(tmp_path):
+    # nested-projects-spec — D-23(b): a table that parses cleanly is an
+    # answered key on the same rule the flat keys follow
+    from lore.config import recorded_keys
+
+    _write_config(tmp_path, '[shared]\nexports = ["a"]\n\n' + DESCENDANTS_TOML)
+    assert recorded_keys(tmp_path) == frozenset({"shared", "descendants"})
+
+
+def test_recorded_keys_ignores_a_table_the_loader_could_not_use(tmp_path):
+    # nested-projects-spec — D-23(b): a value the loader could not use is not
+    # an answer
+    from lore.config import recorded_keys
+
+    _write_config(tmp_path, 'shared = "everything"\ndescendants = 3\n')
+    assert recorded_keys(tmp_path) == frozenset()
+
+
+def test_recorded_keys_is_silent_about_a_broken_table(tmp_path, capsys):
+    # nested-projects-spec — D-23(b): the warning belongs to the load that
+    # reads the values
+    from lore.config import recorded_keys
+
+    _write_config(tmp_path, 'shared = "everything"\n')
+    recorded_keys(tmp_path)
+    assert capsys.readouterr().err == ""
+
+
+# --- the whole file together -----------------------------------------------
+
+
+def test_a_full_nested_projects_config_parses_with_no_warning(tmp_path, capsys):
+    # nested-projects-spec — Part 2 "Data and Storage", the documented file
+    from lore.config import DescendantExport, SharedExports
+
+    _write_config(
+        tmp_path,
+        'project-name = "camelot"\n'
+        'default-project-scope = "self"\n'
+        "\n"
+        "[shared]\n"
+        'exports = ["standards-*"]\n'
+        "glossary = true\n"
+        "\n"
+        "[[descendants]]\n"
+        'name = "lore"\n'
+        'path = "lore"\n'
+        'exports = ["camelot-dispatch-contract"]\n',
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.project_name == "camelot"
+    assert cfg.default_project_scope == "self"
+    assert cfg.shared == SharedExports(exports=("standards-*",), glossary=True)
+    assert cfg.descendants == (
+        DescendantExport(
+            name="lore", path="lore", exports=("camelot-dispatch-contract",)
+        ),
+    )
+    assert cfg.extras == {}
+    assert capsys.readouterr().err == ""
+
+
+def test_the_new_table_fields_are_frozen():
+    # nested-projects-spec — F4: `Config` stays a frozen view of the file
+    cfg = Config()
+    for field_name in ("shared", "descendants"):
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            setattr(cfg, field_name, ())
+
+
+def test_shared_exports_and_descendant_export_are_frozen():
+    # nested-projects-spec — A-1: every table is a frozen dataclass on Config
+    from lore.config import DescendantExport, SharedExports
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        setattr(SharedExports(), "glossary", True)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        setattr(DescendantExport(name="a", path="b"), "name", "c")
+
+
+def test_an_unknown_key_inside_a_known_table_is_ignored(tmp_path, capsys):
+    # nested-projects-spec — FR-6: a newer release may add a key to either
+    # table, and an older one must still parse the file it is given
+    from lore.config import DescendantExport, SharedExports
+
+    _write_config(
+        tmp_path,
+        '[shared]\nexports = ["a"]\nrites = true\n\n'
+        '[[descendants]]\nname = "lore"\npath = "lore"\nfuture = 1\n',
+    )
+    cfg = load_config(tmp_path)
+    assert cfg.shared == SharedExports(exports=("a",), glossary=False)
+    assert cfg.descendants == (DescendantExport(name="lore", path="lore", exports=()),)
+    assert capsys.readouterr().err == ""

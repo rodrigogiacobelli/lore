@@ -1,11 +1,10 @@
 ---
 id: conceptual-workflows-impacts
 title: lore impacts Behaviour
-summary: What the system does internally when lore impacts <token> runs — the
-  bidirectional surfacing primitive over the optional binds frontmatter field
-  that links codex entries to the code paths they govern. Covers token
-  classification (codex id vs path), exact-vs-glob matching, --direct-links and
-  --json modes, error envelope, and Python API parity.
+summary: What the system does internally when lore impacts <token> runs — the bidirectional
+  surfacing primitive over the optional binds frontmatter field that links codex entries
+  to the code paths they govern. Covers token classification (codex id vs path), exact-vs-glob
+  matching, --direct-links and --json modes, error envelope, and Python API parity.
 binds:
 - src/lore/impacts.py
 - src/lore/cli.py
@@ -35,6 +34,8 @@ related:
 - standards-single-responsibility
 - vision-benchmarks
 - codex
+- conceptual-workflows-nested-projects
+- tech-arch-projects-module
 ---
 
 # `lore impacts` Behaviour
@@ -46,6 +47,10 @@ globs a codex entry governs; `lore impacts` walks the edge in either direction.
 - Pass a **codex id** → print the code paths/globs that entry binds.
 - Pass a **file path** → print every codex entry whose `binds:` matches that
   path, exact-or-glob.
+
+`--project NAME` reads the same graph across a tree of Lore projects — see
+conceptual-workflows-nested-projects. `lore codex chaos` is the one traversal
+sibling that never accepts it.
 
 The command never writes anything. It is the codex↔code analogue of
 `lore codex map` (which walks `related:` within the codex). Per
@@ -68,6 +73,7 @@ Determinism and zero false positives are therefore non-negotiable.
 |-----------|------|---------|-------------|
 | `<token>` | positional argument | required | A codex id (no `/`, no `.`) or a repo-relative / absolute file path. |
 | `--direct-links` | flag | off | Path-seed only: drop glob matches; keep `exact` only. Silent no-op on codex-seed lookups. |
+| `--project` (global) | option | project's `default-project-scope` | A project name, `all`, or `self` — read the codex↔code graph of another project in this tree. See conceptual-workflows-nested-projects. |
 | `--json` (global) | flag | off | Emit the `{"impacts": [...]}` envelope instead of the flat text list. |
 
 ## Token Classification
@@ -88,17 +94,11 @@ it lives in the core module and is identical for the Python API.
 
 ### 1. Validate the seed
 
-`impacts.impacts` loads the codex index once via `scan_codex` (parsing
-frontmatter with `extra_fields=("binds",)`). If the supplied id is not in the
-index, the function raises `ImpactsError("Unknown codex id: \"<token>\"")` and
-the CLI handler emits the message to stderr with exit code 1. Under `--json`
-the same wording lands inside `{"error": "..."}` to stderr; exit code 1.
+`impacts.impacts` loads the scoped codex listing once via `codex.list_codex(project_root, scope=scope)`, then resolves the seed against it the way every other id resolves — a bare id against this project's own rows first, a qualified (`<project>:<id>`) id never locally. If the id resolves nowhere in scope, the function raises `ImpactsError("Unknown codex id: \"<token>\"")` and the CLI handler emits the message to stderr with exit code 1. Under `--json` the same wording lands inside `{"error": "..."}` to stderr; exit code 1. An unknown `--project` name raises `UnknownProjectError` instead, at the same exit code.
 
 ### 2. Read `binds:` from the entry
 
-The entry's `binds:` list is returned verbatim in **declaration order from the
-source file**. A missing `binds:` field is treated identically to `binds: []`
-(FR-4) — both produce an empty result.
+Once resolved, the entry's owning project answers: its `binds:` list is read from its own `.lore/codex/` and returned verbatim in **declaration order from the source file**. A missing `binds:` field is treated identically to `binds: []` (FR-4) — both produce an empty result. Every row carries `origin` (`"self"` or the owning project's name).
 
 ### 3. Render
 
@@ -112,17 +112,21 @@ src/lore/**/*.py
 ```
 
 **JSON mode:** envelope keyed `"impacts"`. Each item is
-`{"path": <string>, "kind": "exact" | "glob"}` where `kind` reflects whether
-the binding string contains any glob character (`*`, `?`, `[`).
+`{"path": <string>, "kind": "exact" | "glob", "origin": <string>}` where `kind` reflects whether
+the binding string contains any glob character (`*`, `?`, `[`), and `origin` is
+`"self"` or the owning project's name (always present).
 
 ```json
 {
   "impacts": [
-    {"path": "src/lore/cli.py", "kind": "exact"},
-    {"path": "src/lore/**/*.py", "kind": "glob"}
+    {"path": "src/lore/cli.py", "kind": "exact", "origin": "self"},
+    {"path": "src/lore/**/*.py", "kind": "glob", "origin": "self"}
   ]
 }
 ```
+
+`lore impacts` renders bare lines, not a table, so there is no `ORIGIN` column
+for FR-16's rule to attach to on either seed mode — `origin` is JSON-only.
 
 `--direct-links` is a silent no-op here; the output is identical with or
 without the flag.
@@ -131,27 +135,28 @@ without the flag.
 
 ### 1. Normalise the path
 
-`impacts._normalize_path_input` anchors the path against
-`find_project_root()`:
+A repo-relative path names a different file in every project, so the seed is
+normalised **against each project in scope, in turn** — `impacts._normalize_path_input`
+anchors it against that project's own root:
 
 - Relative paths stay relative (cleaned of `.`/`..` segments).
-- Absolute paths inside the repo are converted to repo-relative.
-- Absolute paths outside the repo raise `ImpactsError("Path is outside the
-  project root: \"<token>\"")` (exit 1).
+- Absolute paths inside that project are converted to project-relative.
+- Absolute paths outside the reading project's own root raise `ImpactsError("Path is outside the
+  project root: \"<token>\"")` (exit 1) — but only when the reading project itself cannot hold it; a project further out in scope that cannot hold the path contributes nothing rather than failing the command.
 - Any path containing a `..` segment raises `ImpactsError("Path traversal not
   allowed: \"<token>\"")` (exit 1).
-- Symlinks resolving outside the repo are rejected after `resolve()` (NFR
+- Symlinks resolving outside a project are rejected after `resolve()` (NFR
   Security — no filesystem walks happen during matching itself).
 
 Normalised paths are `/`-joined POSIX strings regardless of platform.
 
 ### 2. Scan codex `binds:` index
 
-`impacts._load_codex_binds_index` walks the codex once per process (cached via
+`impacts._load_codex_binds_index` walks each in-scope project's own codex once per process (cached via
 `functools.lru_cache(maxsize=1)` keyed on the codex directory), reading
 `binds:` from every entry's frontmatter. Entries with a malformed `binds:`
 field on disk are silently skipped — schema-level rejection is
-`lore health --scope schemas`' job, not this command's. `lore impacts` is a
+`lore health --scope schemas`' job, not this command's, and `lore health` never reads another project's entries regardless. `lore impacts` is a
 read tool; it must never refuse to run because some other entry has a bad
 field.
 
@@ -166,12 +171,14 @@ matched against the seed path:
 - **Plain glob**: `fnmatch.fnmatchcase` on the slash-joined string.
 
 A codex entry that matches both exactly **and** via glob is reported once,
-classified as `exact` (FR-9). Dedup key is the codex id; exact wins.
+classified as `exact` (FR-9). Dedup key is the codex id — the qualified id for a
+foreign entry, so an ancestor's and a descendant's entries of the same bare id
+never collide — and exact wins.
 
 ### 4. Sort and render
 
-Results are sorted **alphabetically by codex id** for determinism (NFR
-Reliability).
+Results are sorted **alphabetically by codex id** (the qualified id for a
+foreign entry) for determinism (NFR Reliability).
 
 **Text mode (default):** one matching codex id per line. Glob matches are
 annotated `<id>  (glob: <pattern>)`; exact matches are unannotated.
@@ -183,14 +190,16 @@ tech-arch-source-layout  (glob: src/lore/**/*.py)
 ```
 
 **JSON mode:** envelope keyed `"impacts"`. Items are `{"id": ..., "match":
-"exact"}` for exact matches; `{"id": ..., "match": "glob", "pattern": ...}`
-for glob matches (the matching binding string is echoed back).
+"exact", "origin": ...}` for exact matches; `{"id": ..., "match": "glob", "pattern": ..., "origin": ...}`
+for glob matches (the matching binding string is echoed back). `id` is
+origin-qualified for a foreign entry, which already names the source, so
+there is no separate `ORIGIN` column for either render mode.
 
 ```json
 {
   "impacts": [
-    {"id": "dec-006-id-references", "match": "exact"},
-    {"id": "tech-arch-source-layout", "match": "glob", "pattern": "src/lore/**/*.py"}
+    {"id": "dec-006-id-references", "match": "exact", "origin": "self"},
+    {"id": "tech-arch-source-layout", "match": "glob", "pattern": "src/lore/**/*.py", "origin": "self"}
   ]
 }
 ```
@@ -221,30 +230,33 @@ alphabetically by codex id.
 ## Python API parity
 
 Per `decisions-011-api-parity-with-cli`, `lore.impacts.impacts` exposes the
-same behaviour as a keyword-only function. `lore.models` re-exports the typed
+same behaviour as a keyword-only function. `lore.api` re-exports the typed
 result surface:
 
 ```python
-from lore.models import impacts, ImpactsResult, CodexBinding, CodeBinding, ImpactsError
+from lore.api import impacts, ImpactsResult, CodexBinding, CodeBinding, ImpactsError, UnknownProjectError
 
-result = impacts(token, project_root=root, direct_links=False)
+result = impacts(token, project_root=root, direct_links=False, scope=None)
 # result.kind == "codex" or "code"
 # result.codex_items: tuple[CodexBinding, ...]   when kind == "codex"
 # result.code_items:  tuple[CodeBinding,  ...]   when kind == "code"
 ```
 
-`CodexBinding` carries `path` and `kind`. `CodeBinding` carries `id`,
-`match`, and an optional `pattern` (None when `match == "exact"`). Errors
-surface as `ImpactsError` (subclass of `ValueError`); the CLI is a thin
-translator over these.
+`CodexBinding` carries `path`, `kind`, and `origin` (default `"self"`).
+`CodeBinding` carries `id` (origin-qualified for a foreign document), `match`,
+an optional `pattern` (None when `match == "exact"`), and `origin`. Errors
+surface as `ImpactsError` (subclass of `ValueError`) or `UnknownProjectError`
+when `scope` names no project in scope; the CLI is a thin translator over
+these.
 
 ## Failure Modes
 
 | Failure point | Behaviour | Exit code |
 |---|---|---|
-| Unknown codex id | `Unknown codex id: "<token>"` to stderr (or JSON `{"error": "..."}`) | 1 |
-| Path outside project root | `Path is outside the project root: "<token>"` to stderr (or JSON `{"error": "..."}`) | 1 |
+| Unknown codex id (not resolved anywhere in scope) | `Unknown codex id: "<token>"` to stderr (or JSON `{"error": "..."}`) | 1 |
+| Path outside every in-scope project's root | `Path is outside the project root: "<token>"` to stderr (or JSON `{"error": "..."}`) | 1 |
 | Path contains `..` segment | `Path traversal not allowed: "<token>"` to stderr (or JSON `{"error": "..."}`) | 1 |
+| Unknown `--project` name | `Unknown project "<name>". Projects in scope: ...` to stderr (or JSON `{"error": "..."}`) | 1 |
 | Empty token | Click `UsageError` | 2 |
 | Malformed `binds:` entry on disk (some other codex entry) | Silently skipped from the index; matching continues. Surfaced separately by `lore health --scope schemas`. | 0 |
 | Empty result (either seed) | Nothing on stdout; `{"impacts": []}` under `--json` | 0 |

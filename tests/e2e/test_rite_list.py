@@ -157,6 +157,9 @@ class TestListJsonEnvelopes:
                     "group": None,
                     "trigger": "Customer requests a refund on a returned order.",
                     "summary": "Confirm the customer is reachable, then refund.",
+                    # nested-projects-spec — ADR-016 as revised: `origin` is
+                    # added beside `group`, never instead of it.
+                    "origin": "self",
                 }
             ]
         }
@@ -181,6 +184,8 @@ class TestListJsonEnvelopes:
                     "group": None,
                     "title": "Read the user's contact information",
                     "summary": "Read the user's email, phone, and mailing address from admin.",
+                    # nested-projects-spec — ADR-016 as revised
+                    "origin": "self",
                 }
             ]
         }

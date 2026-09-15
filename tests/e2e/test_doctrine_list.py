@@ -537,6 +537,8 @@ class TestDoctrineListJson:
             "title": "Feature Implementation",
             "summary": "E2E spec-driven pipeline...",
             "valid": True,
+            # nested-projects-spec — FR-16 / D-15
+            "origin": "self",
         }
 
     def test_doctrine_list_json_empty(self, runner, project_dir):
@@ -577,7 +579,10 @@ class TestDoctrineListJson:
         assert result.exit_code == 0
         data = json.loads(result.output)
         entry = data["doctrines"][0]
-        assert set(entry.keys()) == {"id", "group", "title", "summary", "valid"}
+        # nested-projects-spec — FR-16 / D-15
+        assert set(entry.keys()) == {
+            "id", "group", "title", "summary", "valid", "origin",
+        }
 
     def test_doctrine_list_json_no_filename_key(self, runner, project_dir):
         """JSON output does not include 'filename' key from Python API.

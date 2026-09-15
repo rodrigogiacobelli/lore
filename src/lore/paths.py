@@ -120,6 +120,24 @@ def is_transient_codex_path(root: Path, filepath: Path) -> bool:
     return filepath.is_relative_to(codex_transient_dir(root))
 
 
+def resolve_beneath(root: Path, relative: str) -> Path | None:
+    """Resolve *relative* against *root*, or return ``None`` when it escapes.
+
+    Both sides are resolved before the comparison, so an absolute value, a
+    ``..`` segment and a symlink pointing out of the subtree are all refused
+    the same way: a path a project writes into its own config must never
+    become an arbitrary-filesystem-read primitive.
+
+    Existence is deliberately not checked. Whether the resolved directory
+    holds anything is a different question with a different answer, and asking
+    it here would make a path calculation touch the filesystem for a fact it
+    does not need.
+    """
+    base = root.resolve()
+    candidate = (base / relative).resolve()
+    return candidate if candidate.is_relative_to(base) else None
+
+
 _ENTITY_LOCATION_BASES: dict[str, tuple[str, ...]] = {
     "knight": (".lore", "knights"),
     "doctrine": (".lore", "doctrines"),

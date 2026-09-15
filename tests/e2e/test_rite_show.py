@@ -294,7 +294,9 @@ class TestShowBareSharedStep:
         result = runner.invoke(main, ["--json", "rite", "show", "read-contact-info"])
         assert result.exit_code == 0
         j = json.loads(result.stdout)
-        assert j["rites"][0] == CANONICAL_SHARED_STEP  # bare shared-step object inside rites
+        # nested-projects-spec — FR-16 / D-15: the record gains `origin` and
+        # nothing else; the bare shared-step shape is otherwise unchanged.
+        assert j["rites"][0] == {**CANONICAL_SHARED_STEP, "origin": "self"}
 
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,8 @@ the seed exists but has no neighbours in the active direction.
 
 from pathlib import Path
 
+import pytest
+
 from lore.codex import map_documents
 
 
@@ -109,7 +111,9 @@ def test_map_documents_default_mode_records_have_four_keys(tmp_path):
     assert result is not None
     assert len(result) == 1
     record = result[0]
-    assert set(record.keys()) == {"id", "group", "title", "summary"}
+    # nested-projects-spec — D-15: `origin` is on every record, always,
+    # valued "self" in a project with no tree
+    assert set(record.keys()) == {"id", "group", "title", "summary", "origin"}
     assert "body" not in record
     assert "related" not in record
 
@@ -474,7 +478,10 @@ def test_map_documents_full_mode_records_have_six_keys(tmp_path):
     assert result is not None
     assert len(result) == 1
     record = result[0]
-    assert set(record.keys()) == {"id", "title", "summary", "group", "related", "body"}
+    # nested-projects-spec — D-15
+    assert set(record.keys()) == {
+        "id", "title", "summary", "group", "related", "body", "origin",
+    }
 
 
 # Unit — full-mode excludes seed body even with mutual citation
@@ -610,7 +617,8 @@ def test_codex_map_json_default_entry_has_four_keys(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.stderr
     parsed = _json.loads(result.stdout)
     for entry in parsed["codex"]:
-        assert set(entry.keys()) == {"id", "group", "title", "summary"}
+        # nested-projects-spec — FR-16 / D-15
+        assert set(entry.keys()) == {"id", "group", "title", "summary", "origin"}
         assert "body" not in entry
         assert "related" not in entry
 
@@ -708,8 +716,10 @@ def test_codex_map_json_full_entry_has_six_keys(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.stderr
     parsed = _json.loads(result.stdout)
     for entry in parsed["documents"]:
+        # nested-projects-spec — D-15: JSON is machine-read, where a stable
+        # key is worth more than byte-identity
         assert set(entry.keys()) == {
-            "id", "title", "summary", "group", "related", "body",
+            "id", "title", "summary", "group", "related", "body", "origin",
         }
 
 
@@ -765,3 +775,166 @@ def test_map_documents_handles_multiline_summary_continuation(tmp_path):
 
     assert result is not None
     assert [r["id"] for r in result] == ["peer"]
+
+
+# ---------------------------------------------------------------------------
+# C2 — the scoped map
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C2
+# Decisions: D-17 (cross-project `related` resolution), D-18 (direction is an
+#            authoring rule, not a traversal rule), X-1/B-1 (the two-budget
+#            BFS is not this feature's to change)
+# ---------------------------------------------------------------------------
+
+
+class TestScopedMapDocuments:
+    def test_a_neighbour_from_an_ancestor_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — FR-21: one call answers what a change touches
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", related=("lore:local-one",))
+        tree.doc(tree.lore, "local-one")
+
+        result = map_documents(
+            tree.lore, "camelot:contract", depth_out=1, depth_in=0
+        )
+
+        assert [r["id"] for r in result] == ["local-one"]
+        assert result[0]["origin"] == "self"
+
+    def test_an_ancestor_entry_naming_this_project_reduces_to_the_bare_id(
+        self, tree
+    ):
+        # nested-projects-spec — D-17: `related: [lore:x]`, read from inside
+        # `lore`, is the local `x`
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", related=("lore:tech-db-schema",))
+        tree.doc(tree.lore, "tech-db-schema")
+
+        result = map_documents(
+            tree.lore, "tech-db-schema", depth_out=0, depth_in=1
+        )
+
+        assert [r["id"] for r in result] == ["camelot:contract"]
+        assert result[0]["origin"] == "camelot"
+
+    def test_an_ancestor_internal_edge_keeps_its_owners_namespace(self, tree):
+        # nested-projects-spec — D-17: a bare entry inside an ancestor's file
+        # names a document in the ancestor's own namespace
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", related=("peer",))
+        tree.doc(tree.camelot, "peer")
+
+        result = map_documents(
+            tree.lore, "camelot:contract", depth_out=1, depth_in=0
+        )
+
+        assert [r["id"] for r in result] == ["camelot:peer"]
+
+    def test_an_entry_naming_an_unexported_document_is_dropped(self, tree):
+        # nested-projects-spec — D-17: entries not in the scoped index go, the
+        # way `_read_related` has always dropped an unknown id
+        tree.configure(tree.camelot, '[shared]\nexports = ["contract"]\n')
+        tree.doc(tree.camelot, "contract", related=("private-one",))
+        tree.doc(tree.camelot, "private-one")
+
+        result = map_documents(
+            tree.lore, "camelot:contract", depth_out=1, depth_in=0
+        )
+
+        assert result == []
+
+    def test_the_seed_resolves_locally_before_an_inherited_id(self, tree):
+        # nested-projects-spec — D-8
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "twin", related=("peer",))
+        tree.doc(tree.camelot, "peer")
+        tree.doc(tree.lore, "twin", related=("local-peer",))
+        tree.doc(tree.lore, "local-peer")
+
+        result = map_documents(tree.lore, "twin", depth_out=1, depth_in=0)
+
+        assert [r["id"] for r in result] == ["local-peer"]
+
+    def test_an_unknown_seed_is_still_none(self, tree):
+        # nested-projects-spec — C2: the miss contract is unchanged
+        tree.doc(tree.lore, "local-one")
+
+        assert map_documents(tree.lore, "no-such-doc") is None
+
+    def test_full_mode_normalises_the_related_list_into_the_scoped_namespace(
+        self, tree
+    ):
+        # nested-projects-spec — decisions-006-id-references: every id a
+        # record hands back is an id the reader can address
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.lore, "local-one", related=("camelot:contract",))
+        tree.doc(tree.camelot, "contract", related=("peer",))
+        tree.doc(tree.camelot, "peer")
+
+        result = map_documents(
+            tree.lore, "local-one", depth_out=1, depth_in=0, full=True
+        )
+
+        assert result[0]["id"] == "camelot:contract"
+        assert result[0]["related"] == ["camelot:peer"]
+
+    def test_every_record_carries_its_owning_projects_group(self, tree):
+        # nested-projects-spec — FR-16: only the owning project can derive it
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", group="conceptual", related=("lore:x",))
+        tree.doc(tree.lore, "x")
+
+        result = map_documents(tree.lore, "x", depth_out=0, depth_in=1)
+
+        assert result[0]["group"] == "conceptual"
+
+    def test_conflicting_depth_flags_still_fire_before_any_disk_io(self, tree):
+        # nested-projects-spec — C2: the gate stays ahead of the walk
+        from lore.codex import ConflictingDepthFlags
+
+        with pytest.raises(ConflictingDepthFlags):
+            map_documents(
+                tree.lore / "does-not-exist", "x", depth=1, depth_out=1, scope="all"
+            )
+
+    def test_an_unknown_project_name_raises(self, tree):
+        # nested-projects-spec — FR-12
+        from lore.projects import UnknownProjectError
+
+        tree.doc(tree.camelot, "own-doc")
+
+        with pytest.raises(UnknownProjectError):
+            map_documents(tree.camelot, "own-doc", scope="nope")
+
+    def test_scope_all_traverses_into_a_descendant(self, tree):
+        # nested-projects-spec — FR-21/W6: the ancestor owns the edge (D-14)
+        tree.doc(tree.camelot, "contract", related=("lore:child-doc",))
+        tree.doc(tree.lore, "child-doc")
+
+        result = map_documents(
+            tree.camelot, "contract", depth_out=1, depth_in=0, scope="all"
+        )
+
+        assert [r["id"] for r in result] == ["lore:child-doc"]
+        assert result[0]["origin"] == "lore"
+
+
+class TestTwoBudgetBfsIsUnchanged:
+    def test_symmetric_depth_one_expands_a_backlink_of_an_outbound_neighbour(
+        self, tmp_path
+    ):
+        # nested-projects-spec — X-1/B-1: `_bfs_neighbour_ids` tracks the two
+        # budgets independently, so a node reached by one outbound hop still
+        # has its inbound budget and gets its own backlinks expanded. That is
+        # a pre-existing defect this feature does not fix; pinning it here is
+        # what makes the eventual fix a one-assertion change.
+        codex_dir = _make_codex_dir(tmp_path)
+        _write_doc(codex_dir, "seed", related=["middle"])
+        _write_doc(codex_dir, "middle", related=[])
+        _write_doc(codex_dir, "backlinker", related=["middle"])
+
+        symmetric = map_documents(tmp_path, "seed", depth=1)
+        outbound_only = map_documents(tmp_path, "seed", depth_out=1, depth_in=0)
+
+        assert [r["id"] for r in symmetric] == ["backlinker", "middle"]
+        assert [r["id"] for r in outbound_only] == ["middle"]

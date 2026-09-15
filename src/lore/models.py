@@ -283,12 +283,20 @@ class Watcher:
 
 @dataclasses.dataclass(frozen=True)
 class GlossaryItem:
-    """Typed representation of one entry in .lore/codex/glossary.yaml."""
+    """Typed representation of one entry in .lore/codex/glossary.yaml.
+
+    ``origin`` names the project the item came from — ``"self"`` for this
+    project's own glossary, else the exporting project's name. The keyword
+    itself stays bare in every case: it is natural language matched against
+    document prose, not an id, and qualifying it would break the auto-surface
+    matcher (``nested-projects-spec`` D-22).
+    """
 
     keyword: str
     definition: str
     aliases: tuple[str, ...] = ()
     do_not_use: tuple[str, ...] = ()
+    origin: str = "self"
 
     @classmethod
     def from_dict(cls, d: dict) -> "GlossaryItem":

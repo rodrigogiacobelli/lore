@@ -21,6 +21,7 @@ import yaml
 from lore import artifact as _artifact_mod
 from lore import codex as _codex_mod
 from lore import knight as _knight_mod
+from lore import projects as _projects
 from lore import schemas as _schemas
 from lore import validators as _validators
 from lore import watcher as _watcher_mod
@@ -363,8 +364,11 @@ def update_frontmatter_fields(
 
     Returns ``{"id": name, "filename": <filename>, "updated_at": None}`` on
     success. Raises ``ValueError`` on any validation / lookup / schema
-    failure.
+    failure, and ``ForeignEntityError`` when ``name`` names another project's
+    entity: an entity reached across a boundary is read-only (FR-17, D-7).
     """
+    # 0. read-only rule — before any validation or filesystem call
+    _projects.reject_foreign(name)
     # 1. kind validation
     if kind not in _KINDS:
         raise ValueError(f"Unknown kind: {kind}")

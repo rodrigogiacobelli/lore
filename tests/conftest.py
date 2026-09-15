@@ -208,3 +208,126 @@ def assert_exit_ok(result) -> None:
 def assert_exit_err(result, code: int = 1) -> None:
     """Assert that a CLI invocation exited with a non-zero error code."""
     assert result.exit_code == code, result.output
+
+
+# ---------------------------------------------------------------------------
+# Nested-projects fixture
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — Part 4
+# "Conventions". A real tree on disk, built by real `lore init` runs. Nothing
+# here mocks a walk, ``tomllib`` or ``fnmatch``.
+# ---------------------------------------------------------------------------
+
+
+NESTED_CAMELOT_CONFIG = """\
+project-name = "camelot"
+default-project-scope = "self"
+
+[shared]
+exports = ["standards-*"]
+glossary = true
+
+[[descendants]]
+name = "lore"
+path = "lore"
+exports = ["camelot-dispatch-contract"]
+"""
+
+
+def write_codex_doc(
+    project: Path,
+    doc_id: str,
+    title: str,
+    summary: str,
+    *,
+    group: str = "",
+    related: tuple[str, ...] = (),
+) -> Path:
+    """Write one codex document into ``project`` and return its path."""
+    lines = ["---", f"id: {doc_id}", f"title: {title}", f"summary: {summary}"]
+    if related:
+        lines.append("related:")
+        lines.extend(f"  - {entry}" for entry in related)
+    lines += ["---", "", f"# {title}", "", "Body text.", ""]
+    directory = project / ".lore" / "codex"
+    if group:
+        directory = directory / group
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{doc_id}.md"
+    target.write_text("\n".join(lines), encoding="utf-8")
+    return target
+
+
+@pytest.fixture()
+def nested_tree(tmp_path, monkeypatch):
+    """Build ``camelot`` over ``lore``, ``realm`` and ``citadel``.
+
+    The Part 1 tree, on real disk: four initialised projects, camelot's export
+    tables, and one authored document per project. The seeded ``codex.md`` is
+    removed from each so a codex listing holds only rows this fixture wrote
+    (``adr-no-default-content-tests``); every seeded ``default/`` entity tree
+    is left in place, because "seeded defaults never cross" is a scenario.
+
+    Returns the ancestor path with the working directory set to it; a test
+    reading from a descendant chdirs there itself.
+    """
+    import lore.config as config_module
+
+    config_module._warned = False
+
+    camelot = tmp_path / "camelot"
+    runner = CliRunner()
+    for relative in ("", "lore", "realm", "citadel"):
+        project = camelot / relative if relative else camelot
+        project.mkdir(parents=True, exist_ok=True)
+        monkeypatch.chdir(project)
+        runner.invoke(main, ["init"])
+        (project / ".lore" / "codex" / "codex.md").unlink(missing_ok=True)
+
+    (camelot / ".lore" / "config.toml").write_text(
+        NESTED_CAMELOT_CONFIG, encoding="utf-8"
+    )
+
+    write_codex_doc(
+        camelot,
+        "camelot-dispatch-contract",
+        "Dispatch Contract",
+        "How the three projects hand work to each other.",
+        related=(
+            "lore:tech-db-schema",
+            "realm:tech-dispatch-loop",
+            "citadel:tech-views",
+        ),
+    )
+    write_codex_doc(
+        camelot,
+        "standards-naming",
+        "Naming",
+        "How every Camelot project names things.",
+        group="standards",
+    )
+    write_codex_doc(
+        camelot / "lore",
+        "tech-db-schema",
+        "DB Schema",
+        "The SQLite schema Lore stores state in.",
+        group="technical",
+    )
+    write_codex_doc(
+        camelot / "realm",
+        "tech-dispatch-loop",
+        "Dispatch Loop",
+        "How Realm turns a ready mission into a running agent.",
+        group="technical",
+    )
+    write_codex_doc(
+        camelot / "citadel",
+        "tech-views",
+        "Views",
+        "The screens Citadel renders.",
+        group="technical",
+    )
+
+    monkeypatch.chdir(camelot)
+    yield camelot
+    config_module._warned = False

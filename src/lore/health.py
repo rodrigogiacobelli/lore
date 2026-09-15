@@ -936,7 +936,7 @@ def _check_bindings(project_root: Path) -> list[HealthIssue]:
 def _check_glossary(project_root: Path) -> list[HealthIssue]:
     """Audit the glossary file. Four phases: schema (short-circuits on error),
     duplicate keyword, alias collision, do_not_use collision."""
-    from lore.glossary import scan_glossary
+    from lore.glossary import scan_own_glossary
 
     glossary_file = project_root / ".lore" / "codex" / "glossary.yaml"
     if not glossary_file.exists():
@@ -946,7 +946,9 @@ def _check_glossary(project_root: Path) -> list[HealthIssue]:
     if schema_issues:
         return schema_issues
 
-    items = scan_glossary(project_root)
+    # nested-projects-spec D-21/FR-23 — the project's own file, never the
+    # merged view: an inherited keyword must not raise a project's exit code.
+    items = scan_own_glossary(project_root)
     return [
         *_glossary_duplicate_keyword_issues(items),
         *_glossary_alias_collision_issues(items),

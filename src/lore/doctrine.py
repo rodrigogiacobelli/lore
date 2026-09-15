@@ -1,4 +1,9 @@
-"""Doctrine loading and validation."""
+"""Doctrine loading and validation.
+
+Post nested-projects: ``list_doctrines`` and ``read_doctrine`` take ``scope=``
+and every record carries ``origin``; the three write functions refuse an
+origin-qualified name outright (FR-17, D-7).
+"""
 
 import shutil
 import textwrap
@@ -6,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from lore import projects, scoped
 from lore.frontmatter import parse_frontmatter_doc
 from lore.paths import derive_group, entity_location, group_matches_filter
 from lore.schemas import validate_entity
@@ -133,7 +139,9 @@ def create_doctrine(
 
     Returns ``{id, filename, group, design_filename}`` per amendment B
     Doctrine row (renames ``name``→``id``; drops ``path`` + ``yaml_filename``).
+    Raises ``ForeignEntityError`` on another project's doctrine (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     name_err = validate_name(name)
     if name_err:
         raise ValueError(name_err)
@@ -339,8 +347,10 @@ def update_doctrine(project_root: Path, name: str, content: str) -> dict:
 
     Returns ``{"id": name, "filename": f"{name}.yaml"}`` — EXACT key set.
     Raises ``ValueError`` on missing target, missing dir, name format
-    failure, or schema/name-match failure on incoming content.
+    failure, or schema/name-match failure on incoming content, and
+    ``ForeignEntityError`` on another project's doctrine (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     name_err = validate_name(name)
     if name_err:
         raise ValueError(name_err)
@@ -396,8 +406,10 @@ def delete_doctrine(project_root: Path, name: str) -> dict:
     Ledger CHANGED row "B Doctrine row — both-file behaviour").
 
     Returns ``{"id": name, "deleted": True, "deleted_at": None}`` per A2.
-    Raises ``ValueError`` on missing target.
+    Raises ``ValueError`` on missing target, and ``ForeignEntityError`` on
+    another project's doctrine (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     name_err = validate_name(name)
     if name_err:
         raise ValueError(name_err)
@@ -502,13 +514,42 @@ def _find_doctrine_files(doctrine_id: str, doctrines_dir: Path) -> tuple[Path | 
     return None, primary_yaml
 
 
-def read_doctrine(project_root: Path, doctrine_id: str) -> dict | None:
+def read_doctrine(
+    project_root: Path, doctrine_id: str, *, scope: str | None = None
+) -> dict | None:
     """Load and return a doctrine by ID for display, or ``None`` on miss.
 
-    Searches recursively for <id>.design.md and <id>.yaml under the doctrines
-    directory derived from ``project_root``. Returns a dict with keys: id,
-    title, summary, design, raw_yaml, steps. Returns ``None`` per amendment
+    Returns a dict with keys: id, title, summary, design, raw_yaml, steps,
+    origin. A bare id resolves locally before an inherited one of the same
+    name, and a qualified id never resolves locally (D-8). An unexported
+    ancestor doctrine is a miss, not an error. Returns ``None`` per amendment
     A2 read-shape rule when files are missing (F-READ-DOCTRINE-RAISE-TO-NONE).
+    """
+    row = scoped.select(
+        list_doctrines(project_root, scope=scope), doctrine_id, alias=_doctrine_stem
+    )
+    if row is None:
+        return None
+    owner_root = scoped.locate(project_root, scope, row)[0]
+    # A doctrine pair is found on disk by file stem; ``create_doctrine``
+    # holds the stem and the frontmatter ``id`` equal, but a hand-written
+    # pair need not, and the stem is what the locator globs for.
+    record = _read_doctrine_local(owner_root, _doctrine_stem(row))
+    if record is None:
+        return None
+    return {**record, "id": row["id"], "origin": row["origin"]}
+
+
+def _doctrine_stem(record: dict) -> str:
+    """The file stem a doctrine pair is found on disk by."""
+    return record["filename"].removesuffix(".design.md")
+
+
+def _read_doctrine_local(project_root: Path, doctrine_id: str) -> dict | None:
+    """Read one doctrine from the project that owns it.
+
+    Searches recursively for <id>.design.md and <id>.yaml under the doctrines
+    directory derived from ``project_root``.
     """
     doctrines_dir = entity_location(project_root, "doctrine")
     design_file, yaml_file = _find_doctrine_files(doctrine_id, doctrines_dir)
@@ -551,15 +592,40 @@ def read_doctrine(project_root: Path, doctrine_id: str) -> dict | None:
     }
 
 
-def list_doctrines(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]:
-    """List all valid doctrine pairs (design + yaml) under ``project_root/.lore/doctrines/``.
+def list_doctrines(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+    *,
+    scope: str | None = None,
+) -> list[dict]:
+    """List valid doctrine pairs across every project in scope.
+
+    Returns a list of dicts with keys: id, group, title, summary, valid,
+    filename, origin. A foreign record's ``id`` is origin-qualified.
+
+    Ordering is unchanged (D-16): this module has never sorted by id — it
+    walks ``*.design.md`` in path order — so the merged list concatenates
+    each project's own order rather than inventing a sort key the single-
+    project listing does not have.
+
+    Raises ``UnknownProjectError`` when ``scope`` names no project in scope.
+    """
+    return projects.collect(
+        project_root,
+        scope,
+        read=lambda root: _list_doctrines_local(root, filter_groups),
+    )
+
+
+def _list_doctrines_local(
+    project_root: Path, filter_groups: list[str] | None = None
+) -> list[dict]:
+    """List one project's own doctrine pairs — the reader ``collect`` calls.
 
     Scans for ``*.design.md`` files; for each, checks a matching ``*.yaml``
     exists in the same directory. Parses frontmatter from the design file.
     Silently skips orphaned design files, YAML-only files, and design files
     with missing or invalid ``id`` frontmatter.
-
-    Returns a list of dicts with keys: id, group, title, summary, valid, filename.
     """
     doctrines_dir = entity_location(project_root, "doctrine")
     if not doctrines_dir.exists():
@@ -589,6 +655,7 @@ def list_doctrines(project_root: Path, filter_groups: list[str] | None = None) -
             "summary": summary,
             "valid": True,
             "filename": design_file.name,
+            "origin": scoped.SELF,
         }
         results.append(entry)
 

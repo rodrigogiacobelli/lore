@@ -1,10 +1,14 @@
 ---
 id: decisions-014-link-direction
 title: Link direction — the codex is the hub, links live on the stable side
-summary: ADR defining the direction of every link edge in Lore — codex↔codex (`related`), codex→code (`binds`), codex→rite (`rites`), and source→canonical (`related`, one-way). The unifying rule — the stable/authoritative side owns the link; volatile and derived entities carry none — and why each edge points the way it does.
+summary: ADR defining the direction of every link edge in Lore — codex↔codex (`related`),
+  codex→code (`binds`), codex→rite (`rites`), and source→canonical (`related`, one-way).
+  The unifying rule — the stable/authoritative side owns the link; volatile and derived
+  entities carry none — and why each edge points the way it does.
 related:
-  - conceptual-workflows-impacts
-  - decisions-006-id-references
+- conceptual-workflows-impacts
+- conceptual-workflows-nested-projects
+- decisions-006-id-references
 ---
 
 # ADR-014: Link direction — the codex is the hub, links live on the stable side
@@ -33,7 +37,8 @@ the link; the codex is the hub.**
 
 | Edge | Field | Owner / direction | Back-link? |
 |------|-------|-------------------|------------|
-| codex ↔ codex | `related` | stored on one codex doc; traversal is bidirectional (`lore codex map` surfaces backlinks) | n/a — symmetric |
+| codex ↔ codex (same project) | `related` | stored on one codex doc; traversal is bidirectional (`lore codex map` surfaces backlinks) | n/a — symmetric |
+| codex ↔ codex (cross-project) | `related` | an entry may name an origin-qualified document in a descendant project; the edge points downward, by authoring convention only | **no** — nothing enforces the direction |
 | codex → code | `binds` | codex doc names the code paths it governs | no — code has no frontmatter |
 | codex → rite | `rites` | codex doc names the rites it governs | **no** — rites never link back |
 | source → canonical | `related` | source names the canonical docs it changed | **no** — canonical must never name a source |
@@ -58,6 +63,14 @@ the link; the codex is the hub.**
   doc? here are procedures that touch it", but agents still find rites via
   `lore rite list`. No edge is load-bearing for retrieval, so a missing inbound
   link is never a failure to find something.
+- **A cross-project `related` edge follows the direction inheritance already
+  flows.** An ancestor's exported document may name a descendant's document —
+  pointing the edge the same way a project's dependency on what it inherits
+  runs. Nothing checks that an author pointed it the intended way: confirming
+  the direction would mean reading the descendant's codex from the ancestor's
+  side, and `lore health` validates only the project it runs in
+  (`conceptual-workflows-nested-projects`). The rule is a documented authoring
+  convention, not a checked one.
 
 ## Alternatives Considered
 
@@ -94,9 +107,14 @@ the link; the codex is the hub.**
 4. **Orphan asymmetry for rites.** A main rite no codex `rites:` names is NOT an
    error (found via `lore rite list`, like inbound-orphan sources). A `rites:` id
    with no matching rite IS an error.
+5. **A cross-project `related` entry is downward-only by authoring convention,
+   and no check enforces it.** `lore health` never reads another project, so
+   an edge pointed the wrong way — or one that stops resolving because its
+   target moved or was excluded from export — raises no error on either side.
 
 ## Status History
 
 | Date | Status | Note |
 |------|--------|------|
 | 2026-06-02 | accepted | Initial decision — generalised from the rite linking model to cover all edges |
+| 2026-09-02 | accepted (cross-project edge recorded) | The codex↔codex row splits into same-project (unchanged) and cross-project: a `related` entry may name an origin-qualified document in a descendant project, downward-only by authoring convention, with nothing enforcing the direction — enforcement would require reading another project's codex, which `lore health` does not do. |

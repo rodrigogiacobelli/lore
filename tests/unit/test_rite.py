@@ -17,6 +17,10 @@ src/lore/rite.py + lore.paths.rites_dir.
 
 from __future__ import annotations
 
+import inspect
+
+import pytest
+
 
 # Canonical design-doc fixtures (Tech Spec §Exact YAML schemas).
 MAIN_RITE_YAML = (
@@ -897,3 +901,259 @@ class TestUpdateDeleteResolveByIdInSubfolder:
             _rites_root(bare_lore_dir)
             / "main/diagnostics/network/issue-refund.yaml.deleted"
         ).is_file()
+
+
+# ---------------------------------------------------------------------------
+# C5 — the three new scoped rite names
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C5
+# Decisions: D-27 (new names, `project_root` first), X-4 option (a) (the three
+#            existing names stay byte-identical), D-16, D-7
+# ---------------------------------------------------------------------------
+
+
+class TestTheExistingRiteSignaturesAreUntouched:
+    def test_scan_rites_still_takes_rites_dir_first(self):
+        # nested-projects-spec — X-4 (a): changing a public first parameter is
+        # an ADR-010 breaking change this feature does not authorise
+        from lore.rite import scan_rites
+
+        parameters = list(inspect.signature(scan_rites).parameters)
+
+        assert parameters == ["rites_dir", "shared"]
+
+    def test_search_rites_still_takes_rites_dir_first(self):
+        # nested-projects-spec — X-4 (a)
+        from lore.rite import search_rites
+
+        assert list(inspect.signature(search_rites).parameters) == [
+            "rites_dir",
+            "query",
+        ]
+
+    def test_read_rite_still_takes_rites_dir_first(self):
+        # nested-projects-spec — X-4 (a)
+        from lore.rite import read_rite
+
+        assert list(inspect.signature(read_rite).parameters) == [
+            "rites_dir",
+            "rite_id",
+        ]
+
+
+class TestScopedListRites:
+    def test_an_ancestors_export_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — FR-2/FR-13
+        from lore.rite import list_rites
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "refund-order")
+        tree.rite(tree.lore, "local-rite")
+
+        records = {r["id"]: r for r in list_rites(tree.lore)}
+
+        assert records["camelot:refund-order"]["origin"] == "camelot"
+        assert records["local-rite"]["origin"] == "self"
+
+    def test_it_keeps_the_group_key_beside_the_new_origin(self, tree):
+        # nested-projects-spec — decisions-016-rite-json-envelope-omits-group:
+        # the standing decision is the reverse of that ADR's title, and `group`
+        # is never removed or suppressed
+        from lore.rite import list_rites
+
+        tree.rite(tree.lore, "local-rite", group="ops")
+
+        record = list_rites(tree.lore)[0]
+
+        assert record["group"] == "ops"
+        assert record["origin"] == "self"
+
+    def test_it_delegates_to_the_untouched_scan_rites(self, tree, monkeypatch):
+        # nested-projects-spec — X-4 (a): one implementation, two entry shapes
+        from lore import rite as rite_module
+
+        tree.rite(tree.lore, "local-rite")
+        seen: list = []
+        real = rite_module.scan_rites
+
+        def spy(rites_dir, **kwargs):
+            seen.append(rites_dir)
+            return real(rites_dir, **kwargs)
+
+        monkeypatch.setattr(rite_module, "scan_rites", spy)
+        rite_module.list_rites(tree.lore)
+
+        assert seen == [tree.lore / ".lore" / "rites"]
+
+    def test_the_merged_list_keeps_the_group_then_id_sort(self, tree):
+        # nested-projects-spec — D-16: the module's existing sort key, applied
+        # to the qualified id
+        from lore.rite import list_rites
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "alpha")
+        tree.rite(tree.camelot, "grouped", group="ops")
+        tree.rite(tree.lore, "beta")
+
+        assert [r["id"] for r in list_rites(tree.lore)] == [
+            "beta",
+            "camelot:alpha",
+            "camelot:grouped",
+        ]
+
+    def test_a_group_filter_applies_inside_every_project(self, tree):
+        # nested-projects-spec — FR-16
+        from lore.rite import list_rites
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "kept", group="ops")
+        tree.rite(tree.camelot, "dropped", group="other")
+
+        assert [r["id"] for r in list_rites(tree.lore, filter_groups=["ops"])] == [
+            "camelot:kept"
+        ]
+
+    def test_shared_steps_are_listed_on_their_own_axis(self, tree):
+        # nested-projects-spec — C5: `shared=True` selects the other subtree
+        from lore.rite import list_rites
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "a-step", shared=True)
+        tree.rite(tree.camelot, "a-rite")
+
+        assert [r["id"] for r in list_rites(tree.lore, shared=True)] == [
+            "camelot:a-step"
+        ]
+
+    def test_an_unknown_project_name_raises(self, tree):
+        # nested-projects-spec — FR-12
+        from lore.projects import UnknownProjectError
+        from lore.rite import list_rites
+
+        with pytest.raises(UnknownProjectError):
+            list_rites(tree.lore, scope="nope")
+
+
+class TestScopedFindRite:
+    def test_it_reads_an_inherited_rite_by_qualified_id(self, tree):
+        # nested-projects-spec — W4
+        from lore.rite import find_rite
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "refund-order")
+
+        record = find_rite(tree.lore, "camelot:refund-order")
+
+        assert record["id"] == "camelot:refund-order"
+        assert record["origin"] == "camelot"
+        assert [node["id"] for node in record["nodes"]] == ["only"]
+
+    def test_a_bare_id_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        from lore.rite import find_rite
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "twin")
+        tree.rite(tree.lore, "twin")
+
+        assert find_rite(tree.lore, "twin")["origin"] == "self"
+
+    def test_a_bare_shared_step_id_still_resolves(self, tree):
+        # nested-projects-spec — C5: the main listing never carries a shared
+        # step, and `read_rite` has always resolved one by bare id
+        from lore.rite import find_rite
+
+        tree.rite(tree.lore, "a-step", shared=True)
+
+        assert find_rite(tree.lore, "a-step")["id"] == "a-step"
+
+    def test_an_unexported_ancestor_rite_is_not_found(self, tree):
+        # nested-projects-spec — C5: the existing miss contract is unchanged
+        from lore.rite import RiteError, find_rite
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.rite(tree.camelot, "refund-order")
+
+        with pytest.raises(RiteError) as excinfo:
+            find_rite(tree.lore, "camelot:refund-order")
+
+        assert str(excinfo.value) == 'Rite "camelot:refund-order" not found'
+
+    def test_a_missing_local_id_keeps_its_exact_message(self, tree):
+        # nested-projects-spec — C5: the wording is a contract
+        from lore.rite import RiteError, find_rite
+
+        with pytest.raises(RiteError) as excinfo:
+            find_rite(tree.lore, "no-such-rite")
+
+        assert str(excinfo.value) == 'Rite "no-such-rite" not found'
+
+
+class TestScopedSearchRites:
+    def test_it_searches_across_the_scope(self, tree):
+        # nested-projects-spec — G-2: `rite search` accepts `--project`
+        from lore.rite import search_rites_scoped
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.rite(tree.camelot, "refund-order")
+        tree.rite(tree.lore, "refund-local")
+
+        assert [r["id"] for r in search_rites_scoped(tree.lore, "refund")] == [
+            "camelot:refund-order",
+            "refund-local",
+        ]
+
+    def test_a_miss_is_an_empty_list(self, tree):
+        # nested-projects-spec — C5: unchanged browse semantics
+        from lore.rite import search_rites_scoped
+
+        tree.rite(tree.lore, "refund-local")
+
+        assert search_rites_scoped(tree.lore, "nothing-here") == []
+
+    def test_every_row_carries_its_origin(self, tree):
+        # nested-projects-spec — D-15
+        from lore.rite import search_rites_scoped
+
+        tree.rite(tree.lore, "refund-local")
+
+        assert search_rites_scoped(tree.lore, "refund")[0]["origin"] == "self"
+
+
+class TestForeignRiteWritesAreRefused:
+    def test_create_rite_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17/D-7
+        from lore.projects import ForeignEntityError
+        from lore.rite import create_rite
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            create_rite(
+                tree.lore / ".lore" / "rites",
+                "camelot:refund-order",
+                MAIN_RITE_YAML.format(id="refund-order"),
+            )
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:refund-order": '
+            "an entity from another project is read-only."
+        )
+
+    def test_update_rite_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.projects import ForeignEntityError
+        from lore.rite import update_rite
+
+        with pytest.raises(ForeignEntityError):
+            update_rite(
+                tree.lore / ".lore" / "rites",
+                "camelot:refund-order",
+                MAIN_RITE_YAML.format(id="refund-order"),
+            )
+
+    def test_delete_rite_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.projects import ForeignEntityError
+        from lore.rite import delete_rite
+
+        with pytest.raises(ForeignEntityError):
+            delete_rite(tree.lore / ".lore" / "rites", "camelot:refund-order")

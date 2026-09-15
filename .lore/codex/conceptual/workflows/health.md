@@ -1,7 +1,19 @@
 ---
 id: conceptual-workflows-health
 title: lore health Behaviour
-summary: What the system does internally when lore health runs — a full-scan or scoped audit across two kinds of scope. Eight scopes name a file-based entity type (codex, artifacts, doctrines, knights, watchers, glossary, rites, skills); three cut across them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention policy that decides whether a markdown report reaches codex/transient (none by default, latest, or all), --scope filtering, --json output, the exit-code contract, and the Python API via health_check() with its write_report, timestamp, and retention keywords. Includes the glossary scope's schema and intra-file collision checks, the bindings scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness, and orphan-asymmetry checks, the voice scope's five warning-only prose checks over the canonical codex layers, and the skills scope's manifest-driven audit of the installed skills.
+summary: What the system does internally when lore health runs — a full-scan or scoped
+  audit across two kinds of scope. Eight scopes name a file-based entity type (codex,
+  artifacts, doctrines, knights, watchers, glossary, rites, skills); three cut across
+  them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention
+  policy that decides whether a markdown report reaches codex/transient (none by default,
+  latest, or all), --scope filtering, --json output, the exit-code contract, and the
+  Python API via health_check() with its write_report, timestamp, and retention keywords.
+  Includes the glossary scope's schema and intra-file collision checks, the bindings
+  scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob
+  warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness,
+  and orphan-asymmetry checks, the voice scope's five warning-only prose checks over
+  the canonical codex layers, and the skills scope's manifest-driven audit of the
+  installed skills.
 binds:
 - src/lore/health.py
 - src/lore/cli.py
@@ -16,7 +28,37 @@ binds:
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
 - tests/unit/test_health_voice.py
-related: ["conceptual-entities-artifact", "conceptual-entities-doctrine", "conceptual-entities-knight", "conceptual-entities-watcher", "conceptual-entities-glossary", "conceptual-entities-rite", "conceptual-workflows-codex", "conceptual-workflows-glossary", "conceptual-workflows-impacts", "conceptual-workflows-error-handling", "conceptual-workflows-json-output", "decisions-006-id-references", "decisions-010-public-api-stability", "decisions-011-api-parity-with-cli", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-014-link-direction", "decisions-017-constrained-flags-use-click-choice", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "decisions-020-codex-voice-is-enforced", "decisions-021-health-reports-are-ephemeral-by-default", "ref-lore_api-core", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-entities-skill", "tech-arch-install-manifest", "tech-arch-skill-catalogue", "conceptual-workflows-init-reconcile"]
+related:
+- conceptual-entities-artifact
+- conceptual-entities-doctrine
+- conceptual-entities-knight
+- conceptual-entities-watcher
+- conceptual-entities-glossary
+- conceptual-entities-rite
+- conceptual-workflows-codex
+- conceptual-workflows-glossary
+- conceptual-workflows-impacts
+- conceptual-workflows-error-handling
+- conceptual-workflows-json-output
+- decisions-006-id-references
+- decisions-010-public-api-stability
+- decisions-011-api-parity-with-cli
+- decisions-012-multi-value-cli-param-convention
+- decisions-013-toml-for-config-yaml-for-glossary
+- decisions-014-link-direction
+- decisions-017-constrained-flags-use-click-choice
+- decisions-018-overlays-are-path-discovered-config
+- decisions-019-overlay-scope-stops-at-transient
+- decisions-020-codex-voice-is-enforced
+- decisions-021-health-reports-are-ephemeral-by-default
+- ref-lore_api-core
+- ref-lore_cli-commands
+- tech-arch-schemas
+- conceptual-entities-skill
+- tech-arch-install-manifest
+- tech-arch-skill-catalogue
+- conceptual-workflows-init-reconcile
+- conceptual-workflows-nested-projects
 ---
 
 # `lore health` Behaviour
@@ -99,6 +141,8 @@ The glossary scope runs two families of check over `.lore/codex/glossary.yaml`. 
    - **`do_not_use_collision`** (error): a `do_not_use` term casefold-equals any other item's `keyword` or any `alias`. `detail="'<term>' in do_not_use of '<kw>' collides with keyword/alias '<other>'"`.
 
 `--scope glossary` runs only those two families (no codex `related` checks, no doctrine checks, etc.). `--scope codex glossary` runs codex reference-integrity checks AND the glossary checks (multi-scope per ADR-012). `--scope schemas` continues to validate every schema kind, including `glossary`, so a malformed glossary surfaces in `--scope schemas` even without `glossary` in the scope set.
+
+In a project with an ancestor, these checks read this project's own `glossary.yaml` only — never an item inherited from an ancestor's export. A keyword this project inherits can never trigger `duplicate_keyword` or `alias_keyword_collision` here: a health run judges a project only by what it authored (see "Nested projects" below).
 
 A missing `.lore/codex/glossary.yaml` is NOT an error — empty glossary is a valid state. Schema validation of an absent file is a no-op for this kind. The intra-glossary checks no-op on an empty/absent file.
 
@@ -423,11 +467,16 @@ report.report_path      # Path | None — the written report, or None
 
 When `--scope` is provided, only the named scopes run. Nothing outside them is scanned. Example: `lore health --scope watchers` never reads codex, artifact, doctrine, or knight files.
 
+## Nested projects
+
+`lore health` validates only the project it runs in, in every direction, with no exception — in a project that is an ancestor, a descendant, or both. It never reads another project's files, never audits an inherited or federated entity, and gains no scope, flag, or column from a project's position in a tree. `--project` is a read selector on other commands; `lore health` does not accept it. See `conceptual-workflows-nested-projects` for the full model and for why cross-project visibility is a reading aid, not a validation surface.
+
 ## Out of Scope
 
 - Missions and quests (DB entities) are outside the health perimeter.
 - Auto-repair (`--fix`) is a post-MVP feature.
 - Scheduling or periodic execution is handled by watchers or CI.
+- Reading, auditing, or validating any project other than the one `lore health` runs in.
 
 ## Related
 

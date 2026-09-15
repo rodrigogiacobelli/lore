@@ -329,7 +329,7 @@ def test_render_impacts_json_uses_kind_from_codex_binding():
         ),
     )
     payload = json.loads(_render_impacts_json(result))
-    assert payload == {"impacts": [{"path": "foo[ab].py", "kind": "exact"}]}
+    assert payload == {"impacts": [{"path": "foo[ab].py", "kind": "exact", "origin": "self"}]}
 
 
 # ===========================================================================
@@ -835,3 +835,147 @@ def test_load_codex_rites_index_empty_when_codex_dir_absent(tmp_path):
     """transient-rites-us-5 — a missing codex dir yields an empty index, no raise."""
     index = _load_codex_rites_index(tmp_path / ".lore" / "codex")
     assert index == {}
+
+
+# ---------------------------------------------------------------------------
+# C7 — `impacts` under a scope
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C7
+# Decisions: D-28 (a codex-id seed is split by D-8 and run against the
+#            resolved project; a path seed resolves against each in-scope
+#            project's own root), D-15 (`origin` on both binding types),
+#            B-3 (`_match_pattern` stays private and path-shaped)
+# ---------------------------------------------------------------------------
+
+
+class TestScopedCodexSeed:
+    def test_an_inherited_seed_returns_its_owners_bindings(self, tree):
+        # nested-projects-spec — D-28
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", binds=("src/lore/projects.py",))
+
+        result = impacts("camelot:contract", project_root=tree.lore)
+
+        assert result.kind == "codex"
+        assert [b.path for b in result.codex_items] == ["src/lore/projects.py"]
+        assert [b.origin for b in result.codex_items] == ["camelot"]
+
+    def test_a_bare_seed_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "twin", binds=("src/ancestor.py",))
+        tree.doc(tree.lore, "twin", binds=("src/local.py",))
+
+        result = impacts("twin", project_root=tree.lore)
+
+        assert [b.path for b in result.codex_items] == ["src/local.py"]
+        assert [b.origin for b in result.codex_items] == ["self"]
+
+    def test_an_unexported_ancestor_seed_keeps_the_unknown_id_wording(self, tree):
+        # nested-projects-spec — C7: `ImpactsError` messages are unchanged
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.doc(tree.camelot, "contract", binds=("src/lore/projects.py",))
+
+        with pytest.raises(ImpactsError) as excinfo:
+            impacts("camelot:contract", project_root=tree.lore)
+
+        assert str(excinfo.value) == 'Unknown codex id: "camelot:contract"'
+
+    def test_a_malformed_binds_list_still_reads_as_an_unknown_id(self, tree):
+        # nested-projects-spec — C7: `impacts` is a read tool, so a document
+        # whose `binds:` is malformed is dropped from the index exactly as it
+        # was before the scope existed; authoritative rejection is `lore health`
+        tree.write(
+            tree.lore,
+            "codex/broken.md",
+            "---\nid: broken\ntitle: Broken\nsummary: S.\nbinds: not-a-list\n---\n\nBody.\n",
+        )
+
+        with pytest.raises(ImpactsError) as excinfo:
+            impacts("broken", project_root=tree.lore)
+
+        assert str(excinfo.value) == 'Unknown codex id: "broken"'
+
+    def test_a_local_seed_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15
+        tree.doc(tree.lore, "local-one", binds=("src/local.py",))
+
+        result = impacts("local-one", project_root=tree.lore)
+
+        assert [b.origin for b in result.codex_items] == ["self"]
+
+
+class TestScopedPathSeed:
+    def test_a_repo_relative_path_resolves_inside_every_project(self, tree):
+        # nested-projects-spec — D-28: the same relative path means a
+        # different file in each project, so it is resolved per project
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", binds=("src/shared.py",))
+        tree.doc(tree.lore, "local-one", binds=("src/shared.py",))
+
+        result = impacts("src/shared.py", project_root=tree.lore)
+
+        assert [(b.id, b.origin) for b in result.code_items] == [
+            ("camelot:contract", "camelot"),
+            ("local-one", "self"),
+        ]
+
+    def test_an_unexported_ancestor_document_never_appears(self, tree):
+        # nested-projects-spec — FR-5
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.doc(tree.camelot, "contract", binds=("src/shared.py",))
+        tree.doc(tree.lore, "local-one", binds=("src/shared.py",))
+
+        result = impacts("src/shared.py", project_root=tree.lore)
+
+        assert [(b.id, b.origin) for b in result.code_items] == [
+            ("local-one", "self")
+        ]
+
+    def test_exact_precedence_over_glob_is_unchanged_per_project(self, tree):
+        # nested-projects-spec — C7/FR-9
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "contract", binds=("src/*.py", "src/shared.py"))
+
+        result = impacts("src/shared.py", project_root=tree.lore)
+
+        assert [(b.id, b.match) for b in result.code_items] == [
+            ("camelot:contract", "exact")
+        ]
+
+    def test_direct_links_still_drops_every_glob_row(self, tree):
+        # nested-projects-spec — C7: unchanged behaviour under a scope
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "globbed", binds=("src/*.py",))
+        tree.doc(tree.camelot, "pinned", binds=("src/shared.py",))
+        tree.doc(tree.lore, "exact-one", binds=("src/shared.py",))
+
+        result = impacts("src/shared.py", project_root=tree.lore, direct_links=True)
+
+        assert [b.id for b in result.code_items] == ["camelot:pinned", "exact-one"]
+
+    def test_an_outside_path_keeps_its_exact_message(self, tree):
+        # nested-projects-spec — C7: `ImpactsError` wording is a contract
+        with pytest.raises(ImpactsError) as excinfo:
+            impacts("../outside.py", project_root=tree.lore)
+
+        assert str(excinfo.value) == 'Path traversal not allowed: "../outside.py"'
+
+    def test_a_descendant_contributes_under_scope_all(self, tree):
+        # nested-projects-spec — D-4
+        tree.doc(tree.camelot, "own-doc", binds=("src/shared.py",))
+        tree.doc(tree.lore, "child-doc", binds=("src/shared.py",))
+
+        result = impacts("src/shared.py", project_root=tree.camelot, scope="all")
+
+        assert [(b.id, b.origin) for b in result.code_items] == [
+            ("lore:child-doc", "lore"),
+            ("own-doc", "self"),
+        ]
+
+    def test_an_unknown_project_name_raises(self, tree):
+        # nested-projects-spec — FR-12
+        from lore.projects import UnknownProjectError
+
+        with pytest.raises(UnknownProjectError):
+            impacts("src/shared.py", project_root=tree.lore, scope="nope")

@@ -345,6 +345,30 @@ THIRTEEN_NEW_NAMES: tuple[str, ...] = (
     "validate_agent_selection",
 )
 
+# nested-projects-spec — Part 2 "lore.api.__all__ additions". The thirteen names
+# that release adds, held apart from the thirteen so each feature's addition
+# stays legible against the 0.9.0 boundary.
+NESTED_PROJECTS_NEW_NAMES: tuple[str, ...] = (
+    # project topology
+    "ProjectRef",
+    "UnknownProjectError",
+    "ForeignEntityError",
+    "list_projects",
+    "resolve_project",
+    "project_name",
+    # config tables
+    "SharedExports",
+    "DescendantExport",
+    # validators
+    "validate_project_name",
+    # rite scoped reads
+    "list_rites",
+    "find_rite",
+    "search_rites_scoped",
+    # watcher scoped raw text
+    "read_watcher_text",
+)
+
 # The public surface as `0.9.0` shipped it. Nothing here may ever leave
 # `lore.api.__all__` without an explicit breaking-change notice, so the list is
 # frozen at the release boundary rather than recomputed.
@@ -417,14 +441,20 @@ def test_thirteen_new_names_importable_from_lore_api():
 
 
 def test_no_name_removed_from_all():
-    """Scenario 2 — the difference against 0.9.0 is exactly the thirteen."""
+    """Scenario 2 — the difference against 0.9.0 is the thirteen and the twelve.
+
+    Both additions are minor bumps under ADR-010, so the assertion stays an
+    exact set: nothing may leave, and nothing may arrive unrecorded.
+    """
     from lore import api
 
     current = set(api.__all__)
     assert PREVIOUS_RELEASE_ALL - current == set(), (
         f"names left the public surface: {sorted(PREVIOUS_RELEASE_ALL - current)}"
     )
-    assert current - PREVIOUS_RELEASE_ALL == set(THIRTEEN_NEW_NAMES)
+    assert current - PREVIOUS_RELEASE_ALL == set(THIRTEEN_NEW_NAMES) | set(
+        NESTED_PROJECTS_NEW_NAMES
+    )
 
 
 def test_api_module_contains_no_def_or_class():
@@ -495,14 +525,45 @@ class TestChangelogReleaseObligation:
             if not heading.startswith("[Unreleased]")
         ]
 
-    def test_top_released_section_is_0_10_0(self):
-        """Scenario 3 — the top-most released section."""
+    @classmethod
+    def _section(cls, prefix: str) -> tuple[str, str]:
+        """Return the `(heading, body)` whose heading starts with *prefix*.
+
+        Released sections are addressed by version rather than by position, so a
+        historical release's obligations stay pinned to that release and do not
+        move to whichever entry happens to sit at the top.
+        """
+        for heading, body in cls._changelog_sections():
+            if heading.startswith(prefix):
+                return heading, body
+        raise AssertionError(f"CHANGELOG.md carries no section starting {prefix!r}")
+
+    def test_top_released_section_is_the_declared_version(self):
+        """Scenario 3 — the top-most released section is what pyproject declares."""
+        import tomllib
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[2]
+        version = tomllib.loads(
+            (root / "pyproject.toml").read_text(encoding="utf-8")
+        )["project"]["version"]
         heading, _ = self._released()[0]
-        assert heading.startswith("[0.10.0]"), heading
+        assert heading.startswith(f"[{version}]"), heading
 
     def test_entry_names_every_addition(self):
-        """Scenario 3 — the `Added` section names what this release adds."""
+        """Scenario 3 — the current release's `Added` section names what it adds."""
         _, body = self._released()[0]
+        added = body.split("### Changed")[0]
+        for name in NESTED_PROJECTS_NEW_NAMES:
+            assert f"`{name}`" in added, f"{name} not named in the Added section"
+        for key in ("project-name", "default-project-scope"):
+            assert f"`{key}`" in added, f"config key {key} not named"
+        for token in ("`--project`", "`[shared]`", "`[[descendants]]`", "`lore health`"):
+            assert token in added, f"{token} not named in the Added section"
+
+    def test_the_init_release_entry_still_names_every_addition(self):
+        """The `0.10.0` entry is a historical guarantee, addressed by version."""
+        _, body = self._section("[0.10.0]")
         added = body.split("### Changed")[0]
         for name in THIRTEEN_NEW_NAMES:
             assert f"`{name}`" in added, f"{name} not named in the Added section"
@@ -524,8 +585,8 @@ class TestChangelogReleaseObligation:
         assert "`lore init`" in added
 
     def test_entry_names_the_changed_half(self):
-        """Scenario 3 — the `Changed` section names the floors and the catalogue."""
-        _, body = self._released()[0]
+        """The `0.10.0` `Changed` section names the floors and the catalogue."""
+        _, body = self._section("[0.10.0]")
         assert "### Changed" in body
         changed = body.split("### Changed", 1)[1]
         assert "click" in changed

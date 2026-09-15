@@ -735,3 +735,77 @@ class TestTheFourValidatorsFollowTheModuleContract:
                 if (node.module or "").split(".")[0] == "click":
                     offenders.append(node.module)
         assert offenders == [], f"validators.py imports click: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# validate_project_name — the `project-name` config key.
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — F2, D-24
+# Requirement: FR-1 — the value becomes an origin qualifier, so it must never
+# contain ``:`` (D-8) and shares the entity-name grammar.
+# ---------------------------------------------------------------------------
+
+INVALID_NAME_MESSAGE = (
+    "Invalid name: must start with alphanumeric and contain only "
+    "letters, digits, hyphens, underscores."
+)
+
+
+class TestValidateProjectName:
+    def test_empty_string_is_valid_and_means_fall_back_to_the_directory_name(self):
+        # nested-projects-spec — D-24: `render_default_settings()` seeds
+        # `project-name = ""`, which must not warn
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("") is None
+
+    def test_a_plain_name_is_valid(self):
+        # nested-projects-spec — F2
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("camelot") is None
+
+    def test_a_name_with_digits_hyphens_and_underscores_is_valid(self):
+        # nested-projects-spec — F2: the entity-name grammar, unchanged
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("lore-2_x") is None
+
+    def test_a_colon_is_rejected_because_it_is_the_qualifier_separator(self):
+        # nested-projects-spec — D-8: a qualifier can never contain ``:``
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("cam:elot") == INVALID_NAME_MESSAGE
+
+    def test_a_leading_hyphen_is_rejected(self):
+        # nested-projects-spec — F2
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("-lead") == INVALID_NAME_MESSAGE
+
+    def test_a_space_is_rejected(self):
+        # nested-projects-spec — F2
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("has space") == INVALID_NAME_MESSAGE
+
+    def test_a_slash_is_rejected(self):
+        # nested-projects-spec — F2
+        from lore.validators import validate_project_name
+
+        assert validate_project_name("has/slash") == INVALID_NAME_MESSAGE
+
+    def test_the_non_empty_case_delegates_to_validate_name(self):
+        # nested-projects-spec — F2: one name grammar, not two (standards-dry)
+        from lore.validators import validate_name, validate_project_name
+
+        for value in ("camelot", "cam:elot", "-lead", "has space", "has/slash"):
+            assert validate_project_name(value) == validate_name(value)
+
+    def test_a_non_string_returns_an_error_and_never_raises(self):
+        # nested-projects-spec — F2: the loader hands over whatever TOML
+        # produced, so a non-string is rejected rather than blowing up
+        from lore.validators import validate_project_name
+
+        for value in (42, None, ["camelot"], {"name": "camelot"}, True):
+            assert validate_project_name(value) == INVALID_NAME_MESSAGE

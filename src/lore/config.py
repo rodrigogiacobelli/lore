@@ -12,7 +12,8 @@ Standards:
   * ``standards-single-responsibility`` — this module owns project-config
     loading exclusively.
   * ``standards-dependency-inversion`` — depends only on stdlib
-    (:mod:`tomllib`) and :mod:`lore.paths`.
+    (:mod:`tomllib`), :mod:`lore.paths` and :mod:`lore.validators`, both of
+    which sit below it and import nothing from ``lore``.
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from lore.paths import config_path
+from lore.paths import config_path, resolve_beneath
+from lore.validators import validate_project_name
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +42,13 @@ from lore.paths import config_path
 #      listing every accepted token, in the order the warning should print;
 #   5. (list-typed keys only) add one entry to :data:`_ALLOWED_ITEM_VALUES`
 #      returning the tokens each item may take;
-#   6. add one entry to :data:`_KEY_DOC` describing the key in a line.
+#   6. (free-form values only) add one entry to :data:`_VALUE_CHECK` naming the
+#      validator that decides whether a value of the right type is usable;
+#   7. add one entry to :data:`_KEY_DOC` describing the key in a line.
+#
+# A setting that is a multi-field or repeating record is a TOML table instead
+# (A-1). A table is named in :data:`_KNOWN_TABLES`, parsed by its own function
+# after the flat loop, and lands in its own frozen dataclass field.
 #
 # The comment block `lore init` writes above the settings is generated from
 # those tables by :func:`render_known_keys_header`, so a project initialised
@@ -57,6 +65,8 @@ _FROM_TOML: dict[str, str] = {
     "init-access-mode": "init_access_mode",
     "init-skill-families": "init_skill_families",
     "init-skills-gitignore": "init_skills_gitignore",
+    "project-name": "project_name",
+    "default-project-scope": "default_project_scope",
 }
 
 # Accepted Python type per known key. A value of any other type is rejected
@@ -69,6 +79,8 @@ _EXPECTED_TYPE: dict[str, type] = {
     "init-access-mode": str,
     "init-skill-families": list,
     "init-skills-gitignore": str,
+    "project-name": str,
+    "default-project-scope": str,
 }
 
 # Accepted tokens for constrained string keys. Keys absent from this table
@@ -77,6 +89,7 @@ _ALLOWED_VALUES: dict[str, tuple[str, ...]] = {
     "health-report-retention": ("none", "latest", "all"),
     "init-access-mode": ("cli", "native"),
     "init-skills-gitignore": ("lore-only", "none", "all"),
+    "default-project-scope": ("self", "all"),
 }
 
 # Accepted tokens for each *item* of a list-typed key. Held as callables rather
@@ -126,7 +139,30 @@ _KEY_DOC: dict[str, str] = {
     ),
     "init-skill-families": "which seeded skill families `lore init` installs",
     "init-skills-gitignore": "how the installed skills are tracked in git",
+    "project-name": (
+        "this project's name in an origin qualifier and in --project "
+        "(empty: the project directory's name)"
+    ),
+    "default-project-scope": (
+        "self - a bare read command covers this project and what it inherits\n"
+        "all  - it also covers every Lore project beneath this one"
+    ),
 }
+
+
+# Free-form values a token set cannot express, checked after the type and the
+# token set. Held as a table for the same reason the others are: a key's rules
+# live beside the key, and :func:`_unusable_reason` reads them all one way.
+_VALUE_CHECK: dict[str, Callable[[object], str | None]] = {
+    "project-name": validate_project_name,
+}
+
+
+# Root keys the loader parses as tables rather than as flat settings. Consulted
+# beside :data:`_FROM_TOML` so a known table never also lands in
+# :attr:`Config.extras`, which is documented as holding only keys the loader
+# does not know (A-1, D-23).
+_KNOWN_TABLES: frozenset[str] = frozenset({"shared", "descendants"})
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +177,34 @@ Every family, so a deployment depending on a machinery skill keeps it across an
 upgrade. The interactive checkbox preselects a smaller set; that is a CLI-layer
 concern and never reaches this file (Tech Spec §9.2).
 """
+
+
+@dataclass(frozen=True)
+class SharedExports:
+    """The ``[shared]`` table: what an ancestor offers every descendant.
+
+    ``exports`` holds literal entity ids and glob patterns; ``glossary``
+    exports the whole glossary file, which is the only unit a glossary has
+    (D-22).
+    """
+
+    exports: tuple[str, ...] = ()
+    glossary: bool = False
+
+
+@dataclass(frozen=True)
+class DescendantExport:
+    """One ``[[descendants]]`` block: what an ancestor offers one project.
+
+    ``path`` is the identity — resolved beneath the ancestor's root — and
+    ``name`` is a label for human readers and for messages. A block cannot
+    name a project that does not resolve to that path, so a label that
+    disagrees with its target's real name is inert (D-11).
+    """
+
+    name: str
+    path: str
+    exports: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -173,10 +237,23 @@ class Config:
     The four ``init_*`` fields are read by ``init.plan_init`` and by nothing
     else (ADR-021 constraint 2): a second reader of a command-scoped key is a
     duplicate implementation and an ADR-011 violation.
+        project_name: This project's name in an origin qualifier and in
+            ``--project``. Default ``""``, which means "the project
+            directory's name" — a project names itself, and no ancestor can
+            rename it (A-5).
+        default_project_scope: What a bare read command covers downward —
+            ``"self"`` or ``"all"``. Default ``"self"``. It governs the
+            downward axis only: entities inherited from an ancestor are
+            visible at every scope (A-7).
+        shared: The ``[shared]`` table — what this project offers every
+            descendant. Default: nothing.
+        descendants: The ``[[descendants]]`` blocks — what this project
+            offers one named project beneath it. Default: none.
         extras: Forward-compatibility bucket. Any root-level key not listed
-            in :data:`_FROM_TOML` (including whole TOML tables) is preserved
-            here verbatim, so projects that adopt a newer ``config.toml``
-            against an older Lore release still parse cleanly.
+            in :data:`_FROM_TOML` and not named in :data:`_KNOWN_TABLES`
+            (including whole TOML tables) is preserved here verbatim, so
+            projects that adopt a newer ``config.toml`` against an older Lore
+            release still parse cleanly.
     """
 
     show_glossary_on_codex_commands: bool = True
@@ -187,6 +264,10 @@ class Config:
         default_factory=lambda: list(DEFAULT_SKILL_FAMILIES)
     )
     init_skills_gitignore: str = "lore-only"
+    project_name: str = ""
+    default_project_scope: str = "self"
+    shared: SharedExports = SharedExports()
+    descendants: tuple[DescendantExport, ...] = ()
     extras: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -258,6 +339,18 @@ def load_config(root: Path) -> Config:
         emits a one-time
         ``lore: invalid value for <key> at <path> (expected items from: ...); using default``
         stderr line. Half a selection is not a selection.
+      * ``[shared]`` or ``[[descendants]]`` the loader cannot use → that
+        table falls back to its default and emits a one-time
+        ``lore: invalid [shared] table at <path> (<reason>); using default``
+        or ``lore: invalid [[descendants]] entry at <path> (<reason>); using
+        default`` stderr line. One malformed ``[[descendants]]`` entry drops
+        the **whole** key, on the same rule the list-typed flat keys follow.
+      * A ``[[descendants]]`` ``path`` that does not resolve beneath this
+        project's root → that entry alone is dropped, with a one-time
+        ``lore: descendant path "<path>" at <config path> escapes the project
+        root; ignored`` stderr line. That case is a security refusal (N-5)
+        rather than a shape error, and dropping the whole key would silently
+        disable exports the operator did author correctly.
       * Unknown root keys / tables → preserved in :attr:`Config.extras`.
     """
     return _read(root, warn=True)[0]
@@ -319,7 +412,8 @@ def _read(root: Path, *, warn: bool) -> tuple[Config, frozenset[str]]:
     for key, value in data.items():
         attr = _FROM_TOML.get(key)
         if attr is None:
-            extras[key] = value
+            if key not in _KNOWN_TABLES:
+                extras[key] = value
             continue
         problem = _unusable_reason(key, value, path)
         if problem is not None:
@@ -328,7 +422,118 @@ def _read(root: Path, *, warn: bool) -> tuple[Config, frozenset[str]]:
             continue
         kwargs[attr] = value
         answered.add(key)
-    return Config(extras=extras, **kwargs), frozenset(answered)
+
+    tables = _read_tables(data, root, path, warn=warn)
+    kwargs.update(tables)
+    return Config(extras=extras, **kwargs), frozenset(answered | set(tables))
+
+
+class _TableError(Exception):
+    """A table the loader cannot use, carrying the reason for its warning."""
+
+
+def _read_tables(
+    data: Mapping[str, Any], root: Path, path: Path, *, warn: bool
+) -> dict[str, Any]:
+    """Parse ``[shared]`` and ``[[descendants]]``, keyed by attribute name.
+
+    Runs after the flat loop and follows the same two rules: a table the
+    loader cannot use is left out, so the field keeps its default, and a table
+    that parses cleanly is an answered key — which is why the returned keys
+    are both the values and the answers (D-23).
+    """
+    parsed: dict[str, Any] = {}
+
+    if "shared" in data:
+        try:
+            parsed["shared"] = _parse_shared(data["shared"])
+        except _TableError as reason:
+            if warn:
+                _warn_once(
+                    f"lore: invalid [shared] table at {path} "
+                    f"({reason}); using default"
+                )
+
+    if "descendants" in data:
+        try:
+            blocks, escaped = _parse_descendants(data["descendants"], root)
+        except _TableError as reason:
+            if warn:
+                _warn_once(
+                    f"lore: invalid [[descendants]] entry at {path} "
+                    f"({reason}); using default"
+                )
+        else:
+            if warn:
+                for escaping_path in escaped:
+                    _warn_once(
+                        f'lore: descendant path "{escaping_path}" at {path} '
+                        "escapes the project root; ignored"
+                    )
+            parsed["descendants"] = blocks
+
+    return parsed
+
+
+def _is_string_list(value: object) -> bool:
+    """Whether *value* is a list holding nothing but strings."""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _parse_shared(value: object) -> SharedExports:
+    """Parse the ``[shared]`` table, raising :class:`_TableError` on any shape
+    the loader cannot use.
+
+    An unknown key inside the table is ignored rather than refused, so a file
+    written for a newer Lore release still parses here (FR-6).
+    """
+    if not isinstance(value, dict):
+        raise _TableError("expected a table")
+    exports = value.get("exports", [])
+    if not _is_string_list(exports):
+        raise _TableError("exports must be a list of strings")
+    glossary = value.get("glossary", False)
+    if not isinstance(glossary, bool):
+        raise _TableError("glossary must be a boolean")
+    return SharedExports(exports=tuple(exports), glossary=glossary)
+
+
+def _parse_descendants(
+    value: object, root: Path
+) -> tuple[tuple[DescendantExport, ...], tuple[str, ...]]:
+    """Parse the ``[[descendants]]`` blocks.
+
+    Returns the usable blocks and the raw ``path`` values refused for escaping
+    *root* — two different outcomes, because a shape error drops the whole key
+    while a path escape drops one entry (N-5). Raises :class:`_TableError` for
+    the first shape error found.
+    """
+    if not isinstance(value, list) or not all(
+        isinstance(entry, dict) for entry in value
+    ):
+        raise _TableError("expected an array of tables")
+
+    blocks: list[DescendantExport] = []
+    escaped: list[str] = []
+    for entry in value:
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            raise _TableError("name must be a non-empty string")
+        declared_path = entry.get("path")
+        if not isinstance(declared_path, str) or not declared_path:
+            raise _TableError("path must be a non-empty string")
+        exports = entry.get("exports", [])
+        if not _is_string_list(exports):
+            raise _TableError("exports must be a list of strings")
+        if resolve_beneath(root, declared_path) is None:
+            escaped.append(declared_path)
+            continue
+        blocks.append(
+            DescendantExport(
+                name=name, path=declared_path, exports=tuple(exports)
+            )
+        )
+    return tuple(blocks), tuple(escaped)
 
 
 def _unusable_reason(key: str, value: object, path: Path) -> str | None:
@@ -341,6 +546,8 @@ def _unusable_reason(key: str, value: object, path: Path) -> str | None:
       * wrong type → ``invalid type for <key> at <path> (expected <type>)``;
       * constrained string outside its token set → ``invalid value for <key> at
         <path> (expected one of: ...)``;
+      * free-form value its own validator rejects → ``invalid value for <key>
+        at <path> (<the validator's reason>)``;
       * list-typed key holding an item outside its token set, or an item that
         is not a string → the same wording with ``expected items from``, for
         the **whole** key. Half a selection is not a selection.
@@ -357,8 +564,16 @@ def _unusable_reason(key: str, value: object, path: Path) -> str | None:
             f"lore: invalid value for {key} at {path} "
             f"(expected one of: {', '.join(allowed)}); using default"
         )
+    check = _VALUE_CHECK.get(key)
+    if check is not None:
+        reason = check(value)
+        if reason is not None:
+            return (
+                f"lore: invalid value for {key} at {path} "
+                f"({reason}); using default"
+            )
     allowed_items = _ALLOWED_ITEM_VALUES.get(key)
-    if allowed_items is not None:
+    if allowed_items is not None and isinstance(value, list):
         accepted = allowed_items()
         if any(item not in accepted for item in value):
             return (

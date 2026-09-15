@@ -2,10 +2,10 @@
 id: ref-lore_cli-commands
 title: Lore CLI — commands surface
 summary: Reference doc for the Lore CLI — the cross-cutting conventions, exit codes,
-  idempotency rules, JSON envelope contract, and per-command idiosyncrasies that
-  span more than one command. Per-command flags and help text are canonical via
-  `lore <command> --help` (ADR-008); the source of truth for behaviour is
-  `src/lore/cli.py` plus the ADRs listed below.
+  idempotency rules, JSON envelope contract, and per-command idiosyncrasies that span
+  more than one command. Per-command flags and help text are canonical via `lore <command>
+  --help` (ADR-008); the source of truth for behaviour is `src/lore/cli.py` plus the
+  ADRs listed below.
 binds:
 - src/lore/cli.py
 - tests/e2e/test_*.py
@@ -37,6 +37,9 @@ related:
 - conceptual-workflows-rite-show
 - conceptual-workflows-rite-search
 - conceptual-workflows-rite-crud
+- conceptual-workflows-nested-projects
+- decisions-025-cross-boundary-reads-are-read-only
+- decisions-026-project-naming-and-addressing
 - decisions-014-link-direction
 - decisions-015-rites-writable-file-entity
 - decisions-016-rite-json-envelope-omits-group
@@ -83,7 +86,23 @@ Errors always go to stderr. In `--json` mode they go to stderr as JSON: `{"error
 
 ### Global flags
 
-`--json`, `--help`, `--version` are global. `--json` is supported on every command **except** `lore init` and `lore oracle`. The exception is permanent — both produce side-effecting human output (init prints status; oracle writes markdown reports) where JSON adds no value. The two refuse it differently: `lore oracle` rejects the flag with a usage error at exit 2, while `lore init` accepts and ignores it at exit 0, so an existing pipeline that passes the global flag to every command still initialises a project. The machine surface for `lore init` is `lore.api.plan_init()`, which returns a typed `InitPlan` describing every create, overwrite, removal and conflict without performing any of them.
+`--json`, `--help`, `--version`, `--project` are global. `--json` is supported on every command **except** `lore init` and `lore oracle`. The exception is permanent — both produce side-effecting human output (init prints status; oracle writes markdown reports) where JSON adds no value. The two refuse it differently: `lore oracle` rejects the flag with a usage error at exit 2, while `lore init` accepts and ignores it at exit 0, so an existing pipeline that passes the global flag to every command still initialises a project. The machine surface for `lore init` is `lore.api.plan_init()`, which returns a typed `InitPlan` describing every create, overwrite, removal and conflict without performing any of them.
+
+`--project NAME` selects which project in a tree of Lore projects a read command reads — a project name, `all` for the whole subtree, or `self` for this project plus what it inherits. See "The `--project` selector" below.
+
+### The `--project` selector
+
+`--project <name>` is accepted on 19 read commands: `codex list|show|search|map`, `doctrine list|show`, `knight list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, and `impacts`. It is rejected on every other command — write commands, `lore codex chaos`, and every quest/mission/board/health/oracle command — with a Click `UsageError` at exit 2:
+
+```
+Error: --project is a read selector; it is not accepted on "codex new".
+```
+
+Omitting `--project` resolves the project's own `default-project-scope` config key (default `"self"`). An unknown name fails at exit 1, not 2 — project names come from the tree, not a fixed set: `Unknown project "nope". Projects in scope: citadel, lore, realm.` A write against an origin-qualified (`<project>:<id>`) name fails the same way, at exit 1: `Cannot write "camelot:standards-naming": an entity from another project is read-only.`
+
+Every affected command's output gains an `origin` field under `--json` (`"self"` or the exporting project's name, always present) and, in text mode, a leading `ORIGIN` column — but only when the result set holds at least one non-`self` row, so a project with no tree above or below it prints exactly what it printed before this feature existed. Sort order is unchanged in every case.
+
+The full model — origin-qualified addressing, the two independent axes (inheritance vs. federation), glossary inheritance, and why `lore health` and `lore codex chaos` never accept `--project` — is `conceptual-workflows-nested-projects`.
 
 ### Idempotency rules
 
@@ -238,6 +257,8 @@ The `voice` scope emits warnings only — every `voice_*` row is a `warning` and
 The command has no retention flag. Whether a markdown report is persisted to `.lore/codex/transient/health-<timestamp>.md` is decided by the root-level `health-report-retention` key in `.lore/config.toml` — `none` (default, no file), `latest` (prune prior `health-*.md`, then write), `all` (write, prune nothing). The handler always calls `health_check(write_report=True, timestamp=...)` and passes no `retention`; `health_check` reads the key, so a Python caller gets the same policy (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default`). Persistence is independent of `--json` and never affects the exit code.
 
 ## Shape — command tree
+
+`--project NAME` precedes any subcommand and is omitted below — it applies to the 19 read commands named in "The `--project` selector" above.
 
 ```
 lore                       (dashboard)

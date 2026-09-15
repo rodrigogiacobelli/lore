@@ -254,11 +254,11 @@ def test_glossary_list_json_exact_envelope_string(project_dir, runner):
     _write_fixture(project_dir, FIVE_ITEM_FIXTURE)
     res = runner.invoke(main, ["--json", "glossary", "list"])
     expected = (
-        '{"glossary": [{"keyword": "Codex", "definition": "The documentation system at .lore/codex/. Markdown files with YAML frontmatter.", "aliases": [], "do_not_use": []},'
-        ' {"keyword": "Constable", "definition": "Mission type for orchestrator-handled chores (commits, housekeeping). Not dispatched to a worker.", "aliases": ["constable mission", "chore mission"], "do_not_use": ["bot mission"]},'
-        ' {"keyword": "Doctrine", "definition": "A reusable, passive workflow template stored as paired YAML and markdown.", "aliases": [], "do_not_use": []},'
-        ' {"keyword": "Mission", "definition": "The unit of work an agent executes and closes.", "aliases": [], "do_not_use": []},'
-        ' {"keyword": "Quest", "definition": "A live grouping of Missions representing one body of work.", "aliases": [], "do_not_use": ["epic", "story group"]}]}'
+        '{"glossary": [{"keyword": "Codex", "definition": "The documentation system at .lore/codex/. Markdown files with YAML frontmatter.", "aliases": [], "do_not_use": [], "origin": "self"},'
+        ' {"keyword": "Constable", "definition": "Mission type for orchestrator-handled chores (commits, housekeeping). Not dispatched to a worker.", "aliases": ["constable mission", "chore mission"], "do_not_use": ["bot mission"], "origin": "self"},'
+        ' {"keyword": "Doctrine", "definition": "A reusable, passive workflow template stored as paired YAML and markdown.", "aliases": [], "do_not_use": [], "origin": "self"},'
+        ' {"keyword": "Mission", "definition": "The unit of work an agent executes and closes.", "aliases": [], "do_not_use": [], "origin": "self"},'
+        ' {"keyword": "Quest", "definition": "A live grouping of Missions representing one body of work.", "aliases": [], "do_not_use": ["epic", "story group"], "origin": "self"}]}'
     )
     assert res.output.strip() == expected
 
@@ -294,7 +294,7 @@ def test_glossary_search_json_envelope(project_dir, runner):
     payload = json.loads(res.output)
     assert [i["keyword"] for i in payload["glossary"]] == ["Constable"]
     expected = (
-        '{"glossary": [{"keyword": "Constable", "definition": "Mission type for orchestrator-handled chores (commits, housekeeping). Not dispatched to a worker.", "aliases": ["constable mission", "chore mission"], "do_not_use": ["bot mission"]}]}'
+        '{"glossary": [{"keyword": "Constable", "definition": "Mission type for orchestrator-handled chores (commits, housekeeping). Not dispatched to a worker.", "aliases": ["constable mission", "chore mission"], "do_not_use": ["bot mission"], "origin": "self"}]}'
     )
     assert res.output.strip() == expected
 
@@ -368,8 +368,8 @@ def test_glossary_show_json(project_dir, runner):
     payload = json.loads(res.output)
     assert [i["keyword"] for i in payload["glossary"]] == ["Constable", "Quest"]
     expected = (
-        '{"glossary": [{"keyword": "Constable", "definition": "Mission type for orchestrator-handled chores (commits, housekeeping). Not dispatched to a worker.", "aliases": ["constable mission", "chore mission"], "do_not_use": ["bot mission"]},'
-        ' {"keyword": "Quest", "definition": "A live grouping of Missions representing one body of work.", "aliases": [], "do_not_use": ["epic", "story group"]}]}'
+        '{"glossary": [{"keyword": "Constable", "definition": "Mission type for orchestrator-handled chores (commits, housekeeping). Not dispatched to a worker.", "aliases": ["constable mission", "chore mission"], "do_not_use": ["bot mission"], "origin": "self"},'
+        ' {"keyword": "Quest", "definition": "A live grouping of Missions representing one body of work.", "aliases": [], "do_not_use": ["epic", "story group"], "origin": "self"}]}'
     )
     assert res.output.strip() == expected
 

@@ -705,3 +705,65 @@ class TestFacadeExport:
         from lore.frontmatter_edit import update_frontmatter_fields
 
         assert api.update_frontmatter_fields is update_frontmatter_fields
+
+
+# ---------------------------------------------------------------------------
+# The read-only rule — nested-projects-spec FR-17 / D-7
+# ---------------------------------------------------------------------------
+
+
+class TestForeignFieldEditsAreRefused:
+    """``update_frontmatter_fields`` refuses another project's entity.
+
+    D-7 puts the rule in ``projects.reject_foreign``, called as the first
+    statement of every externally callable write function on a file-backed
+    entity. This one is externally callable — it is in ``lore.api.__all__`` —
+    and it is the whole of the CLI's ``--set/--unset/--add/--remove`` path, so
+    without it a public write function sits outside the rule and a Python
+    caller gets a not-found where the contract says ``ForeignEntityError``.
+    """
+
+    @pytest.mark.parametrize("kind", ("knight", "doctrine", "artifact", "codex"))
+    def test_a_qualified_name_is_refused(self, project_root, kind):
+        from lore.frontmatter_edit import update_frontmatter_fields
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            update_frontmatter_fields(
+                project_root,
+                kind,
+                "camelot:borrowed",
+                set_fields={"title": "Mine"},
+            )
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:borrowed": '
+            "an entity from another project is read-only."
+        )
+
+    def test_it_refuses_before_touching_the_filesystem(self, project_root, monkeypatch):
+        from lore import frontmatter_edit
+        from lore.projects import ForeignEntityError
+
+        def explode(*args, **kwargs):
+            raise AssertionError("the read-only rule must fire before any read")
+
+        monkeypatch.setattr(Path, "read_text", explode)
+        monkeypatch.setattr(Path, "rglob", explode)
+
+        with pytest.raises(ForeignEntityError):
+            frontmatter_edit.update_frontmatter_fields(
+                project_root, "knight", "camelot:borrowed", set_fields={"title": "x"}
+            )
+
+    def test_a_bare_name_is_untouched_by_the_rule(self, project_root):
+        # nested-projects-spec — D-8: a bare id resolves locally, so the
+        # pre-existing not-found path is unchanged
+        from lore.frontmatter_edit import update_frontmatter_fields
+
+        with pytest.raises(ValueError) as excinfo:
+            update_frontmatter_fields(
+                project_root, "knight", "absent", set_fields={"title": "x"}
+            )
+
+        assert "read-only" not in str(excinfo.value)

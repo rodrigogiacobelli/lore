@@ -115,16 +115,19 @@ def test_codex_seed_json_envelope_shape():
         ),
     )
     out = cli_mod._render_impacts_json(result)
-    # Byte-identical golden (key order: path then kind, mirroring pre-hoist body).
+    # Byte-identical golden (key order: path, kind, then origin — mirroring
+    # the pre-hoist body, with nested-projects-spec D-15's `origin` appended:
+    # JSON carries it on every row, always, valued "self" with no tree).
     assert out == (
-        '{"impacts": [{"path": "src/lore/cli.py", "kind": "exact"},'
-        ' {"path": "src/lore/**/*.py", "kind": "glob"}]}'
+        '{"impacts": [{"path": "src/lore/cli.py", "kind": "exact",'
+        ' "origin": "self"}, {"path": "src/lore/**/*.py", "kind": "glob",'
+        ' "origin": "self"}]}'
     )
     # Also assert parseable as JSON to make any future key-order tweak visible.
     assert json.loads(out) == {
         "impacts": [
-            {"path": "src/lore/cli.py", "kind": "exact"},
-            {"path": "src/lore/**/*.py", "kind": "glob"},
+            {"path": "src/lore/cli.py", "kind": "exact", "origin": "self"},
+            {"path": "src/lore/**/*.py", "kind": "glob", "origin": "self"},
         ]
     }
 
@@ -188,7 +191,11 @@ def test_code_seed_json_exact_omits_pattern_key():
         code_items=(CodeBinding(id="entry-a", match="exact"),),
     )
     out = cli_mod._render_impacts_json(result)
-    assert out == '{"impacts": [{"id": "entry-a", "match": "exact"}]}'
+    # nested-projects-spec D-15 appends `origin`; the contract this test
+    # exists for — an exact row carries no `pattern` — is unchanged.
+    assert out == (
+        '{"impacts": [{"id": "entry-a", "match": "exact", "origin": "self"}]}'
+    )
     parsed = json.loads(out)
     assert "pattern" not in parsed["impacts"][0]
 
@@ -202,8 +209,11 @@ def test_code_seed_json_glob_includes_pattern_key():
         ),
     )
     out = cli_mod._render_impacts_json(result)
+    # nested-projects-spec D-15 appends `origin`; the contract this test
+    # exists for — a glob row carries the pattern verbatim — is unchanged.
     assert out == (
-        '{"impacts": [{"id": "entry-b", "match": "glob", "pattern": "src/**/*.py"}]}'
+        '{"impacts": [{"id": "entry-b", "match": "glob", "origin": "self",'
+        ' "pattern": "src/**/*.py"}]}'
     )
 
 

@@ -443,3 +443,214 @@ def test_match_glossary_malformed_file_raises_glossary_error(tmp_path):
 # _render_glossary_block — MIGRATED to tests/unit/test_cli_glossary_render.py
 # Renderer hoisted to `lore.cli` in G3 (transient-public-api-facade-plan).
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# C6 — the scoped glossary
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C6
+# Decisions: D-22 (whole-file export, bare keywords, local wins), A-6 (a
+#            keyword collision resolves local-first), D-21 (health never reads
+#            the merged view), D-7
+# ---------------------------------------------------------------------------
+
+
+class TestScopedScanGlossary:
+    def test_an_inherited_item_keeps_a_bare_keyword_and_carries_its_origin(
+        self, tree
+    ):
+        # nested-projects-spec — D-22: a keyword is natural language matched
+        # against prose, not an id; qualifying it would break the matcher
+        from lore.glossary import scan_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+        tree.glossary(tree.lore, (("Mission", "A single task."),))
+
+        items = {item.keyword: item for item in scan_glossary(tree.lore)}
+
+        assert items["Quest"].origin == "camelot"
+        assert items["Mission"].origin == "self"
+
+    def test_an_ancestor_that_does_not_export_its_glossary_contributes_nothing(
+        self, tree
+    ):
+        # nested-projects-spec — FR-3: the glossary is opt-in, whole-file
+        from lore.glossary import scan_glossary
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\nglossary = false\n')
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+        tree.glossary(tree.lore, (("Mission", "A single task."),))
+
+        assert [item.keyword for item in scan_glossary(tree.lore)] == ["Mission"]
+
+    def test_a_collision_keeps_both_rows_with_the_local_one_first(self, tree):
+        # nested-projects-spec — A-6: `lore glossary list` shows the collision
+        # with its origins rather than hiding one side
+        from lore.glossary import scan_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "The ancestor's definition."),))
+        tree.glossary(tree.lore, (("Quest", "The local definition."),))
+
+        items = scan_glossary(tree.lore)
+
+        assert [(i.keyword, i.origin) for i in items] == [
+            ("Quest", "self"),
+            ("Quest", "camelot"),
+        ]
+
+    def test_a_local_item_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15
+        from lore.glossary import scan_glossary
+
+        tree.glossary(tree.lore, (("Mission", "A single task."),))
+
+        assert scan_glossary(tree.lore)[0].origin == "self"
+
+    def test_a_descendants_glossary_arrives_under_scope_all(self, tree):
+        # nested-projects-spec — D-4: a descendant ref is never export-filtered
+        from lore.glossary import scan_glossary
+
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+        tree.glossary(tree.lore, (("Mission", "A single task."),))
+
+        items = {i.keyword: i.origin for i in scan_glossary(tree.camelot, scope="all")}
+
+        assert items == {"Quest": "self", "Mission": "lore"}
+
+    def test_an_unknown_project_name_raises(self, tree):
+        # nested-projects-spec — FR-12
+        from lore.glossary import scan_glossary
+        from lore.projects import UnknownProjectError
+
+        with pytest.raises(UnknownProjectError):
+            scan_glossary(tree.lore, scope="nope")
+
+    def test_a_malformed_local_glossary_still_fails_loud(self, tree):
+        # nested-projects-spec — C6: the fail-loud path survives a scoped read
+        from lore.glossary import GlossaryError, scan_glossary
+
+        tree.write(tree.lore, "codex/glossary.yaml", "items:\n  - keyword: x\n")
+
+        with pytest.raises(GlossaryError):
+            scan_glossary(tree.lore)
+
+
+class TestScopedGlossaryLookups:
+    def test_read_glossary_item_returns_the_local_side_of_a_collision(self, tree):
+        # nested-projects-spec — A-6: "we preserve what we see in the current
+        # folder, not above or below it"
+        from lore.glossary import read_glossary_item
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "The ancestor's definition."),))
+        tree.glossary(tree.lore, (("Quest", "The local definition."),))
+
+        item = read_glossary_item(tree.lore, "Quest")
+
+        assert item.origin == "self"
+        assert item.definition == "The local definition."
+
+    def test_read_glossary_item_finds_an_inherited_keyword(self, tree):
+        # nested-projects-spec — FR-3
+        from lore.glossary import read_glossary_item
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+
+        assert read_glossary_item(tree.lore, "Quest").origin == "camelot"
+
+    def test_search_glossary_spans_the_scope(self, tree):
+        # nested-projects-spec — FR-13
+        from lore.glossary import search_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+        tree.glossary(tree.lore, (("Questionnaire", "A form."),))
+
+        found = {i.keyword: i.origin for i in search_glossary(tree.lore, "quest")}
+
+        assert found == {"Quest": "camelot", "Questionnaire": "self"}
+
+    def test_match_glossary_returns_the_local_side_of_a_collision(self, tree):
+        # nested-projects-spec — A-6: the auto-surface answers with one item
+        from lore.glossary import match_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "The ancestor's definition."),))
+        tree.glossary(tree.lore, (("Quest", "The local definition."),))
+
+        matched = match_glossary(["A quest is a body of work."], root=tree.lore)
+
+        assert [(i.origin, i.definition) for i in matched] == [
+            ("self", "The local definition.")
+        ]
+
+    def test_match_glossary_surfaces_an_inherited_keyword(self, tree):
+        # nested-projects-spec — D-22
+        from lore.glossary import match_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+
+        matched = match_glossary(["A quest is here."], root=tree.lore)
+
+        assert [i.origin for i in matched] == ["camelot"]
+
+
+class TestHealthNeverReadsTheMergedGlossary:
+    def test_scan_own_glossary_ignores_every_ancestor(self, tree):
+        # nested-projects-spec — D-21/FR-23: a health run validates only the
+        # project it runs in, in every direction
+        from lore.glossary import scan_own_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+        tree.glossary(tree.lore, (("Mission", "A single task."),))
+
+        assert [i.keyword for i in scan_own_glossary(tree.lore)] == ["Mission"]
+
+    def test_an_inherited_collision_raises_no_health_issue(self, tree):
+        # nested-projects-spec — D-21: `alias_keyword_collision` escalates the
+        # exit code, so it must never fire on state the project does not own
+        from lore.health import _check_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(
+            tree.camelot, (("Quest", "A body of work."), ("Mission", "A task."))
+        )
+        tree.glossary(tree.lore, (("Quest", "The local definition."),))
+
+        assert _check_glossary(tree.lore) == []
+
+
+class TestForeignGlossaryWritesAreRefused:
+    def test_create_glossary_item_refuses_a_qualified_keyword(self, tree):
+        # nested-projects-spec — FR-17/D-7: the glossary is on the list
+        from lore.glossary import create_glossary_item
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            create_glossary_item(tree.lore, "camelot:Quest", "A body of work.")
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:Quest": '
+            "an entity from another project is read-only."
+        )
+
+    def test_update_glossary_item_refuses_a_qualified_keyword(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.glossary import update_glossary_item
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            update_glossary_item(tree.lore, "camelot:Quest", definition="Nope.")
+
+    def test_delete_glossary_item_refuses_a_qualified_keyword(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.glossary import delete_glossary_item
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            delete_glossary_item(tree.lore, "camelot:Quest")

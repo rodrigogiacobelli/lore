@@ -3,15 +3,14 @@ id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
 summary: Maps every Lore entity to its available CLI CRUD and traversal operations
   with the exact command for each. Highlights gaps — Codex has no CLI write path;
-  Glossary is read-only via CLI (single file, no group hierarchy); Artifact has
-  `edit` and `delete` write paths (full CRUD parity with knight/doctrine/watcher);
-  Board has no standalone list or update; Quest/Mission have no search;
-  lore deps is documented but unimplemented.
-  All five list commands (codex, artifact, knight, doctrine, watcher) support --filter
-  GROUP... (slash-delimited segment-prefix matching) and all four entity `new`
-  commands (doctrine, knight, watcher, artifact) support --group GROUP for nested
-  creation. Glossary list does NOT accept --filter — single file with no groups.
-  Rite has full CRUD plus search but uses a flat namespace — no --group/--filter;
+  Glossary is read-only via CLI (single file, no group hierarchy); Artifact has `edit`
+  and `delete` write paths (full CRUD parity with knight/doctrine/watcher); Board
+  has no standalone list or update; Quest/Mission have no search; lore deps is documented
+  but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher)
+  support --filter GROUP... (slash-delimited segment-prefix matching) and all four
+  entity `new` commands (doctrine, knight, watcher, artifact) support --group GROUP
+  for nested creation. Glossary list does NOT accept --filter — single file with no
+  groups. Rite has full CRUD plus search but uses a flat namespace — no --group/--filter;
   --shared selects the shared-step subfolder instead.
 binds:
 - src/lore/cli.py
@@ -30,6 +29,7 @@ related:
 - conceptual-workflows-glossary
 - conceptual-entities-skill
 - conceptual-workflows-lore-init
+- conceptual-workflows-nested-projects
 ---
 
 # CLI Entity CRUD Matrix
@@ -46,6 +46,10 @@ related:
 | **Artifact** | `lore artifact new <name> [--group <path>] --from <body>` | `lore artifact show <id> [id2…]` | `lore artifact list [--filter GROUP...]` | — | — | `lore artifact edit <name>` | `lore artifact delete <name>` |
 | **Rite** | `lore rite new <name> [--shared] --from <body>` | `lore rite show <id> [id2…]` | `lore rite list [--shared]` | `lore rite search <kw>` | — | `lore rite edit <name> [--shared]` | `lore rite delete <name> [--shared]` |
 | **Board Message** | `lore board add <entity_id> "<msg>" [-s sender]` | (inside `lore show`) | (inside `lore show`) | — | — | ✗ (immutable) | `lore board delete <int_id>` |
+
+## `--project` Selector
+
+Every Read/List/Search/Traverse cell for Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite additionally accepts the global `--project NAME` flag — a project name, `all`, or `self` — reading the same entity across a tree of Lore projects. No Create/Update/Delete cell accepts it: a usage error at exit 2 rejects `--project` on every write command, and Quest, Mission and Board Message accept it nowhere, on any operation. `lore codex chaos` is the one Traverse command that never accepts it either — its termination ratio is defined over one project's own subgraph. Full behaviour — origin-qualified ids, the `ORIGIN` column, and the read-only rule across a boundary — is `ref-lore_cli-commands` and `conceptual-workflows-nested-projects`.
 
 ## Skills Are Deliberately Absent
 

@@ -120,13 +120,13 @@ def test_lore_impacts_codex_seed_json_byte_identical(project_dir, runner):
     assert result.stdout.endswith("\n")
     body = result.stdout[:-1]
     assert body == (
-        '{"impacts": [{"path": "src/lore/cli.py", "kind": "exact"},'
-        ' {"path": "src/lore/**/*.py", "kind": "glob"}]}'
+        '{"impacts": [{"path": "src/lore/cli.py", "kind": "exact", "origin": "self"},'
+        ' {"path": "src/lore/**/*.py", "kind": "glob", "origin": "self"}]}'
     )
     assert json.loads(body) == {
         "impacts": [
-            {"path": "src/lore/cli.py", "kind": "exact"},
-            {"path": "src/lore/**/*.py", "kind": "glob"},
+            {"path": "src/lore/cli.py", "kind": "exact", "origin": "self"},
+            {"path": "src/lore/**/*.py", "kind": "glob", "origin": "self"},
         ]
     }
 

@@ -8,6 +8,22 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-15
+
+### Added
+
+#### Nested projects — reading across a tree of Lore projects
+
+A directory holding several Lore projects is itself a Lore project. It reads any of them with `--project <name>` or `--project all`, and exports documents down to named descendants, which see them origin-qualified as `<project>:<id>`.
+
+- **A `--project` read selector on nineteen commands** — `codex list|show|search|map`, `doctrine list|show`, `knight list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show` and `impacts`. It takes one token: a project name, `all` for the whole subtree, or `self` for this project alone. It is rejected on every write command and on every quest and mission command, as a usage error at exit 2. An unknown project name is a runtime not-found — the error envelope on stderr at exit 1 — not a usage error, because the valid values are discovered from the tree rather than fixed.
+- **An `ORIGIN` column and an `origin` field** — table output gains a leading `ORIGIN` column when, and only when, the result set holds a row from another project, so a project in no tree prints exactly what it printed before. Every `--json` row carries `origin` always, valued `"self"` or the originating project's name.
+- **Inheritance needs no flag** — a project reads what its ancestors export to it in the listing it already runs. `--project` governs the downward axis only.
+- **Cross-boundary entities are read-only** — an edit or delete against an origin-qualified id fails with the error envelope on stderr at exit 1, on every write path including `--set`/`--unset`/`--add`/`--remove`. `update_frontmatter_fields` raises `ForeignEntityError` for a Python caller.
+- **Thirteen new public API names** — `ProjectRef`, `UnknownProjectError`, `ForeignEntityError`, `list_projects`, `resolve_project` and `project_name` from `lore.projects`; `SharedExports` and `DescendantExport` from `lore.config`; `validate_project_name` from `lore.validators`; `list_rites`, `find_rite` and `search_rites_scoped` from `lore.rite`, which take `project_root` first so a scoped rite read can resolve a topology; and `read_watcher_text` from `lore.watcher`, which returns a watcher's file text resolved through the same scope, so `lore watcher show`'s output is reachable from Python. Additive: nothing left `__all__`, no returned shape narrowed, and `scan_rites`, `search_rites`, `read_rite` and `read_watcher` are unchanged.
+- **Two config keys and two config tables** — `project-name` and `default-project-scope` as root keys, `[shared]` and `[[descendants]]` as tables. `lore init` seeds the two keys at their defaults and asks no new question.
+- **`lore health` reads no other project** — a health run validates only the project it runs in, in every direction. No scope, flag or column joins it.
+
 ## [0.10.0] - 2026-08-26
 
 ### Added

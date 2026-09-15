@@ -219,8 +219,8 @@ def test_json_envelope_codex_seed_populated(project_dir, runner):
     assert result.stderr == ""
     assert json.loads(result.stdout) == {
         "impacts": [
-            {"path": "src/lore/cli.py", "kind": "exact"},
-            {"path": "src/lore/**/*.py", "kind": "glob"},
+            {"path": "src/lore/cli.py", "kind": "exact", "origin": "self"},
+            {"path": "src/lore/**/*.py", "kind": "glob", "origin": "self"},
         ]
     }
 
@@ -640,10 +640,11 @@ def test_json_envelope_code_seed_mixed_matches(project_dir, runner):
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {
         "impacts": [
-            {"id": "dec-006-id-references", "match": "exact"},
+            {"id": "dec-006-id-references", "match": "exact", "origin": "self"},
             {
                 "id": "tech-arch-source-layout",
                 "match": "glob",
+                "origin": "self",
                 "pattern": "src/lore/**/*.py",
             },
         ]
@@ -737,7 +738,7 @@ def test_direct_links_drops_glob_rows_json_output(project_dir, runner):
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == {
-        "impacts": [{"id": "dec-006-id-references", "match": "exact"}]
+        "impacts": [{"id": "dec-006-id-references", "match": "exact", "origin": "self"}]
     }
 
 

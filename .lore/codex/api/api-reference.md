@@ -1,14 +1,17 @@
 ---
 id: api-reference
 title: lore.api — Reference
-summary: Exhaustive per-symbol reference for lore.api — signatures, return shapes, raised exceptions, and one-line examples for every name in lore.api.__all__.
+summary: Exhaustive per-symbol reference for lore.api — signatures, return shapes,
+  raised exceptions, and one-line examples for every name in lore.api.__all__.
 related:
-  - api-guide
-  - decisions-010-public-api-stability
-  - tech-arch-schemas
-  - conceptual-workflows-lore-init
-  - conceptual-workflows-init-reconcile
-  - tech-arch-agents-md
+- api-guide
+- decisions-010-public-api-stability
+- tech-arch-schemas
+- conceptual-workflows-lore-init
+- conceptual-workflows-init-reconcile
+- tech-arch-agents-md
+- conceptual-workflows-nested-projects
+- tech-arch-projects-module
 ---
 
 # lore.api — Reference
@@ -16,6 +19,8 @@ related:
 Every symbol in `lore.api.__all__`. Signatures are copied from the source. For narrative and end-to-end examples, see [`api-guide`](api-guide).
 
 Throughout this doc, `pr` stands for `project_root: Path` — the directory containing `.lore/`.
+
+Every read function on Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite takes a keyword-only `scope: str | None = None` and returns records carrying `origin`. See §19 for the topology functions and `conceptual-workflows-nested-projects` for the model those functions implement.
 
 ## 1. Quest CRUD
 
@@ -381,15 +386,16 @@ create_knight(pr, "tech-writer", content_with_frontmatter)
 Return the full knight record dict, or `None` on miss.
 
 ```python
-read_knight(project_root: Path, name: str) -> dict | None
+read_knight(project_root: Path, name: str, *, scope: str | None = None) -> dict | None
 ```
 
-Returns `{"id", "group", "title", "summary", "filename", "body"}`.
+Returns `{"id", "group", "title", "summary", "filename", "body", "origin"}`. A bare name resolves locally before an inherited one of the same name, and a qualified name never resolves locally. An unexported ancestor knight is a miss, not an error.
 
 Raises: `ValueError` on path-traversal names (`/` or `\` in name).
 
 ```python
 read_knight(pr, "tech-writer")
+read_knight(pr, "camelot:tech-writer", scope="self")
 ```
 
 ### `update_knight`
@@ -426,18 +432,19 @@ delete_knight(pr, "tech-writer")
 
 ### `list_knights`
 
-Return a sorted list of knight records under `.lore/knights/`. Missing-metadata records get sensible fallbacks.
+Return a sorted list of knight records across every project in scope.
 
 ```python
-list_knights(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]
+list_knights(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
 ```
 
-Returns `[{"id", "group", "title", "summary", "name", "filename"}, ...]` sorted by id. Empty list if the directory is absent.
+Returns `[{"id", "group", "title", "summary", "name", "filename", "origin"}, ...]` sorted by id — the qualified id for a foreign record. Missing-metadata records get sensible fallbacks. Empty list if the directory is absent.
 
-Raises: none.
+Raises: `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 list_knights(pr)
+list_knights(pr, scope="all")
 ```
 
 ## 4. Doctrine CRUD
@@ -463,10 +470,10 @@ create_doctrine(pr, "tdd-feature", Path("d.yaml"), Path("d.design.md"))
 Load a doctrine by ID for display.
 
 ```python
-read_doctrine(project_root: Path, doctrine_id: str) -> dict | None
+read_doctrine(project_root: Path, doctrine_id: str, *, scope: str | None = None) -> dict | None
 ```
 
-Returns `{"id", "title", "summary", "design", "raw_yaml", "steps"}` or `None` if either partner file is missing.
+Returns `{"id", "title", "summary", "design", "raw_yaml", "steps", "origin"}` or `None` if either partner file is missing. A bare id resolves locally before an inherited one of the same name, and a qualified id never resolves locally. An unexported ancestor doctrine is a miss.
 
 Raises: none.
 
@@ -508,15 +515,15 @@ delete_doctrine(pr, "tdd-feature")
 
 ### `list_doctrines`
 
-List all valid doctrine pairs. Orphaned files are silently skipped.
+List all valid doctrine pairs across every project in scope. Orphaned files are silently skipped.
 
 ```python
-list_doctrines(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]
+list_doctrines(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
 ```
 
-Returns `[{"id", "group", "title", "summary", "valid", "filename"}, ...]`.
+Returns `[{"id", "group", "title", "summary", "valid", "filename", "origin"}, ...]`. A foreign record's `id` is origin-qualified.
 
-Raises: none.
+Raises: `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 list_doctrines(pr)
@@ -545,10 +552,10 @@ create_artifact(pr, "pr-template", content_with_frontmatter)
 Return the artifact record dict or `None` on miss.
 
 ```python
-read_artifact(project_root: Path, artifact_id: str) -> dict | None
+read_artifact(project_root: Path, artifact_id: str, *, scope: str | None = None) -> dict | None
 ```
 
-Returns `{"id", "title", "summary", "body", "filename", "group"}`.
+Returns `{"id", "title", "summary", "body", "filename", "group", "origin"}`. A bare id resolves locally before an inherited one of the same name, and a qualified id never resolves locally. An unexported ancestor artifact is a miss.
 
 Raises: none.
 
@@ -590,15 +597,15 @@ delete_artifact(pr, "pr-template")
 
 ### `list_artifacts`
 
-Walk `.lore/artifacts/` recursively.
+Return artifact records for every project in scope.
 
 ```python
-list_artifacts(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]
+list_artifacts(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
 ```
 
-Returns `[{"id", "title", "summary", "group", "path"}, ...]` sorted alphabetically by id. Files without valid frontmatter are silently skipped.
+Returns `[{"id", "title", "summary", "group", "path", "origin"}, ...]` sorted alphabetically by id — the qualified id for a foreign record. Files without valid frontmatter are silently skipped.
 
-Raises: none.
+Raises: `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 list_artifacts(pr)
@@ -627,15 +634,31 @@ create_watcher(pr, "nightly-audit", yaml_content)
 Return the full watcher record dict, or `None` on miss.
 
 ```python
-read_watcher(project_root: Path, name: str) -> dict | None
+read_watcher(project_root: Path, name: str, *, scope: str | None = None) -> dict | None
 ```
 
-Returns `{"id", "group", "title", "summary", "filename", "watch_target", "interval", "action"}`.
+Returns `{"id", "group", "title", "summary", "filename", "watch_target", "interval", "action", "origin"}`. A bare name resolves locally before an inherited one of the same name, and a qualified name never resolves locally. An unexported ancestor watcher is a miss.
 
 Raises: none.
 
 ```python
 read_watcher(pr, "nightly-audit")
+```
+
+### `read_watcher_text`
+
+Return the raw text of a watcher's file, or `None` on a miss. `lore watcher show` prints a watcher's file verbatim, and the record `read_watcher` returns holds no text — this is a second entry shape rather than a tenth key on that record, because the record is the `watcher show --json` envelope and its key set is pinned.
+
+```python
+read_watcher_text(project_root: Path, name: str, *, scope: str | None = None) -> str | None
+```
+
+Returns the file's raw text, or `None` on a miss. Resolution is `read_watcher`'s own — a bare name locally first, a qualified name never locally — so the file this returns is always the file that record describes, read from the project that owns it.
+
+Raises: `ValueError` on path-traversal names (`/` or `\` in name).
+
+```python
+read_watcher_text(pr, "nightly-audit")
 ```
 
 ### `update_watcher`
@@ -672,15 +695,15 @@ delete_watcher(pr, "nightly-audit")
 
 ### `list_watchers`
 
-Walk `.lore/watchers/` recursively.
+Return watcher records for every project in scope.
 
 ```python
-list_watchers(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]
+list_watchers(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
 ```
 
-Returns `[{"id", "group", "title", "summary", "watch_target?", "interval?", "action?"}, ...]` sorted by id.
+Returns `[{"id", "group", "title", "summary", "origin", "watch_target?", "interval?", "action?"}, ...]` sorted by id — the qualified id for a foreign record.
 
-Raises: none.
+Raises: `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 list_watchers(pr)
@@ -711,10 +734,10 @@ create_document(pr, "014-use-sqlite", content, group="decisions")
 Return a full document record by ID.
 
 ```python
-read_document(project_root: Path, doc_id: str) -> dict | None
+read_document(project_root: Path, doc_id: str, *, scope: str | None = None) -> dict | None
 ```
 
-Returns `{"id", "title", "summary", "body"}`. Leading newlines stripped from body.
+Returns `{"id", "title", "summary", "body", "origin"}`. Leading newlines stripped from body. `id` is the form the caller asked for, so an inherited document reads back qualified. A bare id resolves locally before an inherited one of the same name, and a qualified id never resolves locally. An unexported ancestor document is a miss, not an error.
 
 Raises: none.
 
@@ -758,29 +781,30 @@ delete_document(pr, "old-doc")
 
 ### `list_codex`
 
-Walk `.lore/codex/` recursively. Filter-aware.
+Return document records for every project in scope. Filter-aware.
 
 ```python
-list_codex(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]
+list_codex(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
 ```
 
-Returns `[{"id", "title", "summary", "path"}, ...]` sorted alphabetically by id. Files missing required frontmatter are silently skipped.
+Returns `[{"id", "title", "summary", "path", "group", "origin"}, ...]` sorted alphabetically by id — the qualified id for a foreign record, so it feeds straight back into `read_document`. Files missing required frontmatter are silently skipped.
 
-Raises: none.
+Raises: `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 list_codex(pr, filter_groups=["decisions"])
+list_codex(pr, scope="all")
 ```
 
 ### `search_documents`
 
-Substring search across title and summary, case-insensitive.
+Substring search across title and summary, case-insensitive, over the same scoped listing `list_codex` reads.
 
 ```python
-search_documents(project_root: Path, keyword: str) -> list[dict]
+search_documents(project_root: Path, keyword: str, *, scope: str | None = None) -> list[dict]
 ```
 
-Returns `[{"id", "title", "summary"}, ...]` sorted alphabetically by id.
+Returns `[{"id", "title", "summary", "origin"}, ...]` sorted alphabetically by id (no `path` — a foreign file path never leaves `lore.codex`).
 
 Raises: none.
 
@@ -793,10 +817,10 @@ search_documents(pr, "sqlite")
 BFS the codex graph from `start_id` along the `related` field. Separate inbound/outbound depth budgets.
 
 ```python
-map_documents(project_root: Path, start_id: str, *, depth: int | None = None, depth_out: int | None = None, depth_in: int | None = None, full: bool = False) -> list[dict] | None
+map_documents(project_root: Path, start_id: str, *, depth: int | None = None, depth_out: int | None = None, depth_in: int | None = None, full: bool = False, scope: str | None = None) -> list[dict] | None
 ```
 
-Returns a list of neighbour records (seed excluded, dedup by id, sorted alphabetically). Default shape `{"id", "group", "title", "summary"}`; `full=True` adds `related` and `body`. `None` iff `start_id` is not in the index.
+Returns a list of neighbour records (seed excluded, dedup by id, sorted alphabetically). Default shape `{"id", "group", "title", "summary", "origin"}`; `full=True` adds `related` and `body`. `None` iff `start_id` is not in the index. Under a scope the index is keyed by qualified id for a foreign document and by bare id for this project's own, so a cross-project `related` edge traverses with no special case in the walk.
 
 Raises: `ConflictingDepthFlags` if `depth` is combined with `depth_out`/`depth_in`.
 
@@ -812,7 +836,7 @@ Random-walk traversal from `start_id`. Terminates when discovered/reachable rati
 chaos_documents(project_root: Path, start_id: str, threshold: int, *, rng: random.Random | None = None) -> list[dict] | None
 ```
 
-Returns a list of records starting with the seed. `None` iff `start_id` is missing.
+Returns a list of records starting with the seed. `None` iff `start_id` is missing. Reads this project's own documents only — takes no `scope` — because a termination ratio is defined over the subgraph one project owns.
 
 Raises: `ValueError` if threshold is outside `[30, 100]`.
 
@@ -825,10 +849,10 @@ chaos_documents(pr, "api-guide", threshold=60)
 Compose a `{documents, glossary}` envelope. Used by `lore codex show`.
 
 ```python
-read_documents_with_glossary(project_root: Path, doc_ids: list[str], *, skip_glossary: bool = False) -> dict
+read_documents_with_glossary(project_root: Path, doc_ids: list[str], *, skip_glossary: bool = False, scope: str | None = None) -> dict
 ```
 
-Returns `{"documents": [...], "glossary": [...]}`. Missing doc ids appear in place as `{"id": "<id>", "not_found": True}`.
+Returns `{"documents": [...], "glossary": [...]}`. Missing doc ids appear in place as `{"id": "<id>", "not_found": True}`. `scope` threads into every document read and into the glossary match, so one envelope answers for one scope.
 
 Raises: none — missing docs fail soft.
 
@@ -859,12 +883,12 @@ create_glossary_item(pr, "Quest", "A live grouping of Missions.")
 Look up an item by exact keyword (case-insensitive). Aliases are NOT consulted (FR-7).
 
 ```python
-read_glossary_item(root: Path, keyword: str) -> GlossaryItem | None
+read_glossary_item(root: Path, keyword: str, *, scope: str | None = None) -> GlossaryItem | None
 ```
 
-Returns a `GlossaryItem` dataclass or `None`.
+Returns a `GlossaryItem` dataclass or `None`. On a collision between a local item and an inherited one, the local item wins — the merged list puts this project's own items first and the first match is returned.
 
-Raises: `GlossaryError` on malformed glossary file.
+Raises: `GlossaryError` on malformed glossary file, and `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 read_glossary_item(pr, "quest")
@@ -904,26 +928,27 @@ delete_glossary_item(pr, "Quest")
 
 ### `scan_glossary`
 
-Return all items in source order. Empty list if file missing.
+Return the glossary items for every project in scope, in source order. This project's items come first, then each in-scope project's, so a collision shows the local definition first. An ancestor contributes only when its `[shared].glossary` is true; a descendant is never export-filtered. Empty list if no project in scope has a file.
 
 ```python
-scan_glossary(root: Path) -> list[GlossaryItem]
+scan_glossary(root: Path, *, scope: str | None = None) -> list[GlossaryItem]
 ```
 
-Returns a list of `GlossaryItem` dataclasses.
+Returns a list of `GlossaryItem` dataclasses, each carrying `origin` (`"self"` or the exporting project's name).
 
-Raises: `GlossaryError` on read error, malformed YAML, or schema violation.
+Raises: `GlossaryError` on read error, malformed YAML, or schema violation, and `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 scan_glossary(pr)
+scan_glossary(pr, scope="all")
 ```
 
 ### `search_glossary`
 
-Case-insensitive substring search across keyword, aliases, do_not_use, and definition.
+Case-insensitive substring search across keyword, aliases, do_not_use, and definition, over the same scoped listing `scan_glossary` reads. Both sides of a collision are returned, each carrying its `origin`.
 
 ```python
-search_glossary(root: Path, query: str) -> list[GlossaryItem]
+search_glossary(root: Path, query: str, *, scope: str | None = None) -> list[GlossaryItem]
 ```
 
 Returns a list of items alphabetised by casefolded keyword.
@@ -936,13 +961,13 @@ search_glossary(pr, "task")
 
 ### `match_glossary`
 
-Return canonical items whose keyword/aliases appear in the supplied bodies. `do_not_use` does NOT auto-surface.
+Return canonical items whose keyword/aliases appear in the supplied bodies. `do_not_use` does NOT auto-surface. On a keyword collision, the local item wins — the same rule `read_glossary_item` applies.
 
 ```python
-match_glossary(bodies: list[str], *, items: list[GlossaryItem] | None = None, root: Path | None = None) -> list[GlossaryItem]
+match_glossary(bodies: list[str], *, items: list[GlossaryItem] | None = None, root: Path | None = None, scope: str | None = None) -> list[GlossaryItem]
 ```
 
-Returns deduped items alphabetised by casefolded keyword. Missing glossary file → `[]`.
+Returns deduped items alphabetised by casefolded keyword. Missing glossary file → `[]`. `scope` is ignored when `items` is passed directly.
 
 Raises: `GlossaryError` on malformed glossary.
 
@@ -1140,20 +1165,23 @@ get_all_dependencies_for_quest(pr, "q-7a3f")
 
 ### `impacts`
 
-Surface codex↔code bindings for *token*. Token classification (codex-seed vs code-seed) determines the return mode.
+Surface codex↔code bindings for *token* across the projects in scope. Token classification (codex-seed vs code-seed) determines the return mode.
 
 ```python
-impacts(token: str, *, project_root: Path, direct_links: bool = False) -> ImpactsResult
+impacts(token: str, *, project_root: Path, direct_links: bool = False, scope: str | None = None) -> ImpactsResult
 ```
 
-Codex-seed: returns `ImpactsResult(kind="codex", codex_items=tuple[CodexBinding, ...])` preserving declaration order.
+Codex-seed: returns `ImpactsResult(kind="codex", codex_items=tuple[CodexBinding, ...])` preserving declaration order. The seed resolves like any other id — a bare id locally first, a qualified id never locally — and the bindings come from the project that owns it.
 
-Code-seed: returns `ImpactsResult(kind="code", code_items=tuple[CodeBinding, ...])` sorted by codex id, deduped per id with exact-precedence over glob. `direct_links=True` drops glob rows.
+Code-seed: returns `ImpactsResult(kind="code", code_items=tuple[CodeBinding, ...])` sorted by codex id (the qualified id for a foreign document), deduped per id with exact-precedence over glob. `direct_links=True` drops glob rows. A repo-relative path is resolved against each in-scope project's own root, because it names a different file in each.
 
-Raises: `ImpactsError` on unknown codex id, outside-repo path, or `..` traversal.
+Both `CodexBinding` and `CodeBinding` carry `origin` (default `"self"`).
+
+Raises: `ImpactsError` on unknown codex id, outside-repo path, or `..` traversal, and `UnknownProjectError` when `scope` names no project in scope.
 
 ```python
 impacts("api-guide", project_root=pr)
+impacts("src/lore/cli.py", project_root=pr, scope="all")
 ```
 
 ### `classify_token`
@@ -1674,6 +1702,18 @@ is_glob_pattern(s: str) -> bool
 
 Returns `True` iff `s` contains any of `*`, `?`, `[`.
 
+### `validate_project_name`
+
+```python
+validate_project_name(value: object) -> str | None
+```
+
+Returns an error string if `value` is not a usable project name, else `None`. The empty string is valid — it means "fall back to the project directory's name". Every other value must pass `validate_name` — a project name becomes an origin qualifier in `<project>:<entity-id>` and can never hold a `:`. Takes `object` rather than `str` because the config loader hands over whatever TOML produced; a non-string value is reported the same way rather than raising.
+
+```python
+validate_project_name("camelot")
+```
+
 ### `route_entity`
 
 ```python
@@ -1706,7 +1746,7 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 - **`Doctrine(id, title, summary, steps)`** — `steps` is `tuple[DoctrineStep, ...]`.
 - **`Knight(name, content)`** — name + raw markdown body.
 - **`DoctrineListEntry(id, group, title, summary, valid, filename)`** — `lore doctrine list` row shape.
-- **`GlossaryItem(keyword, definition, aliases, do_not_use)`** — `aliases` and `do_not_use` are `tuple[str, ...]`.
+- **`GlossaryItem(keyword, definition, aliases, do_not_use, origin)`** — `aliases` and `do_not_use` are `tuple[str, ...]`. `origin` defaults to `"self"`; a scoped read sets it to the exporting project's name. The keyword itself stays bare in every case — it is natural language matched against document prose, not an id.
 - **`Watcher(id, group, title, summary, watch_target, interval, action, filename)`** — full watcher record.
 
 ### Health and validation dataclasses
@@ -1718,8 +1758,8 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 ### Impacts dataclasses
 
 - **`ImpactsResult(kind, codex_items, code_items)`** — `kind` is `Literal["codex", "code"]`; the two `_items` fields are tuples of bindings, one populated based on `kind`.
-- **`CodexBinding(path, kind)`** — `kind` is `Literal["exact", "glob"]`.
-- **`CodeBinding(id, match, pattern)`** — `match` is `Literal["exact", "glob"]`; `pattern` is the glob pattern when `match="glob"`, else `None`.
+- **`CodexBinding(path, kind, origin)`** — `kind` is `Literal["exact", "glob"]`; `path` is repo-relative to the project that declared the binding. `origin` defaults to `"self"`.
+- **`CodeBinding(id, match, pattern, origin)`** — `match` is `Literal["exact", "glob"]`; `pattern` is the glob pattern when `match="glob"`, else `None`. `origin` defaults to `"self"`; `id` is origin-qualified for a foreign document.
 
 ### Init dataclasses and enums
 
@@ -1733,12 +1773,219 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 
 ### Config
 
-- **`Config(show_glossary_on_codex_commands, health_report_retention, init_agents, init_access_mode, init_skill_families, init_skills_gitignore, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `init_agents` is a `tuple[str, ...]` defaulting to `()`; `init_access_mode` is a `str` defaulting to `"native"`, one of `"cli"`, `"native"`; `init_skill_families` is a `tuple[str, ...]` defaulting to all three families; `init_skills_gitignore` is a `str` defaulting to `"lore-only"`, one of `"lore-only"`, `"none"`, `"all"`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
+- **`Config(show_glossary_on_codex_commands, health_report_retention, init_agents, init_access_mode, init_skill_families, init_skills_gitignore, project_name, default_project_scope, shared, descendants, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `init_agents` is a `tuple[str, ...]` defaulting to `()`; `init_access_mode` is a `str` defaulting to `"native"`, one of `"cli"`, `"native"`; `init_skill_families` is a `tuple[str, ...]` defaulting to all three families; `init_skills_gitignore` is a `str` defaulting to `"lore-only"`, one of `"lore-only"`, `"none"`, `"all"`; `project_name` is a `str` defaulting to `""` (falls back to the project directory's name); `default_project_scope` is a `str` defaulting to `"self"`, one of `"self"`, `"all"`; `shared` is a `SharedExports` defaulting to an empty one; `descendants` is a `tuple[DescendantExport, ...]` defaulting to `()`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
+- **`SharedExports(exports, glossary)`** — the `[shared]` table: what an ancestor offers every descendant. `exports` is a `tuple[str, ...]` of literal entity ids and glob patterns, defaulting to `()`; `glossary` is a `bool` defaulting to `False` — the glossary exports whole or not at all.
+- **`DescendantExport(name, path, exports)`** — one `[[descendants]]` block: what an ancestor offers one named project. `path` is the identity, resolved beneath the ancestor's root; `name` is a label for messages and has no resolving power. `exports` is a `tuple[str, ...]` defaulting to `()`.
+
+### Project topology dataclasses (nested projects)
+
+- **`ProjectRef(name, root, relation)`** — one project in scope. `relation` is `"self"`, `"ancestor"` or `"descendant"`.
 
 ### Exceptions
 
 - **`ProjectNotFoundError`** — raised by `find_project_root` when no `.lore/` is found.
+- **`UnknownProjectError`** — raised when `--project <name>` / `scope=<name>` names no project in scope.
+- **`ForeignEntityError`** — raised by every write function on a file-backed entity when the target name is origin-qualified; cross-project reads are permanently read-only.
 - **`ImpactsError`** — raised by `impacts(...)` on bad input.
 - **`GlossaryError`** — raised by glossary reads on malformed YAML.
 - **`OverlayError`** — subclass of `ValueError`; raised by `resolve_merged_schema` / `project_validator_for` / `validate_entity(project_root=...)` when a `.lore/custom-schemas/<kind>.yaml` overlay is malformed (bad YAML, packaged-field collision, undeclared `required`). Propagates unchanged through `create_document` / `update_document` (their existing `ValueError` contract).
 - **`ConflictingDepthFlags`** — raised by `map_documents` on bad depth-flag combos.
+
+## 19. Project topology (nested projects)
+
+A directory holding several Lore projects is itself a Lore project once its own `.lore/` exists. These functions are the ones a Python caller needs beyond the `scope=` keyword already on every entity read — see `conceptual-workflows-nested-projects` for the model and `tech-arch-projects-module` for the module that implements it.
+
+### `list_projects`
+
+Return every project in scope: self, then ancestors, then discovered descendants.
+
+```python
+list_projects(project_root: Path) -> list[ProjectRef]
+```
+
+Returns a list of `ProjectRef`. Never raises.
+
+```python
+for ref in list_projects(pr):
+    print(ref.name, ref.relation)
+```
+
+### `resolve_project`
+
+Return the project called *name*, or raise.
+
+```python
+resolve_project(project_root: Path, name: str) -> ProjectRef
+```
+
+Returns a `ProjectRef`. Matches a project's own resolved name, never a `[[descendants]]` block's label.
+
+Raises: `UnknownProjectError` when no project in scope has that name.
+
+```python
+resolve_project(pr, "camelot")
+```
+
+### `project_name`
+
+Return the project's own resolved name.
+
+```python
+project_name(project_root: Path) -> str
+```
+
+Returns its `project-name` config value when set, else its directory's name.
+
+Raises: none — an unreadable config falls back like an absent one.
+
+```python
+project_name(pr)
+```
+
+## 20. Rite CRUD and scoped reads
+
+Rite functions take `rites_dir: Path` first, not `project_root` — the one entity module that predates the `project_root`-first convention (`tech-cli-entity-crud-matrix`). The three scoped functions added for nested projects take `project_root` first instead, like every other entity module; they wrap the same on-disk reads as their `rites_dir`-first counterparts rather than duplicating them, because changing a public function's first parameter is an ADR-010 breaking change. `rd` below stands for `rites_dir: Path` — `project_root / ".lore" / "rites"` (`entity_location` does not cover the `"rite"` kind, so a caller builds the path directly).
+
+### `create_rite`
+
+Validate name and schema, dup-detect across the whole `main/` + `shared/` tree, then write.
+
+```python
+create_rite(rites_dir: Path, name: str, content: str, *, shared: bool = False, group: str | None = None) -> dict
+```
+
+Returns `{"id", "kind", "group", "filename", "path"}`. `kind` is `"main"` or `"shared"`.
+
+Raises: `RiteError` on invalid name/group, schema failure, or a duplicate id anywhere in the tree. Raises `ForeignEntityError` on a qualified name.
+
+```python
+create_rite(rd, "diagnose-timeout", content)
+```
+
+### `read_rite`
+
+Resolve *rite_id* by id and return the rite, inlining `use:` shared steps.
+
+```python
+read_rite(rites_dir: Path, rite_id: str) -> dict
+```
+
+Returns the parsed rite body. A main rite has each `use:` node flat-inlined with the shared step attached as a `"step"` key.
+
+Raises: `RiteError` for a not-found id (including soft-deleted) or a dangling `use:`.
+
+```python
+read_rite(rd, "diagnose-timeout")
+```
+
+### `update_rite`
+
+Re-validate and overwrite an existing rite in place.
+
+```python
+update_rite(rites_dir: Path, name: str, content: str, *, shared: bool = False) -> dict
+```
+
+Returns the full parsed entity dict.
+
+Raises: `RiteError` if not found or schema-invalid. Raises `ForeignEntityError` on a qualified name.
+
+```python
+update_rite(rd, "diagnose-timeout", new_content)
+```
+
+### `delete_rite`
+
+Soft-delete by renaming `<name>.yaml` to `<name>.yaml.deleted`.
+
+```python
+delete_rite(rites_dir: Path, name: str, *, shared: bool = False) -> dict
+```
+
+Returns `{"id", "group", "deleted_at"}`.
+
+Raises: `RiteError` if not found. Raises `ForeignEntityError` on a qualified name.
+
+```python
+delete_rite(rd, "diagnose-timeout")
+```
+
+### `scan_rites`
+
+Return the rite records under `rites_dir` (recursive).
+
+```python
+scan_rites(rites_dir: Path, *, shared: bool = False) -> list[dict]
+```
+
+Returns a list of dicts (the parsed body plus a derived `group`), sorted by `(group, id)`. Empty or missing subfolder returns `[]`.
+
+Raises: none.
+
+```python
+scan_rites(rd)
+```
+
+### `search_rites`
+
+Return main rites whose id/title/summary/trigger match *query*.
+
+```python
+search_rites(rites_dir: Path, query: str) -> list[dict]
+```
+
+Returns a list of dicts. Case-insensitive substring browse, main rites only. No match returns `[]`.
+
+Raises: none.
+
+```python
+search_rites(rd, "timeout")
+```
+
+### `list_rites`
+
+Return rite records for every project in scope.
+
+```python
+list_rites(project_root: Path, *, shared: bool = False, filter_groups: list[str] | None = None, scope: str | None = None) -> list[dict]
+```
+
+Returns a list of dicts, each carrying `group` and `origin`; a foreign record's `id` is origin-qualified. Sorted by `(group, id)` — the qualified id for a foreign record.
+
+Raises: `UnknownProjectError` when `scope` names no project in scope.
+
+```python
+list_rites(pr, scope="all")
+```
+
+### `find_rite`
+
+Resolve *rite_id* across the projects in scope and return the rite.
+
+```python
+find_rite(project_root: Path, rite_id: str, *, scope: str | None = None) -> dict
+```
+
+Returns the rite dict plus `origin`. A bare id resolves locally before an inherited one of the same name, and a qualified id never resolves locally.
+
+Raises: `RiteError` for an id that resolves nowhere in scope, and `UnknownProjectError` when `scope` names no project in scope.
+
+```python
+find_rite(pr, "diagnose-timeout")
+```
+
+### `search_rites_scoped`
+
+Return rites across the scope whose id/title/summary/trigger match *query*.
+
+```python
+search_rites_scoped(project_root: Path, query: str, *, scope: str | None = None) -> list[dict]
+```
+
+Returns a list of dicts, case-insensitive substring browse over main rites. No match returns `[]`.
+
+Raises: none.
+
+```python
+search_rites_scoped(pr, "timeout", scope="all")
+```

@@ -469,6 +469,8 @@ def test_doctrine_list_json_handler_strips_internal_fields(tmp_path, monkeypatch
         "valid": True,
         "filename": "my-doc.design.md",
         "errors": [],
+        # nested-projects-spec — every scoped read returns `origin`.
+        "origin": "self",
     }
 
     with patch("lore.doctrine.list_doctrines", return_value=[mock_entry]):
@@ -482,7 +484,11 @@ def test_doctrine_list_json_handler_strips_internal_fields(tmp_path, monkeypatch
     assert "filename" not in entry
     assert "errors" not in entry
     # Required fields must be present
-    assert set(entry.keys()) == {"id", "group", "title", "summary", "valid"}
+    # nested-projects-spec — FR-16 / D-15 adds `origin`; the internal
+    # fields this test exists for are still stripped.
+    assert set(entry.keys()) == {
+        "id", "group", "title", "summary", "valid", "origin",
+    }
 
 
 def test_doctrine_list_json_handler_valid_always_true(tmp_path, monkeypatch):
@@ -505,6 +511,8 @@ def test_doctrine_list_json_handler_valid_always_true(tmp_path, monkeypatch):
             "summary": "Summary A",
             "valid": True,
             "filename": "doc-a.design.md",
+            # nested-projects-spec — every scoped read returns `origin`.
+            "origin": "self",
         },
         {
             "id": "doc-b",
@@ -513,6 +521,7 @@ def test_doctrine_list_json_handler_valid_always_true(tmp_path, monkeypatch):
             "summary": "Summary B",
             "valid": True,
             "filename": "mygroup/doc-b.design.md",
+            "origin": "self",
         },
     ]
 
@@ -616,7 +625,10 @@ def test_show_doctrine_returns_correct_keys(tmp_path):
     result = read_doctrine(tmp_path, "my-doc")
 
     assert isinstance(result, dict)
-    assert set(result.keys()) == {"id", "title", "summary", "design", "raw_yaml", "steps"}
+    # nested-projects-spec — D-15: `origin` is on every record, always
+    assert set(result.keys()) == {
+        "id", "title", "summary", "design", "raw_yaml", "steps", "origin",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -852,6 +864,8 @@ def test_doctrine_show_cli_handler_text_mode_format(tmp_path, monkeypatch):
 
 _JSON_MOCK_RESULT = {
     "id": "my-doc",
+    # nested-projects-spec — every scoped read returns `origin`.
+    "origin": "self",
     "title": "My Doc",
     "summary": "A short summary.",
     "design": "---\nid: my-doc\ntitle: My Doc\nsummary: A short summary.\n---\n\n# My Doc\n\nBody.\n",
@@ -888,7 +902,11 @@ def test_doctrine_show_cli_json_handler_correct_keys(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     data = json.loads(result.output)
-    assert set(data.keys()) == {"id", "title", "summary", "design", "steps"}
+    # nested-projects-spec — FR-16 / D-15 adds `origin`; `raw_yaml` and
+    # the other internal keys are still absent.
+    assert set(data.keys()) == {
+        "id", "title", "summary", "design", "steps", "origin",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1803,3 +1821,150 @@ def test_validate_doctrine_content_accepts_top_level_description():
     )
     # Must not raise.
     validate_doctrine_content(text, "my-doc")
+
+
+# ---------------------------------------------------------------------------
+# C3 — the scoped doctrine read path
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C3
+# Decisions: D-2 (one merge loop), D-7 (the read-only rule), D-10 (a seeded
+#            default never crosses a boundary), D-16 (ordering is unchanged)
+# ---------------------------------------------------------------------------
+
+
+class TestScopedListDoctrines:
+    def test_an_ancestors_export_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — FR-2/FR-16
+        from lore.doctrine import list_doctrines
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doctrine(tree.camelot, "shipped-flow")
+        tree.doctrine(tree.lore, "local-flow")
+
+        records = {d["id"]: d for d in list_doctrines(tree.lore)}
+
+        assert records["camelot:shipped-flow"]["origin"] == "camelot"
+        assert records["local-flow"]["origin"] == "self"
+
+    def test_a_seeded_default_never_crosses_a_boundary(self, tree):
+        # nested-projects-spec — FR-10/D-10: a project's own copy of a seeded
+        # default is the only one that applies to it
+        from lore.doctrine import list_doctrines
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doctrine(tree.camelot, "tdd-feature", group="default")
+        tree.doctrine(tree.camelot, "authored-flow")
+
+        ids = [d["id"] for d in list_doctrines(tree.lore)]
+
+        assert ids == ["camelot:authored-flow"]
+
+    def test_a_descendants_seeded_default_is_kept(self, tree):
+        # nested-projects-spec — FR-10: the exclusion governs inheritance, and
+        # a project's own `default/` rows are its own
+        from lore.doctrine import list_doctrines
+
+        tree.doctrine(tree.lore, "tdd-feature", group="default")
+
+        records = list_doctrines(tree.lore)
+
+        assert [d["id"] for d in records] == ["tdd-feature"]
+        assert records[0]["origin"] == "self"
+
+    def test_a_group_filter_applies_inside_every_project(self, tree):
+        # nested-projects-spec — FR-16
+        from lore.doctrine import list_doctrines
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doctrine(tree.camelot, "kept-flow", group="ops")
+        tree.doctrine(tree.camelot, "dropped-flow", group="other")
+
+        ids = [d["id"] for d in list_doctrines(tree.lore, ["ops"])]
+
+        assert ids == ["camelot:kept-flow"]
+
+    def test_an_unknown_project_name_raises(self, tree):
+        # nested-projects-spec — FR-12
+        from lore.doctrine import list_doctrines
+        from lore.projects import UnknownProjectError
+
+        with pytest.raises(UnknownProjectError):
+            list_doctrines(tree.lore, scope="nope")
+
+
+class TestScopedReadDoctrine:
+    def test_it_reads_an_inherited_doctrine_by_qualified_id(self, tree):
+        # nested-projects-spec — W4
+        from lore.doctrine import read_doctrine
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doctrine(tree.camelot, "shipped-flow")
+
+        record = read_doctrine(tree.lore, "camelot:shipped-flow")
+
+        assert record["id"] == "camelot:shipped-flow"
+        assert record["origin"] == "camelot"
+        assert [step["id"] for step in record["steps"]] == ["only"]
+
+    def test_a_bare_id_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        from lore.doctrine import read_doctrine
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doctrine(tree.camelot, "twin")
+        tree.doctrine(tree.lore, "twin")
+
+        assert read_doctrine(tree.lore, "twin")["origin"] == "self"
+
+    def test_an_unexported_ancestor_doctrine_reads_as_a_miss(self, tree):
+        # nested-projects-spec — C3
+        from lore.doctrine import read_doctrine
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.doctrine(tree.camelot, "private-flow")
+
+        assert read_doctrine(tree.lore, "camelot:private-flow") is None
+
+    def test_a_local_record_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15
+        from lore.doctrine import read_doctrine
+
+        tree.doctrine(tree.lore, "local-flow")
+
+        assert read_doctrine(tree.lore, "local-flow")["origin"] == "self"
+
+
+class TestForeignDoctrineWritesAreRefused:
+    def test_create_doctrine_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17/D-7
+        from lore.doctrine import create_doctrine
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            create_doctrine(
+                tree.lore,
+                "camelot:shipped-flow",
+                tree.lore / "missing.yaml",
+                tree.lore / "missing.design.md",
+            )
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:shipped-flow": '
+            "an entity from another project is read-only."
+        )
+
+    def test_update_doctrine_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.doctrine import update_doctrine
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            update_doctrine(tree.lore, "camelot:shipped-flow", "id: x\n")
+
+    def test_delete_doctrine_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.doctrine import delete_doctrine
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            delete_doctrine(tree.lore, "camelot:shipped-flow")

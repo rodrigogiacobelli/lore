@@ -413,7 +413,8 @@ def test_codex_list_json_each_record_has_exactly_four_fields(runner, project_dir
     """Each JSON record must have exactly the keys: id, group, title, summary."""
     import json as _json
 
-    expected_keys = {"id", "group", "title", "summary"}
+    # nested-projects-spec — FR-16 / D-15
+    expected_keys = {"id", "group", "title", "summary", "origin"}
     result = runner.invoke(main, ["codex", "list", "--json"])
     assert result.exit_code == 0
     parsed = _json.loads(result.output)

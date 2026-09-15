@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
+from lore import projects, scoped
 from lore.paths import derive_group, entity_location, group_matches_filter
 from lore.schemas import validate_entity
 from lore.validators import (
@@ -55,12 +56,31 @@ def _parse_knight_frontmatter(filepath: Path) -> dict:
 def list_knights(
     project_root: Path,
     filter_groups: list[str] | None = None,
+    *,
+    scope: str | None = None,
 ) -> list[dict]:
-    """Return a sorted list of knight records under ``project_root/.lore/knights/``.
+    """Return a sorted list of knight records across every project in scope.
 
     Each record is a dict with keys ``id``, ``group``, ``title``, ``summary``,
-    ``name`` (file stem), and ``filename`` (full filename). Results are sorted
-    by id.
+    ``name`` (file stem), ``filename`` (full filename) and ``origin``. A
+    foreign record's ``id`` is origin-qualified, and results stay sorted by
+    id — the qualified id for a foreign record (D-16).
+
+    Raises ``UnknownProjectError`` when ``scope`` names no project in scope.
+    """
+    records = projects.collect(
+        project_root,
+        scope,
+        read=lambda root: _list_knights_local(root, filter_groups),
+    )
+    return sorted(records, key=lambda r: r["id"])
+
+
+def _list_knights_local(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+) -> list[dict]:
+    """List one project's own knights — the reader ``collect`` calls.
 
     Fallback behaviour when metadata is missing:
     - ``id``: filename stem
@@ -89,12 +109,24 @@ def list_knights(
             "summary": summary,
             "name": stem,
             "filename": filepath.name,
+            "origin": scoped.SELF,
         })
 
     if filter_groups:
         records = [r for r in records if group_matches_filter(r["group"], filter_groups)]
 
     return sorted(records, key=lambda r: r["id"])
+
+
+def _reject_traversal(name: str) -> None:
+    """Refuse a name that could address a file outside the knights tree.
+
+    One home for the guard, so a scoped read enforces it as early as the
+    locator always has — a knight is addressed by name, never by path
+    (``decisions-006-id-references``).
+    """
+    if "/" in name or "\\" in name:
+        raise ValueError("Invalid knight name: path separators not allowed")
 
 
 def _find_knight(project_root: Path, name: str) -> Path | None:
@@ -104,8 +136,7 @@ def _find_knight(project_root: Path, name: str) -> Path | None:
     Raises ValueError immediately if ``name`` contains ``/`` or ``\\``
     (path-traversal guard).
     """
-    if "/" in name or "\\" in name:
-        raise ValueError("Invalid knight name: path separators not allowed")
+    _reject_traversal(name)
 
     knights_dir = entity_location(project_root, "knight")
     if not knights_dir.exists():
@@ -175,7 +206,10 @@ def create_knight(
 ) -> dict:
     """Create a new knight persona file under ``project_root/.lore/knights/``.
 
+    Raises ``ForeignEntityError`` on another project's knight (FR-17, D-7).
+
     Validation order (per amendment A4):
+    0. Read-only rule (``projects.reject_foreign``)
     1. Name format (``validate_name``)
     2. Group format (``validate_group``)
     3. Content non-empty
@@ -186,6 +220,7 @@ def create_knight(
     Returns ``{id, filename, group}`` (amendment B knight row).
     Raises ``ValueError`` on any validation failure.
     """
+    projects.reject_foreign(name)
     name_err = validate_name(name)
     if name_err:
         raise ValueError(name_err)
@@ -228,16 +263,38 @@ def create_knight(
     }
 
 
-def read_knight(project_root: Path, name: str) -> dict | None:
+def read_knight(
+    project_root: Path, name: str, *, scope: str | None = None
+) -> dict | None:
     """Return the full knight record dict, or None on miss.
 
-    Shape: ``{id, group, title, summary, filename, body}`` per amendment B
-    Knight row + A2 read-shape. Supersedes canonical Section 4 text-only
-    sketch.
+    Shape: ``{id, group, title, summary, filename, body, origin}`` per
+    amendment B Knight row + A2 read-shape. A bare name resolves locally
+    before an inherited one of the same name, and a qualified name never
+    resolves locally (D-8); an unexported ancestor knight is a miss.
 
-    Path-traversal guard delegated to ``_find_knight`` (raises ``ValueError``
+    Path-traversal guard shared with ``_find_knight`` (raises ``ValueError``
     on ``/`` or ``\\``). Returns None when the directory or file is absent.
     """
+    _reject_traversal(name)
+    row = scoped.select(
+        list_knights(project_root, scope=scope),
+        name,
+        alias=lambda record: record["name"],
+    )
+    if row is None:
+        return None
+    owner_root = scoped.locate(project_root, scope, row)[0]
+    # A knight is found on disk by file stem, which is what every record
+    # carries as ``name`` — the frontmatter ``id`` is free to disagree.
+    record = _read_knight_local(owner_root, row["name"])
+    if record is None:
+        return None
+    return {**record, "id": row["id"], "origin": row["origin"]}
+
+
+def _read_knight_local(project_root: Path, name: str) -> dict | None:
+    """Read one knight from the project that owns it."""
     filepath = _find_knight(project_root, name)
     if filepath is None:
         return None
@@ -269,7 +326,10 @@ def update_knight(project_root: Path, name: str, content: str) -> dict:
     Returns ``{"id": name, "filename": filepath.name}`` on success
     (watcher-canonical envelope — NO ``path``, NO ``ok`` keys).
 
+    Raises ``ForeignEntityError`` on another project's knight (FR-17, D-7).
+
     Validation order:
+    0. Read-only rule (``projects.reject_foreign``).
     1. Path-traversal guard on ``name`` (raises ``ValueError``).
     2. Resolve via ``_find_knight``; missing → ``ValueError``.
     3. Content non-empty.
@@ -277,6 +337,7 @@ def update_knight(project_root: Path, name: str, content: str) -> dict:
        invalid → ``ValueError`` BEFORE any disk write.
     5. Overwrite the file at its existing location.
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid knight name: {name!r}")
 
@@ -311,9 +372,11 @@ def delete_knight(project_root: Path, name: str) -> dict:
     Idempotent: if the live file is absent but a ``.md.deleted`` sibling
     exists, returns the same envelope without raising.
 
-    Raises ``ValueError`` on path-traversal names. Raises ``ValueError`` if
-    neither the live file nor a ``.md.deleted`` sibling exists.
+    Raises ``ForeignEntityError`` on another project's knight (FR-17, D-7),
+    ``ValueError`` on path-traversal names, and ``ValueError`` if neither the
+    live file nor a ``.md.deleted`` sibling exists.
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid knight name: {name!r}")
 

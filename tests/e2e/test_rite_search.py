@@ -82,6 +82,9 @@ class TestSearchHit:
                     "id": "issue-refund",
                     "trigger": "Customer requests a refund on a returned order.",
                     "summary": "Confirm the customer is reachable, then refund.",
+                    # nested-projects-spec — FR-16 / D-15. `group` is still
+                    # absent: `rite search` is outside ADR-016's list.
+                    "origin": "self",
                 }
             ]
         }

@@ -334,3 +334,144 @@ def test_us010_artifact_create_validator_delegates(monkeypatch):
 
     _a_mod._validate_frontmatter({"id": "x", "title": "T", "summary": "s"})
     assert kinds == ["artifact-frontmatter"]
+
+
+# ---------------------------------------------------------------------------
+# C4 — the scoped artifact read path
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C4
+# Decisions: D-2, D-7, D-10, D-16, decisions-003-soft-delete-semantics
+# ---------------------------------------------------------------------------
+
+
+class TestScopedListArtifacts:
+    def test_an_ancestors_export_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — FR-2/FR-16
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "artifact", "checklist")
+        tree.entity(tree.lore, "artifact", "template")
+
+        records = {a["id"]: a for a in list_artifacts(tree.lore)}
+
+        assert records["camelot:checklist"]["origin"] == "camelot"
+        assert records["template"]["origin"] == "self"
+
+    def test_a_seeded_default_never_crosses_a_boundary(self, tree):
+        # nested-projects-spec — FR-10/D-10
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "artifact", "fi-prd", group="default")
+        tree.entity(tree.camelot, "artifact", "checklist")
+
+        assert [a["id"] for a in list_artifacts(tree.lore)] == ["camelot:checklist"]
+
+    def test_the_merged_list_is_sorted_on_the_qualified_id(self, tree):
+        # nested-projects-spec — D-16
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "artifact", "alpha")
+        tree.entity(tree.lore, "artifact", "beta")
+
+        assert [a["id"] for a in list_artifacts(tree.lore)] == [
+            "beta",
+            "camelot:alpha",
+        ]
+
+    def test_a_soft_deleted_artifact_never_appears(self, tree):
+        # nested-projects-spec — decisions-003-soft-delete-semantics
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        path = tree.entity(tree.camelot, "artifact", "retired")
+        path.rename(path.with_suffix(".md.deleted"))
+        tree.entity(tree.camelot, "artifact", "live")
+
+        assert [a["id"] for a in list_artifacts(tree.lore)] == ["camelot:live"]
+
+    def test_an_unknown_project_name_raises(self, tree):
+        # nested-projects-spec — FR-12
+        import pytest as _pytest
+
+        from lore.projects import UnknownProjectError
+
+        with _pytest.raises(UnknownProjectError):
+            list_artifacts(tree.lore, scope="nope")
+
+
+class TestScopedReadArtifact:
+    def test_it_reads_an_inherited_artifact_by_qualified_id(self, tree):
+        # nested-projects-spec — W4
+        from lore.artifact import read_artifact
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "artifact", "checklist", group="review")
+
+        record = read_artifact(tree.lore, "camelot:checklist")
+
+        assert record["id"] == "camelot:checklist"
+        assert record["origin"] == "camelot"
+        assert record["group"] == "review"
+        assert record["body"].strip() == "Body."
+
+    def test_a_bare_id_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        from lore.artifact import read_artifact
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "artifact", "twin", summary="Ancestor.")
+        tree.entity(tree.lore, "artifact", "twin", summary="Local.")
+
+        record = read_artifact(tree.lore, "twin")
+
+        assert record["origin"] == "self"
+        assert record["summary"] == "Local."
+
+    def test_an_unexported_ancestor_artifact_reads_as_a_miss(self, tree):
+        # nested-projects-spec — C4
+        from lore.artifact import read_artifact
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.entity(tree.camelot, "artifact", "checklist")
+
+        assert read_artifact(tree.lore, "camelot:checklist") is None
+
+    def test_a_local_record_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15
+        from lore.artifact import read_artifact
+
+        tree.entity(tree.lore, "artifact", "template")
+
+        assert read_artifact(tree.lore, "template")["origin"] == "self"
+
+
+class TestForeignArtifactWritesAreRefused:
+    def test_create_artifact_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17/D-7
+        import pytest as _pytest
+
+        from lore.artifact import create_artifact
+        from lore.projects import ForeignEntityError
+
+        with _pytest.raises(ForeignEntityError) as excinfo:
+            create_artifact(tree.lore, "camelot:checklist", "---\nid: x\n---\n")
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:checklist": '
+            "an entity from another project is read-only."
+        )
+
+    def test_update_artifact_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        import pytest as _pytest
+
+        from lore.artifact import update_artifact
+        from lore.projects import ForeignEntityError
+
+        with _pytest.raises(ForeignEntityError):
+            update_artifact(tree.lore, "camelot:checklist", "---\nid: x\n---\n")
+
+    def test_delete_artifact_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        import pytest as _pytest
+
+        from lore.artifact import delete_artifact
+        from lore.projects import ForeignEntityError
+
+        with _pytest.raises(ForeignEntityError):
+            delete_artifact(tree.lore, "camelot:checklist")

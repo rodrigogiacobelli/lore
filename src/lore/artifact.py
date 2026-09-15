@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from lore import frontmatter
+from lore import frontmatter, projects, scoped
 from lore.paths import derive_group, entity_location, group_matches_filter
 from lore.schemas import validate_entity
 from lore.validators import (
@@ -65,7 +65,10 @@ def create_artifact(
 ) -> dict:
     """Create a new artifact markdown file under ``project_root/.lore/artifacts/``.
 
+    Raises ``ForeignEntityError`` on another project's artifact (FR-17, D-7).
+
     Validation order:
+    0. Read-only rule (``projects.reject_foreign``)
     1. Name format (``validate_name``)
     2. Group format (``validate_group``)
     3. Content non-empty
@@ -76,6 +79,7 @@ def create_artifact(
     Returns ``{id, filename, group}`` per amendment B Artifact row.
     Raises ``ValueError`` on any validation failure.
     """
+    projects.reject_foreign(name)
     name_err = validate_name(name)
     if name_err:
         raise ValueError(name_err)
@@ -135,8 +139,10 @@ def update_artifact(project_root: Path, name: str, content: str) -> dict:
     """Overwrite an existing artifact markdown file in place.
 
     Returns ``{"id": name, "filename": filepath.name}`` on success.
-    Raises ``ValueError`` on validation failure.
+    Raises ``ValueError`` on validation failure, and ``ForeignEntityError``
+    on another project's artifact (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid artifact name: {name!r}")
 
@@ -160,7 +166,9 @@ def delete_artifact(project_root: Path, name: str) -> dict:
     Returns ``{"id": name, "deleted": True, "deleted_at": None}``
     (amendment A2). Idempotent: if the live file is absent but a
     ``.md.deleted`` sibling exists, returns the same envelope without raising.
+    Raises ``ForeignEntityError`` on another project's artifact (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid artifact name: {name!r}")
 
@@ -183,14 +191,32 @@ def delete_artifact(project_root: Path, name: str) -> dict:
 def list_artifacts(
     project_root: Path,
     filter_groups: list[str] | None = None,
+    *,
+    scope: str | None = None,
 ) -> list[dict]:
-    """Walk ``project_root/.lore/artifacts/`` recursively and return artifact records.
+    """Return artifact records for every project in scope.
 
-    Returns a list of dicts with keys: id, title, summary, group, path.
-    Files without valid frontmatter or missing required fields are skipped.
-    Soft-deleted (.md.deleted) files are excluded.
-    Results are sorted alphabetically by id.
+    Returns a list of dicts with keys: id, title, summary, group, path,
+    origin. A foreign record's ``id`` is origin-qualified. Files without
+    valid frontmatter or missing required fields are skipped. Soft-deleted
+    (.md.deleted) files are excluded. Results are sorted alphabetically by
+    id — the qualified id for a foreign record (D-16).
+
+    Raises ``UnknownProjectError`` when ``scope`` names no project in scope.
     """
+    records = projects.collect(
+        project_root,
+        scope,
+        read=lambda root: _list_artifacts_local(root, filter_groups),
+    )
+    return sorted(records, key=lambda d: d["id"])
+
+
+def _list_artifacts_local(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+) -> list[dict]:
+    """List one project's own artifacts — the reader ``collect`` calls."""
     artifacts_dir = entity_location(project_root, "artifact")
     if not artifacts_dir.exists():
         return []
@@ -200,6 +226,7 @@ def list_artifacts(
         record = frontmatter.parse_frontmatter_doc(filepath, required_fields=("id", "title", "summary"))
         if record is not None:
             record["group"] = derive_group(filepath, artifacts_dir)
+            record["origin"] = scoped.SELF
             results.append(record)
 
     if filter_groups:
@@ -208,28 +235,34 @@ def list_artifacts(
     return sorted(results, key=lambda d: d["id"])
 
 
-def read_artifact(project_root: Path, artifact_id: str) -> dict | None:
+def read_artifact(
+    project_root: Path, artifact_id: str, *, scope: str | None = None
+) -> dict | None:
     """Return a full artifact record dict for the given ID, or None if not found.
 
-    Shape (amendment B Artifact row — gains ``filename`` and ``group``):
-    ``{id, title, summary, body, filename, group}``.
+    Shape (amendment B Artifact row — gains ``filename`` and ``group``, and
+    ``origin`` under nested projects):
+    ``{id, title, summary, body, filename, group, origin}``. A bare id
+    resolves locally before an inherited one of the same name, and a
+    qualified id never resolves locally (D-8); an unexported ancestor
+    artifact is a miss. The group comes off the listing, because only the
+    owning project can derive it from that artifact's path.
     """
-    artifacts = list_artifacts(project_root)
-    artifacts_dir = entity_location(project_root, "artifact")
-    for artifact in artifacts:
-        if artifact["id"] == artifact_id:
-            filepath = artifact["path"]
-            record = frontmatter.parse_frontmatter_doc_full(
-                filepath, required_fields=("id", "title", "summary")
-            )
-            if record is None:
-                return None
-            return {
-                "id": record["id"],
-                "title": record["title"],
-                "summary": record["summary"],
-                "body": record["body"],
-                "filename": Path(filepath).name,
-                "group": derive_group(Path(filepath), artifacts_dir),
-            }
-    return None
+    artifact = scoped.select(list_artifacts(project_root, scope=scope), artifact_id)
+    if artifact is None:
+        return None
+    filepath = artifact["path"]
+    record = frontmatter.parse_frontmatter_doc_full(
+        filepath, required_fields=("id", "title", "summary")
+    )
+    if record is None:
+        return None
+    return {
+        "id": artifact["id"],
+        "title": record["title"],
+        "summary": record["summary"],
+        "body": record["body"],
+        "filename": Path(filepath).name,
+        "group": artifact["group"],
+        "origin": artifact["origin"],
+    }

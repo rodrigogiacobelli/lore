@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from lore import projects, scoped
 from lore.paths import derive_group, entity_location, group_matches_filter
 from lore.schemas import validate_entity
 from lore.validators import (
@@ -32,14 +33,24 @@ def _validate_yaml(data: dict) -> None:
         raise ValueError("\n".join(lines))
 
 
+def _reject_traversal(name: str) -> None:
+    """Refuse a name that could address a file outside the watchers tree.
+
+    One home for the guard, so a scoped read enforces it as early as the
+    locator always has — a watcher is addressed by name, never by path
+    (``decisions-006-id-references``).
+    """
+    if "/" in name or "\\" in name:
+        raise ValueError(f"Invalid watcher name: {name!r}")
+
+
 def _find_watcher(project_root: Path, name: str) -> Path | None:
     """Return the Path to the watcher YAML file whose stem matches name, or None.
 
     Raises ValueError if name contains / or \\ (path-traversal guard).
     Internal — amendment C4 reclassification.
     """
-    if "/" in name or "\\" in name:
-        raise ValueError(f"Invalid watcher name: {name!r}")
+    _reject_traversal(name)
     watchers_dir = entity_location(project_root, "watcher")
     if not watchers_dir.exists():
         return None
@@ -75,12 +86,66 @@ def _load_watcher(filepath: Path, watchers_dir: Path | None = None) -> dict:
     }
 
 
-def read_watcher(project_root: Path, name: str) -> dict | None:
-    """Return the full 8-key watcher record dict, or None on miss.
+def read_watcher(
+    project_root: Path, name: str, *, scope: str | None = None
+) -> dict | None:
+    """Return the full watcher record dict, or None on miss.
 
     Shape: ``{id, group, title, summary, filename, watch_target, interval,
-    action}`` per amendment B Watcher row.
+    action, origin}`` per amendment B Watcher row plus nested projects. A
+    bare name resolves locally before an inherited one of the same name, and
+    a qualified name never resolves locally (D-8); an unexported ancestor
+    watcher is a miss.
     """
+    _reject_traversal(name)
+    row = scoped.select(
+        list_watchers(project_root, scope=scope), name, alias=_watcher_stem
+    )
+    if row is None:
+        return None
+    owner_root = scoped.locate(project_root, scope, row)[0]
+    # A watcher is found on disk by file stem; its ``id:`` may disagree.
+    record = _read_watcher_local(owner_root, _watcher_stem(row))
+    if record is None:
+        return None
+    return {**record, "id": row["id"], "origin": row["origin"]}
+
+
+def read_watcher_text(
+    project_root: Path, name: str, *, scope: str | None = None
+) -> str | None:
+    """Return the raw text of a watcher's file, or ``None`` on a miss.
+
+    ``lore watcher show`` prints a watcher's file verbatim, and the record
+    :func:`read_watcher` returns holds no text. The text is a second entry
+    shape rather than a tenth key on that record, because the record *is* the
+    ``watcher show --json`` envelope: a key added there changes shipped output
+    (SC-7) and its exact key set is pinned.
+
+    Resolution is :func:`read_watcher`'s own — a bare name locally first, a
+    qualified name never locally (D-8) — so the file this returns is always
+    the file that record describes, read from the project that owns it.
+    """
+    _reject_traversal(name)
+    row = scoped.select(
+        list_watchers(project_root, scope=scope), name, alias=_watcher_stem
+    )
+    if row is None:
+        return None
+    owner_root = scoped.locate(project_root, scope, row)[0]
+    filepath = _find_watcher(owner_root, _watcher_stem(row))
+    if filepath is None:
+        return None
+    return filepath.read_text()
+
+
+def _watcher_stem(record: dict) -> str:
+    """The file stem a watcher record is found on disk by."""
+    return Path(record["filename"]).stem
+
+
+def _read_watcher_local(project_root: Path, name: str) -> dict | None:
+    """Read one watcher from the project that owns it."""
     filepath = _find_watcher(project_root, name)
     if filepath is None:
         return None
@@ -98,8 +163,10 @@ def create_watcher(
     """Create a new watcher YAML file under the project's ``.lore/watchers/``.
 
     Returns ``{id, filename, group}`` (amendment B Watcher row — drops ``path``).
+    Raises ``ForeignEntityError`` on another project's watcher (FR-17, D-7).
     Raises ValueError for invalid name/group, duplicate, empty content, or invalid YAML.
     """
+    projects.reject_foreign(name)
     name_err = validate_name(name)
     if name_err:
         raise ValueError(name_err)
@@ -135,8 +202,10 @@ def update_watcher(project_root: Path, name: str, content: str) -> dict:
     """Overwrite an existing watcher YAML file in place.
 
     Returns {"id": name, "filename": filepath.name} on success.
-    Raises ValueError for invalid name, not found, empty content, or invalid YAML.
+    Raises ValueError for invalid name, not found, empty content, or invalid
+    YAML, and ``ForeignEntityError`` on another project's watcher (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid watcher name: {name!r}")
 
@@ -161,8 +230,10 @@ def delete_watcher(project_root: Path, name: str) -> dict:
     """Soft-delete a watcher by renaming {name}.yaml to {name}.yaml.deleted in place.
 
     Returns ``{"id": name, "deleted": True, "deleted_at": None}`` (amendment A2).
-    Raises ValueError for path-traversal names or if the watcher is not found.
+    Raises ValueError for path-traversal names or if the watcher is not found,
+    and ``ForeignEntityError`` on another project's watcher (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid watcher name: {name!r}")
 
@@ -178,13 +249,31 @@ def delete_watcher(project_root: Path, name: str) -> dict:
 def list_watchers(
     project_root: Path,
     filter_groups: list[str] | None = None,
+    *,
+    scope: str | None = None,
 ) -> list[dict]:
-    """Return a list of watcher dicts under ``project_root/.lore/watchers/``.
+    """Return watcher records for every project in scope.
 
-    Each dict has keys: id, group, title, summary, and optional fields
-    watch_target, interval, action when present in the YAML.
-    Results are sorted ascending by id.
+    Each dict has keys: id, group, title, summary, filename, origin, and the
+    optional fields watch_target, interval, action when present in the YAML.
+    A foreign record's ``id`` is origin-qualified. Results are sorted
+    ascending by id — the qualified id for a foreign record (D-16).
+
+    Raises ``UnknownProjectError`` when ``scope`` names no project in scope.
     """
+    records = projects.collect(
+        project_root,
+        scope,
+        read=lambda root: _list_watchers_local(root, filter_groups),
+    )
+    return sorted(records, key=lambda w: w["id"])
+
+
+def _list_watchers_local(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+) -> list[dict]:
+    """List one project's own watchers — the reader ``collect`` calls."""
     watchers_dir = entity_location(project_root, "watcher")
     if not watchers_dir.exists():
         return []
@@ -204,6 +293,7 @@ def list_watchers(
             "title": data.get("title", watcher_id),
             "summary": data.get("summary", ""),
             "filename": filepath.name,
+            "origin": scoped.SELF,
         }
         for optional_field in ("watch_target", "interval", "action"):
             if optional_field in data:

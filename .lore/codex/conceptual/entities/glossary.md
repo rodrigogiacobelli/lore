@@ -1,27 +1,29 @@
 ---
 id: conceptual-entities-glossary
 title: Glossary
-summary: >
-  What the Glossary is — a single canonical YAML file at `.lore/codex/glossary.yaml`
-  that holds short, project-specific term definitions keyed by `keyword`. The
-  Glossary is read-only via the `lore glossary` CLI, auto-surfaces matched terms
-  on `lore codex show`, and is audited (schema and intra-file collisions) by
-  `lore health`.
+summary: 'What the Glossary is — a single canonical YAML file at `.lore/codex/glossary.yaml`
+  that holds short, project-specific term definitions keyed by `keyword`. The Glossary
+  is read-only via the `lore glossary` CLI, auto-surfaces matched terms on `lore codex
+  show`, and is audited (schema and intra-file collisions) by `lore health`.
+
+  '
 related:
-  - conceptual-entities-artifact
-  - conceptual-entities-knight
-  - conceptual-entities-mission
-  - conceptual-entities-quest
-  - conceptual-entities-doctrine
-  - conceptual-entities-watcher
-  - conceptual-workflows-glossary
-  - conceptual-workflows-codex
-  - conceptual-workflows-health
-  - conceptual-workflows-lore-init
-  - ref-lore_cli-commands
-  - tech-arch-source-layout
-  - tech-arch-schemas
-  - decisions-013-toml-for-config-yaml-for-glossary
+- conceptual-entities-artifact
+- conceptual-entities-knight
+- conceptual-entities-mission
+- conceptual-entities-quest
+- conceptual-entities-doctrine
+- conceptual-entities-watcher
+- conceptual-workflows-glossary
+- conceptual-workflows-codex
+- conceptual-workflows-health
+- conceptual-workflows-lore-init
+- ref-lore_cli-commands
+- tech-arch-source-layout
+- tech-arch-schemas
+- decisions-013-toml-for-config-yaml-for-glossary
+- conceptual-workflows-nested-projects
+- decisions-027-glossary-collision-resolves-local-first
 ---
 
 # Glossary
@@ -82,7 +84,9 @@ Two independent surfaces consume the Glossary:
 1. **`lore glossary {list,search,show}`** — direct read access. See conceptual-workflows-glossary (lore codex show conceptual-workflows-glossary).
 2. **`lore codex show <id>` auto-surface** — when `show-glossary-on-codex-commands = true` in `.lore/config.toml` (the default) and `--skip-glossary` is not passed, the system tokenises every returned Codex document body, matches tokens against keyword and alias token-tuples, and appends a trailing `## Glossary` block with each matched item. The match algorithm is the single shared normaliser described in conceptual-workflows-glossary. `do_not_use` matches are NOT included in the auto-surface block.
 
-`lore health` also reads `glossary.yaml`, but only to schema-validate it and to run intra-file collision checks (duplicate keyword, alias-keyword collision, `do_not_use` collision). There is no cross-codex scan over `do_not_use` terms — see conceptual-workflows-health (lore codex show conceptual-workflows-health).
+A project in a tree of Lore projects also sees what an ancestor exports: an ancestor whose `[shared].glossary` config key is `true` offers its whole file — the glossary has no smaller unit to export than the file itself, because a keyword is natural language matched against prose, not an id. An inherited keyword stays bare (qualifying it would break the token matcher). On a keyword collision between a local item and an inherited one, `lore glossary show` and auto-surface both return the local item; `lore glossary list` and `lore glossary search` keep both rows, each carrying its `origin` (decisions-027-glossary-collision-resolves-local-first). See conceptual-workflows-nested-projects for the full model.
+
+`lore health` also reads `glossary.yaml`, but only to schema-validate it and to run intra-file collision checks (duplicate keyword, alias-keyword collision, `do_not_use` collision) — over this project's own file only. An inherited item is never part of that audit, so a project can never be failed by another project's glossary. There is no cross-codex scan over `do_not_use` terms — see conceptual-workflows-health (lore codex show conceptual-workflows-health).
 
 Auto-surface owns the single matcher (`lore.glossary._normalise_tokens` and `_build_lookup`). It is the only presentation policy over that matcher.
 
@@ -102,3 +106,5 @@ Auto-surface owns the single matcher (`lore.glossary._normalise_tokens` and `_bu
 - conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) — how the skeleton is seeded.
 - decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary) — file-format split (TOML for config, YAML for glossary) and the init carve-out.
 - tech-arch-schemas (lore codex show tech-arch-schemas) — how the `glossary` schema kind plugs into the schemas module.
+- conceptual-workflows-nested-projects (lore codex show conceptual-workflows-nested-projects) — glossary inheritance across a tree of Lore projects.
+- decisions-027-glossary-collision-resolves-local-first (lore codex show decisions-027-glossary-collision-resolves-local-first) — why a keyword collision resolves local-first.

@@ -2,10 +2,10 @@
 id: tech-arch-initialized-project-structure
 title: Initialized Project Structure
 summary: What `lore init` creates on disk — the .lore/ directory layout and file purposes,
-  the rendered instruction text at .lore/LORE-AGENT.md, the install manifest, the skills
-  that land in each selected agent's directory, the agent instruction files written
-  outside .lore/, and the verbatim .lore/.gitignore template plus the six known keys
-  in .lore/config.toml.
+  the rendered instruction text at .lore/LORE-AGENT.md, the install manifest, the
+  skills that land in each selected agent's directory, the agent instruction files
+  written outside .lore/, and the verbatim .lore/.gitignore template plus the eight
+  known flat keys and the two export tables in .lore/config.toml.
 binds:
 - src/lore/init.py
 - src/lore/paths.py
@@ -31,6 +31,8 @@ related:
 - decisions-018-overlays-are-path-discovered-config
 - decisions-019-overlay-scope-stops-at-transient
 - decisions-021-health-reports-are-ephemeral-by-default
+- conceptual-workflows-nested-projects
+- tech-arch-projects-module
 ---
 
 # Initialized Project Structure
@@ -107,7 +109,7 @@ A project initialised before that change still carries the block, inside markers
 
 **`.lore/codex/`** is **not** seeded with documentation, with two narrow exceptions (`decisions-013-toml-for-config-yaml-for-glossary`): `lore init` writes `.lore/codex/CODEX.md` — the project codex root, copied from the packaged `example-codex` artifact with its `id` rewritten to `codex` — and `.lore/codex/glossary.yaml` — a header comment plus `items: []`. Both seeds are idempotent: re-init never overwrites an edited file. Neither lives under a `default/` subtree, because both hold user-owned content.
 
-**`.lore/config.toml`** is the project-level configuration file (TOML, parsed with stdlib `tomllib`). It holds six known root-level keys, all seeded at their defaults behind a comment header:
+**`.lore/config.toml`** is the project-level configuration file (TOML, parsed with stdlib `tomllib`). It holds eight known flat root-level keys, all seeded at their defaults behind a comment header, plus two tables that are never seeded:
 
 | Key | Type | Default | Governs |
 |-----|------|---------|---------|
@@ -117,10 +119,21 @@ A project initialised before that change still carries the block, inside markers
 | `init-access-mode` | `"cli"` \| `"native"` | `"native"` | Whether the installed skills tell agents to use the Lore CLI or their own file tools |
 | `init-skill-families` | list of `"memory"` \| `"machinery"` \| `"workflow"` | all three | Which seeded skill families install |
 | `init-skills-gitignore` | `"lore-only"` \| `"none"` \| `"all"` | `"lore-only"` | How the installed skills are tracked in git |
+| `project-name` | string | `""` | This project's name in an origin qualifier and in `--project`; empty means the project directory's name (conceptual-workflows-nested-projects) |
+| `default-project-scope` | `"self"` \| `"all"` | `"self"` | What a bare read command covers downward — this project alone, or this project plus every project beneath it (conceptual-workflows-nested-projects) |
+
+Two tables extend the flat keys, present only when a human writes them — `lore init` never seeds either:
+
+| Table | Fields | Governs |
+|-------|--------|---------|
+| `[shared]` | `exports: list[str]` (default `[]`), `glossary: bool` (default `false`) | Entity ids or glob patterns this project offers every project beneath it, and whether it exports its whole glossary file |
+| `[[descendants]]` (array of tables) | `name: str`, `path: str`, `exports: list[str]` (default `[]`) | One block per named descendant: `path` (resolved beneath this project's root) is the block's identity, `exports` reaches only that one project |
+
+Each table is parsed into its own frozen dataclass on `Config` (`SharedExports`, `DescendantExport`) with the same fail-soft contract as a flat key — a malformed `[shared]` table falls back to `SharedExports()` whole; one malformed `[[descendants]]` entry drops the whole `descendants` key, except a `path` that escapes the project root, which drops only that entry. `tech-arch-projects-module` covers how the tables feed export resolution.
 
 The loader accepts arbitrary additional keys without error and preserves them in `Config.extras`. A missing config falls back to the defaults silently; malformed TOML, a known key of the wrong type, a constrained key holding an out-of-set value, and a list key containing an unknown item each fall back to that key's default with one stderr warning. Because a known key defaults on its own, a config file written by an older Lore keeps working.
 
-The file is user-tracked — `.lore/.gitignore` carries `!config.toml`. `lore init` seeds it whole when absent, and on a file that already exists rewrites only the leading run of comment lines, generated from `config.py`'s own key tables. Every setting line, value, blank line and inline comment survives byte-identical.
+The file is user-tracked — `.lore/.gitignore` carries `!config.toml`. `lore init` seeds it whole when absent, and on a file that already exists rewrites only the leading run of comment lines, generated from `config.py`'s own key tables. Every setting line, value, blank line and inline comment survives byte-identical — a project upgrading into a release carrying `project-name` and `default-project-scope` gains both **in the header only**; neither setting line is ever written into an existing file. `project-name` stays absent from an upgraded project's settings, and its own default (the project directory's name) is what makes that the correct steady state.
 
 **`.lore/custom-schemas/`** holds optional project-local schema overlays — add-only YAML files at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`) that extend the packaged codex frontmatter schemas with custom keys. It is **not** seeded by `lore init` — its absence is the zero-overlay baseline. The `update-custom-schema` skill creates the directory and the overlay on first use. Overlays are user-owned, path-discovered config, addressed by their canonical path and never by ID (`decisions-018-overlays-are-path-discovered-config`). An overlay governs canonical codex docs and `codex/sources/**` only; it never reaches `codex/transient/**` (`decisions-019-overlay-scope-stops-at-transient`). The gitignore template un-ignores `custom-schemas/`, so overlays are tracked. `tech-arch-schemas` holds the resolver and merge semantics; `conceptual-workflows-health` holds how a malformed overlay surfaces.
 

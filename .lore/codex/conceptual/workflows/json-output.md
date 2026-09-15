@@ -33,10 +33,16 @@ Several subcommands also accept a local `--json` flag at the subcommand level. T
 - `lore artifact list`
 - `lore knight list`
 - `lore doctrine list`
+- `lore codex list`
+- `lore watcher list`
 - `lore rite list`
 - `lore rite show`
+- `lore rite search`
+- `lore impacts`
 
 For these commands, the local flag and the global flag produce identical output. Double-declaration (`lore --json knight list --json`) is harmless.
+
+`lore codex search`, `lore glossary list`, and `lore glossary search` carry **no** local `--json` — the global flag is the only way to get their JSON envelope. Every example for these three uses `lore --json <command> ...`.
 
 ## Success Envelopes
 
@@ -96,7 +102,7 @@ The exit code contract is the same in JSON mode as in text mode:
 
 - `0` — success (or idempotent no-op).
 - `1` — at least one error occurred.
-- `2` — usage error. Click writes these to stderr as plain text, never as a JSON envelope, because the failure happens before the command body runs (conceptual-workflows-error-handling).
+- `2` — usage error. A **parser-raised** usage error — Click rejects the arguments before any command body runs, e.g. an invalid `--scope` token — is always plain text on stderr, never a JSON envelope (conceptual-workflows-error-handling). A **handler-raised** usage error — a command's own body detects a conflict Click's parser cannot see, such as `codex map`'s `--depth` combined with `--depth-in`/`--depth-out`, or the FR-14 gate rejecting `--project` on a write command — checks `--json` itself and emits the standard `{"error": ...}` envelope on stderr at exit 2 when it is set.
 
 For multi-entity commands (`claim`, `done`, `needs`, `unneed`), exit code `1` is used if the `errors` array in the JSON envelope is non-empty.
 

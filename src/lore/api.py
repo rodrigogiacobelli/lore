@@ -29,6 +29,12 @@ from lore.initplan import (
 # --- Project root ---
 from lore.root import find_project_root, ProjectNotFoundError
 
+# --- Project topology (nested projects) ---
+from lore.projects import (
+    ProjectRef, UnknownProjectError, ForeignEntityError,
+    list_projects, resolve_project, project_name,
+)
+
 # --- Paths ---
 from lore.paths import entity_location
 
@@ -41,6 +47,7 @@ from lore.validators import (
     validate_rite_id,
     validate_access_mode, validate_skill_family,
     validate_agent_id, validate_agent_selection,
+    validate_project_name,
 )
 
 # --- DB (CRUD + envelopes + bulk ops) ---
@@ -96,7 +103,7 @@ from lore.artifact import (
 
 # --- Watcher ---
 from lore.watcher import (
-    list_watchers, read_watcher,
+    list_watchers, read_watcher, read_watcher_text,
     create_watcher, update_watcher, delete_watcher,
 )
 
@@ -126,6 +133,7 @@ from lore.impacts import impacts, classify_token
 from lore.rite import (
     scan_rites, read_rite, search_rites,
     create_rite, update_rite, delete_rite,
+    list_rites, find_rite, search_rites_scoped,
 )
 
 # --- Health ---
@@ -146,7 +154,7 @@ from lore.init import run_init, plan_init, apply_init
 from lore.oracle import generate_reports
 
 # --- Config (read-only) ---
-from lore.config import load_config, Config
+from lore.config import load_config, Config, SharedExports, DescendantExport
 
 # ---------------------------------------------------------------------------
 # Private CLI-only re-exports (NOT part of the public surface).
@@ -168,6 +176,7 @@ from lore.config import load_config, Config
 # ---------------------------------------------------------------------------
 from lore import __version__ as _lore_version  # noqa: F401
 from lore import paths as _paths  # noqa: F401
+from lore import projects as _projects  # noqa: F401
 from lore import frontmatter_edit as _frontmatter_edit  # noqa: F401
 from lore import graph as _graph  # noqa: F401
 from lore import knight as _knight  # noqa: F401
@@ -210,6 +219,8 @@ __all__ = [
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
+    # project topology (nested-projects)
+    "ProjectRef",
     # operational dataclasses — initialisation
     "AccessMode",
     "FileAction",
@@ -220,8 +231,13 @@ __all__ = [
     "InitResult",
     "GlossaryError",
     "ProjectNotFoundError",
+    "UnknownProjectError",
+    "ForeignEntityError",
     "ConflictingDepthFlags",
     "Config",
+    # config tables (nested-projects)
+    "SharedExports",
+    "DescendantExport",
     # project root
     "find_project_root",
     # validators
@@ -241,6 +257,8 @@ __all__ = [
     "validate_skill_family",
     "validate_agent_id",
     "validate_agent_selection",
+    # validators — nested projects
+    "validate_project_name",
     # db: quest CRUD
     "create_quest",
     "list_quests",
@@ -313,6 +331,8 @@ __all__ = [
     "create_watcher",
     "update_watcher",
     "delete_watcher",
+    # watcher — scoped raw text (nested-projects)
+    "read_watcher_text",
     # frontmatter field-edit (cross-entity)
     "update_frontmatter_fields",
     # codex
@@ -325,6 +345,10 @@ __all__ = [
     "create_document",
     "update_document",
     "delete_document",
+    # projects (nested-projects)
+    "list_projects",
+    "resolve_project",
+    "project_name",
     # glossary
     "scan_glossary",
     "read_glossary_item",
@@ -367,4 +391,8 @@ __all__ = [
     "SharedStep",
     "RiteError",
     "validate_rite_id",
+    # rite — scoped reads (nested-projects)
+    "list_rites",
+    "find_rite",
+    "search_rites_scoped",
 ]

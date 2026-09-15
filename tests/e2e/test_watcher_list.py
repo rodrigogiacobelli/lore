@@ -650,7 +650,12 @@ class TestWatcherShowJson:
         self._setup_watcher(project_dir)
         result = runner.invoke(main, ["watcher", "show", "my-watcher", "--json"])
         data = json.loads(result.output)
-        assert set(data.keys()) == {"id", "group", "title", "summary", "watch_target", "interval", "action", "filename"}
+        # nested-projects-spec — D-15: JSON carries `origin` on every row,
+        # always, valued "self" in a project with no tree
+        assert set(data.keys()) == {
+            "id", "group", "title", "summary", "watch_target", "interval",
+            "action", "filename", "origin",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +709,12 @@ class TestWatcherShowJsonOptionalFieldsNull:
         )
         result = runner.invoke(main, ["watcher", "show", "minimal", "--json"])
         data = json.loads(result.output)
-        assert set(data.keys()) == {"id", "group", "title", "summary", "watch_target", "interval", "action", "filename"}
+        # nested-projects-spec — D-15: JSON carries `origin` on every row,
+        # always, valued "self" in a project with no tree
+        assert set(data.keys()) == {
+            "id", "group", "title", "summary", "watch_target", "interval",
+            "action", "filename", "origin",
+        }
 
 
 # ---------------------------------------------------------------------------

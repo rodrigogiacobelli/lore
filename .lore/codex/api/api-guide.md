@@ -1,13 +1,17 @@
 ---
 id: api-guide
 title: lore.api — Public API guide
-summary: Narrative walkthrough of the lore.api facade — how a Python caller (Realm, custom orchestrator, scripts) drives Lore directly without shelling out to the CLI. Covers imports, per-entity CRUD, frontmatter edits, errors, and stability.
+summary: Narrative walkthrough of the lore.api facade — how a Python caller (Realm,
+  custom orchestrator, scripts) drives Lore directly without shelling out to the CLI.
+  Covers imports, per-entity CRUD, frontmatter edits, errors, and stability.
 related:
-  - api-reference
-  - decisions-010-public-api-stability
-  - decisions-011-api-parity-with-cli
-  - conceptual-workflows-lore-init
-  - conceptual-workflows-init-reconcile
+- api-reference
+- decisions-010-public-api-stability
+- decisions-011-api-parity-with-cli
+- conceptual-workflows-lore-init
+- conceptual-workflows-init-reconcile
+- conceptual-workflows-nested-projects
+- tech-arch-projects-module
 ---
 
 # lore.api — Public API guide
@@ -274,6 +278,36 @@ for dep in list_mission_depends_on(project_root, "q-7a3f/m-002"):
 
 `add_dependency` raises on cycles and on duplicates; the bulk form rolls those into the `existing`/`errors` buckets per-pair.
 
+## Reading across a tree of projects
+
+A directory holding several Lore projects is itself a Lore project once its own `.lore/` exists. Every read function on Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite takes a keyword-only `scope=`, and every returned record carries an `origin`.
+
+```python
+from lore.api import read_document, list_projects, resolve_project
+
+read_document(project_root, "api-guide")                 # this project's own rows first
+read_document(project_root, "camelot:standards-naming")   # an origin-qualified id, read explicitly
+read_document(project_root, "api-guide", scope="all")     # this project, what it inherits, and every descendant
+
+for ref in list_projects(project_root):
+    print(ref.name, ref.relation, ref.root)               # "self", "ancestor" or "descendant"
+```
+
+`scope=None` (the default) resolves the project's own `default-project-scope` config key. `"self"` reads this project plus what its ancestors export to it; `"all"` adds every Lore project discovered beneath it; any other value names one project and reads it alone. A returned record's `id` is origin-qualified (`<project>:<id>`) whenever `origin` is not `"self"`, so a value read from a listing can be passed straight to the matching `read_*` call.
+
+Every write function on a file-backed entity raises `ForeignEntityError` on a qualified name — a cross-project entity has exactly one authoritative copy, in the project that authored it, and no Python call bypasses that:
+
+```python
+from lore.api import update_knight, ForeignEntityError
+
+try:
+    update_knight(project_root, "camelot:tech-writer", new_content)
+except ForeignEntityError as exc:
+    print(exc)  # Cannot write "camelot:tech-writer": an entity from another project is read-only.
+```
+
+`resolve_project(project_root, name)` raises `UnknownProjectError` when `name` matches no project in scope. See `conceptual-workflows-nested-projects` for the full model — origin-qualified addressing, the ORIGIN column, glossary inheritance, and what `lore health` deliberately never reads — and `tech-arch-projects-module` for how `lore.projects` and `lore.scoped` implement it.
+
 ## Field-level frontmatter editing
 
 For file-backed entities (knight, doctrine, artifact, watcher, codex doc) you do not have to round-trip the whole markdown body. `update_frontmatter_fields` mutates one or more frontmatter keys in place:
@@ -302,6 +336,8 @@ Every facade function validates inputs via `lore.validators` (ADR-011, Decision 
 - `OverlayError` — a `ValueError` subclass: `resolve_merged_schema`, `project_validator_for`, `validate_entity(project_root=...)`, `create_document`/`update_document`, and `update_frontmatter_fields(kind="codex", ...)` when a `.lore/custom-schemas/<kind>.yaml` overlay is malformed (bad YAML, packaged-field collision, undeclared `required`).
 - `ProjectNotFoundError` — `find_project_root` could not locate `.lore/` on the upward walk.
 - `ConflictingDepthFlags` — `map_documents` called with both `depth` and `depth_out`/`depth_in`.
+- `UnknownProjectError` — any scoped read whose `scope=` argument names no project in scope.
+- `ForeignEntityError` — any write function on a file-backed entity whose target name is origin-qualified.
 
 Lookup functions (`read_quest`, `read_mission`, `read_knight`, …) return `None` on miss — they do not raise. Reserve `try/except` for the mutation surface.
 

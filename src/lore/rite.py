@@ -10,6 +10,14 @@ filtering only — never for identity. A rite's identity is its ``id:`` field,
 which is globally unique across the entire ``main/`` + ``shared/`` tree (the
 codex model). ``use:`` references a bare id and resolves by scanning the whole
 ``shared/`` tree.
+
+Post nested-projects: three scoped names — :func:`list_rites`,
+:func:`find_rite` and :func:`search_rites_scoped` — take ``project_root``
+first, like every other entity module. The three ``rites_dir``-first
+functions they delegate to are byte-identical to what they were: changing a
+public first parameter is an ADR-010 breaking change this feature does not
+authorise (X-4, option (a)), so this module has two entry shapes for one
+operation and one implementation behind them.
 """
 
 from __future__ import annotations
@@ -19,7 +27,8 @@ from pathlib import Path
 
 import yaml
 
-from lore.paths import derive_group
+from lore import paths, projects, scoped
+from lore.paths import derive_group, group_matches_filter
 from lore.schemas import validate_entity
 from lore.validators import validate_group, validate_rite_id
 
@@ -123,6 +132,7 @@ def create_rite(
     ``main/[group/]`` (default) or ``shared/[group/]`` (``shared=True``).
     Returns ``{id, kind, group, filename, path}``.
     """
+    projects.reject_foreign(name)
     _check_name(name)
     _check_group(group)
     _validate_body(content, shared=shared)
@@ -162,8 +172,10 @@ def update_rite(
     The rite is located by id via a recursive scan of the whole tree (the
     ``shared`` flag only selects the schema to validate against). Not-found
     raises ``RiteError``. The body is re-validated before write. Returns the
-    full parsed entity dict.
+    full parsed entity dict. Raises ``ForeignEntityError`` on another
+    project's rite (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     _check_name(name)
     filepath, _ = _find_rite_file(rites_dir, name)
     if filepath is None:
@@ -180,8 +192,10 @@ def delete_rite(rites_dir: Path, name: str, *, shared: bool = False) -> dict:
     The rite is located by id via a recursive scan of the whole tree (the
     ``shared`` flag is accepted for parity but does not affect lookup).
     Not-found (absent or already deleted) raises ``RiteError``. Returns
-    ``{id, group, deleted_at}``.
+    ``{id, group, deleted_at}``. Raises ``ForeignEntityError`` on another
+    project's rite (FR-17, D-7).
     """
+    projects.reject_foreign(name)
     _check_name(name)
     filepath, _ = _find_rite_file(rites_dir, name)
     if filepath is None:
@@ -276,3 +290,105 @@ def read_rite(rites_dir: Path, rite_id: str) -> dict:
             raise RiteError(f'Rite "{rite_id}" not found (deleted on {ts})')
 
     raise RiteError(f'Rite "{rite_id}" not found')
+
+
+# ---------------------------------------------------------------------------
+# Scoped reads (D-27) — `project_root` first, like every other entity module
+# ---------------------------------------------------------------------------
+
+
+def _list_rites_local(
+    project_root: Path,
+    *,
+    shared: bool,
+    filter_groups: list[str] | None,
+) -> list[dict]:
+    """List one project's own rites — the reader ``collect`` calls.
+
+    A record with no usable ``id`` is skipped: the merge addresses every
+    record by id, and a rite without one can be neither qualified, exported,
+    nor read back.
+    """
+    records = []
+    for record in scan_rites(paths.rites_dir(project_root), shared=shared):
+        rite_id = record.get("id")
+        if not isinstance(rite_id, str) or not rite_id:
+            continue
+        if filter_groups and not group_matches_filter(
+            record.get("group", ""), filter_groups
+        ):
+            continue
+        record["origin"] = scoped.SELF
+        records.append(record)
+    return records
+
+
+def list_rites(
+    project_root: Path,
+    *,
+    shared: bool = False,
+    filter_groups: list[str] | None = None,
+    scope: str | None = None,
+) -> list[dict]:
+    """Return rite records for every project in scope.
+
+    Each record is the parsed rite body with ``group`` and ``origin``
+    attached; a foreign record's ``id`` is origin-qualified. ``group`` stays
+    beside ``origin`` rather than being replaced by it — ADR-016's standing
+    decision is that rites are grouped like every other entity.
+
+    Sorted by ``(group, id)``, the sort ``scan_rites`` already applies, using
+    the qualified id for a foreign record (D-16).
+
+    Raises ``UnknownProjectError`` when ``scope`` names no project in scope.
+    """
+    records = projects.collect(
+        project_root,
+        scope,
+        read=lambda root: _list_rites_local(
+            root, shared=shared, filter_groups=filter_groups
+        ),
+    )
+    return sorted(records, key=lambda r: (r.get("group", ""), r["id"]))
+
+
+def find_rite(project_root: Path, rite_id: str, *, scope: str | None = None) -> dict:
+    """Resolve ``rite_id`` across the projects in scope and return the rite.
+
+    A bare id resolves locally before an inherited one of the same name, and
+    a qualified id never resolves locally (D-8). Shared steps are reached the
+    way ``read_rite`` has always reached them, by bare id in this project —
+    the main listing never carries one.
+
+    Raises ``RiteError`` for an id that resolves nowhere in scope, and
+    ``UnknownProjectError`` when ``scope`` names no project in scope.
+    """
+    row = scoped.select(list_rites(project_root, scope=scope), rite_id)
+    if row is not None:
+        owner_root, local_id = scoped.locate(project_root, scope, row)
+        rite = read_rite(paths.rites_dir(owner_root), local_id)
+        return {**rite, "id": row["id"], "origin": row["origin"]}
+
+    refs = projects.resolve_scope(project_root, scope)
+    if projects.is_qualified(rite_id) or refs[0].relation != scoped.SELF:
+        raise RiteError(f'Rite "{rite_id}" not found')
+    return {**read_rite(paths.rites_dir(project_root), rite_id), "origin": scoped.SELF}
+
+
+def search_rites_scoped(
+    project_root: Path, query: str, *, scope: str | None = None
+) -> list[dict]:
+    """Return rites across the scope whose id/title/summary/trigger match.
+
+    Case-insensitive substring browse over main rites, the same fields
+    ``search_rites`` reads. No match returns ``[]``.
+    """
+    needle = query.lower()
+    return [
+        record
+        for record in list_rites(project_root, scope=scope)
+        if any(
+            needle in str(record.get(field, "")).lower()
+            for field in ("id", "title", "summary", "trigger")
+        )
+    ]

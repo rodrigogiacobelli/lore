@@ -1,12 +1,13 @@
 ---
 id: conceptual-workflows-glossary
 title: Glossary Commands — lore glossary and auto-surface
-summary: >
-  What the system does internally when `lore glossary list/search/show` runs,
-  when `lore codex show` auto-surfaces matched glossary entries, and when
-  `--skip-glossary` overrides per call. Covers the shared tokeniser, the
-  fail-soft policy on `lore codex show`, the fail-loud policy on `lore glossary`
-  and `lore health`, the JSON envelope shape, and the `.lore/config.toml` toggle.
+summary: 'What the system does internally when `lore glossary list/search/show` runs,
+  when `lore codex show` auto-surfaces matched glossary entries, and when `--skip-glossary`
+  overrides per call. Covers the shared tokeniser, the fail-soft policy on `lore codex
+  show`, the fail-loud policy on `lore glossary` and `lore health`, the JSON envelope
+  shape, and the `.lore/config.toml` toggle.
+
+  '
 binds:
 - src/lore/glossary.py
 - src/lore/cli.py
@@ -14,17 +15,19 @@ binds:
 - tests/unit/test_glossary.py
 - tests/unit/test_cli_glossary.py
 related:
-  - conceptual-entities-glossary
-  - conceptual-workflows-codex
-  - conceptual-workflows-health
-  - conceptual-workflows-lore-init
-  - conceptual-workflows-error-handling
-  - conceptual-workflows-json-output
-  - conceptual-workflows-help
-  - decisions-013-toml-for-config-yaml-for-glossary
-  - decisions-012-multi-value-cli-param-convention
-  - ref-lore_cli-commands
-  - tech-arch-schemas
+- conceptual-entities-glossary
+- conceptual-workflows-codex
+- conceptual-workflows-health
+- conceptual-workflows-lore-init
+- conceptual-workflows-error-handling
+- conceptual-workflows-json-output
+- conceptual-workflows-help
+- decisions-013-toml-for-config-yaml-for-glossary
+- decisions-012-multi-value-cli-param-convention
+- ref-lore_cli-commands
+- tech-arch-schemas
+- conceptual-workflows-nested-projects
+- decisions-027-glossary-collision-resolves-local-first
 ---
 
 # Glossary Commands — `lore glossary` and auto-surface
@@ -52,15 +55,20 @@ lore glossary show Constable Quest
 lore --json glossary show Constable
 ```
 
-`lore glossary` (no subcommand) is an alias for `lore glossary list`. The group is registered between `codex` and `artifact` in the CLI listing — adjacency reflects the conceptual proximity to the codex.
+`lore glossary` (no subcommand) is an alias for `lore glossary list`. The group is registered between `codex` and `artifact` in the CLI listing — adjacency reflects the conceptual proximity to the codex. `list`, `search` and `show` accept the global `--project NAME` selector (`conceptual-workflows-nested-projects`):
+
+```
+lore glossary list --project all
+lore --json glossary show Constable --project lore
+```
 
 ## Steps — List (`lore glossary` / `lore glossary list`)
 
 ### 1. Load the glossary
 
-`lore.glossary.scan_glossary(project_root)` reads `.lore/codex/glossary.yaml`, validates against `lore://schemas/glossary`, and returns a list of frozen `GlossaryItem` dataclasses (`keyword`, `definition`, `aliases: tuple[str,...]`, `do_not_use: tuple[str,...]`).
+`lore.glossary.scan_glossary(project_root, scope=None)` reads `.lore/codex/glossary.yaml` for every project the `--project` selector resolves, validates each file against `lore://schemas/glossary`, and returns a list of frozen `GlossaryItem` dataclasses (`keyword`, `definition`, `aliases: tuple[str,...]`, `do_not_use: tuple[str,...]`, `origin`) — this project's own items first, then each in-scope project's. An ancestor contributes only when its `[shared].glossary` key is true; a descendant is never filtered. On a keyword collision the local item's row still comes first, so the collision is visible in `list`/`search` output rather than hidden.
 
-If the file is absent, `scan_glossary` returns `[]` and the CLI prints `No glossary defined.` to stdout, exit 0.
+If no project in scope has a file, `scan_glossary` returns `[]` and the CLI prints `No glossary defined.` to stdout, exit 0.
 
 ### 2. Sort
 
@@ -77,7 +85,7 @@ Constable   constable mission, chore mission Mission type for orchestrator-handl
 Quest       —                                A live grouping of Missions representing one body of work.
 ```
 
-JSON mode emits `{"glossary": [<items>]}` with all four item fields always present (empty arrays for absent `aliases` / `do_not_use` per the field-presence rule in conceptual-workflows-json-output).
+JSON mode emits `{"glossary": [<items>]}` with all four item fields always present (empty arrays for absent `aliases` / `do_not_use` per the field-presence rule in conceptual-workflows-json-output), plus `origin` (`"self"` or the exporting project's name). Text mode adds a leading `ORIGIN` column, but only when the result set holds at least one non-`self` row — a project with no tree renders the table byte-identically to before this feature existed.
 
 ## Steps — Search (`lore glossary search <query>`)
 
@@ -99,7 +107,7 @@ Positional arguments are zero-or-more keywords. ADR-012 multi-value space-separa
 
 ### 2. Look up each keyword
 
-`read_glossary_item(root, keyword)` is case-insensitive (`casefold` on both sides) and returns the matching `GlossaryItem` or `None`. **Aliases are NOT accepted as lookup keys** — only canonical keywords. This keeps `show` a deterministic retrieval surface (one keyword → at most one item).
+`read_glossary_item(root, keyword, scope=None)` is case-insensitive (`casefold` on both sides) and returns the matching `GlossaryItem` or `None`. **Aliases are NOT accepted as lookup keys** — only canonical keywords. This keeps `show` a deterministic retrieval surface (one keyword → at most one item) even under a scope: on a collision between a local item and an inherited one, the local item wins, because `show` must answer with exactly one (`decisions-027-glossary-collision-resolves-local-first`).
 
 ### 3. Fail-fast on missing keyword
 
@@ -131,15 +139,15 @@ The existing `lore codex show` pipeline runs unchanged (lore codex show conceptu
 
 `lore.config.load_config(project_root)` returns a `Config` dataclass. `show-glossary-on-codex-commands` (default `true`) controls auto-surface globally. The `--skip-glossary` flag on `lore codex show` overrides per call. Effective rule: `show_glossary = config.show_glossary_on_codex_commands and not skip_glossary`.
 
-`.lore/config.toml` holds two known root keys. `show-glossary-on-codex-commands` is the one this workflow reads; `health-report-retention` belongs to `lore health` and is documented in `conceptual-workflows-health` and `decisions-021-health-reports-are-ephemeral-by-default`. Both are parsed by the same `load_config` call, so the two share one fail-soft contract and one warning latch: `load_config` emits at most one warning per process across every key, and an invalid `health-report-retention` value therefore silences the warning a malformed `show-glossary-on-codex-commands` would otherwise raise in the same run. Each key falls back to its own default independently — a rejected value never affects the other key's parse.
+`.lore/config.toml` holds several known root keys (tech-arch-initialized-project-structure). `show-glossary-on-codex-commands` is the one this workflow reads; `health-report-retention` belongs to `lore health` and is documented in `conceptual-workflows-health` and `decisions-021-health-reports-are-ephemeral-by-default`; `project-name` and `default-project-scope` belong to nested projects (`conceptual-workflows-nested-projects`). All are parsed by the same `load_config` call, so every key shares one fail-soft contract and one warning latch: `load_config` emits at most one warning per process across every key, and an invalid value on one key therefore silences the warning a malformed value on another would otherwise raise in the same run. Each key falls back to its own default independently — a rejected value never affects another key's parse.
 
 If `show_glossary` is `False`, auto-surface is skipped entirely — no glossary block in text mode, `"glossary": []` in JSON mode.
 
 ### 3. Match
 
-`match_glossary(bodies, root=project_root)` runs once:
+`match_glossary(bodies, root=project_root, scope=scope)` runs once, threaded from the same `--project` selector `lore codex show` itself resolved:
 
-- Calls `scan_glossary(root)` to load items.
+- Calls `scan_glossary(root, scope=scope)` to load items. On a keyword collision the local item wins, the same rule `read_glossary_item` applies — auto-surface never surfaces an inherited definition a local one shadows.
 - Builds a canonical-only lookup: `_build_lookup(items)` maps token-tuples (from `keyword` and each `alias`) to their `GlossaryItem`. `do_not_use` terms are excluded — auto-surface is canonical-vocabulary only.
 - For each body, calls `_normalise_tokens(body)` (split on `[^\w]+` with `re.UNICODE`, casefold, drop empty strings).
 - For each token position, attempts the longest-prefix match against the lookup. On a hit, the matched item is recorded once (set semantics) and the scan advances past the matched run.
@@ -151,7 +159,7 @@ If `show_glossary` is `False`, auto-surface is skipped entirely — no glossary 
 
 ### 4. Render
 
-Text mode appends a trailing `## Glossary` block after the last document body (separated by a blank line). Each matched item renders as `**<keyword>** — <definition>` on a single line. Multi-line definitions collapse to one line via `" ".join(definition.split())`. No ANSI; matches the existing CLI plain-text style.
+Text mode appends a trailing `## Glossary` block after the last document body (separated by a blank line). Each matched item renders as `**<keyword>** — <definition>` on a single line, with no `ORIGIN` marker even for an inherited item — the block is prose, not a table, so FR-16's column rule has nothing to attach to. Multi-line definitions collapse to one line via `" ".join(definition.split())`. No ANSI; matches the existing CLI plain-text style.
 
 ```
 === conceptual-entities-mission ===
@@ -172,7 +180,7 @@ JSON mode adds an always-present `"glossary": [...]` field alongside `"documents
 ```json
 {
   "documents": [{"id": "...", "title": "...", "summary": "...", "body": "..."}],
-  "glossary": [{"keyword": "Mission", "definition": "...", "aliases": [], "do_not_use": []}]
+  "glossary": [{"keyword": "Mission", "definition": "...", "aliases": [], "do_not_use": [], "origin": "self"}]
 }
 ```
 
@@ -205,6 +213,7 @@ This is the reliability bar: a malformed glossary MUST NOT break `lore codex sho
 | Malformed `.lore/config.toml` | any | One-time stderr warning `lore: invalid config at .lore/config.toml: <reason> (using defaults)`; defaults applied | 0 |
 | Wrong-type known config key | any | One-time stderr warning `lore: invalid type for <key> at <path> (expected <type>); using default`; that key's default substituted, other keys parse normally | 0 |
 | Out-of-set value on a constrained string config key | any | One-time stderr warning `lore: invalid value for <key> at <path> (expected one of: ...); using default`; that key's default substituted, other keys parse normally | 0 |
+| Unknown `--project` name | `lore glossary list/search/show` | Stderr `Unknown project "<name>". Projects in scope: ...` | 1 |
 
 ## Out of Scope
 
@@ -227,13 +236,15 @@ from lore.glossary import (
     GlossaryError,
 )
 
-items = scan_glossary(project_root)                      # list[GlossaryItem]; [] if file missing
-item  = read_glossary_item(project_root, "Constable")    # GlossaryItem | None
-hits  = search_glossary(project_root, "mission")          # list[GlossaryItem]
+items = scan_glossary(project_root)                      # list[GlossaryItem]; [] if no project in scope has a file
+item  = read_glossary_item(project_root, "Constable")    # GlossaryItem | None; local wins a collision
+hits  = search_glossary(project_root, "mission")          # list[GlossaryItem]; both sides of a collision, each with .origin
 matched = match_glossary([doc1_body, doc2_body], root=project_root)  # list[GlossaryItem] (canonical-only)
+
+items_all = scan_glossary(project_root, scope="all")      # this project, what it inherits, and every descendant
 ```
 
-`GlossaryItem` is in `lore.models.__all__` (FR-30, ADR-010). `Config` is internal — not exported (FR-14, deferred until Realm asks). `scan_glossary` returns `[]` on missing file; raises `GlossaryError` on parse failure or schema violation.
+`GlossaryItem` is in `lore.models.__all__` (FR-30, ADR-010) and carries `origin` (`"self"` or the exporting project's name). `Config` is internal — not exported (FR-14, deferred until Realm asks). `scan_glossary` returns `[]` when no project in scope has a file; raises `GlossaryError` on parse failure or schema violation, and `UnknownProjectError` when `scope` names no project in scope.
 
 ## Related
 
@@ -246,3 +257,5 @@ matched = match_glossary([doc1_body, doc2_body], root=project_root)  # list[Glos
 - decisions-013-toml-for-config-yaml-for-glossary (lore codex show decisions-013-toml-for-config-yaml-for-glossary) — file-format split.
 - decisions-012-multi-value-cli-param-convention (lore codex show decisions-012-multi-value-cli-param-convention) — `lore glossary show <kw> [...]` and `--scope glossary` semantics.
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference.
+- conceptual-workflows-nested-projects (lore codex show conceptual-workflows-nested-projects) — the `--project` selector, origin-qualified addressing, and glossary inheritance across a tree of Lore projects.
+- decisions-027-glossary-collision-resolves-local-first (lore codex show decisions-027-glossary-collision-resolves-local-first) — why a keyword collision resolves local-first.

@@ -654,6 +654,7 @@ class TestPythonApiListDoctrines:
         result = list_doctrines(tmp_path)
 
         assert len(result) == 1
+        # nested-projects-spec — D-15: `origin` is on every record, always
         assert result[0] == {
             "id": "my-workflow",
             "group": "",
@@ -661,6 +662,7 @@ class TestPythonApiListDoctrines:
             "summary": "Does things",
             "filename": "my-workflow.design.md",
             "valid": True,
+            "origin": "self",
         }
 
     # -----------------------------------------------------------------------
@@ -781,7 +783,10 @@ class TestPythonApiListDoctrines:
         result = list_doctrines(tmp_path)
 
         assert len(result) == 1
-        assert set(result[0].keys()) == {"id", "group", "title", "summary", "filename", "valid"}
+        # nested-projects-spec — D-15
+        assert set(result[0].keys()) == {
+            "id", "group", "title", "summary", "filename", "valid", "origin",
+        }
         assert "name" not in result[0]
         assert "description" not in result[0]
         assert "errors" not in result[0]
@@ -1012,7 +1017,10 @@ class TestPythonApiShowDoctrine:
 
         result = read_doctrine(tmp_path, "my-doc")
 
-        assert set(result.keys()) == {"id", "title", "summary", "design", "raw_yaml", "steps"}
+        # nested-projects-spec — D-15
+        assert set(result.keys()) == {
+            "id", "title", "summary", "design", "raw_yaml", "steps", "origin",
+        }
 
     def test_show_doctrine_api_title_fallback_to_id(self, tmp_path):
         # Spec: US-006 unit — title falls back to id when absent from design frontmatter
@@ -1950,7 +1958,10 @@ class TestPythonApiRiteFunctionsImportable:
         )
         assert result.exit_code == 0
         cli_out = json.loads(result.stdout)
-        assert cli_out["rites"][0] == api_out
+        # nested-projects-spec — FR-16 / D-15: `rite show` resolves through
+        # `find_rite`, which is `read_rite`'s record plus `origin`. The parity
+        # this test exists for — the CLI adds no shaping of its own — holds.
+        assert cli_out["rites"][0] == {**api_out, "origin": "self"}
 
 
 class TestPythonApiRiteTypesExported:

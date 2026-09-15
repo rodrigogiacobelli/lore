@@ -22,12 +22,20 @@ Usage: lore [OPTIONS] COMMAND [ARGS]...
   Artifact — reusable template files referenced by stable ID.
   Watcher  — definitions for agents that monitor and react to project state.
 
+  A directory holding several Lore projects is itself a Lore project: it reads
+  any of them with --project <name> or --project all, and exports documents
+  down to named descendants, which see them origin-qualified as
+  <project>:<id>.
+
   Run any command group with --help for details on that concept.
 
 Options:
-  --version  Show the version and exit.
-  --json     Output as JSON.
-  --help     Show this message and exit.
+  --version       Show the version and exit.
+  --json          Output as JSON.
+  --project NAME  Read another project in this tree: a project name, 'all' for
+                  the whole subtree, or 'self' for this project only. Read
+                  commands only.
+  --help          Show this message and exit.
 
 Commands:
   stats     Show aggregate statistics across all quests and missions.

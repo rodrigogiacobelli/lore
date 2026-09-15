@@ -1,7 +1,8 @@
 ---
 id: ops-git-workflow
 title: Git Workflow
-summary: Branching model with four tiers (main, develop, work, feature), commit conventions, AI vs human merge responsibilities, release process, and hotfix procedure.
+summary: Branching model with three tiers (main, develop, feature), commit conventions,
+  AI vs human merge responsibilities, release process, and hotfix procedure.
 related:
 - ops-installation
 - decisions-010-public-api-stability
@@ -12,30 +13,26 @@ related:
 ## Branching Model
 
 ```
-main        ← official releases (tagged, human-only)
-└── develop ← pre-releases (human-only merges, cloud-protected)
-     └── work ← AI buffer branch (human reviews before merging up)
-          ├── feat/...
-          ├── fix/...
-          └── hotfix/...
+main         ← official releases (tagged, human-only)
+└── develop  ← integration branch (human-only merges, cloud-protected)
+     ├── feat/...
+     ├── fix/...
+     └── hotfix/...
 ```
 
 **`main`** — official releases only. Every commit is a tagged version. Only the human owner decides what ships here. Cloud-protected: no AI agent may merge into `main`.
 
-**`develop`** — pre-release integration. No tags. Receives squash-merges from `work` when the human is satisfied. Cloud-protected: no AI agent may merge into `develop`.
+**`develop`** — integration. No tags. Feature branches are cut from it and squash-merged back into it. Cloud-protected: no AI agent may merge into `develop`.
 
-**`work`** — AI buffer. Protects `develop` from unreviewed churn. AI agents squash feature branches into `work`. Humans inspect `work`, then promote to `develop`.
-
-**Feature branches** (`feat/...`, `fix/...`) — AI territory. Agents branch from `work`, commit freely (many small commits OK), then squash-merge back into `work`.
+**Feature branches** (`feat/...`, `fix/...`) — AI territory. Agents branch from `develop`, commit freely (many small commits are fine), and stop there. The human squash-merges the branch back into `develop`.
 
 ## Who Merges Where
 
-All merges are performed by humans. AI agents commit freely to feature branches but never merge.
+All merges are performed by humans. AI agents commit freely to feature branches and never merge, never rebase another branch onto theirs, and never push to `develop` or `main`.
 
 | Merge | Who |
 |---|---|
-| `feat/*` → `work` | Human (squash, clean commit message) |
-| `work` → `develop` | Human |
+| `feat/*` → `develop` | Human (squash, clean commit message) |
 | `develop` → `main` | Human |
 
 ## Commits
@@ -55,34 +52,29 @@ chore: update dependencies
 feat: mission types
 ```
 
-Feature branch commits can be granular — they will be squashed before entering `work`.
+Feature branch commits can be granular — the squash-merge collapses them into one commit on `develop`.
 
 ## Feature Development
 
 ```bash
-git checkout work
+git checkout develop
 git checkout -b feat/my-feature
 
 # ... AI commits freely ...
 
-# Human squashes into work with a clean message:
-git checkout work
+# Human squash-merges into develop with a clean message:
+git checkout develop
 git merge --squash feat/my-feature
 git commit -m "US-31: My Feature"
 git branch -d feat/my-feature
-
-# Human promotes to develop when ready:
-git checkout develop
-git merge --squash work
-git commit -m "US-31: My Feature"
 ```
 
-One clean commit per feature on `develop`. Human writes all merge commit messages.
+One clean commit per feature on `develop`. The human writes every merge commit message.
 
 ## Releasing
 
 1. On `develop`, bump the version in `pyproject.toml`.
-2. Update `CHANGELOG.md`. Add a `[X.Y.Z] - YYYY-MM-DD` entry. For any release that touches `lore.models` exports, the changelog entry is **required** — it is the human-readable record for Realm's maintainers. Rename `[Unreleased]` to the new version and add a fresh empty `[Unreleased]` above it.
+2. Update `CHANGELOG.md`. Add a `[X.Y.Z] - YYYY-MM-DD` entry. For any release that touches `lore.api` exports, the changelog entry is **required** — it is the human-readable record for Realm's maintainers. Rename `[Unreleased]` to the new version and add a fresh empty `[Unreleased]` above it.
 3. Commit both:
 
 ```bash
@@ -99,12 +91,10 @@ git tag v0.2.0
 git push origin main --tags
 ```
 
-5. Return to `develop`, then sync `work`:
+5. Return to `develop`:
 
 ```bash
 git checkout develop
-git checkout work
-git merge develop
 ```
 
 `main` gets one commit per release. Tags preserve every version permanently.
@@ -135,9 +125,6 @@ git push origin main --tags
 git checkout develop
 git merge hotfix/fix-crash
 
-git checkout work
-git merge develop
-
 git branch -d hotfix/fix-crash
 ```
 
@@ -145,7 +132,7 @@ git branch -d hotfix/fix-crash
 
 | Action | Flow |
 |---|---|
-| New feature | `feat/*` (AI commits) → squash into `work` (human) → squash into `develop` (human) |
+| New feature | `feat/*` (AI commits) → squash into `develop` (human) |
 | Release | `develop` (human) → squash into `main` → tag `vX.Y.Z` |
-| Hotfix | branch from tag → merge into `main` + `develop` + `work` |
+| Hotfix | branch from tag → merge into `main` + `develop` |
 | Inspect release | `git checkout vX.Y.Z` or `git diff` between tags |

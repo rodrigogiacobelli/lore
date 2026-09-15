@@ -165,7 +165,9 @@ summary: An artifact inside a nested subdirectory.
 # Deep Artifact
 """
 
-SPEC_KEY_ORDER = ["id", "group", "title", "summary"]
+# nested-projects-spec — FR-16 / D-15 appends `origin` to every JSON row,
+# valued "self" in a project with no tree.
+SPEC_KEY_ORDER = ["id", "group", "title", "summary", "origin"]
 
 
 # ---------------------------------------------------------------------------

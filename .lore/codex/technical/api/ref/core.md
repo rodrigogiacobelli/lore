@@ -1,14 +1,16 @@
 ---
 id: ref-lore_api-core
 title: Lore Python API — core surface
-summary: Reference doc for the Lore Python API — what is public per entity, where the
-  intentional gaps are, and the cross-cutting contracts (group= kwarg, filter_groups=
-  kwarg, return-dict shapes for high-traffic operations, typed-model boundary).
-  Source of truth is lore.api.__all__ (ADR-010); lore.models continues to host the
-  dataclasses but is no longer the consumer-facing import path.
+summary: Reference doc for the Lore Python API — what is public per entity, where
+  the intentional gaps are, and the cross-cutting contracts (group= kwarg, filter_groups=
+  kwarg, scope= kwarg, return-dict shapes for high-traffic operations, typed-model
+  boundary). Source of truth is lore.api.__all__ (ADR-010); lore.models continues
+  to host the dataclasses but is no longer the consumer-facing import path.
 binds:
 - src/lore/api.py
 - src/lore/models.py
+- src/lore/projects.py
+- src/lore/scoped.py
 - tests/unit/test_models.py
 - tests/unit/test_models_impacts.py
 - tests/unit/test_api_surface.py
@@ -18,11 +20,13 @@ related:
 - decisions-011-api-parity-with-cli
 - decisions-007-artifact-communication-protocol
 - tech-arch-api-facade
+- tech-arch-projects-module
 - tech-cli-entity-crud-matrix
 - ref-lore_db-core
 - conceptual-workflows-python-api
 - conceptual-workflows-health
 - conceptual-workflows-impacts
+- conceptual-workflows-nested-projects
 - standards-facade
 - standards-public-api-stability
 - conceptual-entities-glossary
@@ -30,11 +34,13 @@ related:
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-020-codex-voice-is-enforced
 - decisions-021-health-reports-are-ephemeral-by-default
+- decisions-025-cross-boundary-reads-are-read-only
+- decisions-026-project-naming-and-addressing
 ---
 
 # Lore Python API — core surface
 
-**Covers:** `lore.api` (the facade), and through it: every CRUD, lifecycle, traversal, validator, schema, health, impacts, priority, initialisation, and reporting function in `lore-agent-task-manager`. The internal modules behind the facade (`lore.db`, `lore.codex`, `lore.artifact`, `lore.doctrine`, `lore.knight`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, `lore.models`, `lore.health`, `lore.validators`, `lore.schemas`, `lore.init`, `lore.initplan`, `lore.agents`, `lore.skills`, `lore.manifest`, `lore.reconcile`, `lore.prompts`, `lore.oracle`, `lore.config`, `lore.root`) are not part of the public surface.
+**Covers:** `lore.api` (the facade), and through it: every CRUD, lifecycle, traversal, validator, schema, health, impacts, priority, initialisation, project-topology, and reporting function in `lore-agent-task-manager`. The internal modules behind the facade (`lore.db`, `lore.codex`, `lore.artifact`, `lore.doctrine`, `lore.knight`, `lore.watcher`, `lore.rite`, `lore.glossary`, `lore.impacts`, `lore.priority`, `lore.models`, `lore.health`, `lore.validators`, `lore.schemas`, `lore.init`, `lore.initplan`, `lore.agents`, `lore.skills`, `lore.manifest`, `lore.reconcile`, `lore.prompts`, `lore.oracle`, `lore.config`, `lore.root`, `lore.projects`, `lore.scoped`) are not part of the public surface.
 
 **Source of truth:** `src/lore/api.py` — `lore.api.__all__` enumerates the entire public API. Function signatures, type annotations, and exhaustive return-dict structures live in the operational modules behind the facade and in the dataclasses in `lore.models`. The facade itself contains no business logic; see `tech-arch-api-facade`.
 
@@ -46,11 +52,15 @@ related:
 
 - **`lore.api.__all__` is the boundary.** Names outside it (e.g. `_paths`, `_knight`, internal helpers like `_read_related`) are internal even when importable. Realm imports must reference `lore.api` only — never `from lore.models import ...` or `from lore.db import ...`.
 
-- **`lore.db.*` (re-exported through `lore.api`) takes `project_root: Path` first.** File-module functions re-exported through `lore.api` (`list_knights`, `find_knight`, `create_knight`, `update_knight`, `delete_knight`, the doctrine/artifact/watcher equivalents, and `read_document`, `scan_codex`, `search_documents`, `map_documents`, `chaos_documents`) take the relevant subdirectory path (`knights_dir`, `doctrines_dir`, `artifacts_dir`, `watchers_dir`, `codex_dir`) instead. Mixing the two is the most common API misuse.
+- **`lore.db.*` (re-exported through `lore.api`) takes `project_root: Path` first.** File-module functions re-exported through `lore.api` (`list_knights`, `find_knight`, `create_knight`, `update_knight`, `delete_knight`, the doctrine/artifact/watcher equivalents, and `read_document`, `list_codex`, `search_documents`, `map_documents`, `chaos_documents`) take the relevant subdirectory path (`knights_dir`, `doctrines_dir`, `artifacts_dir`, `watchers_dir`, `codex_dir`) instead. Mixing the two is the most common API misuse. `scan_rites`, `read_rite` and `search_rites` are a third shape: they take `rites_dir: Path` and carry no `scope`. Their scoped counterparts — `list_rites`, `find_rite`, `search_rites_scoped` — take `project_root` first, like every other entity module; the two shapes wrap the same on-disk reads rather than duplicating them, because changing a public function's first parameter is an ADR-010 breaking change this feature does not authorise.
 
 - **`group=` on every `create_*`.** All four entity create helpers — `create_doctrine`, `create_knight`, `create_watcher`, `create_artifact` (all re-exported through `lore.api`) — accept `group: str | None = None` (keyword-only). `None` = entity root. `"a/b/c"` = nested under `base / Path("a/b/c")` after `mkdir(parents=True, exist_ok=True)`. Validation lives in `lore.validators.validate_group` (also exported); CLI and Python paths are byte-identical (ADR-011). Invalid group raises the entity's exception (`DoctrineError` for doctrines; `ValueError` for the rest).
 
 - **`filter_groups=` on every `list_*` / `scan_*`.** Lock-step with `group=`. `None` returns all entities. A list applies slash-delimited segment-prefix matching via internal helpers. Hyphen-delimited form is no longer accepted.
+
+- **`scope=` on every read function across seven entity modules.** `list_knights`, `read_knight`, `list_doctrines`, `read_doctrine`, `list_watchers`, `read_watcher`, `read_watcher_text`, `list_artifacts`, `read_artifact`, `list_codex`, `search_documents`, `read_document`, `map_documents`, `read_documents_with_glossary`, `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary`, `list_rites`, `find_rite`, `search_rites_scoped`, and `impacts` all accept a keyword-only `scope: str | None = None` — `None` reads `default-project-scope`, `"self"`/`"all"`/a project name select what a tree of Lore projects this project reads. A bare id resolves against this project's own rows first; a qualified `<project>:<id>` never resolves locally (D-8). Every returned record dict carries `origin` (`"self"` or the exporting project's name), and a foreign record's id is returned already qualified. `chaos_documents` is the one traversal function with no `scope` parameter — its termination ratio is defined over the subgraph one project owns. See `conceptual-workflows-nested-projects` for the full model and `tech-arch-projects-module` for how `lore.projects` and `lore.scoped` implement it.
+
+- **Every write function on a file-backed entity calls `projects.reject_foreign` first.** `create_*`, `update_*`, `delete_*` for knight, doctrine, artifact, watcher, rite, and `update_frontmatter_fields`, raise `ForeignEntityError` (a plain `Exception`, not a `ValueError`) when the target name is origin-qualified — cross-project reads are permanent and read-only, enforced once in the core rather than at the CLI seam (`decisions-025-cross-boundary-reads-are-read-only`).
 
 - **Duplicate-name detection is subtree-wide.** `rglob` over the entity root, regardless of `group`. Two doctrines named `foo` cannot coexist in different subdirectories.
 
@@ -68,17 +78,17 @@ related:
 
 - **`get_board_messages` filters soft-deleted at SQL.** The typed `BoardMessage` model has no `deleted_at` field — read-side contract excludes deleted rows. The `add_board_message` validator also filters by `deleted_at IS NULL` (stricter than `add_dependency`, which doesn't); board posts to soft-deleted entities are rejected.
 
-- **`get_ready_missions` is exported from `lore.priority`, not `lore.db`.** `lore.api` re-exports it. The pass-through in `db.py` was deleted in the ADR-012 refactor; the only path to ready-mission selection is `lore.api.get_ready_missions(root, count)`.
+- **`get_ready_missions` is exported from `lore.priority`, not `lore.db`.** `lore.api` re-exports it. The pass-through in `db.py` was deleted in the ADR-012 refactor; the only path to ready-mission selection is `lore.api.get_ready_missions(root, count)`. Quest and Mission take no `scope` — nested projects covers file-backed, authored entities only; execution state never crosses a boundary.
 
 - **`Dependency.from_row` is unused at the public layer.** The typed model exists but no callable returns full dependency rows. Use `get_mission_depends_on_details` / `get_mission_blocks_details` (return joined dicts, not Row).
 
-- **`scan_glossary` returns `[]` if file missing; raises on parse failure.** `scan_glossary(root)` is fail-soft on absence (empty file or no file), fail-loud on schema/parse errors (raises `GlossaryError`). `read_glossary_item(root, kw)` is case-insensitive on the keyword; aliases are NOT lookup keys.
+- **`scan_glossary` returns `[]` if file missing; raises on parse failure.** `scan_glossary(root, scope=None)` is fail-soft on absence (empty file or no file), fail-loud on schema/parse errors (raises `GlossaryError`). `read_glossary_item(root, kw, scope=None)` is case-insensitive on the keyword; aliases are NOT lookup keys. On a keyword collision between a local item and an inherited one, `read_glossary_item` and `match_glossary` return the local item; `scan_glossary` and `search_glossary` keep both rows, each carrying its `origin` (`decisions-027-glossary-collision-resolves-local-first`). `scan_own_glossary(root)` — this project's own items only, unmerged — is the reader `lore health` uses; it is deliberately **not** in `lore.api.__all__`.
 
 - **`match_glossary` operates on body strings.** Pass a `dict[doc_id, body]` (or list of bodies). Canonical-only token-run matching. Used by `lore codex show` auto-surface. There is no corpus-level deprecated-term scan — `find_deprecated_terms` has been removed.
 
 - **Schema validation is callable from Realm.** `load_schema(kind)` returns the cached schema dict; `validate_entity_file(path, kind)` returns `list[HealthIssue]` with zero stdout/stderr side effects (ADR-011). Both are in `lore.api.__all__`. For project-local custom frontmatter, `validate_entity(kind, data, project_root=...)`, `resolve_merged_schema(kind, project_root)`, and `project_validator_for(kind, project_root)` build the overlay-merged validator from `.lore/custom-schemas/<kind>.yaml` (the two codex kinds; see tech-arch-schemas). An overlay governs canonical codex docs and the `sources/` layer only — docs under `.lore/codex/transient/` validate against the packaged schema alone at every seam (decisions-019-overlay-scope-stops-at-transient). `update_frontmatter_fields(kind="codex", ...)` sits on the same overlay path. A malformed overlay raises `OverlayError` (a `ValueError`).
 
-- **`impacts(token, *, project_root, direct_links=False) -> ImpactsResult`.** The Python mirror of `lore impacts` (conceptual-workflows-impacts). `ImpactsResult` is a tagged-union dataclass — `kind == "codex"` populates `codex_items: tuple[CodexBinding, ...]`; `kind == "code"` populates `code_items: tuple[CodeBinding, ...]`. Errors surface as `ImpactsError` (subclass of `ValueError`) — unknown codex id, path outside repo, `..` traversal. The function takes `project_root: Path` (NOT `codex_dir`) because path-seed lookups normalise against the repo root, not the codex subdir.
+- **`impacts(token, *, project_root, direct_links=False, scope=None) -> ImpactsResult`.** The Python mirror of `lore impacts` (conceptual-workflows-impacts). `ImpactsResult` is a tagged-union dataclass — `kind == "codex"` populates `codex_items: tuple[CodexBinding, ...]`; `kind == "code"` populates `code_items: tuple[CodeBinding, ...]`. Both binding dataclasses carry `origin` (default `"self"`). A codex-id seed resolves against the scope like any other id (D-8); a path seed is resolved against every in-scope project's own root, because a repo-relative path names a different file in each project. Errors surface as `ImpactsError` (subclass of `ValueError`) — unknown codex id, path outside repo, `..` traversal — and `UnknownProjectError` when `scope` names no project in scope. The function takes `project_root: Path` (NOT `codex_dir`) because path-seed lookups normalise against the repo root, not the codex subdir.
 
 - **Direct-Python `create_mission(project_root, title)` auto-attaches.** Calling `create_mission` from `lore.api` with no `quest_id` argument and exactly one open quest in the project attaches the new mission to that sole-open-quest. The CLI handler and the direct-Python path infer the parent identically (ADR-011 parity — FLAG #4 in the facade Review Ledger).
 
@@ -96,8 +106,11 @@ Y = public function exists in `lore.api.__all__`. — = no concept in this dimen
 | Codex | ✗ | Y | Y | Y | Y | ✗ | ✗ |
 | Glossary | ✗ | Y | Y | Y | — | ✗ | ✗ |
 | Artifact | Y | Y | Y | — | — | Y | Y |
+| Rite | Y | Y | Y | Y | — | Y | Y |
 | Board Message | Y | Y | Y | — | — | ✗ (immutable) | Y |
 | Dependency | Y | Y (details) | — | — | — | — | Y |
+
+Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite Read/List/Search/Traverse take `scope=`; their Create/Update/Delete never do — a `scope` parameter has no write meaning, and a Python caller has no argument through which to make FR-14's mistake. Quest, Mission and Board Message take no `scope` at any operation — nested projects covers file-backed, authored entities only.
 
 ### Gaps and rationale
 
@@ -110,9 +123,10 @@ Y = public function exists in `lore.api.__all__`. — = no concept in this dimen
 
 The facade re-exports the operational surface in named sections; this list mirrors the structure of `__all__` in `src/lore/api.py`. New exports are appended within the relevant section, never sprinkled across sections.
 
-- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineStep`, `Doctrine`, `Knight`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`, `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`.
+- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineStep`, `Doctrine`, `Knight`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`, `SharedExports`, `DescendantExport`, `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`.
+- **Project topology (nested projects)** — `ProjectRef`, `UnknownProjectError`, `ForeignEntityError`, `list_projects`, `resolve_project`, `project_name`.
 - **Project root** — `find_project_root`.
-- **Validators** — `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_group`, `validate_quest_id_loose`, `validate_chaos_threshold`, `validate_access_mode`, `validate_skill_family`, `validate_agent_id`, `validate_agent_selection`, `validate_binds_entry`, `is_glob_pattern`, `route_entity`.
+- **Validators** — `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_group`, `validate_quest_id_loose`, `validate_chaos_threshold`, `validate_access_mode`, `validate_skill_family`, `validate_agent_id`, `validate_agent_selection`, `validate_binds_entry`, `validate_project_name`, `is_glob_pattern`, `route_entity`.
 - **DB: quest CRUD** — `create_quest`, `list_quests`, `get_quest`, `edit_quest`, `edit_quest_full`, `delete_quest`, `close_quest`.
 - **DB: mission CRUD** — `create_mission`, `list_missions`, `list_missions_grouped`, `get_mission`, `edit_mission`, `edit_mission_full`, `delete_mission`.
 - **DB: status transitions** — `claim_mission`, `claim_missions`, `close_mission`, `close_entities`, `block_mission`, `unblock_mission`.
@@ -124,9 +138,10 @@ The facade re-exports the operational surface in named sections; this list mirro
 - **Priority** — `get_ready_missions`.
 - **Knight** — `list_knights`, `find_knight`, `read_knight`, `create_knight`, `update_knight`, `delete_knight`.
 - **Doctrine** — `list_doctrines`, `show_doctrine`, `create_doctrine`, `update_doctrine`, `delete_doctrine`.
-- **Artifact** — `scan_artifacts`, `read_artifact`, `create_artifact`, `update_artifact`, `delete_artifact`.
-- **Watcher** — `list_watchers`, `find_watcher`, `load_watcher`, `create_watcher`, `update_watcher`, `delete_watcher`.
-- **Codex** — `scan_codex`, `search_documents`, `read_document`, `read_documents_with_glossary`, `map_documents`, `chaos_documents`.
+- **Artifact** — `list_artifacts`, `read_artifact`, `create_artifact`, `update_artifact`, `delete_artifact`.
+- **Watcher** — `list_watchers`, `find_watcher`, `load_watcher`, `create_watcher`, `update_watcher`, `delete_watcher`, `read_watcher_text`.
+- **Codex** — `list_codex`, `search_documents`, `read_document`, `read_documents_with_glossary`, `map_documents`, `chaos_documents`.
+- **Rite** — `scan_rites`, `read_rite`, `search_rites`, `create_rite`, `update_rite`, `delete_rite`, `list_rites`, `find_rite`, `search_rites_scoped`.
 - **Glossary** — `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary`.
 - **Impacts** — `impacts`, `classify_token`.
 - **Health** — `health_check`.
@@ -153,7 +168,7 @@ Validates entity existence inside the same `BEGIN IMMEDIATE` as the insert. Vali
 
 ## Diagnostic operations
 
-`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, audits codex `binds:` and `rites:` reference integrity, and audits canonical codex prose against the voice rules. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. `None` runs every scope.
+`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, audits codex `binds:` and `rites:` reference integrity, and audits canonical codex prose against the voice rules. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`. `None` runs every scope. `health_check` takes no `--project` equivalent and never reads another project — it audits only the project it runs in, in every direction (`conceptual-workflows-nested-projects`).
 
 `health_check` takes three keyword-only report arguments: `write_report` (default `False`), `timestamp`, and `retention`. `write_report=False` is a read-only audit that touches no file and never reads `.lore/config.toml`. `write_report=True` offers the report to the retention policy — `retention=None` resolves it from the `health-report-retention` config key (default `"none"`, so a caller that passes only `write_report=True` still gets no file), while an explicit `"none"` / `"latest"` / `"all"` overrides the project. Any other `retention` token raises `ValueError`, whatever `write_report` holds. Resolution lives in `health_check` rather than the CLI, so a Realm or script caller gets the project's policy without reading config itself (ADR-011 parity; `decisions-021-health-reports-are-ephemeral-by-default`). `HealthReport.report_path` names the written file, or is `None` when nothing was written.
 

@@ -1,8 +1,22 @@
 ---
 id: tech-overview
 title: Technical Overview
-summary: Technology choices (Python 3.11+, Click >=8.3, questionary, SQLite WAL, PyYAML, jsonschema, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE), and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry between `lore new quest` and `lore edit`.
-related: ["ref-lore_db-core", "tech-arch-source-layout", "vision-camelot-system", "tech-arch-schemas", "standards-dependency-inversion", "decisions-012-multi-value-cli-param-convention", "decisions-013-toml-for-config-yaml-for-glossary", "decisions-017-constrained-flags-use-click-choice", "ops-installation"]
+summary: Technology choices (Python 3.11+, Click >=8.3, questionary, SQLite WAL, PyYAML,
+  jsonschema, packaging), concurrency strategy (WAL mode, busy timeout, BEGIN IMMEDIATE),
+  and out-of-scope boundaries. Notes the --no-auto-close hidden/visible asymmetry
+  between `lore new quest` and `lore edit`.
+related:
+- ref-lore_db-core
+- tech-arch-source-layout
+- vision-camelot-system
+- tech-arch-schemas
+- standards-dependency-inversion
+- decisions-012-multi-value-cli-param-convention
+- decisions-013-toml-for-config-yaml-for-glossary
+- decisions-017-constrained-flags-use-click-choice
+- ops-installation
+- tech-arch-projects-module
+- conceptual-workflows-nested-projects
 ---
 
 # Technical Overview
@@ -34,18 +48,22 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    └───────────────────────────┘   (cli also imports validators for UX error translation)
    │
    ├──→  paths.py          (path helpers — centralises ".lore" string, derive_group)
-   ├──→  knight.py    ──→  frontmatter.py
+   ├──→  knight.py    ──→  frontmatter.py, projects.py, scoped.py
    │        └───────────→  paths.py
-   ├──→  watcher.py  ──→  paths.py
+   ├──→  watcher.py  ──→  paths.py, projects.py, scoped.py
    │        └───────────→  (no frontmatter.py — uses yaml.safe_load directly)
    ├──→  graph.py          (topological sort)
    ├──→  oracle.py
-   ├──→  doctrine.py  ──→  paths.py, schemas.py
+   ├──→  doctrine.py  ──→  paths.py, schemas.py, projects.py, scoped.py
    ├──→  knight.py    ──→  schemas.py
    ├──→  watcher.py   ──→  schemas.py
-   ├──→  artifact.py  ──→  frontmatter.py, schemas.py
-   ├──→  codex.py     ──→  frontmatter.py
-   ├──→  impacts.py   ──→  frontmatter.py, codex.py, paths.py, validators.py  (codex<->code surfacing for `lore impacts`)
+   ├──→  artifact.py  ──→  frontmatter.py, schemas.py, projects.py, scoped.py
+   ├──→  codex.py     ──→  frontmatter.py, projects.py, scoped.py
+   ├──→  rite.py      ──→  paths.py, schemas.py, validators.py, projects.py, scoped.py
+   ├──→  glossary.py  ──→  models.py, paths.py, schemas.py, projects.py, scoped.py
+   ├──→  impacts.py   ──→  frontmatter.py, codex.py, paths.py, validators.py, projects.py, scoped.py  (codex<->code surfacing for `lore impacts`)
+   ├──→  projects.py  ──→  paths.py, config.py, validators.py  (project topology, export resolution, id qualification — imports no entity module)
+   ├──→  scoped.py    ──→  projects.py  (which row a scoped id addresses, and where it lives — shared by every entity module's scoped reads)
    ├──→  schemas.py   ──→  frontmatter.py   (loads packaged YAML schemas; no lore.* entity imports)
    ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, knight.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py
    ├──→  prompts.py   ──→  initplan.py      (questionary imported lazily inside each function; no click, no other lore.*)
@@ -71,6 +89,7 @@ Dependency rules:
 - `schemas.py` is the single authoritative home for entity JSON Schemas (shared by create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, `artifact.py` and the audit-time `lore health` schema check). It imports only `frontmatter.py` and has no other `lore.*` dependencies.
 - `paths.py` is imported by `cli.py`, `oracle.py`, `db.py`, `knight.py`, `doctrine.py`,
   and `artifact.py`.
+- `projects.py` owns project topology, export resolution and origin-qualified addressing (nested projects); it imports `paths.py`, `config.py` and `validators.py` and no entity module, so every entity module imports `projects.py` and never the reverse. `scoped.py` sits between `projects.py` and the entity modules — the two questions a scoped `read_*` asks of a merged listing — and imports `projects.py` only. See `tech-arch-projects-module`.
 
 ## Concurrency and File Safety
 

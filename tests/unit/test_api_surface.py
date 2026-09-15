@@ -67,6 +67,8 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
+    # project topology (nested-projects)
+    "ProjectRef",
     # operational dataclasses — initialisation (interactive-init-us-023)
     "AccessMode",
     "FileAction",
@@ -78,9 +80,14 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     # exceptions
     "GlossaryError",
     "ProjectNotFoundError",
+    "UnknownProjectError",
+    "ForeignEntityError",
     "ConflictingDepthFlags",
     # config type
     "Config",
+    # config tables (nested-projects)
+    "SharedExports",
+    "DescendantExport",
     # project root
     "find_project_root",
     # validators
@@ -100,6 +107,8 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "validate_skill_family",
     "validate_agent_id",
     "validate_agent_selection",
+    # validators — nested projects
+    "validate_project_name",
     # db: quest CRUD (G17 — get_quest/edit_quest renamed)
     "create_quest",
     "list_quests",
@@ -173,6 +182,8 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "create_watcher",
     "update_watcher",
     "delete_watcher",
+    # watcher — scoped raw text (nested-projects)
+    "read_watcher_text",
     # frontmatter field-edit (cross-entity)
     "update_frontmatter_fields",
     # codex (G16 — scan_codex renamed to list_codex)
@@ -185,6 +196,10 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "create_document",
     "update_document",
     "delete_document",
+    # projects (nested-projects)
+    "list_projects",
+    "resolve_project",
+    "project_name",
     # glossary
     "scan_glossary",
     "read_glossary_item",
@@ -227,6 +242,10 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "SharedStep",
     "RiteError",
     "validate_rite_id",
+    # rite — scoped reads (nested-projects)
+    "list_rites",
+    "find_rite",
+    "search_rites_scoped",
 )
 
 
@@ -260,6 +279,8 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "CodexBinding": "lore.impacts",
     "ImpactsError": "lore.impacts",
     "ImpactsResult": "lore.impacts",
+    # project topology (nested-projects)
+    "ProjectRef": "lore.projects",
     # operational dataclasses — initialisation (interactive-init-us-023)
     "AccessMode": "lore.initplan",
     "FileAction": "lore.initplan",
@@ -271,9 +292,13 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     # exceptions
     "GlossaryError": "lore.glossary",
     "ProjectNotFoundError": "lore.root",
+    "UnknownProjectError": "lore.projects",
+    "ForeignEntityError": "lore.projects",
     "ConflictingDepthFlags": "lore.codex",
     # config
     "Config": "lore.config",
+    "SharedExports": "lore.config",
+    "DescendantExport": "lore.config",
     # project root
     "find_project_root": "lore.root",
     # validators
@@ -292,6 +317,7 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "validate_skill_family": "lore.validators",
     "validate_agent_id": "lore.validators",
     "validate_agent_selection": "lore.validators",
+    "validate_project_name": "lore.validators",
     # db (G17 — get_*/edit_* renamed to read_*/update_*; *_details to list_*)
     "create_quest": "lore.db",
     "list_quests": "lore.db",
@@ -359,6 +385,7 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "create_watcher": "lore.watcher",
     "update_watcher": "lore.watcher",
     "delete_watcher": "lore.watcher",
+    "read_watcher_text": "lore.watcher",
     # frontmatter field-edit
     "update_frontmatter_fields": "lore.frontmatter_edit",
     # codex
@@ -371,6 +398,10 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "create_document": "lore.codex",
     "update_document": "lore.codex",
     "delete_document": "lore.codex",
+    # projects (nested-projects)
+    "list_projects": "lore.projects",
+    "resolve_project": "lore.projects",
+    "project_name": "lore.projects",
     # glossary
     "scan_glossary": "lore.glossary",
     "read_glossary_item": "lore.glossary",
@@ -413,6 +444,10 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "SharedStep": "lore.models",
     "RiteError": "lore.models",
     "validate_rite_id": "lore.validators",
+    # rite — scoped reads (nested-projects)
+    "list_rites": "lore.rite",
+    "find_rite": "lore.rite",
+    "search_rites_scoped": "lore.rite",
 }
 
 
@@ -612,6 +647,10 @@ RITE_PUBLIC_NAMES: frozenset[str] = frozenset(
         "RiteError",
         # validator (lore.validators)
         "validate_rite_id",
+        # scoped reads (nested-projects)
+        "list_rites",
+        "find_rite",
+        "search_rites_scoped",
     }
 )
 
@@ -667,3 +706,30 @@ class TestApiDirCleanliness:
         assert public_names == set(), (
             f"lore.api advertises names outside __all__: {sorted(public_names)}"
         )
+
+
+class TestApiGlossaryScopeSurface:
+    """``scan_own_glossary`` stays internal — unit S1's ruling, recorded.
+
+    The core lane added it because D-21 needs an "own files only" read and no
+    ``scope`` token means that: ``self`` means self *plus ancestors*, because
+    inheritance is unconditional (D-3, A-7). Its only caller is
+    ``lore.health``, and ``standards-facade`` makes ``__all__`` the narrow
+    public surface rather than an inventory of every internal name. ADR-010
+    makes a name added here permanent — a removal is a major bump — so a name
+    with no consumer-facing use case is a stability commitment bought for
+    nothing. The merged view ``scan_glossary`` is the public one, and Part 2's
+    ``__all__`` table does not list ``scan_own_glossary``.
+
+    Passes at red by design: it pins a decision, not a change.
+    """
+
+    def test_scan_own_glossary_is_not_in_the_public_surface(self):
+        from lore import api
+
+        assert "scan_own_glossary" not in api.__all__
+
+    def test_scan_own_glossary_is_still_reachable_internally(self):
+        from lore import glossary
+
+        assert callable(glossary.scan_own_glossary)

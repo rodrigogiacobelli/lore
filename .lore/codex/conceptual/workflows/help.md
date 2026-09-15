@@ -11,6 +11,7 @@ related:
 - conceptual-workflows-lore-init
 - conceptual-workflows-init-interactive
 - conceptual-workflows-health
+- conceptual-workflows-nested-projects
 ---
 
 # Help Output Contract
@@ -22,7 +23,8 @@ Every `lore` command and subcommand exposes `--help` text. The help text is the 
 The root help must describe:
 
 - The two core entity types: `Quest` and `Mission`, with one-line definitions.
-- The two supporting entities: `Knight` and `Doctrine`.
+- The supporting entities: `Knight`, `Doctrine`, `Codex`, `Rite`, `Artifact`, `Watcher`.
+- That a directory holding several Lore projects is itself a Lore project — the `--project` selector and the origin-qualified export it enables (`conceptual-workflows-nested-projects`).
 - A pointer to subcommand groups: `Run any command group with --help for details on that concept.`
 
 Example (from the CLI source):
@@ -39,6 +41,15 @@ Supporting entities:
 
   Knight   — a reusable agent persona attached to missions.
   Doctrine — workflow templates that guide how missions are executed.
+  Codex    — project documentation, searchable and graph-traversable.
+  Rite     — procedural memory: how to do or diagnose a recurring task.
+  Artifact — reusable template files referenced by stable ID.
+  Watcher  — definitions for agents that monitor and react to project state.
+
+A directory holding several Lore projects is itself a Lore project: it
+reads any of them with --project <name> or --project all, and exports
+documents down to named descendants, which see them origin-qualified as
+<project>:<id>.
 
 Run any command group with --help for details on that concept.
 ```
@@ -94,6 +105,10 @@ Every enriched `--help` block for `lore doctrine list`, `lore knight list`, `lor
 - Note that the hyphen-delimited input grammar is no longer accepted — this is a breaking change in the filter grammar.
 - State that matching is segment-prefix on full-segment boundaries: `technical` matches `technical` and `technical/api`, but `tech` does not match `technical`.
 - State that root-level entities (empty group) are always included regardless of the supplied filter tokens.
+
+### `--project`-accepting commands — teaching contract
+
+Every one of the 19 read commands that accepts `--project` (`codex list|show|search|map`, `doctrine list|show`, `knight list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, `impacts` — `conceptual-workflows-nested-projects`) states, in its own or its group's `--help` text, that `--project <name>` (or `all`, or `self`) reads the same entities in another project in this tree. The seven `@main.group()` docstrings among them — knight, doctrine, watcher, artifact, rite, codex, glossary — carry this line. `lore impacts --help`, a top-level command rather than a group, does not.
 
 ### `lore codex --help`
 

@@ -59,6 +59,8 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
+    # project topology (nested-projects)
+    "ProjectRef",
     # operational dataclasses — initialisation (interactive-init-us-023)
     "AccessMode",
     "FileAction",
@@ -69,8 +71,13 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "InitResult",
     "GlossaryError",
     "ProjectNotFoundError",
+    "UnknownProjectError",
+    "ForeignEntityError",
     "ConflictingDepthFlags",
     "Config",
+    # config tables (nested-projects)
+    "SharedExports",
+    "DescendantExport",
     # project root
     "find_project_root",
     # validators
@@ -90,6 +97,8 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "validate_skill_family",
     "validate_agent_id",
     "validate_agent_selection",
+    # validators — nested projects
+    "validate_project_name",
     # db: quest CRUD (G17 — get_quest/edit_quest renamed)
     "create_quest",
     "list_quests",
@@ -162,6 +171,8 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "create_watcher",
     "update_watcher",
     "delete_watcher",
+    # watcher — scoped raw text (nested-projects)
+    "read_watcher_text",
     # frontmatter field-edit (cross-entity)
     "update_frontmatter_fields",
     # codex (G16 — scan_codex renamed to list_codex)
@@ -174,6 +185,10 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "create_document",
     "update_document",
     "delete_document",
+    # projects (nested-projects)
+    "list_projects",
+    "resolve_project",
+    "project_name",
     # glossary
     "scan_glossary",
     "read_glossary_item",
@@ -216,6 +231,10 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "SharedStep",
     "RiteError",
     "validate_rite_id",
+    # rite — scoped reads (nested-projects)
+    "list_rites",
+    "find_rite",
+    "search_rites_scoped",
 )
 
 

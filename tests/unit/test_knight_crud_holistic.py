@@ -215,6 +215,7 @@ class TestReadKnightReturnsFullDict:
     def test_read_returns_full_six_key_dict(self, project_root):
         _k_mod.create_knight(project_root, "reviewer", PERSONA_MD)
         result = _k_mod.read_knight(project_root, "reviewer")
+        # nested-projects-spec — D-15: `origin` is on every record, always
         assert set(result.keys()) == {
             "id",
             "group",
@@ -222,6 +223,7 @@ class TestReadKnightReturnsFullDict:
             "summary",
             "filename",
             "body",
+            "origin",
         }
 
     def test_read_id_field(self, project_root):

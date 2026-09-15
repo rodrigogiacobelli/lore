@@ -1072,3 +1072,394 @@ class TestScanCodexBackwardCompat:
         ids = [d["id"] for d in results]
         assert "codex" in ids
         assert "conceptual-entities-task" in ids
+
+
+# ---------------------------------------------------------------------------
+# C1 — the scoped codex read path
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C1
+# Decisions: D-3/A-7 (inheritance is unconditional, federation is opt-in),
+#            D-4 (what each scope returns), D-8 (bare resolves locally first,
+#            qualified never does), D-10 (no codex doc is a seeded default),
+#            D-15/D-16 (origin on every row, one sort key), A-2 (transient and
+#            sources never export)
+# ---------------------------------------------------------------------------
+
+
+_ANCESTOR_CONFIG = """\
+[shared]
+exports = ["shared-*"]
+
+[[descendants]]
+name = "lore"
+path = "lore"
+exports = ["direct-doc"]
+"""
+
+
+class TestScopedListCodex:
+    def test_an_ancestors_export_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — FR-2/FR-15/FR-16: inheritance needs no flag
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, _ANCESTOR_CONFIG)
+        tree.doc(tree.camelot, "shared-one")
+        tree.doc(tree.lore, "local-one")
+
+        records = {d["id"]: d for d in list_codex(tree.lore)}
+
+        assert records["camelot:shared-one"]["origin"] == "camelot"
+        assert records["local-one"]["origin"] == "self"
+
+    def test_a_descendant_gets_the_block_export_as_well_as_the_shared_one(
+        self, tree
+    ):
+        # nested-projects-spec — FR-3/FR-4: the union of both tables
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, _ANCESTOR_CONFIG)
+        tree.doc(tree.camelot, "shared-one")
+        tree.doc(tree.camelot, "direct-doc")
+
+        ids = [d["id"] for d in list_codex(tree.lore)]
+
+        assert ids == ["camelot:direct-doc", "camelot:shared-one"]
+
+    def test_a_block_export_reaches_only_the_project_it_names(self, tree):
+        # nested-projects-spec — D-11: identity is the block's path
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, _ANCESTOR_CONFIG)
+        tree.doc(tree.camelot, "direct-doc")
+        tree.doc(tree.realm, "own-doc")
+
+        records = list_codex(tree.realm)
+
+        assert [d["id"] for d in records] == ["own-doc"]
+        assert records[0]["origin"] == "self"
+
+    def test_an_unexported_ancestor_document_is_invisible(self, tree):
+        # nested-projects-spec — FR-5: an export is a curated offer
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, _ANCESTOR_CONFIG)
+        tree.doc(tree.camelot, "private-one")
+        tree.doc(tree.lore, "local-one")
+
+        records = list_codex(tree.lore)
+
+        assert [d["id"] for d in records] == ["local-one"]
+        assert records[0]["origin"] == "self"
+
+    def test_a_stray_ancestor_with_no_export_table_is_inert(self, tree):
+        # nested-projects-spec — D-14: a marker directory above is not a tree
+        from lore.codex import list_codex
+
+        tree.doc(tree.camelot, "shared-one")
+        tree.doc(tree.lore, "local-one")
+
+        records = list_codex(tree.lore)
+
+        assert [d["id"] for d in records] == ["local-one"]
+        assert records[0]["origin"] == "self"
+
+    def test_a_transient_ancestor_document_never_exports(self, tree):
+        # nested-projects-spec — A-2: a transient doc is deleted when its
+        # feature ships, so exporting one guarantees a dangling reference
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "shared-one")
+        tree.doc(tree.camelot, "wip-spec", group="transient")
+
+        assert [d["id"] for d in list_codex(tree.lore)] == ["camelot:shared-one"]
+
+    def test_a_source_ancestor_document_never_exports(self, tree):
+        # nested-projects-spec — A-2: a source is disposable raw input
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "raw-input", group="sources")
+        tree.doc(tree.camelot, "shared-one")
+
+        assert [d["id"] for d in list_codex(tree.lore)] == ["camelot:shared-one"]
+
+    def test_a_codex_document_in_a_default_group_still_exports(self, tree):
+        # nested-projects-spec — D-10: `lore init` seeds no codex document, so
+        # the seeded-default exclusion has nothing to remove from this layer
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "grouped-doc", group="default")
+
+        assert [d["id"] for d in list_codex(tree.lore)] == ["camelot:grouped-doc"]
+
+    def test_the_merged_list_is_sorted_on_the_qualified_id(self, tree):
+        # nested-projects-spec — D-16: one sort rule, applied to the id a
+        # caller can feed back in, never grouped by project
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "alpha")
+        tree.doc(tree.camelot, "zulu")
+        tree.doc(tree.lore, "beta")
+        tree.doc(tree.lore, "delta")
+
+        ids = [d["id"] for d in list_codex(tree.lore)]
+
+        assert ids == ["beta", "camelot:alpha", "camelot:zulu", "delta"]
+
+    def test_every_record_carries_its_group(self, tree):
+        # nested-projects-spec — FR-16: the GROUP column is rendered from the
+        # record, because only the owning project can derive it
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "nested-doc", group="conceptual")
+        tree.doc(tree.lore, "root-doc")
+
+        groups = {d["id"]: d["group"] for d in list_codex(tree.lore)}
+
+        assert groups == {"camelot:nested-doc": "conceptual", "root-doc": ""}
+
+    def test_scope_all_adds_every_descendant_unfiltered(self, tree):
+        # nested-projects-spec — D-4: an ancestor asking for the subtree wants
+        # that material, not its own exports reflected back
+        from lore.codex import list_codex
+
+        tree.doc(tree.camelot, "own-doc")
+        tree.doc(tree.lore, "child-doc")
+        tree.doc(tree.realm, "grandchild-doc")
+
+        ids = [d["id"] for d in list_codex(tree.camelot, scope="all")]
+
+        assert ids == ["lore:child-doc", "own-doc", "realm:grandchild-doc"]
+
+    def test_the_default_scope_walks_nothing_downward(self, tree):
+        # nested-projects-spec — A-7/N-3: federation is opt-in
+        from lore.codex import list_codex
+
+        tree.doc(tree.camelot, "own-doc")
+        tree.doc(tree.lore, "child-doc")
+
+        records = list_codex(tree.camelot)
+
+        assert [d["id"] for d in records] == ["own-doc"]
+        assert records[0]["origin"] == "self"
+
+    def test_a_named_project_is_read_alone(self, tree):
+        # nested-projects-spec — D-4/D-11: `--project` matches a project's own
+        # resolved name
+        from lore.codex import list_codex
+
+        tree.doc(tree.camelot, "own-doc")
+        tree.doc(tree.lore, "child-doc")
+
+        ids = [d["id"] for d in list_codex(tree.camelot, scope="lore")]
+
+        assert ids == ["lore:child-doc"]
+
+    def test_an_unknown_project_name_names_the_projects_in_scope(self, tree):
+        # nested-projects-spec — FR-12: the exact message is a contract
+        from lore.codex import list_codex
+        from lore.projects import UnknownProjectError
+
+        tree.doc(tree.camelot, "own-doc")
+
+        with pytest.raises(UnknownProjectError) as excinfo:
+            list_codex(tree.camelot, scope="nope")
+
+        assert str(excinfo.value) == (
+            'Unknown project "nope". Projects in scope: lore, realm.'
+        )
+
+    def test_an_unknown_project_name_in_a_standalone_project_says_so(self, tree):
+        # nested-projects-spec — FR-12: the second exact message
+        from lore.codex import list_codex
+        from lore.projects import UnknownProjectError
+
+        tree.doc(tree.realm, "own-doc")
+
+        with pytest.raises(UnknownProjectError) as excinfo:
+            list_codex(tree.realm, scope="nope")
+
+        assert str(excinfo.value) == (
+            'Unknown project "nope". No other Lore project is in scope.'
+        )
+
+    def test_group_filters_apply_inside_every_project(self, tree):
+        # nested-projects-spec — FR-16: a scoped read keeps every existing
+        # filter, applied per project
+        from lore.codex import list_codex
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "kept-doc", group="conceptual")
+        tree.doc(tree.camelot, "dropped-doc", group="technical")
+        tree.doc(tree.lore, "local-kept", group="conceptual")
+
+        ids = [d["id"] for d in list_codex(tree.lore, ["conceptual"])]
+
+        assert ids == ["camelot:kept-doc", "local-kept"]
+
+
+class TestScopedSearchDocuments:
+    def test_it_tags_and_qualifies_a_match_from_an_ancestor(self, tree):
+        # nested-projects-spec — W1: the ancestor's material answers the search
+        from lore.codex import search_documents
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "shared-one", summary="Talks about dispatch.")
+        tree.doc(tree.lore, "local-one", summary="Also about dispatch.")
+
+        records = {d["id"]: d for d in search_documents(tree.lore, "dispatch")}
+
+        assert records["camelot:shared-one"]["origin"] == "camelot"
+        assert records["local-one"]["origin"] == "self"
+
+    def test_it_never_surfaces_a_transient_ancestor_document(self, tree):
+        # nested-projects-spec — A-2 / F-1 item 3: search reads the same scoped
+        # listing as `codex list`, so the layer exclusion holds on both paths
+        from lore.codex import search_documents
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(
+            tree.camelot, "wip-spec", group="transient", summary="About dispatch."
+        )
+
+        assert search_documents(tree.lore, "dispatch") == []
+
+    def test_it_returns_no_path(self, tree):
+        # nested-projects-spec — decisions-006-id-references: an agent
+        # addresses an entity by id, never by a foreign file path
+        from lore.codex import search_documents
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "shared-one", summary="About dispatch.")
+
+        records = search_documents(tree.lore, "dispatch")
+
+        assert set(records[0]) == {"id", "title", "summary", "origin"}
+
+    def test_it_is_sorted_on_the_qualified_id(self, tree):
+        # nested-projects-spec — D-16
+        from lore.codex import search_documents
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "alpha", summary="About dispatch.")
+        tree.doc(tree.lore, "beta", summary="About dispatch.")
+
+        ids = [d["id"] for d in search_documents(tree.lore, "dispatch")]
+
+        assert ids == ["beta", "camelot:alpha"]
+
+
+class TestScopedReadDocument:
+    def test_it_reads_an_inherited_document_by_qualified_id(self, tree):
+        # nested-projects-spec — W4: the id a listing returns is the id a
+        # caller feeds back in
+        from lore.codex import read_document
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "shared-one", body="Ancestor body.")
+
+        record = read_document(tree.lore, "camelot:shared-one")
+
+        assert record["id"] == "camelot:shared-one"
+        assert record["origin"] == "camelot"
+        assert record["body"].strip() == "Ancestor body."
+
+    def test_a_bare_id_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8: local wins
+        from lore.codex import read_document
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "twin", body="Ancestor body.")
+        tree.doc(tree.lore, "twin", body="Local body.")
+
+        record = read_document(tree.lore, "twin")
+
+        assert record["origin"] == "self"
+        assert record["body"].strip() == "Local body."
+
+    def test_a_qualified_id_never_resolves_locally(self, tree):
+        # nested-projects-spec — D-8: a codex id is free-form, so a local doc
+        # may hold a colon; it is still never reachable through a qualifier
+        from lore.codex import read_document
+
+        tree.write(
+            tree.lore,
+            "codex/colon-doc.md",
+            "---\nid: camelot:shared-one\ntitle: Local\nsummary: Local.\n---\n\nLocal body.\n",
+        )
+
+        assert read_document(tree.lore, "camelot:shared-one") is None
+
+    def test_an_unexported_ancestor_document_reads_as_a_miss(self, tree):
+        # nested-projects-spec — C1: invisible, not an error
+        from lore.codex import read_document
+
+        tree.configure(tree.camelot, _ANCESTOR_CONFIG)
+        tree.doc(tree.camelot, "private-one")
+
+        assert read_document(tree.lore, "camelot:private-one") is None
+
+    def test_a_local_record_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15: `origin` is on every record, always
+        from lore.codex import read_document
+
+        tree.doc(tree.lore, "local-one")
+
+        assert read_document(tree.lore, "local-one")["origin"] == "self"
+
+
+class TestScopedReadDocumentsWithGlossary:
+    def test_it_threads_the_scope_into_each_document(self, tree):
+        # nested-projects-spec — C1: one envelope, scoped the same way
+        from lore.codex import read_documents_with_glossary
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "shared-one")
+
+        envelope = read_documents_with_glossary(
+            tree.lore, ["camelot:shared-one"], skip_glossary=True
+        )
+
+        assert envelope["documents"][0]["origin"] == "camelot"
+
+    def test_a_missing_id_still_fails_soft(self, tree):
+        # nested-projects-spec — C1: the fail-soft path survives a scoped read
+        from lore.codex import read_documents_with_glossary
+
+        envelope = read_documents_with_glossary(
+            tree.lore, ["no-such-doc"], skip_glossary=True
+        )
+
+        assert envelope["documents"] == [{"id": "no-such-doc", "not_found": True}]
+
+    def test_it_surfaces_an_inherited_glossary_term(self, tree):
+        # nested-projects-spec — D-22: the auto-surface reads the merged view
+        from lore.codex import read_documents_with_glossary
+
+        tree.configure(tree.camelot, "[shared]\nglossary = true\n")
+        tree.glossary(tree.camelot, (("Quest", "A body of work."),))
+        tree.doc(tree.lore, "local-one", body="This mentions a quest.")
+
+        envelope = read_documents_with_glossary(tree.lore, ["local-one"])
+
+        assert [item.keyword for item in envelope["glossary"]] == ["Quest"]
+
+
+class TestChaosStaysLocal:
+    def test_chaos_never_reads_an_inherited_document(self, tree):
+        # nested-projects-spec — D-5: `codex chaos` takes no `--project`, and
+        # its termination ratio is defined over this project's own subgraph
+        from lore.codex import chaos_documents
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.doc(tree.camelot, "shared-one")
+        tree.doc(tree.lore, "local-one")
+
+        assert chaos_documents(tree.lore, "camelot:shared-one", 50) is None
+        assert [d["id"] for d in chaos_documents(tree.lore, "local-one", 50)] == [
+            "local-one"
+        ]

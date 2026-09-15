@@ -885,6 +885,8 @@ def test_codex_map_default_json_envelope_is_codex(project_dir, runner):
         "group": "foo/bar",
         "title": "Child A",
         "summary": "Child A summary.",
+        # nested-projects-spec — FR-16 / D-15
+        "origin": "self",
     }
     # No body or related at any entry level.
     assert "body" not in entry
@@ -990,10 +992,12 @@ def test_codex_map_full_json_envelope_is_documents_with_body(project_dir, runner
     # depth 1 outbound from seed -> only child-a (other is at depth 2).
     child_entry = next((e for e in parsed["documents"] if e["id"] == "child-a"), None)
     assert child_entry is not None
+    # nested-projects-spec — D-15: JSON carries `origin` on every row, always
     assert set(child_entry.keys()) == {
-        "id", "title", "summary", "group", "related", "body",
+        "id", "title", "summary", "group", "related", "body", "origin",
     }
     assert child_entry["id"] == "child-a"
+    assert child_entry["origin"] == "self"
     assert child_entry["title"] == "Child A"
     assert child_entry["summary"] == "Child A summary."
     assert child_entry["group"] == "foo/bar"

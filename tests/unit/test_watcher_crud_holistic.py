@@ -139,6 +139,7 @@ class TestReadWatcherEightKeyDict:
     def test_read_has_eight_keys(self, project_root):
         _w_mod.create_watcher(project_root, "w1", WATCHER_YAML)
         result = _w_mod.read_watcher(project_root, "w1")
+        # nested-projects-spec — D-15: `origin` is on every record, always
         assert set(result.keys()) == {
             "id",
             "group",
@@ -148,6 +149,7 @@ class TestReadWatcherEightKeyDict:
             "watch_target",
             "interval",
             "action",
+            "origin",
         }
 
     def test_read_field_values(self, project_root):

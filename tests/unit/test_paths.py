@@ -112,3 +112,98 @@ def test_skills_dir_sits_beside_the_other_dot_lore_helpers(tmp_path):
     from lore.paths import lore_dir, skills_dir
 
     assert skills_dir(tmp_path).parent == lore_dir(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# resolve_beneath — the path-safety helper behind `[[descendants]]` blocks.
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — F1, D-12
+# Requirement: N-5 — the config must not become an arbitrary-filesystem-read
+# primitive, so a value that escapes the project root resolves to nothing.
+#
+# Existence is deliberately not this function's job: whether a resolved path
+# holds a Lore project is a separate question, and asking it here would make a
+# pure path calculation touch the filesystem for a fact it does not need.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_beneath_resolves_a_plain_relative_name(tmp_path):
+    # nested-projects-spec — F1: a relative name resolves under the root
+    from lore.paths import resolve_beneath
+
+    assert resolve_beneath(tmp_path, "lore") == (tmp_path / "lore").resolve()
+
+
+def test_resolve_beneath_resolves_a_nested_relative_path(tmp_path):
+    # nested-projects-spec — F1: several segments still resolve
+    from lore.paths import resolve_beneath
+
+    assert resolve_beneath(tmp_path, "apps/realm") == (tmp_path / "apps" / "realm").resolve()
+
+
+def test_resolve_beneath_returns_the_root_for_a_dot(tmp_path):
+    # nested-projects-spec — F1: "." returns the root itself
+    from lore.paths import resolve_beneath
+
+    assert resolve_beneath(tmp_path, ".") == tmp_path.resolve()
+
+
+def test_resolve_beneath_rejects_a_parent_segment(tmp_path):
+    # nested-projects-spec — F1 / N-5: ".." escapes and is refused
+    from lore.paths import resolve_beneath
+
+    root = tmp_path / "camelot"
+    root.mkdir()
+    assert resolve_beneath(root, "..") is None
+
+
+def test_resolve_beneath_rejects_an_embedded_parent_segment(tmp_path):
+    # nested-projects-spec — F1 / N-5: a `..` anywhere in the value escapes
+    from lore.paths import resolve_beneath
+
+    root = tmp_path / "camelot"
+    root.mkdir()
+    assert resolve_beneath(root, "lore/../../outside") is None
+
+
+def test_resolve_beneath_rejects_an_absolute_path(tmp_path):
+    # nested-projects-spec — F1 / N-5: an absolute value never resolves beneath
+    from lore.paths import resolve_beneath
+
+    assert resolve_beneath(tmp_path, "/etc") is None
+
+
+def test_resolve_beneath_rejects_a_symlink_pointing_outside(tmp_path):
+    # nested-projects-spec — F1 / N-5: both sides are resolved, so a symlink
+    # out of the subtree is refused like a literal `..`
+    from lore.paths import resolve_beneath
+
+    root = tmp_path / "camelot"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "escape").symlink_to(outside, target_is_directory=True)
+
+    assert resolve_beneath(root, "escape") is None
+
+
+def test_resolve_beneath_accepts_a_symlink_that_stays_inside(tmp_path):
+    # nested-projects-spec — F1: a symlink whose target is still beneath the
+    # root is legitimate, and resolves to the target
+    from lore.paths import resolve_beneath
+
+    root = tmp_path / "camelot"
+    (root / "real").mkdir(parents=True)
+    (root / "link").symlink_to(root / "real", target_is_directory=True)
+
+    assert resolve_beneath(root, "link/file") == (root / "real" / "file").resolve()
+
+
+def test_resolve_beneath_resolves_a_path_that_does_not_exist(tmp_path):
+    # nested-projects-spec — F1: existence is not this function's job
+    from lore.paths import resolve_beneath
+
+    assert not (tmp_path / "nowhere").exists()
+    assert resolve_beneath(tmp_path, "nowhere/at/all") == (
+        tmp_path / "nowhere" / "at" / "all"
+    ).resolve()

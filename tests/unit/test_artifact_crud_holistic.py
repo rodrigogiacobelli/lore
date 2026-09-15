@@ -163,6 +163,7 @@ class TestReadArtifactEnvelopeGainsFilenameGroup:
         """Full key set: {id, title, summary, body, filename, group}."""
         _a_mod.create_artifact(project_root, "tmpl", ARTIFACT_MD)
         result = _a_mod.read_artifact(project_root, "tmpl")
+        # nested-projects-spec — D-15: `origin` is on every record, always
         assert set(result.keys()) == {
             "id",
             "title",
@@ -170,6 +171,7 @@ class TestReadArtifactEnvelopeGainsFilenameGroup:
             "body",
             "filename",
             "group",
+            "origin",
         }
 
     def test_read_group_subdir(self, project_root):

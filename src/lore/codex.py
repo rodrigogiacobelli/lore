@@ -2,6 +2,10 @@
 
 Post G17 / codex-CRUD: adds ``create_document`` / ``update_document`` /
 ``delete_document`` per ``transient-codex-crud-spec`` Section A.
+
+Post nested-projects: every read function takes ``scope=`` and every record
+carries ``origin``. The merge itself lives in :func:`lore.projects.collect` —
+this module hands it a single-project reader and sorts what comes back.
 """
 
 import collections
@@ -12,6 +16,7 @@ import yaml
 
 from lore import frontmatter
 from lore import paths as _paths
+from lore import projects, scoped
 from lore.schemas import validate_entity
 from lore.validators import (
     _validate_content_nonempty,
@@ -142,7 +147,11 @@ def create_document(
 
     Returns ``{id, filename, group, doc_type}`` per spec §A.1.
     Raises ``ValueError`` on any validation / duplicate / schema failure.
+    Raises ``ForeignEntityError`` when ``name`` names another project's
+    document: an inherited entity is read-only (FR-17, D-7).
     """
+    # 0. read-only rule — before any validation or filesystem call
+    projects.reject_foreign(name)
     # 1. name
     name_err = validate_name(name)
     if name_err:
@@ -214,8 +223,11 @@ def update_document(
     """Overwrite an existing codex doc with new content (frontmatter + body).
 
     Returns ``{id, filename, group, doc_type, updated_at}`` per spec §A.1.
-    Raises ``ValueError`` on not-found / schema failure / parse failure.
+    Raises ``ValueError`` on not-found / schema failure / parse failure, and
+    ``ForeignEntityError`` on another project's document (FR-17, D-7).
     """
+    # 0. read-only rule — before any filesystem call
+    projects.reject_foreign(name)
     # 1. locate
     filepath = _find_document(project_root, name)
     if filepath is None:
@@ -273,8 +285,10 @@ def delete_document(
 
     Returns ``{id, deleted, deleted_at, group, doc_type}`` per spec §A.1.
     Raises ``ValueError`` on not-found OR if ``name`` is a reserved seeded
-    doc id. Idempotent on already-deleted docs.
+    doc id, and ``ForeignEntityError`` on another project's document (FR-17,
+    D-7). Idempotent on already-deleted docs.
     """
+    projects.reject_foreign(name)
     if "/" in name or "\\" in name:
         raise ValueError(f"Invalid codex doc name: {name!r}")
 
@@ -320,16 +334,19 @@ def delete_document(
     }
 
 
-def list_codex(project_root: Path, filter_groups: list[str] | None = None) -> list[dict]:
-    """Walk ``project_root/.lore/codex/`` recursively and return document records.
+def _list_codex_local(
+    project_root: Path, filter_groups: list[str] | None = None
+) -> list[dict]:
+    """Return one project's own codex records, unmerged.
 
-    Returns a list of dicts with keys: id, title, summary, path.
-    Files without valid frontmatter or missing required fields are skipped.
-    Results are sorted alphabetically by id.
+    The single-project reader :func:`list_codex` hands to
+    ``projects.collect``, and the view ``chaos_documents`` reads directly:
+    a termination ratio is defined over the subgraph a project owns, and
+    ``codex chaos`` accepts no ``--project`` (D-5).
 
-    If filter_groups is a non-empty list, only documents whose group is in
-    filter_groups or whose group is root-level (empty string) are returned.
-    If filter_groups is None or an empty list, all documents are returned.
+    Each record carries ``group`` as well as ``id``, ``title``, ``summary``
+    and ``path``. Only the owning project can derive a group from a path, so
+    the record is where it has to be answered once a listing spans projects.
     """
     codex_dir = _paths.entity_location(project_root, "codex")
     if not codex_dir.exists():
@@ -339,27 +356,67 @@ def list_codex(project_root: Path, filter_groups: list[str] | None = None) -> li
     for filepath in codex_dir.rglob("*.md"):
         record = frontmatter.parse_frontmatter_doc(filepath, required_fields=("id", "title", "summary"))
         if record is not None:
+            record["group"] = _paths.derive_group(filepath, codex_dir)
+            record["origin"] = scoped.SELF
             results.append(record)
 
     if filter_groups:
         results = [
             d for d in results
-            if _paths.group_matches_filter(_paths.derive_group(d["path"], codex_dir), filter_groups)
+            if _paths.group_matches_filter(d["group"], filter_groups)
         ]
 
     return sorted(results, key=lambda d: d["id"])
 
 
-def search_documents(project_root: Path, keyword: str) -> list[dict]:
+def list_codex(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+    *,
+    scope: str | None = None,
+) -> list[dict]:
+    """Return document records for every project in scope.
+
+    Returns a list of dicts with keys: id, title, summary, path, group,
+    origin. A foreign record's ``id`` is origin-qualified, so a caller can
+    feed it straight back into :func:`read_document`. Files without valid
+    frontmatter or missing required fields are skipped. Results are sorted
+    alphabetically by id — the qualified id for a foreign record (D-16).
+
+    If filter_groups is a non-empty list, only documents whose group is in
+    filter_groups or whose group is root-level (empty string) are returned,
+    applied inside each project. If filter_groups is None or an empty list,
+    all documents are returned.
+
+    Raises ``UnknownProjectError`` when ``scope`` names no project in scope.
+    """
+    records = projects.collect(
+        project_root,
+        scope,
+        read=lambda root: _list_codex_local(root, filter_groups),
+        # D-10: `lore init` seeds no codex document, so no codex record is a
+        # seeded default and the exclusion has nothing to remove here.
+        group_key=None,
+    )
+    return sorted(records, key=lambda d: d["id"])
+
+
+def search_documents(
+    project_root: Path, keyword: str, *, scope: str | None = None
+) -> list[dict]:
     """Return documents whose title or summary contains the keyword (case-insensitive).
 
-    Returns a list of dicts with keys: id, title, summary (no path).
+    Returns a list of dicts with keys: id, title, summary, origin (no path —
+    a foreign file path never leaves this module, ``decisions-006-id-references``).
     Results are sorted alphabetically by id.
+
+    The search reads the same scoped listing ``codex list`` does, so the
+    export set and A-2's transient/sources exclusion hold identically on
+    both paths rather than being resolved twice.
     """
-    docs = list_codex(project_root)
     kw = keyword.lower()
     results = []
-    for doc in docs:
+    for doc in list_codex(project_root, scope=scope):
         title_match = kw in doc["title"].lower()
         summary_match = kw in doc["summary"].lower()
         if title_match or summary_match:
@@ -367,40 +424,72 @@ def search_documents(project_root: Path, keyword: str) -> list[dict]:
                 "id": doc["id"],
                 "title": doc["title"],
                 "summary": doc["summary"],
+                "origin": doc["origin"],
             })
     return results
 
 
-def read_document(project_root: Path, doc_id: str) -> dict | None:
+def read_document(
+    project_root: Path, doc_id: str, *, scope: str | None = None
+) -> dict | None:
     """Return a full document record for the given ID, or None if not found.
 
-    The returned dict has keys: id, title, summary, body.
+    The returned dict has keys: id, title, summary, body, origin. ``id`` is
+    the form the caller asked for, so an inherited document reads back
+    qualified. A bare id resolves locally before an inherited one of the same
+    name, and a qualified id never resolves locally (D-8). An unexported
+    ancestor document is a miss, not an error.
+
     The body is the content below the YAML frontmatter block, with leading
     newlines stripped.
     """
-    docs = list_codex(project_root)
-    for doc in docs:
-        if doc["id"] == doc_id:
-            filepath = doc["path"]
-            record = frontmatter.parse_frontmatter_doc_full(filepath, required_fields=("id", "title", "summary"))
-            if record is None:
-                return None
-            return {
-                "id": record["id"],
-                "title": record["title"],
-                "summary": record["summary"],
-                "body": record["body"],
-            }
-    return None
+    doc = scoped.select(list_codex(project_root, scope=scope), doc_id)
+    if doc is None:
+        return None
+    record = frontmatter.parse_frontmatter_doc_full(doc["path"], required_fields=("id", "title", "summary"))
+    if record is None:
+        return None
+    return {
+        "id": doc["id"],
+        "title": record["title"],
+        "summary": record["summary"],
+        "body": record["body"],
+        "origin": doc["origin"],
+    }
 
 
-def _read_related(filepath: Path, index: dict) -> list[str]:
+def _related_key(entry: str, *, owner: str, self_name: str) -> str:
+    """Normalise one ``related`` entry into a scoped index's key space (D-17).
+
+    An entry is written from inside the project that owns the document, so a
+    bare entry names a document in *that* project's namespace and is
+    qualified with the owner. An entry already carrying a qualifier keeps it,
+    unless the qualifier is this project's own name — that is a document we
+    own, named from the other side of the boundary, and it reduces to its
+    bare id. ``index_key`` stays the single home for that reduction.
+    """
+    if not projects.is_qualified(entry):
+        return projects.qualify(owner, entry)
+    return projects.index_key(entry, self_name=self_name)
+
+
+def _read_related(
+    filepath: Path,
+    index: dict,
+    *,
+    owner: str = scoped.SELF,
+    self_name: str = "",
+) -> list[str]:
     """Return sorted list of related IDs present in the index.
 
     Reads the ``related`` field from the document frontmatter at ``filepath``,
-    filters to only IDs present in ``index``, casts non-string entries to str,
-    strips whitespace, drops null entries, and returns a sorted list for
-    determinism.
+    normalises each entry into the index's key space, filters to only IDs
+    present in ``index``, casts non-string entries to str, strips whitespace,
+    drops null entries, and returns a sorted list for determinism.
+
+    ``owner`` is the origin of the document being read and ``self_name`` this
+    project's own resolved name; their defaults describe a single-project
+    index, where every entry is already in its final form.
     """
     record = frontmatter.parse_frontmatter_doc(filepath, extra_fields=("related",))
     if record is None:
@@ -414,7 +503,9 @@ def _read_related(filepath: Path, index: dict) -> list[str]:
     for entry in raw:
         if entry is None:
             continue
-        candidate = str(entry).strip()
+        candidate = _related_key(
+            str(entry).strip(), owner=owner, self_name=self_name
+        )
         if candidate in index:
             result.append(candidate)
 
@@ -424,16 +515,22 @@ def _read_related(filepath: Path, index: dict) -> list[str]:
 def _build_adjacency(
     index: dict[str, dict],
     docs: list[dict],
+    *,
+    self_name: str = "",
 ) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     """Build outbound/inbound adjacency maps from related links.
 
-    Iterates ``docs`` once, calling ``_read_related`` per doc. Both result
-    dicts are initialised with empty sets for every key in ``index``.
+    Iterates ``docs`` once, calling ``_read_related`` per doc with that doc's
+    own origin, so an entry is read in the namespace of the project that
+    wrote it. Both result dicts are initialised with empty sets for every key
+    in ``index``.
     """
     outbound: dict[str, set[str]] = {doc_id: set() for doc_id in index}
     inbound: dict[str, set[str]] = {doc_id: set() for doc_id in index}
     for doc in docs:
-        neighbours = _read_related(doc["path"], index)
+        neighbours = _read_related(
+            doc["path"], index, owner=doc["origin"], self_name=self_name
+        )
         for neighbour_id in neighbours:
             outbound[doc["id"]].add(neighbour_id)
             inbound[neighbour_id].add(doc["id"])
@@ -475,36 +572,47 @@ def _bfs_neighbour_ids(
 
 def _build_neighbour_record(
     meta: dict,
-    codex_dir: Path,
     *,
     full: bool,
+    self_name: str = "",
 ) -> dict | None:
     """Build a single map_documents result record for one neighbour id.
 
-    In default mode returns {id, group, title, summary} from index metadata.
-    In full mode re-parses the file to attach related + body. Returns None
-    only in full mode when the file fails to re-parse (caller skips it).
+    In default mode returns {id, group, title, summary, origin} from index
+    metadata — the group comes off the record, because only the project that
+    owns a document can derive it from that document's path. In full mode
+    re-parses the file to attach related + body, with each related entry
+    normalised into the same key space the ids are in, so every id a record
+    hands back is an id the reader can address. Returns None only in full
+    mode when the file fails to re-parse (caller skips it).
     """
-    group = _paths.derive_group(meta["path"], codex_dir)
     if not full:
         return {
             "id": meta["id"],
             "title": meta["title"],
             "summary": meta["summary"],
-            "group": group,
+            "group": meta["group"],
+            "origin": meta["origin"],
         }
     rec = frontmatter.parse_frontmatter_doc_full(
         meta["path"], extra_fields=("related",)
     )
     if rec is None:
         return None
+    related = [
+        _related_key(entry, owner=meta["origin"], self_name=self_name)
+        if isinstance(entry, str)
+        else entry
+        for entry in (rec.get("related") or [])
+    ]
     return {
-        "id": rec["id"],
+        "id": meta["id"],
         "title": rec["title"],
         "summary": rec["summary"],
-        "group": group,
-        "related": list(rec.get("related") or []),
+        "group": meta["group"],
+        "related": related,
         "body": rec["body"],
+        "origin": meta["origin"],
     }
 
 
@@ -516,12 +624,19 @@ def map_documents(
     depth_out: int | None = None,
     depth_in: int | None = None,
     full: bool = False,
+    scope: str | None = None,
 ) -> list[dict] | None:
     """BFS the codex graph from start_id with separate outbound/inbound budgets.
 
     Returns a list of records (one per neighbour, alphabetically by id):
-      - default (full=False): {"id", "group", "title", "summary"}
-      - full mode (full=True): {"id", "group", "title", "summary", "related", "body"}
+      - default (full=False): {"id", "group", "title", "summary", "origin"}
+      - full mode (full=True): the same plus {"related", "body"}
+
+    Under a scope the index is keyed by qualified id for a foreign document
+    and by bare id for this project's own, so a cross-project edge traverses
+    with no special case in the walk itself (D-17). The direction of such an
+    edge is an authoring rule, not a traversal rule: the BFS has no forbidden
+    direction (D-18).
 
     The seed is never present in the result. Records are deduplicated by id.
 
@@ -551,20 +666,23 @@ def map_documents(
     if eff_out < 0 or eff_in < 0:
         raise ValueError("depth_out and depth_in must be non-negative")
 
-    codex_dir = _paths.entity_location(project_root, "codex")
-    docs = list_codex(project_root)
+    docs = list_codex(project_root, scope=scope)
     index = {doc["id"]: doc for doc in docs}
-    if start_id not in index:
+    seed = scoped.select(docs, start_id)
+    if seed is None:
         return None
 
-    outbound, inbound = _build_adjacency(index, docs)
+    self_name = projects.project_name(project_root)
+    outbound, inbound = _build_adjacency(index, docs, self_name=self_name)
     neighbour_ids = _bfs_neighbour_ids(
-        start_id, outbound, inbound, eff_out, eff_in
+        seed["id"], outbound, inbound, eff_out, eff_in
     )
 
     records: list[dict] = []
     for doc_id in neighbour_ids:
-        record = _build_neighbour_record(index[doc_id], codex_dir, full=full)
+        record = _build_neighbour_record(
+            index[doc_id], full=full, self_name=self_name
+        )
         if record is not None:
             records.append(record)
     return records
@@ -575,6 +693,7 @@ def read_documents_with_glossary(
     doc_ids: list[str],
     *,
     skip_glossary: bool = False,
+    scope: str | None = None,
 ) -> dict:
     """Compose a {documents, glossary} envelope for one-or-more codex docs.
 
@@ -592,6 +711,9 @@ def read_documents_with_glossary(
     skip_glossary:
         When True, returns ``glossary == []`` and does NOT consult the
         glossary file.
+    scope:
+        Threaded into every document read and into the glossary match, so
+        one envelope answers for one scope.
 
     Returns a dict with EXACTLY the keys ``{"documents", "glossary"}``.
     Missing doc ids fail soft: a record carrying ``{"id": "<id>", "not_found": True}``
@@ -601,7 +723,7 @@ def read_documents_with_glossary(
 
     documents: list[dict] = []
     for doc_id in doc_ids:
-        doc = read_document(project_root, doc_id)
+        doc = read_document(project_root, doc_id, scope=scope)
         if doc is None:
             documents.append({"id": doc_id, "not_found": True})
         else:
@@ -612,7 +734,7 @@ def read_documents_with_glossary(
     else:
         bodies = [d["body"] for d in documents if "body" in d]
         glossary_items = list(
-            _glossary.match_glossary(bodies, root=project_root)
+            _glossary.match_glossary(bodies, root=project_root, scope=scope)
         )
 
     return {"documents": documents, "glossary": glossary_items}
@@ -636,6 +758,10 @@ def chaos_documents(
 
     Returns None if start_id is not in the index.
     The seed document is always the first entry.
+
+    Reads this project's own documents only: a termination ratio is defined
+    over the subgraph a project owns, and ``codex chaos`` takes no
+    ``--project`` (D-5).
     """
     from lore.validators import validate_chaos_threshold
 
@@ -643,7 +769,7 @@ def chaos_documents(
     if not valid:
         raise ValueError(err)
 
-    docs = list_codex(project_root)
+    docs = _list_codex_local(project_root)
     index = {doc["id"]: doc for doc in docs}
 
     if start_id not in index:

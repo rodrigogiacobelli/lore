@@ -328,3 +328,130 @@ def test_us010_knight_create_validator_delegates(monkeypatch):
 
     _k_mod._validate_frontmatter({"id": "pm", "title": "PM", "summary": "s"})
     assert kinds == ["knight-frontmatter"]
+
+
+# ---------------------------------------------------------------------------
+# C3 — the scoped knight read path
+#
+# Spec: nested-projects-spec (lore codex show nested-projects-spec) — C3
+# Decisions: D-2 (one merge loop), D-7, D-10, D-16
+# ---------------------------------------------------------------------------
+
+
+class TestScopedListKnights:
+    def test_an_ancestors_export_arrives_qualified_and_tagged(self, tree):
+        # nested-projects-spec — FR-2/FR-16
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "knight", "reviewer")
+        tree.entity(tree.lore, "knight", "builder")
+
+        records = {k["id"]: k for k in list_knights(tree.lore)}
+
+        assert records["camelot:reviewer"]["origin"] == "camelot"
+        assert records["builder"]["origin"] == "self"
+
+    def test_a_seeded_default_never_crosses_a_boundary(self, tree):
+        # nested-projects-spec — FR-10/D-10
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "knight", "dev-lane", group="default")
+        tree.entity(tree.camelot, "knight", "reviewer")
+
+        assert [k["id"] for k in list_knights(tree.lore)] == ["camelot:reviewer"]
+
+    def test_the_merged_list_is_sorted_on_the_qualified_id(self, tree):
+        # nested-projects-spec — D-16
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "knight", "alpha")
+        tree.entity(tree.lore, "knight", "beta")
+        tree.entity(tree.lore, "knight", "delta")
+
+        assert [k["id"] for k in list_knights(tree.lore)] == [
+            "beta",
+            "camelot:alpha",
+            "delta",
+        ]
+
+    def test_a_soft_deleted_knight_never_appears(self, tree):
+        # nested-projects-spec — decisions-003-soft-delete-semantics
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        path = tree.entity(tree.camelot, "knight", "retired")
+        path.rename(path.with_suffix(".md.deleted"))
+        tree.entity(tree.camelot, "knight", "live")
+
+        assert [k["id"] for k in list_knights(tree.lore)] == ["camelot:live"]
+
+
+class TestScopedReadKnight:
+    def test_it_reads_an_inherited_knight_by_qualified_name(self, tree):
+        # nested-projects-spec — W4
+        from lore.knight import read_knight
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "knight", "reviewer")
+
+        record = read_knight(tree.lore, "camelot:reviewer")
+
+        assert record["id"] == "camelot:reviewer"
+        assert record["origin"] == "camelot"
+        assert record["body"].strip() == "Body."
+
+    def test_a_bare_name_resolves_locally_first(self, tree):
+        # nested-projects-spec — D-8
+        from lore.knight import read_knight
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["*"]\n')
+        tree.entity(tree.camelot, "knight", "twin", summary="Ancestor.")
+        tree.entity(tree.lore, "knight", "twin", summary="Local.")
+
+        record = read_knight(tree.lore, "twin")
+
+        assert record["origin"] == "self"
+        assert record["summary"] == "Local."
+
+    def test_an_unexported_ancestor_knight_reads_as_a_miss(self, tree):
+        # nested-projects-spec — C3
+        from lore.knight import read_knight
+
+        tree.configure(tree.camelot, '[shared]\nexports = ["nothing-*"]\n')
+        tree.entity(tree.camelot, "knight", "reviewer")
+
+        assert read_knight(tree.lore, "camelot:reviewer") is None
+
+    def test_a_local_record_carries_the_self_origin(self, tree):
+        # nested-projects-spec — D-15
+        from lore.knight import read_knight
+
+        tree.entity(tree.lore, "knight", "builder")
+
+        assert read_knight(tree.lore, "builder")["origin"] == "self"
+
+
+class TestForeignKnightWritesAreRefused:
+    def test_create_knight_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17/D-7
+        from lore.knight import create_knight as _create
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError) as excinfo:
+            _create(tree.lore, "camelot:reviewer", "---\nid: x\n---\n")
+
+        assert str(excinfo.value) == (
+            'Cannot write "camelot:reviewer": '
+            "an entity from another project is read-only."
+        )
+
+    def test_update_knight_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.knight import update_knight
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            update_knight(tree.lore, "camelot:reviewer", "---\nid: x\n---\n")
+
+    def test_delete_knight_refuses_a_qualified_name(self, tree):
+        # nested-projects-spec — FR-17
+        from lore.knight import delete_knight
+        from lore.projects import ForeignEntityError
+
+        with pytest.raises(ForeignEntityError):
+            delete_knight(tree.lore, "camelot:reviewer")

@@ -11,6 +11,8 @@ related:
 - tech-arch-source-layout
 - conceptual-workflows-lore-init
 - tech-arch-install-manifest
+- tech-arch-projects-module
+- conceptual-workflows-nested-projects
 ---
 
 # Project Root Detection
@@ -73,3 +75,14 @@ in the codebase — in `paths.py`.
 
 **`root.py` retains its existing responsibilities** — detection only — and is not
 modified by the refactor. `paths.py` is a companion, not a replacement.
+
+## A tree of Lore projects
+
+`find_project_root()` stops at the **first** `.lore/` found walking upward — it answers "which project am I in", nothing more. It does not change when a project participates in a tree of nested Lore projects.
+
+Two separate walks, both in `src/lore/projects.py`, answer the tree questions `find_project_root()` was never asked:
+
+- **Upward, past the first `.lore/`** — `resolve_ancestors(project_root)` continues from `project_root.parent` to the filesystem root, looking for a project whose config exports into this one. `find_project_root()`'s own walk stops at the nearest `.lore/`; this is a second, independent walk starting one directory further out.
+- **Downward** — `discover_descendants(project_root)` walks the subtree with `os.walk`, finding every project nested beneath this one.
+
+Neither walk is a variant of `find_project_root()` and neither lives in `root.py`: `find_project_root()`'s contract (stop at the first `.lore/`, raise `ProjectNotFoundError` at the filesystem root) is depended on by every command's root resolution, and changing it would change all of them. See `tech-arch-projects-module` for both walks' shape and cost, and `conceptual-workflows-nested-projects` for the model they serve.

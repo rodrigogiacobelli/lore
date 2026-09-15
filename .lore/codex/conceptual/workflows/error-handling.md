@@ -11,6 +11,7 @@ related:
 - decisions-017-constrained-flags-use-click-choice
 - decisions-012-multi-value-cli-param-convention
 - conceptual-workflows-init-interactive
+- conceptual-workflows-nested-projects
 ---
 
 # CLI Error Handling
@@ -23,7 +24,7 @@ Lore's CLI follows consistent conventions for surfacing errors to callers. Under
 |---|---|
 | 0 | Success (including idempotent no-ops) |
 | 1 | At least one error occurred |
-| 2 | Usage error — a flag, value or option combination Click refused before the command body ran |
+| 2 | Usage error — an invalid flag, value or option combination. Click's own parser refuses some of these before the command body runs; a command's own body raises others itself, once it can see a conflict the parser cannot (`--depth` combined with `--depth-in`/`--depth-out` on `codex map`, `--project` on a command that does not accept it) — see `conceptual-workflows-json-output` for which of the two a given usage error is. |
 
 Idempotent successes always return 0, even when no database write occurred (e.g., claiming an already-`in_progress` mission).
 
@@ -107,6 +108,10 @@ JSON: `{"error": "...", "deleted_at": "2026-03-24T12:00:00Z"}`.
 | Entity not found | Error to stderr | 1 |
 | Wrong status for operation | Error to stderr | 1 |
 | DB integrity error | Exception propagates; unhandled error | 1 |
+| `--project` passed to a write, quest, or mission command | `Error: --project is a read selector; it is not accepted on "<command>".` to stderr (handler-raised, envelope under `--json`) | 2 |
+| A write against an origin-qualified entity id | `Error: Cannot write "<id>": an entity from another project is read-only.` to stderr; a Python caller gets `ForeignEntityError` | 1 |
+| `--project <name>` naming a project not in scope | `Unknown project "<name>". Projects in scope: <others>.` to stderr | 1 |
+| A project in scope is unreadable during a merged read | One `lore: project "<name>" is unreadable: <reason>; skipped` line to stderr; the command completes with every other project's rows | 0 |
 
 ## Out of Scope
 

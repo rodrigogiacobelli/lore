@@ -95,6 +95,12 @@ def validate_priority(priority: int | None) -> str | None:
     return None
 
 
+_INVALID_NAME = (
+    "Invalid name: must start with alphanumeric and contain only "
+    "letters, digits, hyphens, underscores."
+)
+
+
 def validate_name(name: str) -> str | None:
     """Return an error string if *name* is not a valid knight/doctrine name, else None.
 
@@ -102,11 +108,28 @@ def validate_name(name: str) -> str | None:
     letters, digits, hyphens, and underscores.
     """
     if not name or not _NAME_RE.match(name):
-        return (
-            "Invalid name: must start with alphanumeric and contain only "
-            "letters, digits, hyphens, underscores."
-        )
+        return _INVALID_NAME
     return None
+
+
+def validate_project_name(value: object) -> str | None:
+    """Return an error string if *value* is not a usable project name, else None.
+
+    The empty string is valid and means "fall back to the project directory's
+    name", which is what a freshly seeded ``.lore/config.toml`` carries. Every
+    other value must be a name in the entity grammar: the value becomes an
+    origin qualifier in ``<project>:<entity-id>``, so it can never hold a
+    ``:``.
+
+    Takes ``object`` rather than ``str`` because the config loader hands over
+    whatever TOML produced. A value that is not a string is not a name, and is
+    reported the same way rather than raising.
+    """
+    if value == "":
+        return None
+    if not isinstance(value, str):
+        return _INVALID_NAME
+    return validate_name(value)
 
 
 def validate_rite_id(s: str) -> None:

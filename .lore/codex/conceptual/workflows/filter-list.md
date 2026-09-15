@@ -2,9 +2,9 @@
 id: conceptual-workflows-filter-list
 title: lore * list --filter Behaviour
 summary: What the system does when --filter GROUP... is passed to the list subcommand
-  of codex, artifact, knight, doctrine, watcher, or rite commands — slash-delimited token-to-group
-  segment-prefix matching, root-level file inclusion, Python API parity, and unchanged
-  unfiltered behaviour.
+  of codex, artifact, knight, doctrine, watcher, or rite commands — slash-delimited
+  token-to-group segment-prefix matching, root-level file inclusion, Python API parity,
+  and unchanged unfiltered behaviour.
 binds:
 - src/lore/cli.py
 - src/lore/paths.py
@@ -19,6 +19,7 @@ related:
 - conceptual-workflows-codex
 - ref-lore_cli-commands
 - decisions-011-api-parity-with-cli
+- conceptual-workflows-nested-projects
 ---
 
 # `lore * list --filter` Behaviour
@@ -104,19 +105,25 @@ lore codex list --filter conceptual technical/api
 
 ## Python API Parity
 
-Per ADR-011, the filtering logic for the five frontmatter/YAML entities lives in each Python module function — not in `cli.py`. Those five list functions accept a `filter_groups` keyword argument:
+Per ADR-011, the filtering logic for the five frontmatter/YAML entities lives in each Python module function — not in `cli.py`. Those five list functions take `project_root` first and accept a `filter_groups` keyword argument, plus a keyword-only `scope` for the `--project` selector:
 
 ```python
-scan_codex(codex_dir, filter_groups=None)
-scan_artifacts(artifacts_dir, filter_groups=None)
-list_knights(knights_dir, filter_groups=None)
-list_doctrines(doctrines_dir, filter_groups=None)
-list_watchers(watchers_dir, filter_groups=None)
+list_codex(project_root, filter_groups=None, *, scope=None)
+list_artifacts(project_root, filter_groups=None, *, scope=None)
+list_knights(project_root, filter_groups=None, *, scope=None)
+list_doctrines(project_root, filter_groups=None, *, scope=None)
+list_watchers(project_root, filter_groups=None, *, scope=None)
 ```
 
 `filter_groups=None` (or omitted) returns all entities — existing callers are unaffected. `filter_groups=["conceptual"]` returns all entities whose group is `conceptual` or starts with the segment `conceptual` (e.g., `conceptual/workflows`, `conceptual/reference`), plus root-level entities.
 
-Rites apply the same `paths.group_matches_filter` rule, but the filter is applied in the `rite list` CLI handler over the `group` each `scan_rites` record already carries (rather than as a `scan_rites` keyword) — `scan_rites(rites_dir, shared=...)` always returns the full recursive listing with groups attached, and the segment-prefix match plus root-always-included semantics are identical to the other five.
+Rites apply the same `paths.group_matches_filter` rule, applied inside `list_rites` itself: `list_rites(project_root, *, shared=False, filter_groups=None, scope=None)` filters each project's own listing before the merge, exactly as the other five do.
+
+## `--project` and `--filter` compose per project
+
+`--filter` narrows what one project returns; `--project` chooses which projects are read. The two are independent and compose: `filter_groups` is applied **inside each project's own listing**, before that project's rows join the merge — so `lore codex list --filter conceptual --project all` returns, from every project in scope, only the rows whose *own* group matches `conceptual` (or is root-level). A group name is meaningful only within the project that derived it from its own directory layout; there is no cross-project group namespace, and a filter token never matches against another project's directory structure directly — each project answers the filter for itself.
+
+The rendered table gains the `ORIGIN` column under the same rule as every other affected command (D-15): only when the filtered result set holds at least one non-`self` row. Root-level files stay always-included, independently in every project — a project with no root-level match under `--filter` still contributes its foreign root-level rows when reading `all`.
 
 ## Example Output
 
@@ -168,3 +175,4 @@ No new failure modes are introduced by this feature:
 - conceptual-workflows-codex (lore codex show conceptual-workflows-codex)
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands)
 - decisions-011-api-parity-with-cli (lore codex show decisions-011-api-parity-with-cli)
+- conceptual-workflows-nested-projects (lore codex show conceptual-workflows-nested-projects) — the `--project` selector these six list commands also accept.
