@@ -20,7 +20,7 @@ related:
 
 `lore.api` is the single stable import surface for Lore. ADR-010 fixes the contract at `lore.api.__all__`, which spans types, validators, and operational callables. The authoritative list lives in `src/lore/api.py`. Every CLI command routes through this same facade (ADR-011), so a Python caller gets identical behaviour: same validation, same return shape, same state effects.
 
-Internal modules (`lore.db`, `lore.codex`, `lore.knight`, …) may be renamed, split, or merged between releases. Consumers that import from them are broken by design. Import from `lore.api` only.
+Internal modules (`lore.db`, `lore.codex`, `lore.doctrine`, …) may be renamed, split, or merged between releases. Consumers that import from them are broken by design. Import from `lore.api` only.
 
 Two consumer profiles use this:
 
@@ -102,7 +102,7 @@ Creation returns `{"id", "filename", "group"}`. `filename` and `group` are `None
 
 ### Mission
 
-A Mission is a single executable task. It optionally belongs to a Quest (hierarchical ID `q-7a3f/m-001`) and optionally names a Knight persona.
+A Mission is a single executable task. It optionally belongs to a Quest (hierarchical ID `q-7a3f/m-001`) and optionally names a doctrine mission by the reference `<doctrine-id>/<mission-id>`.
 
 ```python
 from lore.api import create_mission, claim_mission, close_mission, block_mission
@@ -112,8 +112,8 @@ m = create_mission(
     title="Draft api-guide.md",
     quest_id="q-7a3f",
     priority=2,
-    knight="tech-writer",
-    mission_type="knight",
+    doctrine_mission="tdd-implementation/red",
+    mission_type="agent",
 )
 mission_id = m["id"]
 
@@ -124,48 +124,34 @@ close_mission(project_root, mission_id)        # cascade-unblocks dependents
 
 For UI dashboards, `list_missions_grouped` returns missions bucketed by quest with the quest title attached. For the orchestrator's "what next" loop, `get_ready_missions(project_root, count=N)` returns unblocked open missions ordered by priority.
 
-### Knight
-
-A Knight is a reusable agent persona — a markdown file under `.lore/knights/`.
-
-```python
-from lore.api import create_knight, read_knight, list_knights
-
-content = """---
-id: tech-writer
-title: Tech Writer
-summary: Drafts narrative docs and references.
----
-You are a technical writer for Lore...
-"""
-create_knight(project_root, name="tech-writer", content=content, group=None)
-
-knight = read_knight(project_root, "tech-writer")
-print(knight["body"])
-```
-
-Returns include `{"id", "filename", "group"}` — `filename` is the relative path under `.lore/knights/`. Updates overwrite the file in place; deletes rename to `.md.deleted` for soft-delete.
-
 ### Doctrine
 
-A Doctrine is a passive workflow template — a paired `<name>.yaml` + `<name>.design.md` under `.lore/doctrines/`.
+A Doctrine is a passive directory of prose under `.lore/doctrines/`: `<name>/<name>.design.md` for the orchestrator, and one `<name>/missions/<id>.md` per worker.
 
 ```python
-from lore.api import create_doctrine, read_doctrine
+from lore.api import create_doctrine, read_doctrine, update_doctrine
 
 create_doctrine(
     project_root,
-    name="tdd-feature",
-    yaml_source_path=Path("/tmp/tdd-feature.yaml"),
-    design_source_path=Path("/tmp/tdd-feature.design.md"),
+    "tdd-feature",
+    design_body,
+    {"red": red_body, "green": green_body, "refactor": refactor_body},
 )
 
 d = read_doctrine(project_root, "tdd-feature")
-for step in d["steps"]:
-    print(step["title"], step.get("knight"))
+print(d["design"])
+for m in d["missions"]:
+    print(m["id"], m["title"])
+
+one = read_doctrine(project_root, "tdd-feature", mission="red")
+print(one["mission"]["body"])
+
+update_doctrine(project_root, "tdd-feature", missions={"red": revised_red})
 ```
 
-Both source files are required and validated atomically — no partial writes.
+Everything is validated before anything is written. `create_doctrine` additionally stages the whole directory and moves it into place with one `os.replace`, so no partial doctrine is ever left on disk. `update_doctrine` merges by stem: a mission you do not name is left byte-identical.
+
+A bare `None` from `read_doctrine` means **the doctrine** missed. When the doctrine resolves and the named mission does not, the returned dict carries `"mission": None`.
 
 ### Artifact
 
@@ -280,7 +266,7 @@ for dep in list_mission_depends_on(project_root, "q-7a3f/m-002"):
 
 ## Reading across a tree of projects
 
-A directory holding several Lore projects is itself a Lore project once its own `.lore/` exists. Every read function on Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite takes a keyword-only `scope=`, and every returned record carries an `origin`.
+A directory holding several Lore projects is itself a Lore project once its own `.lore/` exists. Every read function on Doctrine, Watcher, Artifact, Codex, Glossary and Rite takes a keyword-only `scope=`, and every returned record carries an `origin`.
 
 ```python
 from lore.api import read_document, list_projects, resolve_project
@@ -298,10 +284,10 @@ for ref in list_projects(project_root):
 Every write function on a file-backed entity raises `ForeignEntityError` on a qualified name — a cross-project entity has exactly one authoritative copy, in the project that authored it, and no Python call bypasses that:
 
 ```python
-from lore.api import update_knight, ForeignEntityError
+from lore.api import update_doctrine, ForeignEntityError
 
 try:
-    update_knight(project_root, "camelot:tech-writer", new_content)
+    update_doctrine(project_root, "camelot:tdd-feature", new_design)
 except ForeignEntityError as exc:
     print(exc)  # Cannot write "camelot:tech-writer": an entity from another project is read-only.
 ```
@@ -310,7 +296,7 @@ except ForeignEntityError as exc:
 
 ## Field-level frontmatter editing
 
-For file-backed entities (knight, doctrine, artifact, watcher, codex doc) you do not have to round-trip the whole markdown body. `update_frontmatter_fields` mutates one or more frontmatter keys in place:
+For file-backed entities (doctrine, artifact, watcher, codex doc) you do not have to round-trip the whole markdown body. The `doctrine` kind addresses the design document. `update_frontmatter_fields` mutates one or more frontmatter keys in place:
 
 ```python
 from lore.api import update_frontmatter_fields
@@ -339,7 +325,7 @@ Every facade function validates inputs via `lore.validators` (ADR-011, Decision 
 - `UnknownProjectError` — any scoped read whose `scope=` argument names no project in scope.
 - `ForeignEntityError` — any write function on a file-backed entity whose target name is origin-qualified.
 
-Lookup functions (`read_quest`, `read_mission`, `read_knight`, …) return `None` on miss — they do not raise. Reserve `try/except` for the mutation surface.
+Lookup functions (`read_quest`, `read_mission`, `read_doctrine`, …) return `None` on miss — they do not raise. Reserve `try/except` for the mutation surface.
 
 ```python
 from lore.api import create_mission, ProjectNotFoundError

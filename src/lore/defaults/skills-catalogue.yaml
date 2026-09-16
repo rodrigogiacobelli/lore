@@ -34,8 +34,6 @@ skills:
     family: machinery
   - id: update-doctrine
     family: machinery
-  - id: update-knight
-    family: machinery
   - id: update-watcher
     family: machinery
   - id: inquest
@@ -61,3 +59,6 @@ retired:
   explore-codex: {into: retrieve-memory, reason: merged into retrieve-memory}
   explore-rite: {into: retrieve-memory, reason: merged into retrieve-memory}
   explore-codex-rite: {into: retrieve-memory, reason: merged into retrieve-memory}
+  update-knight:
+    into: update-doctrine
+    reason: "a reusable instruction lives in the doctrine mission file that uses it"

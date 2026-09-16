@@ -51,8 +51,6 @@ FR13_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("codex", "map", "sc7-anchor"),
     ("doctrine", "list"),
     ("doctrine", "show", "sc7-doctrine"),
-    ("knight", "list"),
-    ("knight", "show", "sc7-knight"),
     ("artifact", "list"),
     ("artifact", "show", "sc7-artifact"),
     ("rite", "list"),
@@ -69,7 +67,7 @@ FR13_COMMANDS: tuple[tuple[str, ...], ...] = (
 
 # Every seeded subtree `lore init` installs, plus the two user-owned files it
 # writes once (ADR-013 constraints 2 and 3). None of them may reach a golden.
-_SEEDED_TREES = ("doctrines", "knights", "artifacts", "watchers")
+_SEEDED_TREES = ("doctrines", "artifacts", "watchers")
 
 
 _ANCHOR_DOC = """\
@@ -100,18 +98,6 @@ summary: A second document, so `lore codex map` has an edge to traverse.
 Reached from the anchor.
 """
 
-_KNIGHT_MD = """\
----
-id: sc7-knight
-title: SC-7 Knight
-summary: A knight authored by this test so `knight list` has a row.
----
-
-# SC-7 Knight
-
-Does nothing.
-"""
-
 _ARTIFACT_MD = """\
 ---
 id: sc7-artifact
@@ -133,18 +119,17 @@ summary: A doctrine authored by this test so `doctrine list` has a row.
 
 # SC-7 Doctrine
 
-One step, one knight.
+One mission.
 """
 
-_DOCTRINE_YAML = """\
-id: sc7-doctrine
-title: SC-7 Doctrine
-summary: A doctrine authored by this test so `doctrine list` has a row.
-steps:
-  - id: only-step
-    title: Do the thing
-    type: knight
-    knight: sc7-knight
+_DOCTRINE_MISSION = """\
+---
+id: only-mission
+title: Do the thing
+summary: The one mission this doctrine carries.
+---
+
+Do the thing.
 """
 
 _WATCHER_YAML = """\
@@ -190,13 +175,14 @@ def author_standalone_project(root: Path) -> None:
 
     (lore / "codex" / "sc7-anchor.md").write_text(_ANCHOR_DOC, encoding="utf-8")
     (lore / "codex" / "sc7-neighbour.md").write_text(_NEIGHBOUR_DOC, encoding="utf-8")
-    (lore / "knights" / "sc7-knight.md").write_text(_KNIGHT_MD, encoding="utf-8")
     (lore / "artifacts" / "sc7-artifact.md").write_text(_ARTIFACT_MD, encoding="utf-8")
-    (lore / "doctrines" / "sc7-doctrine.design.md").write_text(
+    doctrine = lore / "doctrines" / "sc7-doctrine"
+    (doctrine / "missions").mkdir(parents=True, exist_ok=True)
+    (doctrine / "sc7-doctrine.design.md").write_text(
         _DOCTRINE_DESIGN, encoding="utf-8"
     )
-    (lore / "doctrines" / "sc7-doctrine.yaml").write_text(
-        _DOCTRINE_YAML, encoding="utf-8"
+    (doctrine / "missions" / "only-mission.md").write_text(
+        _DOCTRINE_MISSION, encoding="utf-8"
     )
     (lore / "watchers" / "sc7-watcher.yaml").write_text(_WATCHER_YAML, encoding="utf-8")
     (lore / "rites" / "main" / "sc7-rite.yaml").write_text(_RITE_YAML, encoding="utf-8")

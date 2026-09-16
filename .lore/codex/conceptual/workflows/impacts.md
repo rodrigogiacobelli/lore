@@ -278,7 +278,7 @@ these.
   of direct neighbours out. No crossing of `related:` edges during a path
   lookup, no chained `binds:` traversal.
 - **Injection policy.** When and how an orchestrator invokes `lore impacts`
-  before dispatching a knight is the orchestrator's concern. This command
+  before dispatching a worker is the orchestrator's concern. This command
   exposes the data; it does not surface or inject it.
 - **Glossary `binds:`.** PRD post-MVP. The schema and command shape generalise
   cleanly but v1 implements neither.

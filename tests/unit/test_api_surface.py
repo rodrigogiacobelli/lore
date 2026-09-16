@@ -5,7 +5,7 @@ zero `def`/`class` in body, docstring ref ADR-010, identity (not copy)
 of every re-export.
 
 G1 slice = names that EXIST TODAY only. Bulk ops, `*_full`, `*_detail`,
-new CRUD parity names (update_knight, delete_artifact, etc.) land in
+new CRUD parity names (update_watcher, delete_artifact, etc.) land in
 later chunks per `transient-public-api-facade-plan`.
 
 Source spec docs:
@@ -54,9 +54,6 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "BoardMessage",
     "Artifact",
     "CodexDocument",
-    "DoctrineStep",
-    "Doctrine",
-    "Knight",
     "DoctrineListEntry",
     "GlossaryItem",
     "Watcher",
@@ -158,12 +155,6 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "init_database",
     # priority
     "get_ready_missions",
-    # knight (G16 — find_knight reclassified internal; read_knight is dict)
-    "list_knights",
-    "create_knight",
-    "read_knight",
-    "update_knight",
-    "delete_knight",
     # doctrine (G16 — show_doctrine renamed to read_doctrine; None-on-miss)
     "list_doctrines",
     "read_doctrine",
@@ -266,9 +257,6 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "BoardMessage": "lore.models",
     "Artifact": "lore.models",
     "CodexDocument": "lore.models",
-    "DoctrineStep": "lore.models",
-    "Doctrine": "lore.models",
-    "Knight": "lore.models",
     "DoctrineListEntry": "lore.models",
     "GlossaryItem": "lore.models",
     "Watcher": "lore.models",
@@ -361,12 +349,6 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "init_database": "lore.db",
     # priority
     "get_ready_missions": "lore.priority",
-    # knight
-    "list_knights": "lore.knight",
-    "create_knight": "lore.knight",
-    "read_knight": "lore.knight",
-    "update_knight": "lore.knight",
-    "delete_knight": "lore.knight",
     # doctrine
     "list_doctrines": "lore.doctrine",
     "read_doctrine": "lore.doctrine",
@@ -706,6 +688,37 @@ class TestApiDirCleanliness:
         assert public_names == set(), (
             f"lore.api advertises names outside __all__: {sorted(public_names)}"
         )
+
+
+class TestApiPrivateAliases:
+    """The private CLI-only aliases track the modules that still exist.
+
+    ``lore.knight`` is deleted, so the ``_knight`` namespace alias and the
+    ``_validate_frontmatter`` re-export it served have no module to point at.
+    ``_doctrine`` stays: the doctrine module owns the directory and every
+    mission file inside it.
+    """
+
+    def test_knight_alias_is_gone(self):
+        from lore import api
+
+        assert not hasattr(api, "_knight"), (
+            "lore.api._knight must not exist — lore.knight is deleted"
+        )
+
+    def test_validate_frontmatter_alias_is_gone(self):
+        from lore import api
+
+        assert not hasattr(api, "_validate_frontmatter"), (
+            "lore.api._validate_frontmatter must not exist — it re-exported "
+            "a lore.knight helper and has no caller"
+        )
+
+    def test_doctrine_alias_still_resolves(self):
+        import lore.doctrine
+        from lore import api
+
+        assert api._doctrine is lore.doctrine
 
 
 class TestApiGlossaryScopeSurface:

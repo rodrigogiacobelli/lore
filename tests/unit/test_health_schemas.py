@@ -24,7 +24,7 @@ from lore.health import _ALL_SCOPES, _check_schemas, health_check
 
 def _make_lore_skeleton(root: Path) -> Path:
     lore = root / ".lore"
-    for d in ("knights", "doctrines", "codex", "artifacts", "watchers"):
+    for d in ("doctrines", "codex", "artifacts", "watchers"):
         (lore / d).mkdir(parents=True, exist_ok=True)
     return root
 
@@ -34,22 +34,23 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _write_bad_knight(root: Path) -> Path:
-    """Knight with hallucinated `stability` field (additionalProperties)."""
+def _write_bad_doctrine_mission(root: Path) -> Path:
+    """Mission file with a hallucinated `stability` field (additionalProperties)."""
     p = (
         root
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
-        / "feature-implementation"
-        / "pm.md"
+        / "tdd-lite"
+        / "missions"
+        / "recon.md"
     )
     _write(
         p,
         "---\n"
-        "id: pm\n"
-        "title: Product Manager\n"
-        "summary: Writes PRDs.\n"
+        "id: recon\n"
+        "title: Recon\n"
+        "summary: Maps the ground.\n"
         "stability: experimental\n"
         "---\n"
         "# Body\n",
@@ -57,43 +58,24 @@ def _write_bad_knight(root: Path) -> Path:
     return p
 
 
-def _write_multi_bad_knight(root: Path) -> Path:
-    """Knight missing title+summary AND with unknown `stability` field."""
-    p = (
-        root
-        / ".lore"
-        / "knights"
-        / "default"
-        / "feature-implementation"
-        / "pm.md"
-    )
-    _write(
-        p,
-        "---\n"
-        "id: pm\n"
-        "stability: x\n"
-        "---\n"
-        "# Body\n",
-    )
-    return p
-
-
-def _write_bad_doctrine_yaml(root: Path) -> Path:
+def _write_multi_bad_doctrine_mission(root: Path) -> Path:
+    """Mission file missing title+summary AND with unknown `stability` field."""
     p = (
         root
         / ".lore"
         / "doctrines"
         / "default"
-        / "broken"
-        / "broken.yaml"
+        / "tdd-lite"
+        / "missions"
+        / "recon.md"
     )
     _write(
         p,
-        "id: broken\n"
-        "title: Broken\n"
-        "summary: bad\n"
-        "bogus_top_level: nope\n"
-        "steps: []\n",
+        "---\n"
+        "id: recon\n"
+        "stability: x\n"
+        "---\n"
+        "# Body\n",
     )
     return p
 
@@ -174,24 +156,23 @@ def _write_frontmatterless_artifact(root: Path) -> Path:
 
 
 @pytest.fixture()
-def tmp_project_with_bad_knight(tmp_path):
+def tmp_project_with_bad_doctrine_mission(tmp_path):
     _make_lore_skeleton(tmp_path)
-    _write_bad_knight(tmp_path)
+    _write_bad_doctrine_mission(tmp_path)
     return tmp_path
 
 
 @pytest.fixture()
-def tmp_project_with_multi_bad_knight(tmp_path):
+def tmp_project_with_multi_bad_doctrine_mission(tmp_path):
     _make_lore_skeleton(tmp_path)
-    _write_multi_bad_knight(tmp_path)
+    _write_multi_bad_doctrine_mission(tmp_path)
     return tmp_path
 
 
 @pytest.fixture()
 def tmp_project_with_bad_file_per_kind(tmp_path):
     _make_lore_skeleton(tmp_path)
-    _write_bad_knight(tmp_path)
-    _write_bad_doctrine_yaml(tmp_path)
+    _write_bad_doctrine_mission(tmp_path)
     _write_bad_doctrine_design(tmp_path)
     _write_bad_watcher(tmp_path)
     _write_bad_codex(tmp_path)
@@ -202,9 +183,9 @@ def tmp_project_with_bad_file_per_kind(tmp_path):
 @pytest.fixture()
 def tmp_project_without_watchers(tmp_path):
     lore = tmp_path / ".lore"
-    for d in ("knights", "doctrines", "codex", "artifacts"):
+    for d in ("doctrines", "codex", "artifacts"):
         (lore / d).mkdir(parents=True, exist_ok=True)
-    _write_bad_knight(tmp_path)
+    _write_bad_doctrine_mission(tmp_path)
     return tmp_path
 
 
@@ -252,8 +233,7 @@ def test_check_schemas_walks_every_entity_dir(tmp_project_with_bad_file_per_kind
         "artifact",
         "codex",
         "doctrine-design-frontmatter",
-        "doctrine-yaml",
-        "knight",
+        "doctrine-mission-frontmatter",
         "watcher",
     ]
 
@@ -263,9 +243,8 @@ def test_check_schemas_every_entity_type_is_documented_label(
 ):
     """Every violation's entity_type is one of the six documented kind strings."""
     allowed = {
-        "doctrine-yaml",
         "doctrine-design-frontmatter",
-        "knight",
+        "doctrine-mission-frontmatter",
         "watcher",
         "codex",
         "artifact",
@@ -276,25 +255,25 @@ def test_check_schemas_every_entity_type_is_documented_label(
         assert issue.entity_type in allowed
 
 
-def test_check_schemas_issue_shape(tmp_project_with_bad_knight):
+def test_check_schemas_issue_shape(tmp_project_with_bad_doctrine_mission):
     """Each HealthIssue carries check, severity, entity_type, schema_id, rule, pointer."""
-    issues = _check_schemas(tmp_project_with_bad_knight)
+    issues = _check_schemas(tmp_project_with_bad_doctrine_mission)
     assert len(issues) == 1
     issue = issues[0]
     assert issue.check == "schema"
     assert issue.severity == "error"
-    assert issue.entity_type == "knight"
-    assert issue.schema_id == "lore://schemas/knight-frontmatter"
+    assert issue.entity_type == "doctrine-mission-frontmatter"
+    assert issue.schema_id == "lore://schemas/doctrine-mission-frontmatter"
     assert issue.rule == "additionalProperties"
     assert issue.pointer == "/stability"
-    assert issue.id.startswith(".lore/knights/")
+    assert issue.id.startswith(".lore/doctrines/")
 
 
 def test_check_schemas_multi_violation_not_aggregated(
-    tmp_project_with_multi_bad_knight,
+    tmp_project_with_multi_bad_doctrine_mission,
 ):
     """conceptual-workflows-health — FR-9: N violations → N distinct records."""
-    issues = _check_schemas(tmp_project_with_multi_bad_knight)
+    issues = _check_schemas(tmp_project_with_multi_bad_doctrine_mission)
     assert len(issues) == 3
     rules = [i.rule for i in issues]
     assert rules.count("required") == 2
@@ -307,12 +286,12 @@ def test_check_schemas_missing_dir_is_noop(tmp_project_without_watchers):
     assert all(i.entity_type != "watcher" for i in issues)
 
 
-def test_check_schemas_relative_paths_posix(tmp_project_with_bad_knight):
+def test_check_schemas_relative_paths_posix(tmp_project_with_bad_doctrine_mission):
     """HealthIssue.id is POSIX-style relpath from project root."""
-    issues = _check_schemas(tmp_project_with_bad_knight)
+    issues = _check_schemas(tmp_project_with_bad_doctrine_mission)
     assert len(issues) == 1
     assert "\\" not in issues[0].id
-    assert issues[0].id == ".lore/knights/default/feature-implementation/pm.md"
+    assert issues[0].id == ".lore/doctrines/default/tdd-lite/missions/recon.md"
 
 
 def test_check_schemas_frontmatterless_artifact_is_loud(
@@ -337,16 +316,16 @@ def test_check_schemas_clean_skeleton_no_issues(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_health_check_default_runs_schemas(tmp_project_with_bad_knight):
+def test_health_check_default_runs_schemas(tmp_project_with_bad_doctrine_mission):
     """conceptual-workflows-health — FR-12: default run includes schemas."""
-    report = health_check(project_root=tmp_project_with_bad_knight)
+    report = health_check(project_root=tmp_project_with_bad_doctrine_mission)
     assert any(i.check == "schema" for i in report.issues)
 
 
-def test_health_check_scope_references_skips_schemas(tmp_project_with_bad_knight):
+def test_health_check_scope_references_skips_schemas(tmp_project_with_bad_doctrine_mission):
     """Scoped run without `schemas` emits no schema issues."""
     report = health_check(
-        project_root=tmp_project_with_bad_knight,
+        project_root=tmp_project_with_bad_doctrine_mission,
         scopes=["codex"],
     )
     assert all(i.check != "schema" for i in report.issues)
@@ -365,10 +344,10 @@ def test_health_check_scope_schemas_only_runs_schemas(
 
 
 def test_health_check_schema_issues_populate_has_errors(
-    tmp_project_with_bad_knight,
+    tmp_project_with_bad_doctrine_mission,
 ):
     """Schema errors trip report.has_errors."""
-    report = health_check(project_root=tmp_project_with_bad_knight)
+    report = health_check(project_root=tmp_project_with_bad_doctrine_mission)
     assert report.has_errors is True
 
 
@@ -465,7 +444,7 @@ def test_check_schemas_failure_modes_are_errors_with_check_schema(tmp_path):
 
 
 def test_check_schemas_unexpected_exception_becomes_read_failed(
-    tmp_project_with_bad_knight, monkeypatch
+    tmp_project_with_bad_doctrine_mission, monkeypatch
 ):
     """NFR-Reliability safety net: any unexpected per-file exception becomes
     a read-failed HealthIssue rather than aborting the walk."""
@@ -477,7 +456,7 @@ def test_check_schemas_unexpected_exception_becomes_read_failed(
     monkeypatch.setattr(health_mod, "_load_schema_payload", boom, raising=False)
 
     # Even with the loader blown up, _check_schemas must not raise.
-    issues = _check_schemas(tmp_project_with_bad_knight)
+    issues = _check_schemas(tmp_project_with_bad_doctrine_mission)
     assert any(i.rule == "read-failed" for i in issues), (
         "expected defensive read-failed wrapper to catch RuntimeError"
     )
@@ -490,8 +469,10 @@ def test_check_schemas_unexpected_exception_becomes_read_failed(
 def test_check_schemas_unreadable_file_emits_read_failed(tmp_path, monkeypatch):
     """PermissionError on read becomes one read-failed HealthIssue with 'Permission denied'."""
     _make_lore_skeleton(tmp_path)
-    p = tmp_path / ".lore" / "knights" / "default" / "locked" / "pm.md"
-    _write(p, "---\nid: pm\ntitle: PM\nsummary: s\n---\n")
+    p = (
+        tmp_path / ".lore" / "doctrines" / "locked" / "missions" / "recon.md"
+    )
+    _write(p, "---\nid: recon\ntitle: Recon\nsummary: s\n---\n")
 
     real_read_bytes = Path.read_bytes
     real_read_text = Path.read_text

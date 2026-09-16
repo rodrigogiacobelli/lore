@@ -21,7 +21,7 @@ The CLI is a concern. Business logic is a different concern. They live apart. A 
 | CLI | `cli.py` | Translate between the terminal and the core. Parse arguments, format output, handle exit codes. Nothing else. |
 | Database / business logic | `db.py` | Enforce database rules. Run queries, apply business constraints, return result dicts. |
 | Validation | `validators.py` | Define validation rules. Return an error string on failure, `None` on success. Import nothing from `lore.*`. |
-| Filesystem entities | `knight.py`, `doctrine.py`, `codex.py`, `artifact.py` | Handle file-based entity operations only. |
+| Filesystem entities | `doctrine.py`, `codex.py`, `artifact.py`, `watcher.py`, `rite.py` | Handle file-based entity operations only. |
 
 ## Rule
 

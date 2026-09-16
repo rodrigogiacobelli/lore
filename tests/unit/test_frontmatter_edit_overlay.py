@@ -264,15 +264,15 @@ def test_coercion_context_non_codex_kind_has_no_overlay_root(tmp_path):
     from lore.frontmatter_edit import _coercion_context
 
     _make_skeleton(tmp_path)
-    knights = tmp_path / ".lore" / "knights"
-    knights.mkdir(parents=True, exist_ok=True)
-    (knights / "tester.md").write_text(
+    directory = tmp_path / ".lore" / "doctrines" / "tester"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "tester.design.md").write_text(
         "---\nid: tester\ntitle: T\nsummary: s\n---\nBody.\n", encoding="utf-8"
     )
 
-    schema_kind, overlay_root = _coercion_context(tmp_path, "knight", "tester")
+    schema_kind, overlay_root = _coercion_context(tmp_path, "doctrine", "tester")
 
-    assert schema_kind == "knight-frontmatter"
+    assert schema_kind == "doctrine-design-frontmatter"
     assert overlay_root is None
 
 

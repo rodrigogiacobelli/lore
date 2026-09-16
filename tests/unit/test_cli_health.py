@@ -18,14 +18,17 @@ import click
 
 
 def test_valid_scopes_tuple_shape():
-    """US-001 unit — `_VALID_SCOPES` token tuple; `skills` appended last after `voice`."""
+    """US-001 unit — `_VALID_SCOPES` token tuple; `skills` appended last after `voice`.
+
+    The declaration order is what Click prints in its invalid-value message,
+    so it is pinned here character for character.
+    """
     from lore.cli import _VALID_SCOPES
 
     assert _VALID_SCOPES == (
         "codex",
         "artifacts",
         "doctrines",
-        "knights",
         "watchers",
         "schemas",
         "glossary",
@@ -35,7 +38,32 @@ def test_valid_scopes_tuple_shape():
         "skills",
     )
     assert _VALID_SCOPES[-1] == "skills"
-    assert len(_VALID_SCOPES) == 11
+    assert len(_VALID_SCOPES) == 10
+
+
+def test_valid_scopes_has_no_retired_entity_token():
+    """The Knight entity is gone, so `--scope` no longer offers its token."""
+    from lore.cli import _VALID_SCOPES
+
+    assert "knights" not in _VALID_SCOPES
+
+
+def test_scope_option_help_demonstrates_only_live_tokens():
+    """ADR-008 — the hand-written example is a second copy of the vocabulary.
+
+    `click.Choice` keeps the `--help` listing in sync on its own; this example
+    string does not, and an example naming a token that exits 2 teaches the
+    wrong command.
+    """
+    from lore.cli import _VALID_SCOPES, health_cmd
+
+    scope_param = next(p for p in health_cmd.params if p.name == "scope")
+    example = scope_param.help.split("e.g. --scope", 1)[1].rstrip(").")
+    assert example.split(), "the --scope help must keep a worked example"
+    for token in example.split():
+        assert token in _VALID_SCOPES, (
+            f"--scope help demonstrates {token!r}, which is not a valid scope"
+        )
 
 
 def test_valid_scopes_matches_the_health_scope_vocabulary():

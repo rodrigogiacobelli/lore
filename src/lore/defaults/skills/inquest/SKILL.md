@@ -7,7 +7,7 @@ description: Audit finished work against its original intent and trace a missed 
 
 An inquest is a backward audit of finished work. Use it when a quest is closed but something is wrong — a requirement from the original request is missing, or a codex mandate ("the codex says do X") was silently skipped — and you need to know *which* link in the chain dropped it and *who* ran that link.
 
-A doctrine is a chain: each step consumes upstream outputs and produces its own. A requirement can fall out at any handoff. The inquest reconstructs the chain, walks it link by link, and produces a **verdict** — a blame file naming the culprit link, the failure mode, the responsible party, and the evidence.
+A doctrine is a chain: each mission consumes upstream outputs and produces its own. A requirement can fall out at any handoff. The inquest reconstructs the chain, walks it link by link, and produces a **verdict** — a blame file naming the culprit link, the failure mode, the responsible party, and the evidence.
 
 This skill orchestrates evidence collection. The tracing methodology lives in the `inquest-design` artifact — retrieve it and follow it.
 
@@ -30,7 +30,7 @@ Follow it. The steps below collect the evidence it needs.
 
 ### 2. Reconstruct the chain
 
-Identify the doctrine that drove the work and list its steps in dependency order:
+Identify the doctrine that drove the work and list its missions in dependency order:
 
 ```
 lore show <quest-id>
@@ -38,7 +38,13 @@ lore missions -q <quest-id>
 lore doctrine show <doctrine-id>
 ```
 
-For each doctrine step record: step ID, knight, mission ID, mission status. `lore show <mission-id>` returns the knight persona and the mission notes the executing agent actually received — those notes are the instructions that link was held to.
+`lore doctrine show` returns the design document — whose table carries the dependency order — and an index of the doctrine's missions. For each doctrine mission record: its id, the Lore mission ID that ran it, and that mission's status. `lore show <mission-id>` returns the doctrine mission body and the description the executing agent actually received — together they are the instructions that link was held to.
+
+Where a Lore mission carries no doctrine mission reference, read the doctrine's own copy:
+
+```
+lore doctrine show <doctrine-id> --mission <mission-id>
+```
 
 ### 3. Collect the evidence
 
@@ -64,7 +70,7 @@ Batch ids into one call — `show` deduplicates and appends the glossary terms i
 List and read `.lore/codex/transient/*.md` directly with your own file tool. Glossary terms are not attached to what you read — look up an unfamiliar one in `.lore/codex/glossary.yaml`.
 <!-- lore:access end -->
 
-`lore impacts` stays on the CLI in every mode: it is a bidirectional index over every `binds:` field in the codex, and no file read reproduces it. `lore codex map <id>` and `lore codex chaos <id>` do too, when you need to see what a mandate connects to. So do quests, missions, board messages, doctrines and knights — they are SQLite-backed or spliced together by the CLI.
+`lore impacts` stays on the CLI in every mode: it is a bidirectional index over every `binds:` field in the codex, and no file read reproduces it. `lore codex map <id>` and `lore codex chaos <id>` do too, when you need to see what a mandate connects to. So do quests, missions, board messages and doctrines — they are SQLite-backed or spliced together by the CLI.
 
 ### 4. Trace the custody chain
 
@@ -85,11 +91,11 @@ Retrieve it later by reading `.lore/codex/transient/inquest-<slug>.md` — the p
 
 ### 6. Present the verdict
 
-Summarize for the user: the culprit link, the failure mode, the responsible party, and the recommended remediation. Do not re-open missions or re-run steps — the inquest reports, the human decides.
+Summarize for the user: the culprit link, the failure mode, the responsible party, and the recommended remediation. Do not re-open missions or re-run them — the inquest reports, the human decides.
 
 ## Notes
 
-- An inquest assigns blame to a *link*, not always an *agent*. If every executor faithfully honored its instructions and the requirement still vanished, the doctrine is at fault — no step owned the requirement. Say so plainly; that is a doctrine defect, not an agent defect.
+- An inquest assigns blame to a *link*, not always an *agent*. If every executor faithfully honored its instructions and the requirement still vanished, the doctrine is at fault — no mission owned the requirement. Say so plainly; that is a doctrine defect, not an agent defect.
 - An **override** — an executor that saw the requirement and explicitly decided against it — may be a legitimate judgment call. Flag it for the human; do not condemn it.
 - One inquest, one requirement. If the work has several missing requirements, run a separate inquest per requirement.
 - A missing procedure the chain should have followed is a signal to record one with `store-memory`, not a finding against an agent that improvised without one.

@@ -16,6 +16,11 @@
 #       which seeded skill families `lore init` installs
 #   init-skills-gitignore           : "lore-only" | "none" | "all", default "lore-only"
 #       how the installed skills are tracked in git
+#   project-name                    : str, default ""
+#       this project's name in an origin qualifier and in --project (empty: the project directory's name)
+#   default-project-scope           : "self" | "all", default "self"
+#       self - a bare read command covers this project and what it inherits
+#       all  - it also covers every Lore project beneath this one
 show-glossary-on-codex-commands = true
 health-report-retention = "none"
 init-agents = ["claude"]

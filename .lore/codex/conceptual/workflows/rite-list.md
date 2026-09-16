@@ -69,7 +69,7 @@ read-contact-info  io     Read the user's contact information   Look up the cust
 ### 4. JSON mode
 
 `lore rite list` accepts the global `--json` (`lore --json rite list`) and a
-local `--json` (`lore rite list --json`), mirroring `artifact list`/`knight
+local `--json` (`lore rite list --json`), mirroring `artifact list`/`doctrine
 list`/`doctrine list`. Double-declaration is harmless.
 
 Main:

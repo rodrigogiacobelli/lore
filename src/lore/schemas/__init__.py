@@ -162,13 +162,13 @@ def project_validator_for(kind: str, project_root: Path) -> jsonschema.Draft2020
 
 
 _FRONTMATTER_KINDS = {
-    "knight-frontmatter",
     "codex-frontmatter",
     "artifact-frontmatter",
     "doctrine-design-frontmatter",
+    "doctrine-mission-frontmatter",
 }
 
-_YAML_KINDS = {"doctrine-yaml", "watcher-yaml", "glossary", "main-rite", "shared-step"}
+_YAML_KINDS = {"watcher-yaml", "glossary", "main-rite", "shared-step"}
 
 _RAISE_KINDS = {"glossary"}
 

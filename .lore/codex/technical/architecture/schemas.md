@@ -1,12 +1,11 @@
 ---
 id: tech-arch-schemas
 title: Schemas Module Internals
-summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the nine project schema kinds plus the two packaged-data kinds agents and skill-catalogue (glossary, main-rite, and shared-step are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/knight/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
+summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the eleven packaged schema files — the eight project schema kinds health walks, the codex-source-frontmatter kind, and the two packaged-data kinds agents and skill-catalogue (glossary, main-rite, and shared-step are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
 binds:
 - src/lore/schemas/__init__.py
-- src/lore/schemas/doctrine-yaml.yaml
+- src/lore/schemas/doctrine-mission-frontmatter.yaml
 - src/lore/schemas/doctrine-design-frontmatter.yaml
-- src/lore/schemas/knight-frontmatter.yaml
 - src/lore/schemas/watcher-yaml.yaml
 - src/lore/schemas/codex-frontmatter.yaml
 - src/lore/schemas/codex-source-frontmatter.yaml
@@ -40,7 +39,7 @@ related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "
 **Source module:** `src/lore/schemas/__init__.py` (the module logic; a package rather than a flat module because the YAML resources live as sibling files in the same directory)
 **Resource dir:** `src/lore/schemas/*.yaml` (packaged inside the wheel via hatchling `package-data`)
 
-This module is the single authoritative home for the JSON Schemas that define the shape of every on-disk Lore entity. It is consumed by both the create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, and `artifact.py` **and** by the audit-time `_check_schemas` checker in `health.py`. No schema content is duplicated anywhere else in the codebase — this is the DRY guarantee required by FR-19/FR-20 of the schema validation feature.
+This module is the single authoritative home for the JSON Schemas that define the shape of every on-disk Lore entity. It is consumed by both the create-time validators in `doctrine.py`, `watcher.py`, and `artifact.py` **and** by the audit-time `_check_schemas` checker in `health.py`. No schema content is duplicated anywhere else in the codebase — this is the DRY guarantee required by FR-19/FR-20 of the schema validation feature.
 
 ## Why This Module Exists
 
@@ -52,13 +51,12 @@ This module is the single authoritative home for the JSON Schemas that define th
 
 ## Schema Kinds
 
-Nine entity kinds are validated in a project. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
+Eight entity kinds are walked in a project, one row each in `health._SCHEMA_KINDS`. Each kind is a short slug that appears in `HealthIssue.entity_type`, in the `$id` of the schema (`lore://schemas/<kind>`), and in the schema filename (`src/lore/schemas/<kind>.yaml`):
 
 | Kind | Source pattern | Schema `$id` |
 |---|---|---|
-| `doctrine-yaml` | `.lore/doctrines/**/*.yaml` | `lore://schemas/doctrine-yaml` |
 | `doctrine-design-frontmatter` | Frontmatter of `.lore/doctrines/**/*.design.md` | `lore://schemas/doctrine-design-frontmatter` |
-| `knight` | Frontmatter of `.lore/knights/**/*.md` | `lore://schemas/knight-frontmatter` |
+| `doctrine-mission-frontmatter` | Frontmatter of `.lore/doctrines/**/missions/*.md` | `lore://schemas/doctrine-mission-frontmatter` |
 | `watcher` | `.lore/watchers/**/*.yaml` | `lore://schemas/watcher-yaml` |
 | `codex` | Frontmatter of `.lore/codex/**/*.md` | `lore://schemas/codex-frontmatter` |
 | `artifact` | Frontmatter of `.lore/artifacts/**/*.md` | `lore://schemas/artifact-frontmatter` |
@@ -72,7 +70,7 @@ The `glossary` kind is the first full-YAML kind whose source pattern is a litera
 
 Two kinds validate **package** data rather than project files: `lore://schemas/agents` covers `src/lore/defaults/agents.yaml` (the agent registry) and `lore://schemas/skill-catalogue` covers `src/lore/defaults/skills-catalogue.yaml` (the skill catalogue). Both are full-YAML kinds shipped from `src/lore/schemas/` like every other kind.
 
-They differ from the nine project kinds in three ways:
+They differ from the eight project kinds in three ways:
 
 - **No source pattern under `.lore/`.** Nothing in a project matches them, so `_check_schemas` never walks them and they never appear in `HealthIssue.entity_type`.
 - **Loaded through `load_schema(kind)` only, never through `resolve_merged_schema`.** `.lore/custom-schemas/agents.yaml` is not a recognised overlay path, and the v1 overlay kinds stay exactly as `decisions-018-overlays-are-path-discovered-config` lists them: `codex-frontmatter` and `codex-source-frontmatter`. A project cannot extend either packaged file, because neither is the project's to extend.
@@ -109,8 +107,8 @@ The validator is compiled once per kind and reused across all files of that kind
 
 Full file-level validator. Dispatches by kind:
 
-- **Full-YAML kinds** (`doctrine-yaml`, `watcher`, `glossary`, `main-rite`, `shared-step`): calls `yaml.safe_load` on the file contents.
-- **Frontmatter kinds** (`doctrine-design-frontmatter`, `knight`, `codex`, `artifact`): calls `frontmatter.parse_frontmatter_raw(path)` to obtain the raw mapping preserving every key.
+- **Full-YAML kinds** (`watcher`, `glossary`, `main-rite`, `shared-step`): calls `yaml.safe_load` on the file contents.
+- **Frontmatter kinds** (`doctrine-design-frontmatter`, `doctrine-mission-frontmatter`, `codex`, `artifact`): calls `frontmatter.parse_frontmatter_raw(path)` to obtain the raw mapping preserving every key.
 
 Error translation:
 
@@ -125,13 +123,12 @@ Error translation:
 
 ## Reuse at Create Time (FR-20)
 
-The existing private create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, `artifact.py`, and `rite.py` keep their current signatures and exception types (callers outside the module see no change), but internally delegate to `lore.schemas.validate_entity(kind, data)`:
+The existing private create-time validators in `doctrine.py`, `watcher.py`, `artifact.py`, and `rite.py` keep their current signatures and exception types (callers outside the module see no change), but internally delegate to `lore.schemas.validate_entity(kind, data)`:
 
 | Callsite | Delegates to |
 |---|---|
-| `doctrine._validate_yaml_schema(data, name)` | `validate_entity("doctrine-yaml", data)` |
 | `doctrine._validate_design_frontmatter(meta, name)` | `validate_entity("doctrine-design-frontmatter", meta)` |
-| `knight.create_knight` frontmatter check | `validate_entity("knight", meta)` |
+| `doctrine._validate_mission_sources(missions)` | `validate_entity("doctrine-mission-frontmatter", meta)` per mission |
 | `watcher.create_watcher` YAML shape check | `validate_entity("watcher", data)` |
 | `artifact.create_artifact` frontmatter re-check | `validate_entity("artifact", meta)` |
 | `rite.create_rite`/`update_rite` body check | `validate_entity("main-rite", data)` / `validate_entity("shared-step", data)` |
@@ -287,9 +284,9 @@ only.
 
 ## Dependency Rules
 
-- `schemas/__init__.py` imports **only** stdlib (`importlib.resources`, `os`, `pathlib`, `copy`), `yaml`, `jsonschema`, `lore.frontmatter`, and `lore.paths` (for the overlay path helpers). It has zero imports from any entity module (`doctrine.py`, `knight.py`, etc.), so the create-time validators can import it without creating a cycle. `lore.paths` has no cycle back into schemas.
+- `schemas/__init__.py` imports **only** stdlib (`importlib.resources`, `os`, `pathlib`, `copy`), `yaml`, `jsonschema`, `lore.frontmatter`, and `lore.paths` (for the overlay path helpers). It has zero imports from any entity module (`doctrine.py`, `watcher.py`, etc.), so the create-time validators can import it without creating a cycle. `lore.paths` has no cycle back into schemas.
 - The packaged schema YAML files are static resources. They are never written to and never fetched over the network — `$schema` and `$id` URIs are metadata only.
-- **Project-local schema overlays are supported** for the two codex kinds via the resolver above (`.lore/custom-schemas/<kind>.yaml`, add-only, strict). This reverses the previous "no runtime override path" posture. The override is add-only and defaults-authoritative — an overlay can never redefine, relax, or remove a packaged field — so the packaged schemas remain the single source of truth for the core shape. It is also **scope-bounded**: overlays reach canonical codex docs and `sources/` only, never `.lore/codex/transient/**`, where the packaged schema is the whole contract (ADR-019). Overlays for other entity kinds (knight, artifact, doctrine) and per-doc-type overlays remain post-MVP.
+- **Project-local schema overlays are supported** for the two codex kinds via the resolver above (`.lore/custom-schemas/<kind>.yaml`, add-only, strict). This reverses the previous "no runtime override path" posture. The override is add-only and defaults-authoritative — an overlay can never redefine, relax, or remove a packaged field — so the packaged schemas remain the single source of truth for the core shape. It is also **scope-bounded**: overlays reach canonical codex docs and `sources/` only, never `.lore/codex/transient/**`, where the packaged schema is the whole contract (ADR-019). Overlays for other entity kinds (artifact, doctrine) and per-doc-type overlays remain post-MVP.
 
 ## Packaging
 
@@ -297,7 +294,7 @@ only.
 
 ## Test Strategy
 
-- Unit tests in `tests/unit/test_schemas.py` cover every schema kind (happy fixture + one fixture per violated keyword: `required`, `additionalProperties`, `type`, `enum`, `minItems`, `uniqueItems`, `minLength`, `oneOf`, and the doctrine-step `if/then/else` `knight` conditional).
+- Unit tests in `tests/unit/test_schemas.py` cover every schema kind (happy fixture + one fixture per violated keyword: `required`, `additionalProperties`, `type`, `enum`, `minItems`, `uniqueItems`, `minLength`, and `oneOf`).
 - Unit tests in `tests/unit/test_frontmatter_raw.py` cover the five `parse_frontmatter_raw` cases (happy, no-frontmatter, yaml-parse, non-mapping, empty).
 - E2E tests in `tests/e2e/test_health_schemas.py` cover all seven PRD workflows end-to-end including `lore init` + `lore health` green run, hallucinated fields, missing required fields, scoped runs, `--json` output, the Python API parity path, and the transient report section.
 

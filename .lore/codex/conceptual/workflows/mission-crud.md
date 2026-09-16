@@ -2,8 +2,9 @@
 id: conceptual-workflows-mission-crud
 title: Mission CRUD Operations
 summary: 'What the system does internally when creating, listing, editing, deleting,
-  and viewing mission detail via the CLI, including active-status filtering and soft-delete
-  behaviour.
+  and viewing mission detail via the CLI, including the -D/--doctrine-mission and
+  --no-doctrine-mission flags and their mutual exclusion, active-status filtering,
+  and soft-delete behaviour.
 
   '
 binds:
@@ -45,7 +46,7 @@ If the specified parent quest has `status = 'closed'`, it is automatically set b
 
 ### 5. Insert the mission row
 
-Inserted with status `open`, the supplied fields (`title`, `description`, `priority`, `knight`, `mission_type`), and UTC timestamps.
+Inserted with status `open`, the supplied fields (`title`, `description`, `priority`, `doctrine_mission`, `mission_type`), and UTC timestamps. The `-D/--doctrine-mission` value is stored verbatim as the reference `<doctrine-id>/<mission-id>` and is never interpreted at write time.
 
 ### 6. Commit and report
 
@@ -66,10 +67,10 @@ If a `<quest-id>` argument is supplied, the quest is looked up. If not found, an
 Quest-bound missions are displayed under a `Quest: <title> (<quest-id>)` header. Standalone missions are grouped under `Standalone:`. Each line:
 
 ```
-  <id>  P<priority>  [<status>]  [<mission_type>]  <title>  [<knight>]
+  <id>  P<priority>  [<status>]  [<mission_type>]  <title>  [<doctrine_mission>]
 ```
 
-`mission_type` and `knight` brackets are omitted when null. In JSON mode: `{"missions": [{id, quest_id, title, status, priority, mission_type, knight, created_at}, ...]}`.
+`mission_type` and `doctrine_mission` brackets are omitted when null. In JSON mode: `{"missions": [{id, quest_id, title, status, priority, mission_type, doctrine_mission, created_at}, ...]}`.
 
 ### 4. Active-status filtering
 
@@ -79,15 +80,15 @@ By default, only missions in `open`, `in_progress`, or `blocked` status are show
 
 ### 1. ID routing
 
-IDs containing `m-` are routed to `_edit_mission`. At least one of `--title`, `--description`, `--priority`, `--knight`, `--no-knight`, or `--type` must be provided.
+IDs containing `m-` are routed to `_edit_mission`. At least one of `--title`, `--description`, `--priority`, `-D/--doctrine-mission`, `--no-doctrine-mission`, `--auto-close`, `--no-auto-close`, or `--type` must be provided. A run with none of them raises `click.UsageError` — exit 2 (lore codex show decisions-034-missing-required-combination-is-a-usage-error).
 
 ### 2. Mutual exclusion
 
-`--knight` and `--no-knight` cannot both be supplied.
+`-D/--doctrine-mission` and `--no-doctrine-mission` cannot both be supplied. Passing both raises `click.UsageError("--doctrine-mission and --no-doctrine-mission are mutually exclusive.")` — exit 2.
 
 ### 3. Apply changes
 
-`edit_mission` in `lore.db` updates only the supplied fields and sets `updated_at`. Passing `--no-knight` sets the knight field to `NULL`.
+`edit_mission` in `lore.db` updates only the supplied fields and sets `updated_at`. Passing `--no-doctrine-mission` sets `doctrine_mission` to `NULL`.
 
 ### 4. Report
 

@@ -52,7 +52,7 @@ The subclass overrides `Option.add_to_parser` and reaches `parser._long_opt`, `p
 
 ```
 lore codex list --filter conceptual decisions         # two tokens
-lore health --scope doctrines knights                 # two tokens
+lore health --scope doctrines artifacts               # two tokens
 lore health --scope watchers                          # one token
 lore health                                           # no flag = all scopes
 ```
@@ -61,7 +61,7 @@ lore health                                           # no flag = all scopes
 
 ```
 lore codex list --filter conceptual --filter decisions   # repeatable flag — wrong
-lore health --scope doctrines --scope knights            # repeatable flag — wrong
+lore health --scope doctrines --scope artifacts          # repeatable flag — wrong
 ```
 
 ## Consequences
@@ -87,3 +87,4 @@ lore health --scope doctrines --scope knights            # repeatable flag — w
 |------|--------|------|
 | 2026-04-10 | accepted | Initial decision. Recorded after the `lore health --scope` draft proposed repeatable flags against the `--filter` precedent. |
 | 2026-08-25 | accepted (mechanism corrected) | `nargs=-1` is not available on a Click option; the recorded mechanism is corrected to the two shapes that deliver the syntax. `SpaceSeparatedChoice` named as the mechanism for a command with more than one multi-value flag, with the `click>=8.3` floor recorded as the guard on its private-parser dependency. The decision — space-separated, never repeatable — is unchanged. |
+| 2026-09-16 | accepted | Decision unchanged. The `--scope` examples use `artifacts` where they used `knights`, so the rule is no longer taught with a token the flag rejects. |

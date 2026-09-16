@@ -10,7 +10,7 @@ binds:
 - src/lore/frontmatter.py
 - tests/unit/test_frontmatter.py
 - tests/unit/test_frontmatter_raw.py
-related: ["tech-arch-source-layout", "tech-arch-knight-module", "tech-arch-validators", "tech-arch-codex-map", "tech-arch-schemas", "conceptual-workflows-impacts"]
+related: ["tech-arch-source-layout", "tech-arch-validators", "tech-arch-codex-map", "tech-arch-schemas", "conceptual-workflows-impacts"]
 ---
 
 # Frontmatter Module Internals
@@ -80,7 +80,7 @@ the full content is needed.
 
 ## Required Fields
 
-Both functions require the fields listed in the `required_fields` parameter to be present and non-empty. The default required fields are `("id", "title", "summary")`, matching the contract for codex documents, artifacts, and knights. Artifact callers use the default `required_fields=("id", "title", "summary")`.
+Both functions require the fields listed in the `required_fields` parameter to be present and non-empty. The default required fields are `("id", "title", "summary")`, matching the contract for codex documents and artifacts. Artifact callers use the default `required_fields=("id", "title", "summary")`.
 
 A file missing any required field is silently skipped — the function returns `None`. This matches the existing behaviour for codex and artifact scan operations.
 
@@ -111,10 +111,9 @@ The helper is deliberately surgical: it does not filter, rename, or inject any f
 | `_load_codex_binds_index` | `impacts.py` | `parse_frontmatter_doc` (metadata-only, `extra_fields=("binds",)`) |
 | `scan_artifacts` | `artifact.py` | `parse_frontmatter_doc` (metadata-only) |
 | `read_artifact` | `artifact.py` | `parse_frontmatter_doc_full` (includes body) |
-| `list_knights` | `knight.py` | `parse_frontmatter_doc` (metadata-only, `required_fields=("id","title","summary")`) |
 | `validate_entity_file` | `schemas.py` | `parse_frontmatter_raw` (full raw mapping, no filtering) |
 
-Imported by `codex.py`, `artifact.py`, `knight.py`, and `schemas.py`.
+Imported by `codex.py`, `artifact.py`, `doctrine.py`, and `schemas.py`.
 
 ## Why Not Inline
 

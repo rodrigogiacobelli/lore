@@ -34,11 +34,11 @@ DEFAULT_AGENTS: tuple[str, ...] = ("claude",)
 
 DEFAULT_SKILL_FAMILIES: tuple[str, ...] = ("memory", "workflow")
 """Preselected in the family checkbox. Machinery is opt-in: a project that
-never edits a doctrine or a knight does not need the five skills that do."""
+never edits a doctrine does not need the four skills that do."""
 
 ACCESS_SCOPE_NOTE = (
     "  (codex, rites and the glossary only — quests, missions, artifacts,\n"
-    "   knights, doctrines and watchers always go through the Lore CLI)"
+    "   doctrines and watchers always go through the Lore CLI)"
 )
 """The access-mode answer's blast radius, stated at the prompt because it is
 not guessable from the question."""

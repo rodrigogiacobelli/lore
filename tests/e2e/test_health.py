@@ -30,11 +30,44 @@ def _write_artifact(project_dir, filename, content):
     path.write_text(content)
 
 
-def _write_doctrine_pair(project_dir, stem, yaml_content, design_content):
-    base = project_dir / ".lore" / "doctrines" / stem
-    base.parent.mkdir(parents=True, exist_ok=True)
-    (base.parent / (base.name + ".design.md")).write_text(design_content)
-    (base.parent / (base.name + ".yaml")).write_text(yaml_content)
+def _write_doctrine(
+    project_dir,
+    stem,
+    *,
+    group="",
+    design_id=None,
+    design_body="Body.\n",
+    missions=None,
+    mission_body="Body.\n",
+):
+    """Write a doctrine directory: the design document plus its mission files.
+
+    ``missions`` maps a filename stem to the id its frontmatter declares, so a
+    test can write a mission whose id disagrees with its stem.
+    """
+    base = project_dir / ".lore" / "doctrines"
+    if group:
+        base = base / group
+    directory = base / stem
+    (directory / "missions").mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.design.md").write_text(
+        f"---\nid: {design_id or stem}\ntitle: {stem}\nsummary: s\n---\n{design_body}"
+    )
+    for mission_stem, mission_id in (missions or {"recon": "recon"}).items():
+        (directory / "missions" / f"{mission_stem}.md").write_text(
+            f"---\nid: {mission_id}\ntitle: {mission_stem}\nsummary: s\n---\n{mission_body}"
+        )
+    return directory
+
+
+def _write_flat_design(project_dir, stem):
+    """Write a doctrine directory holding only a design document — the old shape."""
+    directory = project_dir / ".lore" / "doctrines" / stem
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.design.md").write_text(
+        f"---\nid: {stem}\ntitle: {stem}\nsummary: s\n---\nBody.\n"
+    )
+    return directory
 
 
 def _persist_health_reports(project_dir):
@@ -50,12 +83,6 @@ def _persist_health_reports(project_dir):
 
 def _write_watcher(project_dir, filename, content):
     path = project_dir / ".lore" / "watchers" / filename
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-
-
-def _write_knight(project_dir, name, content):
-    path = project_dir / ".lore" / "knights" / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
 
@@ -82,26 +109,18 @@ class TestHealthCleanProject:
 
 # ---------------------------------------------------------------------------
 # Scenario 2: Project with errors — all five types scanned, issues reported, exit 1
-# Exercises: conceptual-workflows-health — full audit with broken knight ref + invalid watcher YAML
+# Exercises: conceptual-workflows-health — full audit with a doctrine error + invalid watcher YAML
 # ---------------------------------------------------------------------------
 
 
 class TestHealthWithErrors:
     """lore health reports errors from multiple entity types and exits 1."""
 
-    def test_health_broken_knight_ref_and_invalid_watcher_yaml_exits_one(
+    def test_health_doctrine_error_and_invalid_watcher_yaml_exits_one(
         self, runner, project_dir
     ):
-        """lore health exits 1 when doctrine has broken knight ref and watcher has invalid YAML."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        """lore health exits 1 when a doctrine id mismatches and a watcher is malformed."""
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
         _write_watcher(
             project_dir,
             "on-quest-close.yaml",
@@ -112,17 +131,9 @@ class TestHealthWithErrors:
 
         assert result.exit_code == 1, result.output
 
-    def test_health_broken_knight_ref_appears_in_output(self, runner, project_dir):
-        """lore health output contains 'ERROR  doctrines' line for broken knight ref."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+    def test_health_doctrine_error_appears_in_output(self, runner, project_dir):
+        """lore health output contains an 'ERROR  doctrines' line."""
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health"])
 
@@ -264,16 +275,16 @@ class TestHealthScopeWatchersOnly:
 
 
 # ---------------------------------------------------------------------------
-# Scenario 5 (US-002): --scope doctrines --scope knights — only those two types
+# Scenario 5 (US-002): --scope doctrines --scope rites — only those two types
 # Exercises: conceptual-workflows-health — two-type scope filtering
 # ---------------------------------------------------------------------------
 
 
 class TestHealthScopeTwoTokens:
-    """lore health --scope doctrines --scope knights reports only those two types."""
+    """lore health --scope doctrines --scope rites reports only those two types."""
 
     def test_health_scope_two_tokens_no_codex_errors(self, runner, project_dir):
-        """lore health --scope doctrines --scope knights output does not contain codex errors."""
+        """lore health --scope doctrines --scope rites output does not contain codex errors."""
         _write_codex_doc(
             project_dir,
             "broken.md",
@@ -286,14 +297,14 @@ class TestHealthScopeTwoTokens:
         )
 
         result = runner.invoke(
-            main, ["health", "--scope", "doctrines", "--scope", "knights"]
+            main, ["health", "--scope", "doctrines", "--scope", "rites"]
         )
 
         lines = result.output.splitlines()
         assert not any("codex" in line for line in lines if "ERROR" in line)
 
     def test_health_scope_two_tokens_no_watcher_errors(self, runner, project_dir):
-        """lore health --scope doctrines --scope knights output does not contain watcher errors."""
+        """lore health --scope doctrines --scope rites output does not contain watcher errors."""
         _write_watcher(
             project_dir,
             "broken.yaml",
@@ -301,14 +312,14 @@ class TestHealthScopeTwoTokens:
         )
 
         result = runner.invoke(
-            main, ["health", "--scope", "doctrines", "--scope", "knights"]
+            main, ["health", "--scope", "doctrines", "--scope", "rites"]
         )
 
         lines = result.output.splitlines()
         assert not any("watchers" in line for line in lines if "ERROR" in line)
 
     def test_health_scope_two_tokens_no_artifacts_errors(self, runner, project_dir):
-        """lore health --scope doctrines --scope knights output does not contain artifact errors."""
+        """lore health --scope doctrines --scope rites output does not contain artifact errors."""
         _write_artifact(
             project_dir,
             "bad.md",
@@ -316,7 +327,7 @@ class TestHealthScopeTwoTokens:
         )
 
         result = runner.invoke(
-            main, ["health", "--scope", "doctrines", "--scope", "knights"]
+            main, ["health", "--scope", "doctrines", "--scope", "rites"]
         )
 
         lines = result.output.splitlines()
@@ -348,6 +359,13 @@ class TestHealthScopeInvalidToken:
             str(result.exception) if result.exception else ""
         )
         assert "unicorns" in combined
+
+    def test_health_retired_entity_scope_token_exits_two(self, runner, project_dir):
+        """The scope of an entity that no longer exists is a usage error (ADR-017)."""
+        result = runner.invoke(main, ["health", "--scope", "knights"])
+
+        assert result.exit_code == 2
+        assert "Invalid value for '--scope': 'knights' is not one of" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -870,337 +888,154 @@ class TestHealthArtifactMissingFrontmatter:
 
 
 # ---------------------------------------------------------------------------
-# US-008: Orphaned doctrine files — exact output format and exit code
+# The doctrines scope — the cross-field checks JSON Schema cannot express
 # Exercises: lore codex show conceptual-workflows-health
 # ---------------------------------------------------------------------------
 
 
-def _write_doctrine_yaml_only(project_dir, stem):
-    """Write only the .yaml half of a doctrine pair (no .design.md)."""
-    base = project_dir / ".lore" / "doctrines"
-    base.mkdir(parents=True, exist_ok=True)
-    (base / f"{stem}.yaml").write_text(
-        f"id: {stem}\ntitle: {stem}\nsummary: s\nsteps: []\n"
-    )
+class TestHealthOldShapeDoctrine:
+    """A doctrine left in the pre-directory shape is a warning, not an error."""
+
+    def test_a_flat_design_file_warns_about_its_missing_missions_directory(
+        self, runner, project_dir
+    ):
+        _write_flat_design(project_dir, "feat-auth")
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert (
+            "WARNING  doctrines  feat-auth  missing_missions_dir: no missions/ "
+            "directory — this doctrine is not readable in the current shape"
+        ) in result.output, result.output
+
+    def test_a_stray_yaml_beside_it_warns_that_nothing_reads_it(
+        self, runner, project_dir
+    ):
+        _write_flat_design(project_dir, "feat-auth")
+        (project_dir / ".lore" / "doctrines" / "feat-auth" / "feat-auth.yaml").write_text(
+            "id: feat-auth\nsteps: []\n"
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert (
+            "WARNING  doctrines  feat-auth  stray_yaml: feat-auth.yaml is no longer read"
+        ) in result.output, result.output
+
+    def test_an_old_shape_doctrine_does_not_fail_the_run(self, runner, project_dir):
+        """conceptual-workflows-health — a warning never raises the exit code."""
+        _write_flat_design(project_dir, "feat-auth")
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert result.exit_code == 0, result.output
+
+    def test_a_directory_with_no_design_document_warns(self, runner, project_dir):
+        directory = project_dir / ".lore" / "doctrines" / "feat-auth" / "missions"
+        directory.mkdir(parents=True)
+        (directory / "recon.md").write_text(
+            "---\nid: recon\ntitle: Recon\nsummary: s\n---\nBody.\n"
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert (
+            "WARNING  doctrines  feat-auth  missing_design: no feat-auth.design.md — "
+            "this directory is not a doctrine"
+        ) in result.output, result.output
+
+    def test_a_grouping_directory_produces_nothing(self, runner, project_dir):
+        """A directory holding neither missions/ nor a design file is a group."""
+        _write_doctrine(project_dir, "feat-auth", group="area/subarea")
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert "area" not in result.output, result.output
+        assert "subarea" not in result.output, result.output
+
+    def test_a_whole_doctrine_in_the_current_shape_produces_nothing(
+        self, runner, project_dir
+    ):
+        _write_doctrine(project_dir, "feat-auth")
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert "feat-auth" not in result.output, result.output
 
 
-def _write_doctrine_design_only(project_dir, stem):
-    """Write only the .design.md half of a doctrine pair (no .yaml)."""
-    base = project_dir / ".lore" / "doctrines"
-    base.mkdir(parents=True, exist_ok=True)
-    (base / f"{stem}.design.md").write_text(
-        f"---\nid: {stem}\ntitle: {stem}\nsummary: s\n---\nBody.\n"
-    )
+class TestHealthDoctrineIdMismatch:
+    """An id that disagrees with the name it is found by is an error."""
 
-
-class TestHealthOrphanedDoctrine:
-    """lore health --scope doctrines reports orphaned doctrine files."""
-
-    def test_health_doctrines_yaml_without_design_md_exits_one(self, runner, project_dir):
-        """lore health --scope doctrines exits 1 when .yaml has no matching .design.md."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: feat-auth.yaml exists, feat-auth.design.md does not
-        _write_doctrine_yaml_only(project_dir, "feat-auth")
+    def test_a_design_id_that_is_not_the_directory_name(self, runner, project_dir):
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
         assert result.exit_code == 1, result.output
+        assert (
+            "ERROR  doctrines  feat-auth  id_mismatch: design frontmatter id "
+            "'something-else' does not match directory name"
+        ) in result.output, result.output
 
-    def test_health_doctrines_yaml_without_design_md_exact_output_line(self, runner, project_dir):
-        """lore health --scope doctrines stdout contains exact orphaned_file line for missing .design.md."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: feat-auth.yaml exists, feat-auth.design.md does not
-        _write_doctrine_yaml_only(project_dir, "feat-auth")
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        expected = "ERROR  doctrines  feat-auth  orphaned_file: .design.md missing"
-        assert expected in result.output, f"Expected line not found.\nOutput:\n{result.output}"
-
-    def test_health_doctrines_design_md_without_yaml_exits_one(self, runner, project_dir):
-        """lore health --scope doctrines exits 1 when .design.md has no matching .yaml."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 2: feat-auth.design.md exists, feat-auth.yaml does not
-        _write_doctrine_design_only(project_dir, "feat-auth")
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        assert result.exit_code == 1, result.output
-
-    def test_health_doctrines_design_md_without_yaml_exact_output_line(self, runner, project_dir):
-        """lore health --scope doctrines stdout contains exact orphaned_file line for missing .yaml."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 2: feat-auth.design.md exists, feat-auth.yaml does not
-        _write_doctrine_design_only(project_dir, "feat-auth")
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        expected = "ERROR  doctrines  feat-auth  orphaned_file: .yaml missing"
-        assert expected in result.output, f"Expected line not found.\nOutput:\n{result.output}"
-
-    def test_health_doctrines_complete_pair_no_orphaned_file_line(self, runner, project_dir):
-        """lore health --scope doctrines does not output orphaned_file for feat-auth when both files exist."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 3: both feat-auth.yaml and feat-auth.design.md exist
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            "id: feat-auth\ntitle: Auth\nsummary: s\nsteps: []\n",
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        lines = result.output.splitlines()
-        orphan_lines = [line for line in lines if "orphaned_file" in line and "feat-auth" in line]
-        assert orphan_lines == [], f"Unexpected orphaned_file line.\nOutput:\n{result.output}"
-
-    def test_health_doctrines_multiple_orphans_both_lines_present(self, runner, project_dir):
-        """lore health --scope doctrines reports separate errors for each orphaned doctrine file."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 4: feat-auth.yaml (no .design.md) AND feat-payments.design.md (no .yaml)
-        _write_doctrine_yaml_only(project_dir, "feat-auth")
-        _write_doctrine_design_only(project_dir, "feat-payments")
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        assert "ERROR  doctrines  feat-auth  orphaned_file: .design.md missing" in result.output, (
-            f"feat-auth orphan line not found.\nOutput:\n{result.output}"
-        )
-        assert "ERROR  doctrines  feat-payments  orphaned_file: .yaml missing" in result.output, (
-            f"feat-payments orphan line not found.\nOutput:\n{result.output}"
-        )
-
-    def test_health_doctrines_multiple_orphans_exits_one(self, runner, project_dir):
-        """lore health --scope doctrines exits 1 when multiple doctrine files are orphaned."""
-        # Exercises: lore codex show conceptual-workflows-health
-        _write_doctrine_yaml_only(project_dir, "feat-auth")
-        _write_doctrine_design_only(project_dir, "feat-payments")
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        assert result.exit_code == 1, result.output
-
-
-# ---------------------------------------------------------------------------
-# US-009: Broken knight refs in doctrine steps — exact output format and exit code
-# Exercises: lore codex show conceptual-workflows-health
-# ---------------------------------------------------------------------------
-
-
-class TestHealthBrokenKnightRef:
-    """lore health reports broken_knight_ref errors for doctrine steps naming missing knights."""
-
-    def test_health_doctrine_broken_knight_ref_exits_one(self, runner, project_dir):
-        """lore health exits 1 when doctrine step names a knight not found on disk."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: feat-auth.yaml step 2 names senior-engineer; no .md or .md.deleted
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health"])
-
-        assert result.exit_code == 1, result.output
-
-    def test_health_doctrine_broken_knight_ref_exact_output_line(self, runner, project_dir):
-        """lore health --scope doctrines stdout contains exact broken_knight_ref line per US-009 spec."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: exact format: ERROR  doctrines  feat-auth  broken_knight_ref: 'senior-engineer' not found (step 2)
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        expected = "ERROR  doctrines  feat-auth  broken_knight_ref: 'senior-engineer' not found (step 2)"
-        assert expected in result.output, f"Expected line not found.\nOutput:\n{result.output}"
-
-    def test_health_doctrine_present_knight_no_broken_knight_ref(self, runner, project_dir):
-        """lore health --scope doctrines does not output broken_knight_ref when knight file exists."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 2: tech-lead.md exists on disk
-        _write_knight(project_dir, "tech-lead.md", "---\nid: tech-lead\ntitle: Tech Lead\nsummary: s\n---\nBody.\n")
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n    knight: tech-lead\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        lines = result.output.splitlines()
-        broken_lines = [line for line in lines if "broken_knight_ref" in line and "feat-auth" in line]
-        assert broken_lines == [], f"Unexpected broken_knight_ref line.\nOutput:\n{result.output}"
-
-    def test_health_doctrine_soft_deleted_knight_no_broken_knight_ref(self, runner, project_dir):
-        """lore health --scope doctrines does not flag broken_knight_ref for soft-deleted knight."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 3: senior-engineer.md.deleted exists; no .md
-        _write_knight(project_dir, "senior-engineer.md.deleted", "deleted")
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        lines = result.output.splitlines()
-        broken_lines = [line for line in lines if "broken_knight_ref" in line and "feat-auth" in line]
-        assert broken_lines == [], f"Unexpected broken_knight_ref for soft-deleted knight.\nOutput:\n{result.output}"
-
-    def test_health_doctrine_multiple_broken_knight_refs_separate_lines(self, runner, project_dir):
-        """lore health --scope doctrines reports separate error lines for each broken knight ref step."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 4: step 1 missing-a, step 3 missing-b → two separate lines
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n    knight: missing-a\n"
-                "  - id: step-2\n    title: Step 2\n"
-                "  - id: step-3\n    title: Step 3\n    knight: missing-b\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        assert "broken_knight_ref: 'missing-a' not found (step 1)" in result.output, (
-            f"missing-a error line not found.\nOutput:\n{result.output}"
-        )
-        assert "broken_knight_ref: 'missing-b' not found (step 3)" in result.output, (
-            f"missing-b error line not found.\nOutput:\n{result.output}"
-        )
-
-    def test_health_doctrine_broken_knight_ref_scope_doctrines_exits_one(self, runner, project_dir):
-        """lore health --scope doctrines exits 1 when doctrine has broken knight ref."""
-        # Exercises: lore codex show conceptual-workflows-health
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+    def test_a_mission_id_that_is_not_its_filename_stem(self, runner, project_dir):
+        _write_doctrine(
+            project_dir, "feat-auth", missions={"recon": "reconnaissance"}
         )
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
         assert result.exit_code == 1, result.output
+        assert (
+            "ERROR  doctrines  feat-auth/recon  mission_id_mismatch: frontmatter id "
+            "'reconnaissance' does not match filename stem 'recon'"
+        ) in result.output, result.output
 
+    def test_two_doctrines_declaring_one_id(self, runner, project_dir):
+        _write_doctrine(project_dir, "feat-auth")
+        _write_doctrine(project_dir, "feat-payments", design_id="feat-auth")
 
-# ---------------------------------------------------------------------------
-# US-010: Broken artifact ref in doctrine step notes
-# Exercises: conceptual-workflows-health
-# ---------------------------------------------------------------------------
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert result.exit_code == 1, result.output
+        duplicate = [
+            line for line in result.output.splitlines() if "duplicate_id" in line
+        ]
+        assert len(duplicate) == 1, result.output
+        assert "declared by" in duplicate[0]
 
 
 class TestHealthDoctrineArtifactRef:
-    """lore health --scope doctrines detects broken artifact references in step notes."""
+    """A fi-* token naming no artifact is an error, in a design or a mission."""
 
-    def test_health_doctrine_broken_artifact_ref_exits_one(self, runner, project_dir):
-        """lore health --scope doctrines exits 1 when step notes reference missing artifact."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: step 3 notes has fi-prd-v2, no such artifact exists
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n"
-                "  - id: step-3\n    title: Step 3\n    notes: 'see artifact: fi-prd-v2'\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+    def test_a_broken_reference_in_a_mission_body(self, runner, project_dir):
+        _write_doctrine(
+            project_dir, "feat-auth", mission_body="Read fi-prd-v2 before starting.\n"
         )
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
         assert result.exit_code == 1, result.output
+        assert (
+            "ERROR  doctrines  feat-auth  broken_artifact_ref: 'fi-prd-v2' not found "
+            "(mission recon)"
+        ) in result.output, result.output
 
-    def test_health_doctrine_broken_artifact_ref_error_line_in_output(self, runner, project_dir):
-        """lore health --scope doctrines output contains broken_artifact_ref error line."""
-        # Exercises: lore codex show conceptual-workflows-health
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n"
-                "  - id: step-3\n    title: Step 3\n    notes: 'see artifact: fi-prd-v2'\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+    def test_a_broken_reference_in_the_design_body(self, runner, project_dir):
+        _write_doctrine(
+            project_dir, "feat-auth", design_body="The plan follows fi-prd-v2.\n"
         )
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
-        assert "broken_artifact_ref" in result.output, result.output
-        assert "fi-prd-v2" in result.output, result.output
-        assert "feat-auth" in result.output, result.output
+        assert result.exit_code == 1, result.output
+        assert (
+            "ERROR  doctrines  feat-auth  broken_artifact_ref: 'fi-prd-v2' not found "
+            "(design)"
+        ) in result.output, result.output
 
-    def test_health_doctrine_broken_artifact_ref_exact_output_format(self, runner, project_dir):
-        """lore health --scope doctrines output line matches exact AC format."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: ERROR  doctrines  feat-auth  broken_artifact_ref: 'fi-prd-v2' not found (step 3)
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n"
-                "  - id: step-3\n    title: Step 3\n    notes: 'see artifact: fi-prd-v2'\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        assert "broken_artifact_ref: 'fi-prd-v2' not found (step 3)" in result.output, (
-            f"Expected exact error format not found.\nOutput:\n{result.output}"
-        )
-
-    def test_health_doctrine_present_artifact_no_broken_artifact_ref(self, runner, project_dir):
-        """lore health --scope doctrines does not report broken_artifact_ref when artifact exists."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 2: fi-prd-template exists → no error
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-3\n    title: Step 3\n    notes: see fi-prd-template\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+    def test_an_artifact_that_exists_produces_nothing(self, runner, project_dir):
+        _write_doctrine(
+            project_dir, "feat-auth", mission_body="Use fi-prd-template.\n"
         )
         _write_artifact(
             project_dir,
@@ -1210,167 +1045,123 @@ class TestHealthDoctrineArtifactRef:
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
-        lines = result.output.splitlines()
-        broken_lines = [
-            line for line in lines if "broken_artifact_ref" in line and "feat-auth" in line
-        ]
-        assert broken_lines == [], f"Unexpected broken_artifact_ref line.\nOutput:\n{result.output}"
+        assert "broken_artifact_ref" not in result.output, result.output
 
-    def test_health_doctrine_step_no_notes_no_broken_artifact_ref(self, runner, project_dir):
-        """lore health --scope doctrines does not report broken_artifact_ref when step has no notes."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 3: step has no notes field → no broken_artifact_ref error
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+    def test_a_body_with_no_fi_token_produces_nothing(self, runner, project_dir):
+        _write_doctrine(
+            project_dir, "feat-auth", mission_body="See the design doc for details.\n"
         )
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
-        lines = result.output.splitlines()
-        broken_lines = [line for line in lines if "broken_artifact_ref" in line]
-        assert broken_lines == [], f"Unexpected broken_artifact_ref line.\nOutput:\n{result.output}"
+        assert "broken_artifact_ref" not in result.output, result.output
 
-    def test_health_doctrine_notes_no_fi_pattern_no_broken_artifact_ref(self, runner, project_dir):
-        """lore health --scope doctrines does not report broken_artifact_ref for non-fi-pattern notes."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 4: notes = "See the design doc for details." → no fi-* token
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n    notes: See the design doc for details.\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+    def test_two_broken_references_produce_two_lines(self, runner, project_dir):
+        _write_doctrine(
+            project_dir, "feat-auth", mission_body="fi-missing-a and fi-missing-b\n"
         )
 
         result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
-        lines = result.output.splitlines()
-        broken_lines = [line for line in lines if "broken_artifact_ref" in line]
-        assert broken_lines == [], f"Unexpected broken_artifact_ref line.\nOutput:\n{result.output}"
-
-    def test_health_doctrine_multiple_missing_artifact_refs_two_error_lines(self, runner, project_dir):
-        """lore health --scope doctrines reports separate error lines for each missing artifact ref."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 5: step 2 notes has fi-missing-a and fi-missing-b → two error lines
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n    notes: fi-missing-a and fi-missing-b\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
-
-        result = runner.invoke(main, ["health", "--scope", "doctrines"])
-
-        assert "broken_artifact_ref: 'fi-missing-a' not found (step 2)" in result.output, (
-            f"fi-missing-a error line not found.\nOutput:\n{result.output}"
-        )
-        assert "broken_artifact_ref: 'fi-missing-b' not found (step 2)" in result.output, (
-            f"fi-missing-b error line not found.\nOutput:\n{result.output}"
-        )
+        assert (
+            "broken_artifact_ref: 'fi-missing-a' not found (mission recon)"
+            in result.output
+        ), result.output
+        assert (
+            "broken_artifact_ref: 'fi-missing-b' not found (mission recon)"
+            in result.output
+        ), result.output
 
 
-# ---------------------------------------------------------------------------
-# US-011: Missing knight file referenced by active missions
-# Exercises: conceptual-workflows-health
-# ---------------------------------------------------------------------------
+class TestHealthDoctrineMissionMissingFile:
+    """An active mission whose stored reference is not on disk is an error."""
 
-
-class TestHealthKnightMissingFile:
-    """lore health --scope knights detects active missions referencing missing knight files."""
-
-    def test_health_knight_missing_file_exits_one(self, runner, project_dir):
-        """lore health exits 1 when active mission references a knight not found on disk."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: mission m-0042 knight="ghost-knight"; detail says "referenced by m-0042 but not found on disk"
+    def test_a_dangling_reference_exits_one(self, runner, project_dir):
         from tests.conftest import insert_mission, insert_quest
 
         insert_quest(project_dir, "q-0042", "Quest 42")
-        insert_mission(project_dir, "m-0042", "q-0042", "Mission 42", knight="ghost-knight")
+        insert_mission(
+            project_dir, "q-0042/m-0042", "q-0042", "Mission 42",
+            doctrine_mission="gone/missing",
+        )
 
-        result = runner.invoke(main, ["health", "--scope", "knights"])
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
-        # AC: exit 1 AND detail says "referenced by ... but not found on disk"
         assert result.exit_code == 1, result.output
-        assert "referenced by" in result.output and "not found on disk" in result.output, (
-            f"Expected 'referenced by ... not found on disk' in output.\nOutput:\n{result.output}"
-        )
+        assert (
+            "ERROR  doctrines  gone/missing  missing_file: referenced by "
+            "q-0042/m-0042 but not found on disk"
+        ) in result.output, result.output
 
-    def test_health_knight_missing_file_output_exact_detail_format(self, runner, project_dir):
-        """lore health stdout contains exact AC detail: 'referenced by <id> but not found on disk'."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1 exact output: ERROR  knights  ghost-knight  missing_file: referenced by m-0043 but not found on disk
-        from tests.conftest import insert_mission, insert_quest
-
-        insert_quest(project_dir, "q-0043", "Quest 43")
-        insert_mission(project_dir, "m-0043", "q-0043", "Mission 43", knight="ghost-knight")
-
-        result = runner.invoke(main, ["health", "--scope", "knights"])
-
-        assert "referenced by" in result.output, (
-            f"Expected 'referenced by' in output.\nOutput:\n{result.output}"
-        )
-        assert "not found on disk" in result.output, (
-            f"Expected 'not found on disk' in output.\nOutput:\n{result.output}"
-        )
-        assert "m-0043" in result.output, (
-            f"Expected mission ID m-0043 in output.\nOutput:\n{result.output}"
-        )
-
-    def test_health_knight_missing_file_output_contains_mission_id(self, runner, project_dir):
-        """lore health stdout contains the referencing mission ID in the missing_file line."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 1: detail must include mission ID per AC
-        from tests.conftest import insert_mission, insert_quest
-
-        insert_quest(project_dir, "q-0044", "Quest 44")
-        insert_mission(project_dir, "m-0044", "q-0044", "Mission 44", knight="ghost-knight")
-
-        result = runner.invoke(main, ["health", "--scope", "knights"])
-
-        assert "m-0044" in result.output, (
-            f"Mission ID m-0044 not in output.\nOutput:\n{result.output}"
-        )
-
-    def test_health_knight_multiple_missions_same_missing_knight_one_error_line(
+    def test_several_missions_sharing_one_broken_reference_produce_one_line(
         self, runner, project_dir
     ):
-        """lore health --scope knights reports one error line with all referencing mission IDs."""
-        # Exercises: lore codex show conceptual-workflows-health
-        # Scenario 4: m-0010, m-0011, m-0012 all reference ghost-knight → one ERROR line
-        # AND that error line's detail contains all three mission IDs
         from tests.conftest import insert_mission, insert_quest
 
-        insert_quest(project_dir, "q-0047", "Quest 47")
-        insert_mission(project_dir, "m-0010", "q-0047", "Mission 10", knight="ghost-knight")
-        insert_mission(project_dir, "m-0011", "q-0047", "Mission 11", knight="ghost-knight")
-        insert_mission(project_dir, "m-0012", "q-0047", "Mission 12", knight="ghost-knight")
+        insert_quest(project_dir, "q-0010", "Quest")
+        for suffix in ("0010", "0011", "0012"):
+            insert_mission(
+                project_dir, f"q-0010/m-{suffix}", "q-0010", f"Mission {suffix}",
+                doctrine_mission="gone/missing",
+            )
 
-        result = runner.invoke(main, ["health", "--scope", "knights"])
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
 
         error_lines = [
-            line for line in result.output.splitlines()
-            if "ERROR  knights  ghost-knight  missing_file" in line
+            line for line in result.output.splitlines() if "missing_file" in line
         ]
-        assert len(error_lines) == 1, (
-            f"Expected 1 error line, got {len(error_lines)}.\nOutput:\n{result.output}"
+        assert len(error_lines) == 1, result.output
+        for suffix in ("0010", "0011", "0012"):
+            assert f"q-0010/m-{suffix}" in error_lines[0]
+
+    def test_a_reference_that_resolves_produces_nothing(self, runner, project_dir):
+        from tests.conftest import insert_mission, insert_quest
+
+        _write_doctrine(project_dir, "feat-auth")
+        insert_quest(project_dir, "q-0042", "Quest 42")
+        insert_mission(
+            project_dir, "q-0042/m-0042", "q-0042", "Mission 42",
+            doctrine_mission="feat-auth/recon",
         )
-        # AC: single error line detail must list all referencing mission IDs
-        assert "m-0010" in error_lines[0], f"m-0010 not in error line: {error_lines[0]}"
-        assert "m-0011" in error_lines[0], f"m-0011 not in error line: {error_lines[0]}"
-        assert "m-0012" in error_lines[0], f"m-0012 not in error line: {error_lines[0]}"
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert "missing_file" not in result.output, result.output
+
+    def test_a_closed_missions_dangling_reference_is_not_reported(
+        self, runner, project_dir
+    ):
+        from tests.conftest import insert_mission, insert_quest
+
+        insert_quest(project_dir, "q-0042", "Quest 42")
+        insert_mission(
+            project_dir, "q-0042/m-0042", "q-0042", "Mission 42",
+            doctrine_mission="gone/missing", status="closed",
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert "missing_file" not in result.output, result.output
+        assert result.exit_code == 0, result.output
+
+    def test_a_soft_deleted_mission_file_is_not_a_dangling_reference(
+        self, runner, project_dir
+    ):
+        """A soft-deleted mission is a removal on the record, not a file gone astray."""
+        from tests.conftest import insert_mission, insert_quest
+
+        _write_doctrine(project_dir, "feat-auth")
+        missions = project_dir / ".lore" / "doctrines" / "feat-auth" / "missions"
+        (missions / "recon.md").rename(missions / "recon.md.deleted")
+        insert_quest(project_dir, "q-0042", "Quest 42")
+        insert_mission(
+            project_dir, "q-0042/m-0042", "q-0042", "Mission 42",
+            doctrine_mission="feat-auth/recon",
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "doctrines"])
+
+        assert "missing_file" not in result.output, result.output
 
 
 # ---------------------------------------------------------------------------
@@ -1569,15 +1360,7 @@ class TestHealthReportFileWrittenWithErrors:
 
     def test_health_errors_run_creates_report_file(self, runner, project_dir):
         """lore health with errors creates a health-*.md file in .lore/codex/transient/."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\n"
-                "steps:\n  - knight: nonexistent-knight-us014\n    mission: impl\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health"])
 
@@ -1589,15 +1372,7 @@ class TestHealthReportFileWrittenWithErrors:
 
     def test_health_errors_run_report_contains_markdown_table(self, runner, project_dir):
         """lore health with errors: report file contains markdown table with error row."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\n"
-                "steps:\n  - knight: nonexistent-knight-us014\n    mission: impl\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         runner.invoke(main, ["health"])
 
@@ -1606,21 +1381,13 @@ class TestHealthReportFileWrittenWithErrors:
         assert report_files, "No report file found"
         content = report_files[0].read_text()
         assert "|" in content, f"Report file has no markdown table. Content:\n{content}"
-        assert "feat-auth" in content or "nonexistent-knight" in content, (
+        assert "feat-auth" in content, (
             f"Report missing expected error detail. Content:\n{content}"
         )
 
     def test_health_errors_run_exits_one(self, runner, project_dir):
-        """lore health exits 1 when there are broken knight refs."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\n"
-                "steps:\n  - knight: nonexistent-knight-us014\n    mission: impl\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        """lore health exits 1 when a doctrine error is present."""
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health"])
 
@@ -1744,38 +1511,24 @@ class TestHealthReportFileFrontmatter:
 class TestHealthUS015HumanReadableTable:
     """US-015: lore health prints column-aligned issue rows when --json is not set."""
 
-    def test_health_broken_knight_ref_human_readable_exact_line(self, runner, project_dir):
-        """lore health stdout contains exact column-aligned ERROR line for broken_knight_ref."""
-        # Given: feat-auth.yaml step 2 references knight senior-engineer (missing)
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-1\n    title: Step 1\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+    def test_health_doctrine_error_human_readable_exact_line(self, runner, project_dir):
+        """lore health stdout contains an exact column-aligned ERROR line."""
+        # Given: a design document whose declared id is not its directory name
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health"])
 
-        expected = "ERROR  doctrines  feat-auth  broken_knight_ref: 'senior-engineer' not found (step 2)"
+        expected = (
+            "ERROR  doctrines  feat-auth  id_mismatch: design frontmatter id "
+            "'something-else' does not match directory name"
+        )
         assert expected in result.output, (
             f"Expected exact column-aligned ERROR line not found.\nOutput:\n{result.output}"
         )
 
-    def test_health_broken_knight_ref_human_readable_exits_one(self, runner, project_dir):
-        """lore health exits 1 when a broken_knight_ref error is present."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+    def test_health_doctrine_error_human_readable_exits_one(self, runner, project_dir):
+        """lore health exits 1 when a doctrine error is present."""
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health"])
 
@@ -1791,66 +1544,44 @@ class TestHealthUS015HumanReadableTable:
 class TestHealthUS015JsonEnvelope:
     """US-015: lore health --json outputs a valid JSON envelope with has_errors and issues array."""
 
-    def test_health_json_envelope_has_errors_true_with_broken_knight_ref(self, runner, project_dir):
-        """lore health --json has_errors is True when broken_knight_ref error exists."""
+    def test_health_json_envelope_has_errors_true_with_a_doctrine_error(self, runner, project_dir):
+        """lore health --json has_errors is True when a doctrine error exists."""
         import json
 
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--json"])
 
         data = json.loads(result.output)
         assert data["has_errors"] is True
 
-    def test_health_json_envelope_issues_contains_broken_knight_ref_dict(self, runner, project_dir):
-        """lore health --json issues array contains dict with all required fields for broken_knight_ref."""
+    def test_health_json_envelope_issues_contains_the_doctrine_error_dict(self, runner, project_dir):
+        """lore health --json issues array carries every required field."""
         import json
 
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--json"])
 
         data = json.loads(result.output)
         assert len(data["issues"]) >= 1
         issue = next(
-            (i for i in data["issues"] if i.get("check") == "broken_knight_ref"),
+            (i for i in data["issues"] if i.get("check") == "id_mismatch"),
             None,
         )
-        assert issue is not None, f"No broken_knight_ref issue found in: {data['issues']}"
+        assert issue is not None, f"No id_mismatch issue found in: {data['issues']}"
         assert issue["severity"] == "error"
         assert issue["entity_type"] == "doctrines"
         assert issue["id"] == "feat-auth"
-        assert issue["detail"] == "'senior-engineer' not found (step 2)"
+        assert issue["detail"] == (
+            "design frontmatter id 'something-else' does not match directory name"
+        )
 
     def test_health_json_envelope_issues_array_has_required_keys(self, runner, project_dir):
         """lore health --json each issue dict contains severity, entity_type, id, check, detail."""
         import json
 
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--json"])
 
@@ -1861,17 +1592,9 @@ class TestHealthUS015JsonEnvelope:
                 f"Issue dict missing required keys. Got: {set(issue.keys())}"
             )
 
-    def test_health_json_broken_knight_ref_exits_one(self, runner, project_dir):
+    def test_health_json_doctrine_error_exits_one(self, runner, project_dir):
         """lore health --json exits 1 when issues contain an error."""
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--json"])
 
@@ -1986,15 +1709,7 @@ class TestHealthUS015JsonOnlyOutput:
         """lore health --json: entire stdout content is parseable as a single JSON object."""
         import json
 
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--json"])
 
@@ -2012,15 +1727,7 @@ class TestHealthUS015JsonOnlyOutput:
         """lore health --json: no extra text lines appear before or after the JSON object."""
         import json
 
-        _write_doctrine_pair(
-            project_dir,
-            "feat-auth",
-            (
-                "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-                "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-            ),
-            "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
-        )
+        _write_doctrine(project_dir, "feat-auth", design_id="something-else")
 
         result = runner.invoke(main, ["health", "--json"])
 

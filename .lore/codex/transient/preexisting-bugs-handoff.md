@@ -1,7 +1,7 @@
 ---
 id: preexisting-bugs-handoff
 title: Pre-existing bugs surfaced during the interactive-init quest — handoff
-summary: Three defects found while building interactive lore init that predate it and were deliberately left unfixed, with reproductions verified against the branch head, plus one behaviour a product ruling reclassified as intended.
+summary: Three defects found while building interactive lore init that predate it and were deliberately left unfixed, with reproductions verified against the branch head, plus one behaviour a product ruling reclassified as intended. Bug 1 is now fixed; the resolver pattern it called for lives in doctrine.py.
 related:
   - interactive-init-prd
   - conceptual-workflows-health
@@ -16,46 +16,13 @@ Every reproduction below was re-run against the branch head and still fails. Eac
 
 ---
 
-## 1. `lore health --scope knights` dies whenever a doctrine-driven quest is open
+## 1. `lore health --scope knights` — FIXED
 
-**Severity:** high — the scope is unusable for the whole duration of any quest, which is exactly when a health check matters.
+**Status:** closed. The Knight entity is removed outright: there is no `knights` scope, no `_check_knights`, no `_find_knight`, and no `missions.knight` column.
 
-### What happens
+The pattern the bug called for now lives in `doctrine.py` as a deliberate resolver pair. `_find_doctrine_dir` is strict — a name that came from a user refuses a path separator outright — while `_resolve_doctrine_mission` is permissive about the one separator a *stored* `<doctrine-id>/<mission-id>` reference legitimately carries, and refuses an absolute path, any `..` segment, and any shape that is not exactly two segments. `health.py` imports `_resolve_doctrine_mission` rather than re-deriving the question, so the two paths cannot disagree about what a valid reference is.
 
-```
-lore health
-  ERROR  knights  knights  scan_failed: Invalid knight name: path separators not allowed
-```
-
-`lore health` still completes and other scopes still report, but the knights scope produces nothing.
-
-### Why
-
-`_check_knights` (`src/lore/health.py:396`) reads the `knight` field off every open mission and passes it to `_find_knight` (`src/lore/knight.py:100`), which rejects any name containing a path separator as a traversal guard:
-
-```python
-if "/" in name or "\\" in name:
-    raise ValueError("Invalid knight name: path separators not allowed")
-```
-
-Doctrines write grouped knight names — `tdd-feature/defaults-reviewer.md`, `feature-implementation/scout.md` — and `lore new mission -k` accepts them without complaint. So any open mission created from a doctrine breaks the scan. `lore knight list` and `lore knight show` resolve the same grouped names correctly, so the two paths disagree about what a valid knight name is.
-
-`src/lore/health.py:293` calls `_find_knight` the same way and is worth checking alongside it.
-
-### Reproduce
-
-```
-lore new mission -q <quest> "x" -k tdd-feature/defaults-reviewer.md -T knight
-lore health --scope knights
-```
-
-The error clears when the mission closes, because `list_missions(include_closed=False)` stops returning it — which is why the bug is invisible between quests and reliable during one.
-
-### Fix direction
-
-Resolve grouped names the way `lore knight show` does. The traversal guard is protecting against an untrusted path, but a knight name that came out of the database was written by a doctrine, not by an attacker. Either resolve the group before the guard, or give `_check_knights` a resolver that accepts group-qualified ids.
-
-**Introduced:** `a44efaa` ("feat: API and CLI parity"), which predates this quest's first commit.
+See `ref-lore_doctrine-module` and `decisions-033-unresolvable-reference-is-silent-on-read`.
 
 ---
 

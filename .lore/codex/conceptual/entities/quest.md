@@ -52,9 +52,9 @@ The default for new Quests is `auto_close` disabled. Use `--auto-close` at creat
 
 ```
 Missions:
-○ m-0e36 Design auth schema [knight]
-○ m-a6d0 Design dashboard UI [knight]         ← q-4f5a/m-0e36
-○ m-d6b3 Implement dashboard API [knight]     ← m-a6d0, q-4f5a/m-8383
+○ m-0e36 Design auth schema [agent]
+○ m-a6d0 Design dashboard UI [agent]         ← q-4f5a/m-0e36
+○ m-d6b3 Implement dashboard API [agent]     ← m-a6d0, q-4f5a/m-8383
 ○ m-9501 Deploy dashboard [constable]         ← m-d6b3, q-4f5a/m-cdf7
 ```
 

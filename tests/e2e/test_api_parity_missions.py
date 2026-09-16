@@ -10,8 +10,8 @@ grouped envelope onto its existing JSON shape.
 
 Pre-refactor CLI JSON envelope (cli.py:945-961):
   {"missions": [
-      {id, quest_id, title, status, priority, mission_type, knight,
-       created_at},
+      {id, quest_id, title, status, priority, mission_type,
+       doctrine_mission, created_at},
       ...
   ]}
 
@@ -49,8 +49,8 @@ class TestMissionsJsonParity:
             "q-a1b2/m-aaaa",
             "q-a1b2",
             "M1",
-            mission_type="knight",
-            knight="reviewer.md",
+            mission_type="agent",
+            doctrine_mission="tdd-lite/review",
         )
         result = runner.invoke(main, ["--json", "missions"])
         payload = json.loads(result.output)
@@ -63,7 +63,7 @@ class TestMissionsJsonParity:
             "status",
             "priority",
             "mission_type",
-            "knight",
+            "doctrine_mission",
             "created_at",
         }
 

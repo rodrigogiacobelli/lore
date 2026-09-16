@@ -9,9 +9,6 @@
 !artifacts
 !artifacts/**
 artifacts/default/
-!knights
-!knights/**
-knights/default/
 !doctrines
 !doctrines/**
 doctrines/default/

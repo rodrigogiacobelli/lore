@@ -26,7 +26,7 @@ related:
 
 # Skill Catalogue and Access-Mode Rendering
 
-Ten skills ship with Lore. The catalogue records their structure; each skill's own `SKILL.md` carries its content. `conceptual-entities-skill` describes what a skill is and where it installs.
+Nine skills ship with Lore. The catalogue records their structure; each skill's own `SKILL.md` carries its content. `conceptual-entities-skill` describes what a skill is and where it installs.
 
 ## The Catalogue
 
@@ -47,8 +47,6 @@ skills:
   - id: retrieve-memory
     family: memory
   - id: update-doctrine
-    family: machinery
-  - id: update-knight
     family: machinery
   - id: update-watcher
     family: machinery
@@ -77,6 +75,9 @@ retired:
   explore-codex:      {into: retrieve-memory,      reason: merged into retrieve-memory}
   explore-rite:       {into: retrieve-memory,      reason: merged into retrieve-memory}
   explore-codex-rite: {into: retrieve-memory,      reason: merged into retrieve-memory}
+  update-knight:
+    into: update-doctrine
+    reason: "a reusable instruction lives in the doctrine mission file that uses it"
 ```
 
 | Field | Meaning |
@@ -91,6 +92,8 @@ retired:
 A skill's human-readable description is authored once, in its own `SKILL.md` frontmatter, and is not repeated here. The catalogue carries structure — id, family, reference files, retirement — and nothing an agent reads.
 
 `retired` rows are **append-only**. A project hopping several releases needs every intermediate rename explained, and `reason` is quoted verbatim in the removal report.
+
+Append-only means a chain is possible: `new-knight` retires into `update-knight`, which retires in turn into `update-doctrine`. Both rows stand. A reader resolving where a skill went follows `into` until it lands on an id the release still ships.
 
 The catalogue validates against `lore://schemas/skill-catalogue` through `load_schema`, never through the overlay resolver. An unparseable or schema-invalid catalogue raises `RuntimeError` naming the packaged file — a build defect, never a user error.
 

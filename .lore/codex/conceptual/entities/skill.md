@@ -9,7 +9,6 @@ summary: What a Skill is — a seeded instruction file that teaches a coding age
 related:
 - conceptual-entities-artifact
 - conceptual-entities-doctrine
-- conceptual-entities-knight
 - conceptual-entities-rite
 - conceptual-workflows-lore-init
 - conceptual-workflows-init-interactive
@@ -35,7 +34,6 @@ A skill is not a Lore-managed entity in the sense the other seven are. It has no
 | memory | `store-memory` | Records knowledge into project memory — a codex document, a rite, or a source snapshot — creating, editing or deleting as the request requires. |
 | memory | `retrieve-memory` | Answers a question from project memory, consulting both the codex and the rites. |
 | machinery | `update-doctrine` | Authors or edits a doctrine. |
-| machinery | `update-knight` | Authors or edits a knight persona. |
 | machinery | `update-watcher` | Authors or edits a watcher. |
 | machinery | `update-artifact` | Authors or edits an artifact template. |
 | machinery | `update-custom-schema` | Authors or edits a project custom-schema overlay. |
@@ -48,7 +46,7 @@ A skill is not a Lore-managed entity in the sense the other seven are. It has no
 The three families are the unit a person selects at `lore init`:
 
 - **memory** — project memory: the codex, the rites and the glossary, consulted together.
-- **machinery** — Lore's own configuration entities: doctrines, knights, watchers, artifacts, custom schemas.
+- **machinery** — Lore's own configuration entities: doctrines, watchers, artifacts, custom schemas.
 - **workflow** — multi-step processes over quests and missions.
 
 A family is selected or not selected as a whole. `conceptual-workflows-init-interactive` holds the prompt and its flag.
@@ -77,7 +75,7 @@ Each skill is authored once and installed in one of two access modes, recorded p
 
 The mode swaps the skill's **command layer**, not a preamble. Everything else in the skill is identical between the two.
 
-Three commands stay in both modes — `lore codex map`, `lore codex chaos` and `lore impacts` — because no file tool reproduces a precomputed graph traversal. Artifacts, knights, doctrines, watchers, and every SQLite-backed entity keep the by-ID CLI rule in both modes (`decisions-006-id-references`).
+Three commands stay in both modes — `lore codex map`, `lore codex chaos` and `lore impacts` — because no file tool reproduces a precomputed graph traversal. Artifacts, doctrines, watchers, and every SQLite-backed entity keep the by-ID CLI rule in both modes (`decisions-006-id-references`).
 
 `tech-arch-skill-catalogue` holds how the two renderings come out of one authored file.
 

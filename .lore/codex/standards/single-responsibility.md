@@ -24,7 +24,6 @@ Each module in the Lore source tree has exactly one job:
 | `db.py` | Database operations and business rule enforcement |
 | `validators.py` | Input validation — one function per rule |
 | `paths.py` | `.lore/` path construction helpers |
-| `knight.py` | Knight filesystem operations only |
 | `watcher.py` | Watcher YAML filesystem operations only |
 | `doctrine.py` | Doctrine YAML loading, validation, and storage |
 | `codex.py` | Codex document discovery and retrieval |
@@ -41,7 +40,7 @@ If a module is doing two things, split it or move the second concern to the righ
 
 If a CLI handler is growing complex logic (beyond parse → call → format), that logic belongs in `db.py` or a domain module.
 
-If `db.py` is accumulating filesystem operations, those belong in the relevant entity module (`knight.py`, `doctrine.py`, etc.).
+If `db.py` is accumulating filesystem operations, those belong in the relevant entity module (`doctrine.py`, `artifact.py`, etc.).
 
 ## Violation Pattern
 

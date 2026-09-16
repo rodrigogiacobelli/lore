@@ -24,7 +24,7 @@ import yaml
 # Red: every one of these imports is expected to fail until the Green phase
 # lands `src/lore/impacts.py`. Wrapped in try/except so collection succeeds
 # and the surrounding test suite is not blocked — matches the pattern used
-# by other red-phase test files (see tests/unit/test_knight.py).
+# by other red-phase test files in this suite.
 try:
     from lore.impacts import (  # type: ignore[import-not-found]
         CodexBinding,

@@ -31,7 +31,6 @@ Several subcommands also accept a local `--json` flag at the subcommand level. T
 - `lore show`
 - `lore unneed`
 - `lore artifact list`
-- `lore knight list`
 - `lore doctrine list`
 - `lore codex list`
 - `lore watcher list`
@@ -40,7 +39,7 @@ Several subcommands also accept a local `--json` flag at the subcommand level. T
 - `lore rite search`
 - `lore impacts`
 
-For these commands, the local flag and the global flag produce identical output. Double-declaration (`lore --json knight list --json`) is harmless.
+For these commands, the local flag and the global flag produce identical output. Double-declaration (`lore --json doctrine list --json`) is harmless.
 
 `lore codex search`, `lore glossary list`, and `lore glossary search` carry **no** local `--json` — the global flag is the only way to get their JSON envelope. Every example for these three uses `lore --json <command> ...`.
 
@@ -56,8 +55,8 @@ Each command documents its own JSON shape. Common patterns:
 | `lore done` | `{"updated": [...], "quest_closed": [...], "errors": []}` |
 | `lore block` | `{"id": "...", "status": "blocked", "block_reason": "..."}` |
 | `lore list` | `{"quests": [{id, title, status, priority, created_at}]}` |
-| `lore missions` | `{"missions": [{id, quest_id, title, status, priority, mission_type, knight, created_at}]}` |
-| `lore ready` | `{"missions": [{id, quest_id, title, status, priority, mission_type, knight, created_at}]}` |
+| `lore missions` | `{"missions": [{id, quest_id, title, status, priority, mission_type, doctrine_mission, created_at}]}` |
+| `lore ready` | `{"missions": [{id, quest_id, title, status, priority, mission_type, doctrine_mission, created_at}]}` |
 | `lore stats` | `{"quests": {...}, "missions": {...}}` |
 | `lore show <quest>` | Full quest object with nested missions and board |
 | `lore show <mission>` | Full mission object with dependencies and board |
@@ -68,12 +67,10 @@ Each command documents its own JSON shape. Common patterns:
 | `lore edit` | Full updated entity object |
 | `lore delete` | `{"id": "...", "deleted_at": "..."}` |
 | `lore artifact list` | `{"artifacts": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level artifacts |
-| `lore knight list` | `{"knights": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level knights |
 | `lore doctrine list` | `{"doctrines": [{id, group, title, summary, valid}]}` — `group` is slash-joined when nested, `null` for root-level doctrines |
 | `lore watcher list` | `{"watchers": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level watchers |
 | `lore codex list` | `{"codex": [{id, group, title, summary}]}` — `group` is slash-joined when nested, `null` for root-level documents |
 | `lore doctrine new` | `{"name", "group", "yaml_filename", "design_filename", "path"}` — `group` slash-joined or `null` |
-| `lore knight new` | `{"name", "group", "filename", "path"}` — `group` slash-joined or `null` |
 | `lore watcher new` | `{"id", "group", "filename", "path"}` — `group` slash-joined or `null` |
 | `lore artifact new` | `{"id", "group", "filename", "path"}` — `group` slash-joined or `null` |
 | `lore rite list` | `{"rites": [{id, group, trigger, summary}]}` (main) / `{"shared_steps": [{id, group, title}]}` (`--shared`) — `group` slash-joined or `null` |
@@ -112,7 +109,7 @@ All fields in documented envelopes are always present, even when the value is `n
 
 ### Group key canonical form
 
-For every entity with a `group` field in the JSON envelope (the six `list` commands — codex/artifact/knight/doctrine/watcher/**rite** — plus the four `new` commands and `rite new`/`rite delete`), the canonical form is:
+For every entity with a `group` field in the JSON envelope (the five `list` commands — codex/artifact/doctrine/watcher/**rite** — plus the three `new` commands and `rite new`/`rite delete`), the canonical form is:
 
 - `null` — entity lives directly at the entity root (`.lore/<entity>/<name>.*`).
 - slash-joined string (e.g., `"seo-analysis/keyword-analysers"`) — entity lives in a nested subdirectory under the entity root.
@@ -135,6 +132,6 @@ Two commands are outside JSON mode, and they refuse it differently.
 
 | Failure point | Behaviour | Exit code |
 |---|---|---|
-| Flag placed after subcommand | Flag silently ignored for most commands; accepted and acts correctly for `lore show`, `lore unneed`, `lore artifact list`, `lore knight list`, and `lore doctrine list` | varies |
+| Flag placed after subcommand | Flag silently ignored for most commands; accepted and acts correctly for `lore show`, `lore unneed`, `lore artifact list`, and `lore doctrine list` | varies |
 | Oracle with --json | Rejected: usage error on stderr, no report written | 2 |
 | Init with --json | Flag ignored; text output produced | 0 |

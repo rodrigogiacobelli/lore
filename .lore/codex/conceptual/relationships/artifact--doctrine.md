@@ -44,17 +44,26 @@ The Artifact ID in the notes is a plain string embedded in prose. Lore treats it
 
 ## Concrete Examples
 
-### Artifact ID in step notes
+### Artifact ID in a mission body
 
-```yaml
-steps:
-  - id: tech-spec
-    type: knight
-    knight: architect
-    notes: |
-      Read the PRD first. Retrieve the template with:
-        lore artifact show fi-tech-spec-draft
-      Output to .lore/codex/transient/<slug>-tech-spec-draft.md
+```markdown
+---
+id: tech-spec
+title: Produce the Tech Spec
+summary: Makes concrete architectural decisions from the PRD.
+---
+
+# Architect
+
+...
+
+## Inputs
+
+Read the PRD first. Retrieve the template with:
+
+    lore artifact show fi-tech-spec-draft
+
+Output to .lore/codex/transient/<slug>-tech-spec-draft.md
 ```
 
 → Lore stores this as-is. No lookup of `fi-tech-spec-draft` occurs.
@@ -62,16 +71,16 @@ steps:
 ### Orchestrator extracting and retrieving the Artifact
 
 ```
-# Orchestrator reads step notes and creates Mission:
-$ lore mission new --quest q-9001 --knight architect \
-    "Tech Spec: Build auth module — use lore artifact show fi-tech-spec-draft"
+# Orchestrator reads the design table and creates the Mission:
+$ lore new mission -q q-9001 -T agent -D quick-feature-implementation/tech-spec \
+    "Tech Spec: Build auth module"
 Mission q-9001/m-001 created.
 ```
 
 ### Worker retrieving the Artifact during execution
 
 ```
-# Worker (architect knight) reads mission description and acts:
+# Worker reads its mission body and acts:
 $ lore artifact show fi-tech-spec-draft
 ---
 id: fi-tech-spec-draft

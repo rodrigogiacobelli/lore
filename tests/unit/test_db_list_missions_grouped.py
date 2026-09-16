@@ -14,7 +14,7 @@ Envelope (per Tech Spec §2):
         "missions": [
           {
             "id", "quest_id", "title", "status", "priority",
-            "mission_type", "knight", "created_at",
+            "mission_type", "doctrine_mission", "created_at",
           },
           ...
         ],
@@ -56,7 +56,7 @@ MISSION_ENTRY_KEYS: frozenset[str] = frozenset(
         "status",
         "priority",
         "mission_type",
-        "knight",
+        "doctrine_mission",
         "created_at",
     }
 )
@@ -114,7 +114,7 @@ class TestListMissionsGroupedEnvelopeShape:
         insert_quest(project_dir, "q-aaaa", "Q")
         insert_mission(
             project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
-            mission_type="knight", knight="someone.md",
+            mission_type="agent", doctrine_mission="tdd-lite/recon",
         )
 
         result = list_missions_grouped(project_dir)

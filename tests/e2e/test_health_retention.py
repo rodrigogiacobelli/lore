@@ -108,15 +108,14 @@ def _seed_stale_report(project_dir: Path, timestamp: str) -> Path:
 
 
 def _break_a_doctrine(project_dir: Path) -> None:
-    """Introduce one health *error* — a doctrine step naming an absent knight."""
-    base = project_dir / ".lore" / "doctrines"
-    base.mkdir(parents=True, exist_ok=True)
-    (base / "feat-retention.yaml").write_text(
-        "id: feat-retention\ntitle: Retention\nsummary: s\n"
-        "steps:\n  - knight: no-such-knight-retention\n    mission: impl\n"
+    """Introduce one health *error* — a design id that is not its directory name."""
+    directory = project_dir / ".lore" / "doctrines" / "feat-retention"
+    (directory / "missions").mkdir(parents=True, exist_ok=True)
+    (directory / "feat-retention.design.md").write_text(
+        "---\nid: something-else\ntitle: Retention\nsummary: s\n---\nBody.\n"
     )
-    (base / "feat-retention.design.md").write_text(
-        "---\nid: feat-retention\ntitle: Retention\nsummary: s\n---\nBody.\n"
+    (directory / "missions" / "recon.md").write_text(
+        "---\nid: recon\ntitle: Recon\nsummary: s\n---\nBody.\n"
     )
 
 

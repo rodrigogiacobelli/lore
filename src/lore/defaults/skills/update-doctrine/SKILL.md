@@ -1,22 +1,24 @@
 ---
 name: update-doctrine
-description: Create or edit a doctrine, along with the knights and artifacts it needs
+description: Create or edit a doctrine — its design document, its mission files, and the artifacts they need
 ---
 
 # Update Doctrine
 
-Author a Lore doctrine. This skill **creates a doctrine or edits an existing one**, whichever the request calls for — "add a review step to `tdd-implementation`" and "build me a hotfix workflow" both land here.
+Author a Lore doctrine. This skill **creates a doctrine or edits an existing one**, whichever the request calls for — "add a review mission to `tdd-implementation`" and "build me a hotfix workflow" both land here.
 
-Doctrines are YAML workflow templates that describe a sequence of steps for a standard body of work. An orchestrator reads them and translates them into quests and missions. The mission notes are the full execution spec — a worker agent receives only the mission output and must be able to complete the task from that alone.
+A doctrine is a directory of prose for a standard body of work: a design document that says how the work is done, and one mission file per reusable instruction. An orchestrator reads the design and translates it into a quest and its missions; a worker is handed one mission body. Lore parses none of it — order, type and dependencies are the orchestrator's to read out of the design prose.
+
+A mission file is the full execution spec for its worker. The worker receives that body plus its Lore mission's own description and nothing else, so it must be able to finish the task from those two alone.
 
 ## Creating or editing
 
 Decide which you are doing before you draft:
 
-- **Editing** — the doctrine exists. Read it in full first (`lore doctrine show <id>`), change only the steps the request names, and keep every other step byte-identical. Adding a step usually means fixing the `needs` edges around it and the `priority` of everything downstream.
+- **Editing** — the doctrine exists. Read it in full first (`lore doctrine show <id>`, then `lore doctrine show <id> --mission <mission-id>` for each mission the change touches), change only what the request names, and leave every other file untouched. `lore doctrine edit` replaces only the files you pass, so a mission nobody names stays byte-identical.
 - **Creating** — no doctrine covers this shape of work. Run the whole flow below.
 
-Either way, `lore doctrine show` runs normalisation, step validation and cycle detection, and the doctrine tree hides a `default/` versus flat split and slash-derived groups. Doctrines are reached through the Lore CLI in every access mode, never by reading the YAML off disk.
+Either way, doctrines are reached through the Lore CLI in every access mode, never by reading files off disk: the doctrine tree hides a `default/` versus flat split and slash-derived groups, and `lore doctrine show` assembles the mission index across the directory.
 
 ## Input: Design Doc (preferred)
 
@@ -26,7 +28,7 @@ The user may provide a design doc. If they are unsure of the format, show them t
 lore artifact show doctrine-design
 ```
 
-When a design doc is provided, use it as the authoritative spec. The table maps directly to doctrine steps — Input becomes what the mission notes tell the agent to read, Output becomes what it must produce.
+When a design doc is provided, use it as the authoritative spec. The table maps directly to mission files — Input becomes what the mission file tells the worker to read, Output becomes what it must produce.
 
 If no design doc is provided, ask the user for the workflow description before proceeding.
 
@@ -35,19 +37,18 @@ If no design doc is provided, ask the user for the workflow description before p
 ### 1. Understand the full scope
 
 From the design doc or the user's description, identify:
-- All steps and their order/dependencies
-- Which knights are needed (existing or new)
+- All missions and their order/dependencies
 - Which artifacts are needed (existing or new)
-- Any human gates, constable steps, or parallel tracks
+- Any human gates, constable missions, or parallel tracks
 
 ```
 lore doctrine list
 lore doctrine show <existing-id>
-lore knight list
+lore doctrine show <existing-id> --mission <mission-id>
 lore artifact list
 ```
 
-Align on the project's vocabulary before you name steps and write notes — a doctrine that invents a synonym for a term the project already has costs every downstream agent a translation.
+Align on the project's vocabulary before you name missions and write their bodies — a doctrine that invents a synonym for a term the project already has costs every downstream worker a translation.
 
 <!-- lore:access cli -->
 ```
@@ -63,7 +64,7 @@ Read `.lore/codex/glossary.yaml` for the vocabulary and grep `.lore/codex/**/*.m
 
 ### 2. Create artifacts first
 
-For each new artifact in the design doc, create it before writing the doctrine (the doctrine's mission notes will reference them).
+For each new artifact in the design doc, create it before writing the doctrine (the mission files will reference them by id).
 
 Draft the artifact into a temp file:
 
@@ -90,95 +91,69 @@ To nest under a subdirectory, pass `--group <subdir>`.
 
 Verify: `lore artifact show <id>`
 
-### 3. Create knights
+### 3. Draft the design document
 
-For each new knight in the design doc, create it before writing the doctrine.
+The design document is the file `lore doctrine show <name>` prints. Its frontmatter carries exactly `id`, `title` and `summary`, and its `id` must equal the doctrine name.
 
-A knight is a markdown file that encodes **who the agent is and how it works** — not what to do on a specific mission. Mission notes handle the what; the knight handles the behavioral DNA.
+Fill the `doctrine-design` template: the mission table (phase, mission id, type, depends-on, input, output), the Missions list with a one-line purpose each, the artifacts the doctrine uses, the escalation table, and any notes the orchestrator needs.
 
-Structure:
-```markdown
----
-id: <slug>
-title: <Title>
-summary: <One sentence: role and primary contribution.>
----
-# <Title>
+Type tokens are `agent`, `constable` and `human`:
 
-<One paragraph: who you are and your primary goal.>
+- `agent` — dispatched to a worker, which reads the mission file
+- `constable` — an orchestrator chore handled inline (commit, housekeeping)
+- `human` — requires user action; the orchestrator does not claim it
 
-## How You Work
+### 4. Draft one mission file per mission
 
-<Behavioral approach — how this knight thinks, what they prioritize, tools they use,
-how they make decisions. Include domain expertise and methodology. This should be
-generic enough to apply to any mission this knight is assigned to.>
+Retrieve the template before you write the first one:
 
-## Rules
-
-- <Hard constraints that are always true for this role — never task-specific>
-- <What they must never do>
-- <Quality bars they always maintain>
+```
+lore artifact show mission-design
 ```
 
-Write to a temp file, then:
-```
-lore knight new <name> -f <temp-file>
-```
+Every mission in the design table gets a file whose stem is the mission id. Its frontmatter carries exactly `id`, `title` and `summary`, and `id` must equal the filename stem.
 
-Verify: `lore knight show <name>`
-
-### 4. Draft the doctrine YAML
-
-The YAML contains only `id` and `steps` — no title, summary, or description. All metadata lives in the design doc.
-
-```yaml
-id: <slug>
-steps:
-  - id: <step-slug>
-    title: <Step Title>
-    type: knight        # knight | constable | human
-    priority: 0         # phase number — same priority = can run in parallel
-    knight: <knight-file.md>   # omit if constable or human
-    needs:              # omit if no dependencies
-      - <other-step-id>
-    notes: |
-      <Full execution spec. The agent receives only this — it must be enough.>
-      <Inputs: what to read and where to find the IDs (board messages or mission description).>
-      <Outputs: exact file paths, frontmatter requirements, what to post to which boards.>
-      <Quality requirements: what "done" means for this specific step.>
-      Mark done: `lore done <mission-id>`
-```
+The body is the worker's whole brief, in this order: the role it adopts, how it works, its hard rules, its inputs, its steps, its done criteria, and what it hands on. It merges what a persona would say about *who the worker is* with what a step spec would say about *what to do this run*.
 
 Rules:
-- `priority` maps to phase — same priority = parallel-eligible
-- `needs` creates a dependency
-- `constable` steps are orchestrator chores — no knight needed
-- `human` steps require user action — orchestrator does not claim them
-- Mission notes must be self-contained — the agent has no other context beyond board messages and the knight prompt
+- Each mission file is self-contained — the worker has no other context beyond board messages and its Lore mission description
+- There is no include mechanism; if two missions need the same paragraph, each carries its own copy
 - IDs passed via board messages: "your board messages contain the X ID"
 - IDs in the mission description: "your mission description contains the X ID"
-- Never tell the agent to run `lore show <mission-id>` — it already received that output. This applies to all step types including human steps.
-- When specifying frontmatter for output documents in mission notes, require only `id`, `title`, `summary`
+- Never tell the worker to run `lore show <mission-id>` — it already received that output. This applies to every mission type including human ones.
+- Reference artifacts and codex documents by id and the command that fetches them — `lore artifact show <id>`, `lore codex show <id>` — never by file path
+- When specifying frontmatter for output documents, require only `id`, `title`, `summary`
+- No order, dependency, phase or type belongs in a mission file; that lives in the design table
 
 ### 5. Write the doctrine
 
-Write the YAML to a temp file, then create or replace it:
+Pass the design document and every mission file in one call:
 
 ```
-lore doctrine new <name> -f <temp-file>     # new doctrine
-lore doctrine edit <name> -f <temp-file>    # replace an existing one
+lore doctrine new <name> -d <design-file> -m <mission-1> <mission-2> <mission-3>
 ```
 
-To nest under a subdirectory, pass `--group <subdir>` on `new`. To retire a doctrine, `lore doctrine delete <name>` — a soft delete, so the file is renamed rather than destroyed.
+To nest under a subdirectory, pass `--group <subdir>` on `new`. The whole directory is created or nothing is.
 
-Verify: `lore doctrine show <name>`
-
-### 6. Save the design doc alongside the doctrine
-
-If a design doc was provided, save it as `<doctrine-name>.design.md` in the same directory as the doctrine YAML:
+To change an existing doctrine:
 
 ```
-.lore/doctrines/<doctrine-name>.design.md
+lore doctrine edit <name> -d <design-file>               # replace the design
+lore doctrine edit <name> -m <mission-file> ...          # replace or add missions
+lore doctrine edit <name> --remove-mission <id> ...      # soft-delete missions
+lore doctrine edit <name> --set summary="..."            # edit one design frontmatter field
 ```
 
-Frontmatter requires only `id` (use `<doctrine-name>-design`), `title`, and `summary`. The design doc is the permanent human-readable explanation of the doctrine — the YAML is the machine-readable version. The CLI pairs them by filename prefix.
+A doctrine always keeps at least one mission — `--remove-mission` refuses to empty it.
+
+To retire a doctrine, `lore doctrine delete <name>` — a soft delete, so the directory is renamed rather than destroyed.
+
+### 6. Verify
+
+```
+lore doctrine show <name>
+lore doctrine show <name> --mission <mission-id>
+lore health --scope doctrines schemas
+```
+
+`lore doctrine show <name>` prints the design document and a `--- Missions ---` index. Check that every mission in the design table appears in that index and that no mission appears in the index without a row in the table.

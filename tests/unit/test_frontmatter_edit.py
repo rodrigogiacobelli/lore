@@ -21,12 +21,12 @@ import yaml
 
 @pytest.fixture()
 def project_root(tmp_path: Path) -> Path:
-    for sub in ("knights", "doctrines", "artifacts", "watchers"):
+    for sub in ("doctrines", "artifacts", "watchers"):
         (tmp_path / ".lore" / sub).mkdir(parents=True)
     return tmp_path
 
 
-KNIGHT_BODY = (
+DESIGN_BODY = (
     "# Heading\n"
     "\n"
     "Some prose.\n"
@@ -38,13 +38,13 @@ KNIGHT_BODY = (
     "Trailing line.   \n"  # trailing whitespace preserved
 )
 
-KNIGHT_MD = (
+DESIGN_MD = (
     "---\n"
-    "id: tester\n"
-    "title: Tester\n"
-    "summary: A test knight.\n"
+    "id: workflow\n"
+    "title: Workflow\n"
+    "summary: A doctrine.\n"
     "---\n"
-    + KNIGHT_BODY
+    + DESIGN_BODY
 )
 
 ARTIFACT_BODY = (
@@ -66,16 +66,6 @@ ARTIFACT_MD = (
     + ARTIFACT_BODY
 )
 
-DOCTRINE_YAML = (
-    "id: workflow\n"
-    "title: Workflow\n"
-    "summary: A doctrine.\n"
-    "steps:\n"
-    "  - id: s1\n"
-    "    title: Step 1\n"
-    "    type: human\n"
-)
-
 WATCHER_YAML = (
     "id: watch\n"
     "title: Watcher\n"
@@ -89,21 +79,18 @@ WATCHER_YAML = (
 )
 
 
-def _seed_knight(project_root: Path, name: str = "tester") -> Path:
-    fp = project_root / ".lore" / "knights" / f"{name}.md"
-    fp.write_text(KNIGHT_MD)
+def _seed_doctrine(project_root: Path, name: str = "workflow") -> Path:
+    """Write a doctrine directory and return its design document."""
+    directory = project_root / ".lore" / "doctrines" / name
+    directory.mkdir(parents=True, exist_ok=True)
+    fp = directory / f"{name}.design.md"
+    fp.write_text(DESIGN_MD)
     return fp
 
 
 def _seed_artifact(project_root: Path, name: str = "tmpl") -> Path:
     fp = project_root / ".lore" / "artifacts" / f"{name}.md"
     fp.write_text(ARTIFACT_MD)
-    return fp
-
-
-def _seed_doctrine(project_root: Path, name: str = "workflow") -> Path:
-    fp = project_root / ".lore" / "doctrines" / f"{name}.yaml"
-    fp.write_text(DOCTRINE_YAML)
     return fp
 
 
@@ -124,27 +111,31 @@ def _split_frontmatter(text: str) -> tuple[dict, str]:
 
 
 # ---------------------------------------------------------------------------
-# 1) Knight: --set summary round-trips with body preservation
+# 1) Doctrine design: --set summary round-trips with body preservation
 # ---------------------------------------------------------------------------
 
 
-class TestKnightSet:
+class TestDoctrineDesignSet:
     def test_set_summary_round_trips_and_body_preserved(self, project_root):
         from lore.frontmatter_edit import update_frontmatter_fields
 
-        fp = _seed_knight(project_root)
+        fp = _seed_doctrine(project_root)
         _, original_body = _split_frontmatter(fp.read_text())
 
         result = update_frontmatter_fields(
             project_root,
-            "knight",
-            "tester",
+            "doctrine",
+            "workflow",
             set_fields={"summary": "Updated summary."},
             unset_fields=None,
             add_to_list=None,
             remove_from_list=None,
         )
-        assert result == {"id": "tester", "filename": "tester.md", "updated_at": None}
+        assert result == {
+            "id": "workflow",
+            "filename": "workflow.design.md",
+            "updated_at": None,
+        }
 
         meta, new_body = _split_frontmatter(fp.read_text())
         assert meta["summary"] == "Updated summary."
@@ -158,10 +149,11 @@ class TestKnightSet:
 
 
 class TestDoctrineSet:
-    def test_set_title_round_trips_and_steps_preserved(self, project_root):
+    def test_set_title_round_trips_and_body_preserved(self, project_root):
         from lore.frontmatter_edit import update_frontmatter_fields
 
         fp = _seed_doctrine(project_root)
+        _, original_body = _split_frontmatter(fp.read_text())
         result = update_frontmatter_fields(
             project_root,
             "doctrine",
@@ -173,12 +165,12 @@ class TestDoctrineSet:
         )
         assert result == {
             "id": "workflow",
-            "filename": "workflow.yaml",
+            "filename": "workflow.design.md",
             "updated_at": None,
         }
-        data = yaml.safe_load(fp.read_text())
-        assert data["title"] == "New Title"
-        assert data["steps"] == [{"id": "s1", "title": "Step 1", "type": "human"}]
+        meta, body = _split_frontmatter(fp.read_text())
+        assert meta["title"] == "New Title"
+        assert body == original_body
 
 
 # ---------------------------------------------------------------------------
@@ -335,27 +327,27 @@ class TestIdempotentUnsetMissing:
     def test_unset_nonexistent_key_succeeds_byte_identical(self, project_root):
         from lore.frontmatter_edit import update_frontmatter_fields
 
-        fp = _seed_knight(project_root)
+        fp = _seed_doctrine(project_root)
         pre_sha = _sha(fp)
         result = update_frontmatter_fields(
             project_root,
-            "knight",
-            "tester",
+            "doctrine",
+            "workflow",
             set_fields=None,
             unset_fields=["nonexistent_key"],
             add_to_list=None,
             remove_from_list=None,
         )
-        assert result["id"] == "tester"
+        assert result["id"] == "workflow"
         # File rewrite may have different bytes (re-serialize), but semantic
         # frontmatter must be unchanged AND body byte-identical.
         meta, body = _split_frontmatter(fp.read_text())
         assert "nonexistent_key" not in meta
-        assert meta["id"] == "tester"
-        assert meta["title"] == "Tester"
-        assert meta["summary"] == "A test knight."
+        assert meta["id"] == "workflow"
+        assert meta["title"] == "Workflow"
+        assert meta["summary"] == "A doctrine."
         # Body must remain byte-identical
-        _, original_body = _split_frontmatter(KNIGHT_MD)
+        _, original_body = _split_frontmatter(DESIGN_MD)
         assert body == original_body
         # pre_sha reference kept for symmetry — not asserted (re-serialization
         # may change FM bytes even for no-op unset).
@@ -395,7 +387,6 @@ class TestRejectsUnsetRequired:
     @pytest.mark.parametrize(
         "kind,name,seed",
         [
-            ("knight", "tester", _seed_knight),
             ("doctrine", "workflow", _seed_doctrine),
             ("artifact", "tmpl", _seed_artifact),
             ("watcher", "watch", _seed_watcher),
@@ -426,16 +417,16 @@ class TestRejectsUnsetRequired:
 
 
 class TestRejectsUnknownField:
-    def test_set_unknown_field_on_knight_raises_and_no_write(self, project_root):
+    def test_set_unknown_field_on_doctrine_raises_and_no_write(self, project_root):
         from lore.frontmatter_edit import update_frontmatter_fields
 
-        fp = _seed_knight(project_root)
+        fp = _seed_doctrine(project_root)
         pre_sha = _sha(fp)
         with pytest.raises(ValueError) as exc:
             update_frontmatter_fields(
                 project_root,
-                "knight",
-                "tester",
+                "doctrine",
+                "workflow",
                 set_fields={"bogus": "1"},
                 unset_fields=None,
                 add_to_list=None,
@@ -456,7 +447,7 @@ class TestCoerceScalarForSchema:
     def test_coerce_string_passthrough(self):
         from lore.frontmatter_edit import _coerce_scalar_for_schema
 
-        assert _coerce_scalar_for_schema("knight-frontmatter", "title", "hi") == "hi"
+        assert _coerce_scalar_for_schema("doctrine-design-frontmatter", "title", "hi") == "hi"
 
     def test_coerce_integer_from_string(self):
         # Synthetic test via dispatch on a known-int schema field — none on
@@ -546,7 +537,7 @@ class TestBodyBytePreservation:
     @pytest.mark.parametrize(
         "kind,name,seed",
         [
-            ("knight", "tester", _seed_knight),
+            ("doctrine", "workflow", _seed_doctrine),
             ("artifact", "tmpl", _seed_artifact),
         ],
     )
@@ -579,7 +570,7 @@ class TestAtomicNoPartialWriteOnFailure:
 
         from lore.frontmatter_edit import update_frontmatter_fields
 
-        fp = _seed_knight(project_root)
+        fp = _seed_doctrine(project_root)
         replace_calls = []
         original_replace = os.replace
 
@@ -591,8 +582,8 @@ class TestAtomicNoPartialWriteOnFailure:
         with pytest.raises(ValueError):
             update_frontmatter_fields(
                 project_root,
-                "knight",
-                "tester",
+                "doctrine",
+                "workflow",
                 set_fields=None,
                 unset_fields=["id"],
                 add_to_list=None,
@@ -613,12 +604,12 @@ class TestNoMutationsSupplied:
     def test_all_none_raises(self, project_root):
         from lore.frontmatter_edit import update_frontmatter_fields
 
-        _seed_knight(project_root)
+        _seed_doctrine(project_root)
         with pytest.raises(ValueError) as exc:
             update_frontmatter_fields(
                 project_root,
-                "knight",
-                "tester",
+                "doctrine",
+                "workflow",
                 set_fields=None,
                 unset_fields=None,
                 add_to_list=None,
@@ -629,12 +620,12 @@ class TestNoMutationsSupplied:
     def test_all_empty_raises(self, project_root):
         from lore.frontmatter_edit import update_frontmatter_fields
 
-        _seed_knight(project_root)
+        _seed_doctrine(project_root)
         with pytest.raises(ValueError):
             update_frontmatter_fields(
                 project_root,
-                "knight",
-                "tester",
+                "doctrine",
+                "workflow",
                 set_fields={},
                 unset_fields=[],
                 add_to_list={},
@@ -649,7 +640,7 @@ class TestNoMutationsSupplied:
 
 class TestEntityNotFound:
     @pytest.mark.parametrize(
-        "kind", ["knight", "doctrine", "artifact", "watcher"],
+        "kind", ["doctrine", "artifact", "watcher"],
     )
     def test_ghost_name_raises(self, project_root, kind):
         from lore.frontmatter_edit import update_frontmatter_fields
@@ -723,7 +714,7 @@ class TestForeignFieldEditsAreRefused:
     caller gets a not-found where the contract says ``ForeignEntityError``.
     """
 
-    @pytest.mark.parametrize("kind", ("knight", "doctrine", "artifact", "codex"))
+    @pytest.mark.parametrize("kind", ("doctrine", "artifact", "codex"))
     def test_a_qualified_name_is_refused(self, project_root, kind):
         from lore.frontmatter_edit import update_frontmatter_fields
         from lore.projects import ForeignEntityError
@@ -753,7 +744,7 @@ class TestForeignFieldEditsAreRefused:
 
         with pytest.raises(ForeignEntityError):
             frontmatter_edit.update_frontmatter_fields(
-                project_root, "knight", "camelot:borrowed", set_fields={"title": "x"}
+                project_root, "doctrine", "camelot:borrowed", set_fields={"title": "x"}
             )
 
     def test_a_bare_name_is_untouched_by_the_rule(self, project_root):
@@ -763,7 +754,67 @@ class TestForeignFieldEditsAreRefused:
 
         with pytest.raises(ValueError) as excinfo:
             update_frontmatter_fields(
-                project_root, "knight", "absent", set_fields={"title": "x"}
+                project_root, "doctrine", "absent", set_fields={"title": "x"}
             )
 
         assert "read-only" not in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# The knight kind is gone; the doctrine kind targets the design document
+# ---------------------------------------------------------------------------
+
+
+class TestKindTable:
+    def test_there_is_no_knight_kind(self):
+        from lore.frontmatter_edit import _KINDS
+
+        assert "knight" not in _KINDS
+
+    def test_the_doctrine_kind_targets_the_design_frontmatter(self):
+        from lore.frontmatter_edit import _KINDS
+
+        cfg = _KINDS["doctrine"]
+        assert cfg.schema_kind == "doctrine-design-frontmatter"
+        assert cfg.shape == "md_fm"
+        assert cfg.extension == ".md"
+
+    def test_there_is_no_doctrine_mission_kind(self):
+        from lore.frontmatter_edit import _KINDS
+
+        assert "doctrine-mission" not in _KINDS
+
+    def test_the_module_does_not_import_lore_knight(self):
+        import lore.frontmatter_edit as module
+
+        source = Path(module.__file__).read_text()
+        assert "knight" not in source
+
+    def test_an_unknown_kind_raises(self, project_root):
+        from lore.frontmatter_edit import update_frontmatter_fields
+
+        with pytest.raises(ValueError) as excinfo:
+            update_frontmatter_fields(
+                project_root, "knight", "tester", set_fields={"title": "x"}
+            )
+
+        assert str(excinfo.value) == "Unknown kind: knight"
+
+    def test_a_doctrine_under_default_is_reachable(self, project_root):
+        """update_doctrine's flat lookup was a bug; this locator recurses."""
+        from lore.frontmatter_edit import update_frontmatter_fields
+
+        directory = project_root / ".lore" / "doctrines" / "default" / "nested"
+        directory.mkdir(parents=True)
+        design = directory / "nested.design.md"
+        design.write_text(
+            "---\nid: nested\ntitle: Nested\nsummary: s\n---\n\nBody.\n"
+        )
+
+        update_frontmatter_fields(
+            project_root, "doctrine", "nested", set_fields={"title": "Renamed"}
+        )
+
+        meta, body = _split_frontmatter(design.read_text())
+        assert meta["title"] == "Renamed"
+        assert body == "\n\nBody.\n"

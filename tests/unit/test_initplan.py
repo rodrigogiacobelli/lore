@@ -267,18 +267,18 @@ class TestTheSeededTreeCountsAsAChange:
 
     Round 5's defect 10 put them in the plan's listing and round 7's N4 found
     the other half still missing: `has_changes` was False and `counts()` was
-    empty for a run that then overwrote an edited `.lore/knights/default/…`
+    empty for a run that then overwrote an edited `.lore/doctrines/default/…`
     file. The CLI reads `render_plan` and Realm reads `has_changes`, and only
     one of them was being told.
     """
 
     def test_a_plan_with_seeded_paths_has_changes(self):
-        plan = dataclasses.replace(_plan(), seeded=(".lore/knights/default/a.md",))
+        plan = dataclasses.replace(_plan(), seeded=(".lore/doctrines/default/a.md",))
         assert plan.has_changes is True
 
     def test_the_seeded_paths_are_counted(self):
         plan = dataclasses.replace(
-            _plan(), seeded=(".lore/knights/default/a.md", ".lore/config.toml")
+            _plan(), seeded=(".lore/doctrines/default/a.md", ".lore/config.toml")
         )
         assert plan.counts()[SEED_COUNT] == 2
 

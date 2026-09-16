@@ -1,330 +1,321 @@
-"""E2E parity tests for `lore doctrine edit / delete` — G8 Red.
+"""E2E parity tests for the doctrine write surface — API and CLI answer alike.
 
-Plan: transient-public-api-facade-plan §G8.
-Anchor: decisions-011-api-parity-with-cli — when CRUD ops migrate to
-`lore.doctrine.{update,delete}_doctrine` op fns, the user-visible CLI
-behaviour (exit code, stdout, stderr, JSON envelope keys) MUST remain
-byte-identical to the pre-refactor surface at cli.py:1423-1529.
+Anchor: decisions-011-api-parity-with-cli — every ``lore.api`` function is
+self-contained and behaviourally identical to its CLI command. What the CLI
+prints on stderr for a failure is the ``ValueError`` the module raises, and what
+it prints under ``--json`` is the envelope the module returns.
 
-These tests pin the parity contract for the refactor that lands in G8
-Green. They define the externally observable behaviour the CLI MUST
-preserve once it stops doing inline YAML field-preservation + soft-delete
-rename and instead delegates to op fns whose return shapes are EXACTLY
-`{name, filename}` (update) and `{name, deleted: True}` (delete).
-
-Red phase — every test MUST fail until G8 Green lands (whether by op-fn
-absence or CLI envelope drift).
+The one thing the CLI does that the API cannot is read the files named on the
+command line; the rule about what is in them lives in ``lore.doctrine``, which
+is what these tests pin.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
+
+import pytest
 
 from lore.cli import main
 
 
 # ---------------------------------------------------------------------------
-# YAML fixtures
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
-VALID_DOCTRINE_YAML = (
-    "id: tdd\n"
-    "title: TDD\n"
-    "summary: Test-driven development workflow.\n"
-    "description: A doctrine for TDD.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
-)
-
-# New content omitting id/title/summary — field-preservation merge target.
-PARTIAL_DOCTRINE_YAML = (
-    "description: Updated description for TDD.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
-    "  - id: refactor\n"
-    "    title: Refactor\n"
-)
-
-FULL_UPDATED_DOCTRINE_YAML = (
-    "id: tdd\n"
-    "title: TDD v2\n"
-    "summary: Updated TDD doctrine.\n"
-    "description: Updated description.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
-)
-
-SCHEMA_INVALID_YAML = (
-    "id: tdd\n"
-    "title: TDD\n"
-    "summary: Missing steps field.\n"
-    "description: A doctrine missing the steps field.\n"
-)
+def _design(doctrine_id="tdd", *, title="TDD", summary="Test-driven development."):
+    return f"---\nid: {doctrine_id}\ntitle: {title}\nsummary: {summary}\n---\n\n# {title}\n"
 
 
-def _seed_doctrine(project_dir, name: str = "tdd", body: str = VALID_DOCTRINE_YAML) -> None:
-    """Write a valid .yaml into .lore/doctrines/ for test setup."""
-    doctrines = project_dir / ".lore" / "doctrines"
-    doctrines.mkdir(parents=True, exist_ok=True)
-    (doctrines / f"{name}.yaml").write_text(body)
+def _mission(mission_id, *, summary="A mission.", body="Do the work.\n"):
+    head = f"---\nid: {mission_id}\ntitle: {mission_id.title()}\n"
+    if summary is not None:
+        head += f"summary: {summary}\n"
+    return f"{head}---\n\n{body}"
+
+
+def _source(tmp_path, name, text):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return path
+
+
+def _tree(project_dir):
+    """Every file under .lore/doctrines/, keyed by relative path."""
+    root = project_dir / ".lore" / "doctrines"
+    return {
+        path.relative_to(root).as_posix(): path.read_text()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _seed(project_dir, stem="tdd", missions=("red", "green")):
+    directory = project_dir / ".lore" / "doctrines" / stem
+    (directory / "missions").mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.design.md").write_text(_design(stem))
+    for mission_id in missions:
+        (directory / "missions" / f"{mission_id}.md").write_text(_mission(mission_id))
+    return directory
 
 
 # ---------------------------------------------------------------------------
-# `lore doctrine edit` — parity contract
+# create_doctrine vs lore doctrine new
 # ---------------------------------------------------------------------------
 
 
-class TestDoctrineEditParity:
-    """`lore doctrine edit` JSON envelope + exit + stderr unchanged through G8."""
+class TestCreateDoctrineParity:
+    """The same call, made twice, writes the same tree and returns the same dict."""
 
-    def test_edit_existing_doctrine_exit_zero(self, runner, project_dir):
-        """doctrine edit on existing doctrine exits 0."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
+    def test_the_envelope_is_the_same_object(self, runner, project_dir, tmp_path):
+        from lore.api import create_doctrine
+
+        design = _source(tmp_path, "d.md", _design())
+        red = _source(tmp_path, "red.md", _mission("red"))
+
+        cli = runner.invoke(
             main,
-            ["doctrine", "edit", "tdd", "--from", str(project_dir / "new.yaml")],
+            ["--json", "doctrine", "new", "tdd", "-d", str(design), "-m", str(red)],
         )
-        assert result.exit_code == 0
+        assert cli.exit_code == 0, cli.output
+        cli_envelope = json.loads(cli.stdout)
+        cli_tree = _tree(project_dir)
 
-    def test_edit_existing_doctrine_stdout_message(self, runner, project_dir):
-        """doctrine edit stdout exactly 'Updated doctrine {name}'."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            ["doctrine", "edit", "tdd", "--from", str(project_dir / "new.yaml")],
+        # Reset the tree so the API call starts where the CLI call did.
+        shutil.rmtree(project_dir / ".lore" / "doctrines" / "tdd")
+
+        api_envelope = create_doctrine(
+            project_dir, "tdd", _design(), {"red": _mission("red")}
         )
-        assert result.output.strip() == "Updated doctrine tdd"
 
-    def test_edit_existing_doctrine_json_envelope_is_name_filename_exact(
+        assert cli_envelope == api_envelope
+        assert _tree(project_dir) == cli_tree
+
+    @pytest.mark.parametrize(
+        "design_id,missions,message",
+        [
+            (
+                "tdd",
+                {},
+                "At least one mission file is required (-m)",
+            ),
+            (
+                "elsewhere",
+                {"red": _mission("red")},
+                'Design file id "elsewhere" does not match command argument "tdd"',
+            ),
+            (
+                "tdd",
+                {"red": _mission("recon")},
+                'Mission file id "recon" does not match filename stem "red"',
+            ),
+        ],
+    )
+    def test_each_failure_message_is_the_modules_own(
+        self, runner, project_dir, tmp_path, design_id, missions, message
+    ):
+        from lore.api import create_doctrine
+
+        argv = ["doctrine", "new", "tdd", "-d", str(_source(tmp_path, "d.md", _design(design_id)))]
+        for mission_id, text in missions.items():
+            argv += ["-m", str(_source(tmp_path, f"{mission_id}.md", text))]
+
+        cli = runner.invoke(main, argv)
+        assert cli.exit_code == 1
+        assert cli.stderr.strip() == message
+
+        with pytest.raises(ValueError) as excinfo:
+            create_doctrine(project_dir, "tdd", _design(design_id), dict(missions))
+        assert str(excinfo.value) == message
+
+    def test_neither_surface_leaves_a_partial_tree(self, runner, project_dir, tmp_path):
+        from lore.api import create_doctrine
+
+        before = _tree(project_dir)
+        argv = [
+            "doctrine", "new", "tdd",
+            "-d", str(_source(tmp_path, "d.md", _design())),
+            "-m", str(_source(tmp_path, "red.md", _mission("red", summary=None))),
+        ]
+
+        assert runner.invoke(main, argv).exit_code == 1
+        assert _tree(project_dir) == before
+
+        with pytest.raises(ValueError):
+            create_doctrine(
+                project_dir, "tdd", _design(), {"red": _mission("red", summary=None)}
+            )
+        assert _tree(project_dir) == before
+
+
+# ---------------------------------------------------------------------------
+# update_doctrine vs lore doctrine edit
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateDoctrineParity:
+    def test_the_envelope_is_the_same_object(self, runner, project_dir, tmp_path):
+        from lore.api import update_doctrine
+
+        _seed(project_dir)
+        source = _source(tmp_path, "red.md", _mission("red", body="Rewritten.\n"))
+
+        cli = runner.invoke(
+            main, ["--json", "doctrine", "edit", "tdd", "-m", str(source)]
+        )
+        assert cli.exit_code == 0, cli.output
+        cli_envelope = json.loads(cli.stdout)
+        cli_tree = _tree(project_dir)
+
+        api_envelope = update_doctrine(
+            project_dir, "tdd", None, {"red": _mission("red", body="Rewritten.\n")}
+        )
+
+        assert cli_envelope == api_envelope
+        assert _tree(project_dir) == cli_tree
+
+    def test_a_miss_is_reported_the_same_way_on_both_surfaces(
+        self, runner, project_dir, tmp_path
+    ):
+        from lore.api import update_doctrine
+
+        source = _source(tmp_path, "red.md", _mission("red"))
+
+        cli = runner.invoke(main, ["doctrine", "edit", "nope", "-m", str(source)])
+        assert cli.exit_code == 1
+        assert cli.stderr.strip() == 'Doctrine "nope" not found.'
+
+        with pytest.raises(ValueError) as excinfo:
+            update_doctrine(project_dir, "nope", None, {"red": _mission("red")})
+        assert str(excinfo.value) == 'Doctrine "nope" not found.'
+
+    def test_the_last_mission_guard_holds_on_both_surfaces(self, runner, project_dir):
+        from lore.api import update_doctrine
+
+        _seed(project_dir, stem="solo", missions=("only",))
+        message = "Cannot remove every mission: a doctrine keeps at least one mission."
+
+        cli = runner.invoke(
+            main, ["doctrine", "edit", "solo", "--remove-mission", "only"]
+        )
+        assert cli.exit_code == 1
+        assert cli.stderr.strip() == message
+
+        with pytest.raises(ValueError) as excinfo:
+            update_doctrine(project_dir, "solo", None, None, ["only"])
+        assert str(excinfo.value) == message
+
+    def test_the_cli_refuses_to_call_the_module_with_nothing_to_do(
         self, runner, project_dir
     ):
-        """doctrine edit --json returns EXACTLY {name, filename} — no extras."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            [
-                "--json",
-                "doctrine",
-                "edit",
-                "tdd",
-                "--from",
-                str(project_dir / "new.yaml"),
-            ],
-        )
-        assert result.exit_code == 0
-        payload = json.loads(result.output)
-        assert payload == {"id": "tdd", "filename": "tdd.yaml", "updated_at": None}
+        """The API no-op is legal; the CLI invocation that means it is a usage error."""
+        from lore.api import update_doctrine
 
-    def test_edit_existing_doctrine_json_has_no_path_key(self, runner, project_dir):
-        """doctrine edit --json MUST NOT include a 'path' key (FLAG #3)."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            [
-                "--json",
-                "doctrine",
-                "edit",
-                "tdd",
-                "--from",
-                str(project_dir / "new.yaml"),
-            ],
-        )
-        payload = json.loads(result.output)
-        assert "path" not in payload
+        _seed(project_dir)
 
-    def test_edit_existing_doctrine_json_has_no_ok_key(self, runner, project_dir):
-        """doctrine edit --json MUST NOT include an 'ok' key (CHANGED #5)."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            [
-                "--json",
-                "doctrine",
-                "edit",
-                "tdd",
-                "--from",
-                str(project_dir / "new.yaml"),
-            ],
-        )
-        payload = json.loads(result.output)
-        assert "ok" not in payload
+        cli = runner.invoke(main, ["doctrine", "edit", "tdd"])
+        assert cli.exit_code == 2
+        assert "Error: Nothing to update: pass -d, -m, or --remove-mission" in cli.stderr
 
-    def test_edit_existing_doctrine_json_uses_id_not_name(self, runner, project_dir):
-        """doctrine edit --json uses 'id' post-G16 (was 'name')."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            [
-                "--json",
-                "doctrine",
-                "edit",
-                "tdd",
-                "--from",
-                str(project_dir / "new.yaml"),
-            ],
-        )
-        payload = json.loads(result.output)
-        assert payload.get("id") == "tdd"
-        assert "name" not in payload
-
-    def test_edit_partial_content_preserves_existing_fields_on_disk(
-        self, runner, project_dir
-    ):
-        """doctrine edit with partial content preserves id/title/summary on disk."""
-        import yaml
-
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "new.yaml").write_text(PARTIAL_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            ["doctrine", "edit", "tdd", "--from", str(project_dir / "new.yaml")],
-        )
-        assert result.exit_code == 0
-        merged = yaml.safe_load(
-            (project_dir / ".lore" / "doctrines" / "tdd.yaml").read_text()
-        )
-        assert merged.get("id") == "tdd"
-        assert merged.get("title") == "TDD"
-        assert merged.get("summary") == "Test-driven development workflow."
-        # New fields landed
-        assert merged.get("description") == "Updated description for TDD."
-
-    def test_edit_missing_doctrine_exit_one(self, runner, project_dir):
-        """doctrine edit on missing doctrine exits 1."""
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            ["doctrine", "edit", "ghost", "--from", str(project_dir / "new.yaml")],
-        )
-        assert result.exit_code == 1
-
-    def test_edit_missing_doctrine_stderr_contains_not_found(
-        self, runner, project_dir
-    ):
-        """doctrine edit on missing doctrine surfaces a 'not found' message."""
-        (project_dir / "new.yaml").write_text(FULL_UPDATED_DOCTRINE_YAML)
-        result = runner.invoke(
-            main,
-            ["doctrine", "edit", "ghost", "--from", str(project_dir / "new.yaml")],
-        )
-        combined = (result.output or "") + (
-            result.stderr if hasattr(result, "stderr") else ""
-        )
-        assert "not found" in combined.lower()
-        assert "ghost" in combined
-
-    def test_edit_invalid_schema_exit_one(self, runner, project_dir):
-        """doctrine edit with schema-invalid content exits 1."""
-        _seed_doctrine(project_dir, "tdd")
-        (project_dir / "bad.yaml").write_text(SCHEMA_INVALID_YAML)
-        result = runner.invoke(
-            main, ["doctrine", "edit", "tdd", "--from", str(project_dir / "bad.yaml")]
-        )
-        assert result.exit_code == 1
-
-    def test_edit_invalid_schema_does_not_modify_file(self, runner, project_dir):
-        """doctrine edit with invalid schema leaves the existing file untouched."""
-        _seed_doctrine(project_dir, "tdd")
-        original = (
-            project_dir / ".lore" / "doctrines" / "tdd.yaml"
-        ).read_text()
-        (project_dir / "bad.yaml").write_text(SCHEMA_INVALID_YAML)
-        runner.invoke(
-            main, ["doctrine", "edit", "tdd", "--from", str(project_dir / "bad.yaml")]
-        )
-        assert (
-            project_dir / ".lore" / "doctrines" / "tdd.yaml"
-        ).read_text() == original
+        assert update_doctrine(project_dir, "tdd") == {
+            "updated": "tdd",
+            "design_replaced": False,
+            "missions_replaced": [],
+            "missions_removed": [],
+        }
 
 
 # ---------------------------------------------------------------------------
-# `lore doctrine delete` — parity contract
+# delete_doctrine vs lore doctrine delete
 # ---------------------------------------------------------------------------
 
 
-class TestDoctrineDeleteParity:
-    """`lore doctrine delete` JSON envelope + exit + stderr unchanged through G8."""
+class TestDeleteDoctrineParity:
+    def test_the_envelope_is_the_same_object(self, runner, project_dir):
+        from lore.api import delete_doctrine
 
-    def test_delete_existing_doctrine_exit_zero(self, runner, project_dir):
-        """doctrine delete on existing doctrine exits 0."""
-        _seed_doctrine(project_dir, "tdd")
-        result = runner.invoke(main, ["doctrine", "delete", "tdd"])
-        assert result.exit_code == 0
+        _seed(project_dir)
+        cli = runner.invoke(main, ["--json", "doctrine", "delete", "tdd"])
+        assert cli.exit_code == 0, cli.output
+        cli_envelope = json.loads(cli.stdout)
 
-    def test_delete_existing_doctrine_stdout_message(self, runner, project_dir):
-        """doctrine delete stdout exactly 'Deleted doctrine {name}'."""
-        _seed_doctrine(project_dir, "tdd")
-        result = runner.invoke(main, ["doctrine", "delete", "tdd"])
-        assert result.output.strip() == "Deleted doctrine tdd"
+        shutil.rmtree(project_dir / ".lore" / "doctrines" / "tdd.deleted")
+        _seed(project_dir)
+        api_envelope = delete_doctrine(project_dir, "tdd")
 
-    def test_delete_existing_doctrine_soft_deletes_yaml(self, runner, project_dir):
-        """doctrine delete renames .yaml -> .yaml.deleted on disk."""
-        _seed_doctrine(project_dir, "tdd")
+        assert cli_envelope == api_envelope == {
+            "id": "tdd",
+            "deleted": True,
+            "deleted_at": None,
+        }
+
+    def test_both_surfaces_rename_the_directory(self, runner, project_dir):
+        from lore.api import delete_doctrine
+
+        directory = _seed(project_dir)
         runner.invoke(main, ["doctrine", "delete", "tdd"])
-        assert not (project_dir / ".lore" / "doctrines" / "tdd.yaml").exists()
-        assert (
-            project_dir / ".lore" / "doctrines" / "tdd.yaml.deleted"
-        ).exists()
+        assert directory.with_name("tdd.deleted").is_dir()
+        cli_tree = _tree(project_dir)
 
-    def test_delete_existing_doctrine_json_envelope_is_name_deleted_exact(
+        directory.with_name("tdd.deleted").rename(directory)
+        delete_doctrine(project_dir, "tdd")
+
+        assert _tree(project_dir) == cli_tree
+
+    def test_a_miss_is_reported_the_same_way_on_both_surfaces(self, runner, project_dir):
+        from lore.api import delete_doctrine
+
+        cli = runner.invoke(main, ["doctrine", "delete", "nope"])
+        assert cli.exit_code == 1
+        assert cli.stderr.strip() == 'Doctrine "nope" not found'
+
+        with pytest.raises(ValueError) as excinfo:
+            delete_doctrine(project_dir, "nope")
+        assert str(excinfo.value) == 'Doctrine "nope" not found'
+
+
+# ---------------------------------------------------------------------------
+# read_doctrine vs lore doctrine show
+# ---------------------------------------------------------------------------
+
+
+class TestReadDoctrineParity:
+    def test_the_json_envelope_wraps_the_record_the_api_returns(
         self, runner, project_dir
     ):
-        """doctrine delete --json returns EXACTLY {name, deleted: True} — no extras."""
-        _seed_doctrine(project_dir, "tdd")
-        result = runner.invoke(main, ["--json", "doctrine", "delete", "tdd"])
-        assert result.exit_code == 0
-        payload = json.loads(result.output)
-        assert payload == {"id": "tdd", "deleted": True, "deleted_at": None}
+        from lore.api import read_doctrine
 
-    def test_delete_existing_doctrine_json_has_no_path_key(self, runner, project_dir):
-        """doctrine delete --json MUST NOT include a 'path' key."""
-        _seed_doctrine(project_dir, "tdd")
-        result = runner.invoke(main, ["--json", "doctrine", "delete", "tdd"])
-        payload = json.loads(result.output)
-        assert "path" not in payload
+        _seed(project_dir)
 
-    def test_delete_existing_doctrine_json_has_no_ok_key(self, runner, project_dir):
-        """doctrine delete --json MUST NOT include an 'ok' key."""
-        _seed_doctrine(project_dir, "tdd")
-        result = runner.invoke(main, ["--json", "doctrine", "delete", "tdd"])
-        payload = json.loads(result.output)
-        assert "ok" not in payload
+        cli = runner.invoke(main, ["--json", "doctrine", "show", "tdd"])
+        assert cli.exit_code == 0, cli.output
 
-    def test_delete_existing_doctrine_json_uses_id_not_name(self, runner, project_dir):
-        """doctrine delete --json uses 'id' post-G16 (was 'name')."""
-        _seed_doctrine(project_dir, "tdd")
-        result = runner.invoke(main, ["--json", "doctrine", "delete", "tdd"])
-        payload = json.loads(result.output)
-        assert payload.get("id") == "tdd"
-        assert "name" not in payload
+        assert json.loads(cli.stdout)["doctrine"] == read_doctrine(project_dir, "tdd")
 
-    def test_delete_missing_doctrine_exit_one(self, runner, project_dir):
-        """doctrine delete on missing doctrine exits 1."""
-        result = runner.invoke(main, ["doctrine", "delete", "ghost"])
-        assert result.exit_code == 1
-
-    def test_delete_missing_doctrine_stderr_contains_not_found(
+    def test_a_mission_miss_is_a_record_on_one_surface_and_an_error_on_the_other(
         self, runner, project_dir
     ):
-        """doctrine delete on missing doctrine surfaces a 'not found' message."""
-        result = runner.invoke(main, ["doctrine", "delete", "ghost"])
-        stderr = result.stderr if hasattr(result, "stderr") else ""
-        combined = (result.output or "") + (stderr or "")
-        assert "not found" in combined.lower()
-        assert "ghost" in combined
+        """ADR-011 — the CLI tells the two misses apart from the return value alone."""
+        from lore.api import read_doctrine
+
+        _seed(project_dir)
+
+        record = read_doctrine(project_dir, "tdd", mission="nope")
+        assert record is not None
+        assert record["mission"] is None
+
+        cli = runner.invoke(main, ["doctrine", "show", "tdd", "--mission", "nope"])
+        assert cli.exit_code == 1
+        assert cli.stderr.strip() == 'Mission "nope" not found in doctrine "tdd"'
+
+    def test_a_doctrine_miss_is_none_on_both_surfaces(self, runner, project_dir):
+        from lore.api import read_doctrine
+
+        assert read_doctrine(project_dir, "nope") is None
+
+        cli = runner.invoke(main, ["doctrine", "show", "nope"])
+        assert cli.exit_code == 1
+        assert cli.stderr.strip() == "Doctrine 'nope' not found"

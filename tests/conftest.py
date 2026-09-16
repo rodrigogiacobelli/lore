@@ -100,7 +100,7 @@ def insert_mission(
     status: str = "open",
     priority: int = 2,
     mission_type: str | None = None,
-    knight: str | None = None,
+    doctrine_mission: str | None = None,
     block_reason: str | None = None,
     deleted_at: str | None = None,
     closed_at: str | None = None,
@@ -113,7 +113,7 @@ def insert_mission(
         conn.execute(
             "INSERT INTO missions "
             "(id, quest_id, title, description, status, priority, mission_type, "
-            "knight, block_reason, created_at, updated_at, closed_at, deleted_at) "
+            "doctrine_mission, block_reason, created_at, updated_at, closed_at, deleted_at) "
             "VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 mission_id,
@@ -122,7 +122,7 @@ def insert_mission(
                 status,
                 priority,
                 mission_type,
-                knight,
+                doctrine_mission,
                 block_reason,
                 created_at,
                 updated_at,

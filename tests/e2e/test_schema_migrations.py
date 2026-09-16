@@ -32,10 +32,51 @@ def _set_schema_version(project_dir, version: int) -> None:
         conn.close()
 
 
+def _rebuild_missions_in_pre_v7_shape(project_dir) -> None:
+    """Put the ``missions`` table back in the shape a pre-v7 database had.
+
+    Simulating an older schema version means presenting the older schema: the
+    chain runs every migration from the version recorded, and v6 to v7 reads a
+    ``knight`` column that a fresh database no longer has.
+    """
+    raw = sqlite3.connect(str(project_dir / ".lore" / "lore.db"))
+    try:
+        raw.execute("DELETE FROM missions")
+        raw.execute("DROP INDEX IF EXISTS idx_missions_quest_id")
+        raw.execute("DROP INDEX IF EXISTS idx_missions_status_priority")
+        raw.execute("ALTER TABLE missions RENAME TO missions_pre_v7")
+        raw.execute("""
+            CREATE TABLE missions (
+                id           TEXT PRIMARY KEY,
+                quest_id     TEXT REFERENCES quests(id),
+                title        TEXT NOT NULL,
+                description  TEXT NOT NULL DEFAULT '',
+                status       TEXT NOT NULL DEFAULT 'open'
+                    CHECK (status IN ('open', 'in_progress', 'blocked', 'closed')),
+                priority     INTEGER NOT NULL DEFAULT 2 CHECK (priority BETWEEN 0 AND 4),
+                knight       TEXT,
+                block_reason TEXT,
+                created_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL,
+                closed_at    TEXT,
+                deleted_at   TEXT,
+                mission_type TEXT
+            )
+        """)
+        raw.execute("CREATE INDEX idx_missions_quest_id ON missions(quest_id)")
+        raw.execute(
+            "CREATE INDEX idx_missions_status_priority ON missions(status, priority)"
+        )
+        raw.execute("DROP TABLE missions_pre_v7")
+        raw.commit()
+    finally:
+        raw.close()
+
+
 class TestFreshInitSchemaVersion:
     """After lore init, schema_version is at the current supported version."""
 
-    def test_fresh_init_schema_version_is_6(self, project_dir):
+    def test_fresh_init_schema_version_is_7(self, project_dir):
         conn = db_conn(project_dir)
         try:
             row = conn.execute(
@@ -44,7 +85,7 @@ class TestFreshInitSchemaVersion:
         finally:
             conn.close()
         assert row is not None
-        assert row[0] == "6", f"Expected schema_version '6', got '{row[0]}'"
+        assert row[0] == "7", f"Expected schema_version '7', got '{row[0]}'"
 
 
 class TestAutoMigrationOnConnect:
@@ -208,6 +249,7 @@ class TestV5ToV6Migration:
         finally:
             raw.close()
 
+        _rebuild_missions_in_pre_v7_shape(project_dir)
         _set_schema_version(project_dir, 5)
 
         conn = get_connection(project_dir)
@@ -231,7 +273,8 @@ class TestV5ToV6Migration:
             ).fetchone()
         finally:
             raw.close()
-        assert row[0] == "6"
+        # The chain does not stop at the migration under test: it runs to the head.
+        assert row[0] == "7"
 
         _insert_quest_direct(project_dir)
         result = add_board_message(project_dir, "q-ab01", "Hello board")
@@ -317,7 +360,8 @@ class TestV4ToV5Migration:
             conn.close()
 
         types_by_id = {row["id"]: row["mission_type"] for row in rows}
-        assert types_by_id.get("q-ab01/m-aa01") == "knight"
+        # The chain runs on to v7, which rewrites the retired token to 'agent'.
+        assert types_by_id.get("q-ab01/m-aa01") == "agent"
         assert types_by_id.get("q-ab01/m-aa02") == "constable"
         assert types_by_id.get("q-ab01/m-aa03") == "human"
 
@@ -366,6 +410,7 @@ class TestV2ToV3Migration:
         finally:
             raw.close()
 
+        _rebuild_missions_in_pre_v7_shape(project_dir)
         _set_schema_version(project_dir, 2)
 
         from lore.migrations.v2_to_v3 import migrate as v2_to_v3_migrate
@@ -405,3 +450,122 @@ class TestV2ToV3Migration:
         assert new_row[0] == 1, (
             f"After v2 to v3 migration, new quests get auto_close=1 (column DEFAULT 1), got {new_row[0]}"
         )
+
+
+class TestV6ToV7Migration:
+    """v6 to v7 renames the mission reference column and rewrites the type token."""
+
+    def _build_v6_missions_table(self, project_dir):
+        _rebuild_missions_in_pre_v7_shape(project_dir)
+        raw = sqlite3.connect(str(project_dir / ".lore" / "lore.db"))
+        try:
+            raw.execute(
+                "INSERT OR IGNORE INTO quests (id, title, description, status, priority, created_at, updated_at, auto_close) "
+                "VALUES ('q-ab01', 'Test Quest', '', 'open', 2, '2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z', 0)"
+            )
+            raw.execute(
+                "INSERT INTO missions (id, quest_id, title, description, status, priority, "
+                "knight, created_at, updated_at, mission_type) "
+                "VALUES ('q-ab01/m-aa01', 'q-ab01', 'M', '', 'open', 2, 'developer.md', "
+                "'2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z', 'knight')"
+            )
+            raw.execute(
+                "INSERT INTO missions (id, quest_id, title, description, status, priority, "
+                "created_at, updated_at, mission_type) "
+                "VALUES ('q-ab01/m-aa02', 'q-ab01', 'H', '', 'open', 2, "
+                "'2025-01-01T00:00:00Z', '2025-01-01T00:00:00Z', 'human')"
+            )
+            raw.commit()
+        finally:
+            raw.close()
+        _set_schema_version(project_dir, 6)
+
+    def test_the_column_is_replaced_and_the_stored_value_is_dropped(self, project_dir):
+        """FR-23: ``knight`` goes, ``doctrine_mission`` arrives empty.
+
+        A stored knight name is not a valid ``<doctrine-id>/<mission-id>``
+        reference, so carrying it across would make every upgraded project
+        report health errors on missions nobody touched.
+        """
+        self._build_v6_missions_table(project_dir)
+
+        conn = get_connection(project_dir)
+        try:
+            columns = [
+                row[1] for row in conn.execute("PRAGMA table_info(missions)").fetchall()
+            ]
+            row = conn.execute(
+                "SELECT doctrine_mission FROM missions WHERE id = 'q-ab01/m-aa01'"
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert "doctrine_mission" in columns
+        assert "knight" not in columns
+        assert row["doctrine_mission"] is None
+
+    def test_the_retired_mission_type_token_becomes_agent(self, project_dir):
+        self._build_v6_missions_table(project_dir)
+
+        conn = get_connection(project_dir)
+        try:
+            rows = conn.execute(
+                "SELECT id, mission_type FROM missions ORDER BY id"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        types_by_id = {row["id"]: row["mission_type"] for row in rows}
+        assert types_by_id == {"q-ab01/m-aa01": "agent", "q-ab01/m-aa02": "human"}
+
+    def test_the_version_and_the_indexes_land(self, project_dir):
+        self._build_v6_missions_table(project_dir)
+
+        conn = get_connection(project_dir)
+        try:
+            version = conn.execute(
+                "SELECT value FROM lore_meta WHERE key = 'schema_version'"
+            ).fetchone()[0]
+            indexes = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index' "
+                    "AND tbl_name = 'missions'"
+                ).fetchall()
+            }
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+        finally:
+            conn.close()
+
+        assert version == "7"
+        assert {"idx_missions_quest_id", "idx_missions_status_priority"} <= indexes
+        assert "missions_old" not in tables
+
+    def test_a_fresh_database_matches_a_migrated_one(self, project_dir, tmp_path):
+        """A fresh init and a migrated database agree on column names and order."""
+        self._build_v6_missions_table(project_dir)
+        conn = get_connection(project_dir)
+        try:
+            migrated = [
+                row[1] for row in conn.execute("PRAGMA table_info(missions)").fetchall()
+            ]
+        finally:
+            conn.close()
+
+        fresh_db = tmp_path / "fresh" / ".lore" / "lore.db"
+        fresh_db.parent.mkdir(parents=True)
+        lore_db.init_database(fresh_db)
+        raw = sqlite3.connect(str(fresh_db))
+        try:
+            fresh = [
+                row[1] for row in raw.execute("PRAGMA table_info(missions)").fetchall()
+            ]
+        finally:
+            raw.close()
+
+        assert migrated == fresh

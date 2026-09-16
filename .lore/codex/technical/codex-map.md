@@ -236,7 +236,7 @@ Handler responsibilities, in order:
      normalising empty-string `group` to `null` via `_group_for_json` (same
      helper `codex_list` uses).
    - `full=False`, text mode — `_origin_table(["ID", "GROUP", "TITLE", "SUMMARY"], rows, origins)`,
-     the same renderer used by `codex_list`, `knight_list`, `doctrine_list`,
+     the same renderer used by `codex_list`, `artifact_list`, `doctrine_list`,
      and `artifact_list` — an ORIGIN column is prepended only when a row is foreign. Empty neighbourhood prints `No related documents.`.
 
 ### Output dispatch reuses existing renderers

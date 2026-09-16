@@ -20,7 +20,7 @@ from __future__ import annotations
 # Red: this import fails until US-004 Green adds `is_glob_pattern` to
 # `lore/validators.py`. Wrapped in try/except so collection succeeds and
 # the surrounding test suite is not blocked — matches the pattern used
-# by other red-phase test files (see tests/unit/test_knight.py). The
+# by other red-phase test files in this suite. The
 # tests below still fail at run time (calling None raises TypeError).
 try:
     from lore.validators import is_glob_pattern  # type: ignore[attr-defined]

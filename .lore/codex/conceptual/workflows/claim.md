@@ -94,7 +94,7 @@ When the global `--json` flag is set:
 ## Out of Scope
 
 - Validating that the claimed mission has no unresolved dependencies — claiming is permitted regardless of whether dependencies are complete. The dependency system is advisory and influences the ready queue, not claim eligibility.
-- Assigning a knight on claim — knights are assigned at mission creation time.
+- Assigning a doctrine mission on claim — the reference is set at mission creation time.
 
 ## Related
 

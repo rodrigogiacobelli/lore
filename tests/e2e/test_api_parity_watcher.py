@@ -3,8 +3,8 @@
 Spec §10: "Watcher CRUD → tests/e2e/test_api_parity_watcher.py:
 regression — already at parity, must not break."
 
-Watcher is the canonical CRUD pattern (Section 4) that knight / doctrine /
-artifact mirror. After G13's facade flip, every watcher CLI command must
+Watcher is the canonical CRUD pattern (Section 4) that doctrine and artifact
+mirror. After G13's facade flip, every watcher CLI command must
 go through ``lore.api.*`` not ``lore.watcher.*``.
 
 Post-G16: ``load_watcher`` is internal (``_load_watcher``); use ``read_watcher``.

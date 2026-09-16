@@ -7,7 +7,8 @@ Spec source:
 Envelope (per cli.py:2030-2057, byte-exact). EXPLICIT key set (NOT superset):
   {
     "id", "quest_id", "title", "description", "status", "priority",
-    "mission_type", "knight", "knight_contents", "block_reason",
+    "mission_type", "doctrine_mission", "doctrine_mission_contents",
+    "block_reason",
     "created_at", "updated_at", "closed_at",
     "dependencies",     # {"needs": [...], "blocks": [...]}
     "board",            # [{"id","sender","message","created_at"}, ...]
@@ -17,8 +18,8 @@ Review-Ledger CHANGED #3: NO `quest_deleted` key (text-mode-only at cli.py:2061)
 
 Behaviour:
   * `get_mission_detail` returns None on miss.
-  * `include_knight=False` skips knight read (knight_contents=None).
-  * Bad / missing knight slug → knight_contents=None (no exception).
+  * `include_doctrine_mission=False` skips the read (contents=None).
+  * An unresolvable reference → contents=None (no exception, no warning).
   * dependency entries are dicts with EXACTLY {id, title, status} per
     cli.py:2022-2028 (`_dep_to_json`).
   * board entries are dicts with EXACTLY {id, sender, message, created_at}.
@@ -44,8 +45,8 @@ MISSION_DETAIL_KEYS: frozenset[str] = frozenset(
         "status",
         "priority",
         "mission_type",
-        "knight",
-        "knight_contents",
+        "doctrine_mission",
+        "doctrine_mission_contents",
         "block_reason",
         "created_at",
         "updated_at",
@@ -159,8 +160,8 @@ class TestMissionDetailFieldPassthrough:
             "Title text",
             status="blocked",
             priority=1,
-            mission_type="knight",
-            knight=None,
+            mission_type="agent",
+            doctrine_mission=None,
             block_reason="waiting upstream",
         )
 
@@ -170,8 +171,8 @@ class TestMissionDetailFieldPassthrough:
         assert data["title"] == "Title text"
         assert data["status"] == "blocked"
         assert data["priority"] == 1
-        assert data["mission_type"] == "knight"
-        assert data["knight"] is None
+        assert data["mission_type"] == "agent"
+        assert data["doctrine_mission"] is None
         assert data["block_reason"] == "waiting upstream"
 
     def test_closed_at_passthrough(self, project_dir):
@@ -188,53 +189,102 @@ class TestMissionDetailFieldPassthrough:
 
 
 # ---------------------------------------------------------------------------
-# Knight contents — include_knight flag + bad-slug fallback
+# Doctrine mission contents — the include flag, resolution and the traversal guard
 # ---------------------------------------------------------------------------
 
 
-class TestMissionDetailKnightContents:
-    def test_no_knight_assigned_yields_none_contents(self, project_dir):
+def _write_doctrine(project_dir, stem="tdd-lite", mission="recon", body="Do the recon.\n"):
+    directory = project_dir / ".lore" / "doctrines" / stem
+    (directory / "missions").mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.design.md").write_text(
+        f"---\nid: {stem}\ntitle: {stem}\nsummary: A doctrine.\n---\n\nDesign.\n"
+    )
+    (directory / "missions" / f"{mission}.md").write_text(
+        f"---\nid: {mission}\ntitle: {mission}\nsummary: A mission.\n---\n\n{body}"
+    )
+    return directory
+
+
+class TestMissionDetailDoctrineMissionContents:
+    def test_no_reference_yields_none_contents(self, project_dir):
         from lore.db import get_mission_detail
 
         insert_quest(project_dir, "q-aaaa", "Q")
-        insert_mission(project_dir, "q-aaaa/m-7777", "q-aaaa", "M", knight=None)
+        insert_mission(project_dir, "q-aaaa/m-7777", "q-aaaa", "M", doctrine_mission=None)
 
         data = get_mission_detail(project_dir, "q-aaaa/m-7777")
-        assert data["knight_contents"] is None
+        assert data["doctrine_mission_contents"] is None
 
-    def test_include_knight_false_skips_read_even_if_assigned(self, project_dir):
-        """`include_knight=False` MUST suppress the knight read entirely."""
+    def test_a_resolving_reference_yields_the_stripped_body(self, project_dir):
         from lore.db import get_mission_detail
 
+        _write_doctrine(project_dir)
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-7778", "q-aaaa", "M",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        data = get_mission_detail(project_dir, "q-aaaa/m-7778")
+        assert data["doctrine_mission"] == "tdd-lite/recon"
+        assert data["doctrine_mission_contents"] == "Do the recon.\n"
+
+    def test_include_false_skips_the_read_even_if_assigned(self, project_dir):
+        """`include_doctrine_mission=False` MUST suppress the read entirely."""
+        from lore.db import get_mission_detail
+
+        _write_doctrine(project_dir)
         insert_quest(project_dir, "q-aaaa", "Q")
         insert_mission(
             project_dir, "q-aaaa/m-8888", "q-aaaa", "M",
-            knight="some-knight.md",
+            doctrine_mission="tdd-lite/recon",
         )
 
         data = get_mission_detail(
-            project_dir, "q-aaaa/m-8888", include_knight=False
+            project_dir, "q-aaaa/m-8888", include_doctrine_mission=False
         )
-        assert data["knight"] == "some-knight.md", "raw knight slug must still pass through"
-        assert data["knight_contents"] is None, (
-            "include_knight=False MUST yield knight_contents=None"
+        assert data["doctrine_mission"] == "tdd-lite/recon", (
+            "the stored reference must still pass through"
         )
+        assert data["doctrine_mission_contents"] is None
 
-    def test_bad_knight_slug_yields_none_contents(self, project_dir):
-        """Unknown knight slug → knight_contents=None (no exception)."""
+    def test_an_unresolvable_reference_yields_none_contents(self, project_dir):
+        """An unresolvable reference is silent here — `lore health` is the reporter."""
         from lore.db import get_mission_detail
 
         insert_quest(project_dir, "q-aaaa", "Q")
         insert_mission(
             project_dir, "q-aaaa/m-9990", "q-aaaa", "M",
-            knight="nonexistent-knight.md",
+            doctrine_mission="gone/missing",
         )
 
         data = get_mission_detail(project_dir, "q-aaaa/m-9990")
-        # bad slug must not raise; envelope still returns; contents must be None
         assert data is not None
-        assert data["knight"] == "nonexistent-knight.md"
-        assert data["knight_contents"] is None
+        assert data["doctrine_mission"] == "gone/missing"
+        assert data["doctrine_mission_contents"] is None
+
+    def test_a_reference_with_a_traversal_segment_reads_nothing(self, project_dir):
+        from lore.db import get_mission_detail
+
+        (project_dir / "secret.md").write_text("top secret")
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-9991", "q-aaaa", "M",
+            doctrine_mission="../../secret",
+        )
+
+        data = get_mission_detail(project_dir, "q-aaaa/m-9991")
+        assert data["doctrine_mission_contents"] is None
+
+    def test_the_envelope_carries_no_knight_key(self, project_dir):
+        from lore.db import get_mission_detail
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(project_dir, "q-aaaa/m-9992", "q-aaaa", "M")
+
+        data = get_mission_detail(project_dir, "q-aaaa/m-9992")
+        assert "knight" not in data
+        assert "knight_contents" not in data
 
 
 # ---------------------------------------------------------------------------

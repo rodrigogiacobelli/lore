@@ -230,7 +230,6 @@ class TestTheSeededLoreIgnoreDoesNotDecideSkillTracking:
         init(repo, agents=["none"], skills_gitignore="lore-only")
         authored = []
         for relative in (
-            "knights/mine.md",
             "doctrines/mine.yaml",
             "artifacts/mine.md",
             "rites/mine.md",
@@ -316,3 +315,15 @@ class TestSwitchingToATighterAnswerAfterACommit:
             )
         )
         assert "git rm" not in "\n".join(result.messages)
+
+
+# ---------------------------------------------------------------------------
+# The gitignore stops un-ignoring a tree Lore no longer ships
+# ---------------------------------------------------------------------------
+
+
+def test_the_seeded_gitignore_names_no_retired_entity_tree(repo):
+    """Nothing in the file may name a tree the release stopped shipping."""
+    init(repo, agents=["none"], skills_gitignore="lore-only")
+    text = (repo / ".lore" / ".gitignore").read_text(encoding="utf-8")
+    assert "knight" not in text

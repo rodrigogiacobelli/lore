@@ -436,8 +436,8 @@ def test_code_seed_mixed_exact_and_glob_sorted_alphabetically(project_dir, runne
     )
     _write_codex_entry(
         project_dir,
-        entry_id="conceptual-entities-knight",
-        binds=["docs/knights/*.md"],
+        entry_id="conceptual-entities-rite",
+        binds=["docs/rites/*.md"],
     )
     result = runner.invoke(main, ["impacts", "src/lore/cli.py"])
     assert result.exit_code == 0, result.output
@@ -764,7 +764,7 @@ def test_direct_links_only_globs_yields_empty(project_dir, runner):
 # they describe a "do nothing different" contract on the existing codex
 # branch, and the kwarg is already accepted (no-op by default). They would
 # pass immediately, violating the Red rule "if a test passes immediately
-# it is not testing new behavior" (see knight: tdd-red). The Green phase
+# it is not testing new behavior" (the red-phase rule). The Green phase
 # is constrained to leave the codex branch untouched, so the existing
 # 45 cluster-A/B tests guard against regression there.
 #

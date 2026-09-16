@@ -2,14 +2,13 @@
 id: tech-cli-entity-crud-matrix
 title: CLI Entity CRUD Matrix
 summary: Maps every Lore entity to its available CLI CRUD and traversal operations
-  with the exact command for each. Highlights gaps — Codex has no CLI write path;
-  Glossary is read-only via CLI (single file, no group hierarchy); Artifact has `edit`
-  and `delete` write paths (full CRUD parity with knight/doctrine/watcher); Board
-  has no standalone list or update; Quest/Mission have no search; lore deps is documented
-  but unimplemented. All five list commands (codex, artifact, knight, doctrine, watcher)
-  support --filter GROUP... (slash-delimited segment-prefix matching) and all four
-  entity `new` commands (doctrine, knight, watcher, artifact) support --group GROUP
-  for nested creation. Glossary list does NOT accept --filter — single file with no
+  with the exact command for each. Highlights gaps — Glossary is read-only via CLI
+  (single file, no group hierarchy); Artifact has `edit` and `delete` write paths
+  (full CRUD parity with doctrine/watcher); Board has no standalone list or update;
+  Quest/Mission have no search; lore deps is documented but unimplemented. All four
+  list commands (codex, artifact, doctrine, watcher) support --filter GROUP...
+  (slash-delimited segment-prefix matching) and all three entity `new` commands
+  (doctrine, watcher, artifact) support --group GROUP for nested creation. Glossary list does NOT accept --filter — single file with no
   groups. Rite has full CRUD plus search but uses a flat namespace — no --group/--filter;
   --shared selects the shared-step subfolder instead.
 binds:
@@ -37,11 +36,10 @@ related:
 | Entity | Create | Read/Show | List | Search | Traverse | Update | Delete |
 |--------|--------|-----------|------|--------|----------|--------|--------|
 | **Quest** | `lore new quest <title>` | `lore show <id>` | `lore list [--all]` | — | — | `lore edit <id>` | `lore delete <id> [--cascade]` |
-| **Mission** | `lore new mission <title>` | `lore show <id> [--no-knight]` | `lore missions [quest_id] [--all]` | — | — | `lore edit <id>` | `lore delete <id>` |
-| **Knight** | `lore knight new <name> [--group <path>]` | `lore knight show <name>` | `lore knight list [--filter GROUP...]` | — | — | `lore knight edit <name>` | `lore knight delete <name>` |
-| **Doctrine** | `lore doctrine new <name> [--group <path>] -f <yaml> -d <design>` | `lore doctrine show <name>` | `lore doctrine list [--filter GROUP...]` | — | — | `lore doctrine edit <name>` | `lore doctrine delete <name>` |
+| **Mission** | `lore new mission <title> [-D <doctrine>/<mission>]` | `lore show <id> [--no-doctrine-mission]` | `lore missions [quest_id] [--all]` | — | — | `lore edit <id>` | `lore delete <id>` |
+| **Doctrine** | `lore doctrine new <name> [--group <path>] -d <design> -m <mission>...` | `lore doctrine show <name> [--mission <id>]` | `lore doctrine list [--filter GROUP...]` | — | — | `lore doctrine edit <name> [-d <design>] [-m <mission>...] [--remove-mission <id>...]` | `lore doctrine delete <name>` |
 | **Watcher** | `lore watcher new <name> [--group <path>]` | `lore watcher show <name>` | `lore watcher list [--filter GROUP...]` | — | — | `lore watcher edit <name>` | `lore watcher delete <name>` |
-| **Codex** | ✗ (disk only) | `lore codex show <id> [id2…] [--skip-glossary]` | `lore codex list [--filter GROUP...]` | `lore codex search <kw>` | `lore codex map <id> [--depth N \| --depth-out N --depth-in N] [--full]`<br>`lore codex chaos <id> --threshold <int>`<br>`lore impacts <codex-id\|path> [--direct-links]` | ✗ (disk only) | ✗ (disk only) |
+| **Codex** | `lore codex new <id> [--group <path>] [--type <type>] -f <body>` | `lore codex show <id> [id2…] [--skip-glossary]` | `lore codex list [--filter GROUP...]` | `lore codex search <kw>` | `lore codex map <id> [--depth N \| --depth-out N --depth-in N] [--full]`<br>`lore codex chaos <id> --threshold <int>`<br>`lore impacts <codex-id\|path> [--direct-links]` | `lore codex edit <id> -f <body>` \| `--set/--unset/--add/--remove` | `lore codex delete <id>` |
 | **Glossary** | ✗ (disk only) | `lore glossary show <keyword> [kw2…]` | `lore glossary list` | `lore glossary search <query>` | — | ✗ (disk only) | ✗ (disk only) |
 | **Artifact** | `lore artifact new <name> [--group <path>] --from <body>` | `lore artifact show <id> [id2…]` | `lore artifact list [--filter GROUP...]` | — | — | `lore artifact edit <name>` | `lore artifact delete <name>` |
 | **Rite** | `lore rite new <name> [--shared] --from <body>` | `lore rite show <id> [id2…]` | `lore rite list [--shared]` | `lore rite search <kw>` | — | `lore rite edit <name> [--shared]` | `lore rite delete <name> [--shared]` |
@@ -49,7 +47,7 @@ related:
 
 ## `--project` Selector
 
-Every Read/List/Search/Traverse cell for Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite additionally accepts the global `--project NAME` flag — a project name, `all`, or `self` — reading the same entity across a tree of Lore projects. No Create/Update/Delete cell accepts it: a usage error at exit 2 rejects `--project` on every write command, and Quest, Mission and Board Message accept it nowhere, on any operation. `lore codex chaos` is the one Traverse command that never accepts it either — its termination ratio is defined over one project's own subgraph. Full behaviour — origin-qualified ids, the `ORIGIN` column, and the read-only rule across a boundary — is `ref-lore_cli-commands` and `conceptual-workflows-nested-projects`.
+Every Read/List/Search/Traverse cell for Doctrine, Watcher, Artifact, Codex, Glossary and Rite additionally accepts the global `--project NAME` flag — a project name, `all`, or `self` — reading the same entity across a tree of Lore projects. No Create/Update/Delete cell accepts it: a usage error at exit 2 rejects `--project` on every write command, and Quest, Mission and Board Message accept it nowhere, on any operation. `lore codex chaos` is the one Traverse command that never accepts it either — its termination ratio is defined over one project's own subgraph. Full behaviour — origin-qualified ids, the `ORIGIN` column, and the read-only rule across a boundary — is `ref-lore_cli-commands` and `conceptual-workflows-nested-projects`.
 
 ## Skills Are Deliberately Absent
 
@@ -82,8 +80,7 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 
 | Entity | `new` accepts `--group`? | Helper called | Notes |
 |--------|--------------------------|---------------|-------|
-| **Doctrine** | yes | `lore.doctrine.create_doctrine(..., group=...)` | Subtree-wide duplicate check via `rglob`; mkdir before write. |
-| **Knight** | yes | `lore.knight.create_knight(project_root, name, content, group=...)` | Frontmatter is schema-validated against `lore://schemas/knight-frontmatter` before the subtree-wide duplicate check. |
+| **Doctrine** | yes | `lore.doctrine.create_doctrine(project_root, name, design_content, missions, group=...)` | Subtree-wide duplicate check via `rglob`; the whole directory is staged and moved into place with one `os.replace`. |
 | **Watcher** | yes | `lore.watcher.create_watcher(project_root, name, content, group=...)` | YAML parse-check runs before write. |
 | **Artifact** | yes | `lore.artifact.create_artifact(project_root, name, content, group=...)` | Strict frontmatter required — `id`, `title`, `summary` all present. |
 
@@ -105,8 +102,8 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 
 | Entity | Missing | Notes |
 |--------|---------|-------|
-| **Codex** | Create, Update, Delete | No CLI write path. Authoring is on-disk. Intentional — Codex is the human/agent record layer. The feature's list display and `--filter` grammar change applies to codex in lock-step, but no write path is introduced. |
 | **Glossary** | Create, Update, Delete, `--filter` on list | Read-only CLI by design (mirrors artifact pattern). Maintainers edit `.lore/codex/glossary.yaml` directly. `--filter` does NOT apply — the glossary is a single file with no group hierarchy. |
+| **Codex** | `--filter` on `search` | `lore codex new/edit/delete` all exist; only search is unfiltered. |
 | **Board Message** | Update, standalone List | Append-only by design (ADR-009). Only visible inside `lore show`. |
 | **Quest / Mission** | Search | No keyword search across titles or descriptions. |
 | **Mission** | `lore deps` | CLI command is not implemented. Dependency info is embedded inside `lore show`. The shipped `AGENTS.md` template no longer references `lore deps` (removed in ADR-012 refactor). |

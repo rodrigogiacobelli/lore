@@ -129,20 +129,21 @@ def test_health_malformed_overlay_scan_failed(runner, project_dir):
 
 
 def test_health_malformed_overlay_other_kinds_still_scanned(runner, project_dir):
-    """FR-10: after the collision overlay aborts the codex kind, a bad knight
-    is still caught — failure isolation across kinds."""
+    """FR-10: after the collision overlay aborts the codex kind, a bad mission
+    file is still caught — failure isolation across kinds."""
     _write_overlay(
         project_dir,
         "codex-frontmatter",
         {"properties": {"title": {"type": "string"}}},
     )
-    # Hallucinated knight field — must still be caught.
+    # Hallucinated frontmatter field — must still be caught.
     _write(
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "feature-implementation"
+        / "missions"
         / "pm.md",
         "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n# Body\n",
     )
@@ -151,12 +152,13 @@ def test_health_malformed_overlay_other_kinds_still_scanned(runner, project_dir)
 
     assert result.exit_code != 0, result.stdout
     envelope = json.loads(result.stdout)
-    knight_issues = [
+    mission_issues = [
         i
         for i in envelope["issues"]
-        if i["entity_type"] == "knight" and i["check"] == "schema"
+        if i["entity_type"] == "doctrine-mission-frontmatter"
+        and i["check"] == "schema"
     ]
-    assert knight_issues, envelope["issues"]
+    assert mission_issues, envelope["issues"]
 
 
 # E2E — no-overlay baseline identical (Scenario 3, FR-2)

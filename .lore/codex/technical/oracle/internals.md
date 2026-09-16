@@ -96,13 +96,13 @@ Written by `_write_quest_index(path, quest, missions)`. Contains:
 - H1 heading with quest title
 - Quest ID, status, and priority
 - Quest description
-- A markdown table listing all missions with columns: ID, Title, Status, Priority, Type, Knight
+- A markdown table listing all missions with columns: ID, Title, Status, Priority, Type, Doctrine Mission
 
 ### Per-mission `.md` file
 
 Written by `_write_mission_file(path, mission, depends_on, blocks)`. Contains:
 - H1 heading with mission title
-- Mission ID, status, priority, type, knight
+- Mission ID, status, priority, type, doctrine mission
 - `## Description` section
 - `## Dependencies` section with `Needs:` and `Blocks:` lines
 - `## Block Reason` section (only present if `block_reason` is non-null)

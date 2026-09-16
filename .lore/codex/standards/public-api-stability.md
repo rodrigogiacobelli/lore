@@ -39,9 +39,6 @@ __all__ = [
     "BoardMessage",
     "Artifact",
     "CodexDocument",
-    "DoctrineStep",
-    "Doctrine",
-    "Knight",
     "DoctrineListEntry",
     "GlossaryItem",
     "Watcher",
@@ -130,12 +127,6 @@ __all__ = [
     "init_database",
     # priority
     "get_ready_missions",
-    # knight
-    "list_knights",
-    "read_knight",
-    "create_knight",
-    "update_knight",
-    "delete_knight",
     # doctrine
     "list_doctrines",
     "read_doctrine",
@@ -209,8 +200,7 @@ Every module under `lore` **other than `lore.api`** is internal. None of the fol
 - `lore.paths` — `.lore/` path helpers
 - `lore.graph` — graph algorithms on mission dependency sets
 - `lore.priority` — ready-queue logic
-- `lore.knight` — knight filesystem operations
-- `lore.doctrine` — doctrine YAML loading, normalisation, validation
+- `lore.doctrine` — doctrine directory discovery, reading, and the staged create/edit/delete write path
 - `lore.watcher` — watcher YAML filesystem operations
 - `lore.artifact` — artifact filesystem operations
 - `lore.codex` — codex scanning, retrieval, search, traversal
@@ -233,7 +223,7 @@ Every module under `lore` **other than `lore.api`** is internal. None of the fol
 - `lore.migrations.*` — schema migration modules
 - The CLI entry point `lore.cli:main`
 
-Lore's own `cli.py` reaches its internal helpers through leading-underscore namespace aliases re-exported from `lore.api` (e.g. `lore.api._paths.knights_dir`). External consumers do not have access to those aliases — they are excluded from `lore.api.__all__` by the underscore prefix per Spec §1.
+Lore's own `cli.py` reaches its internal helpers through leading-underscore namespace aliases re-exported from `lore.api` (e.g. `lore.api._paths.doctrines_dir`). External consumers do not have access to those aliases — they are excluded from `lore.api.__all__` by the underscore prefix per Spec §1.
 
 ## Semver Policy (Pre-1.0)
 

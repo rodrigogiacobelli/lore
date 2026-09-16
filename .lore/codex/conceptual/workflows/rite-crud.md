@@ -35,7 +35,7 @@ subfolder instead of the default `main/`.
 
 - The Lore project has been initialised.
 - Rite `name` must match `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (same rule as
-  knight/doctrine/watcher/artifact, enforced by `validate_rite_id` in
+  doctrine/watcher/artifact, enforced by `validate_rite_id` in
   `lore.validators`).
 - For `new`/`edit`, body content is provided via `--from <path>` or stdin.
 

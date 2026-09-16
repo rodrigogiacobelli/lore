@@ -8,7 +8,7 @@ properties:
   id:
     type: string
     minLength: 1
-    description: Doctrine id. Must match the paired YAML file's id.
+    description: Doctrine id. Must match the doctrine directory name.
   title:
     type: string
     minLength: 1

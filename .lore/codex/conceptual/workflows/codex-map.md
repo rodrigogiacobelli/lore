@@ -123,7 +123,7 @@ Results are sorted alphabetically by ID for deterministic output — the qualifi
 depends on `--full`:
 
 **Default text mode** — uses the shared `_origin_table` helper (which wraps `_format_table`) that powers
-`lore codex list`, `lore knight list`, `lore doctrine list`, and
+`lore codex list`, `lore artifact list`, `lore doctrine list`, and
 `lore artifact list`. Columns are ID, GROUP, TITLE, SUMMARY, with a leading ORIGIN column when the result set holds a foreign row. GROUP is derived
 from the document's directory path via `paths.derive_group`, read off the index metadata for both self and foreign rows. Empty
 neighbourhood prints `No related documents.` and exits 0.
@@ -176,7 +176,7 @@ A cross-project `related` edge is legal in one direction only, by authoring conv
 | Structured neighbour list for scripts | `lore --json codex map <id>` |
 | Which projects a coordination document touches | `lore --project all codex map <id> --depth-out 1 --depth-in 0` |
 
-The default mode is the right answer for scout knights and any agent that
+The default mode is the right answer for a scout mission and any agent that
 needs to triage the codex before reading anything. `--full` is for human
 maintainers and tooling that genuinely needs the bodies.
 

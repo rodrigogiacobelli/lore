@@ -21,7 +21,7 @@ The output is a **verdict**: a blame file that names the culprit link, the failu
 ## Vocabulary
 
 - **Requirement (R)** — the precise thing that is missing or wrong. State it as one verifiable sentence: "The export endpoint enforces no rate limit" — not "rate limiting is off."
-- **Link** — one doctrine step, executed by one knight (or constable / human) in one mission, producing one or more outputs.
+- **Link** — one doctrine mission, executed by one worker (or constable / human) in one Lore mission, producing one or more outputs.
 - **Custody** — a link *holds* R when R is present in what it consumed (inbound) and obligated to be present in what it produced (outbound).
 - **Origin** — the link where R *first should have existed*. Everything upstream of the origin is irrelevant to the inquest.
 
@@ -29,21 +29,21 @@ The output is a **verdict**: a blame file that names the culprit link, the failu
 
 Write R as one verifiable sentence. Then find where R should have entered the chain. There are two origin classes:
 
-- **External origin** — R is in the original request. It should appear in the quest description or the first transient doc (PRD / context map). The origin link is the first step that consumed the request.
-- **Codex origin** — R is mandated by a codex document — a standard, an ADR, a constraint ("the codex says do X"). An agent at some link was obligated to honor it because a codex doc binds a file that link touched. Find these by running `lore impacts <path>` on every touched file. The origin link is the first step obligated to honor that codex doc.
+- **External origin** — R is in the original request. It should appear in the quest description or the first transient doc (PRD / context map). The origin link is the first link that consumed the request.
+- **Codex origin** — R is mandated by a codex document — a standard, an ADR, a constraint ("the codex says do X"). An agent at some link was obligated to honor it because a codex doc binds a file that link touched. Find these by running `lore impacts <path>` on every touched file. The origin link is the first link obligated to honor that codex doc.
 
 If R has no origin in either class — it is in neither the request nor the codex — then R is not a dropped requirement. It is a *new* request. Stop: there is no one to blame. Report that and end the inquest.
 
 ## Step 2 — Reconstruct the chain
 
-List the doctrine steps in dependency order (`needs`). For each link, record:
+List the doctrine's missions in dependency order, as its design table gives them. For each link, record:
 
 | Field | Source |
 |---|---|
-| Step ID, title | `lore doctrine show <id>` |
-| Knight (executor) | doctrine step `knight:` |
+| Doctrine mission id, title | `lore doctrine show <id>` |
+| Reusable instructions | `lore doctrine show <id> --mission <mission-id>` |
 | Mission ID, status | `lore missions -q <quest-id>` |
-| Instructions given | `lore show <mission-id>` — the mission notes the agent actually received |
+| Instructions given | `lore show <mission-id>` — the description and mission instructions the agent actually received |
 | Inbound (what it consumed) | upstream link outputs + board messages |
 | Outbound (what it produced) | transient docs, files, commits |
 
@@ -73,11 +73,11 @@ The verdict must name *which* failure occurred — the remedy differs per mode:
 
 | Mode | Signature | Responsible party |
 |---|---|---|
-| **Drop** | R was in the input; the executor silently omitted it from the output | The executor — knight + mission |
+| **Drop** | R was in the input; the executor silently omitted it from the output | The executor — doctrine mission + Lore mission |
 | **Never-captured** | R was in the *request* but the first link never wrote it into the first transient doc | The first link's executor — intake failure |
 | **Distortion** | R is present in the output but weakened or wrong — not absent, degraded | The executor — partial fault |
-| **Override** | The executor saw R and explicitly decided against it — visible in a commit message, mission notes, or a board message | A judgment call. **May be legitimate. Flag for the human — do not condemn.** |
-| **Instruction gap** | R was in the input, but no step's mission notes — and the doctrine itself — ever told any executor to carry R. Every executor faithfully did what it was told. | The **doctrine**, not any agent. A doctrine defect. |
+| **Override** | The executor saw R and explicitly decided against it — visible in a commit message, a mission description, or a board message | A judgment call. **May be legitimate. Flag for the human — do not condemn.** |
+| **Instruction gap** | R was in the input, but no mission description, no doctrine mission body and the design itself ever told any executor to carry R. Every executor faithfully did what it was told. | The **doctrine**, not any agent. A doctrine defect. |
 
 The instruction-gap case is the most important distinction. If you cannot point to an instruction that obligated a specific executor to carry R, you cannot blame that executor. Blame the chain design instead: the doctrine has no link that owns R.
 
@@ -104,14 +104,14 @@ summary: >
 
 | Link | Executor | Mission | Inbound R? | Outbound R? |
 |------|----------|---------|------------|-------------|
-| <step-id> | <knight> | <mission-id> | yes/no | yes/no |
+| <doctrine-mission-id> | <doctrine>/<mission> | <mission-id> | yes/no | yes/no |
 | ... | | | | |
 
 ## Verdict
 
-- **Culprit link:** <step-id> — <title>
+- **Culprit link:** <doctrine-mission-id> — <title>
 - **Failure mode:** <Drop | Never-captured | Distortion | Override | Instruction gap>
-- **Responsible:** <knight + mission-id | the doctrine <id> | the original request>
+- **Responsible:** <doctrine mission + mission-id | the doctrine <id> | the original request>
 
 ## Evidence
 

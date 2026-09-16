@@ -1,518 +1,172 @@
-"""Unit tests for G15.5 — doctrine module raises ``ValueError`` (not ``DoctrineError``).
+"""``lore.doctrine`` raises plain ``ValueError`` and guards every path it builds.
 
-Plan: ``transient-public-api-facade-plan §G15.5`` — *Remove ``DoctrineError``,
-raise ``ValueError`` from doctrine module*.
-Anchor: ``decisions-011-public-api-stability`` + ``standards-separation-of-concerns``
-— operational modules raise plain Python exceptions; Click-subclass exceptions
-are forbidden outside ``cli.py``.
+Anchor: standards-separation-of-concerns — an operational module raises plain
+Python exceptions; a Click-subclass exception is forbidden outside ``cli.py``.
 
-G15.5 flips every ``raise DoctrineError(...)`` site in ``src/lore/doctrine.py``
-to ``raise ValueError(...)`` and removes the ``class DoctrineError`` /
-``import click`` lines. The message text MUST stay byte-identical so CLI
-parity tests (``test_api_parity_doctrine.py``) keep their stderr/exit-code
-assertions green.
-
-These tests assert the post-flip contract:
-
-  * ``validate_doctrine_content`` raises ``ValueError`` on every validation
-    failure path (missing required field, name/id mismatch, invalid YAML,
-    invalid step structure).
-  * ``create_doctrine`` raises ``ValueError`` on invalid name, invalid group,
-    duplicate doctrine, missing source files, and YAML/design id mismatch.
-  * ``update_doctrine`` raises ``ValueError`` on missing target, missing
-    doctrines_dir, invalid name, malformed YAML content, and schema failure.
-  * ``delete_doctrine`` raises ``ValueError`` on missing target, missing
-    doctrines_dir, and invalid name.
-  * Message text on every path remains unchanged (parity).
-
-Red phase — every test below MUST fail until G15.5 Green lands.
-
-Open Items for orchestrator: pre-existing tests still asserting
-``pytest.raises(DoctrineError)`` are obsolete after G15.5 Green and need
-authorization to migrate. They live in:
-
-  * ``tests/unit/test_doctrine.py`` (numerous sites — imports
-    ``DoctrineError`` at module top, line ~20).
-  * ``tests/unit/test_doctrine_crud.py`` (``TestUpdateDoctrineErrorPaths`` +
-    ``TestDeleteDoctrineErrorPaths`` classes — every test imports
-    ``DoctrineError`` and uses ``pytest.raises(DoctrineError)``).
-  * ``tests/e2e/test_python_api.py`` (US-006 + US-008 scenarios — multiple
-    ``from lore.doctrine import DoctrineError, ...`` + ``raises(DoctrineError, ...)``).
-  * ``tests/e2e/test_doctrine_show.py`` (docstring/comment references only —
-    test body asserts CLI exit code; safe but stale wording).
-
-Note: ``tests/unit/test_api_surface.py`` + ``tests/unit/test_api_all_matches_spec.py``
-still list ``DoctrineError`` in the expected ``lore.api.__all__`` surface.
-G15.5 removes ``DoctrineError`` from ``lore.api.__all__`` — those surface
-tests also need authorization to drop the name from the expected list.
+Also pins the path-traversal guard. ``doctrine.py`` carries the strict/permissive
+resolver pair the retired entity's module proved: ``_find_doctrine_dir`` refuses a
+separator in a *user-supplied* name outright, while ``_resolve_doctrine_mission``
+accepts the one separator a *stored* reference legitimately carries and refuses
+anything that would climb out of ``.lore/doctrines/``.
 """
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
+import click
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Fixtures — valid + invalid YAML content blocks
-# ---------------------------------------------------------------------------
-
-
-VALID_DOCTRINE_YAML = (
-    "id: tdd\n"
-    "title: TDD\n"
-    "summary: Test-driven development workflow.\n"
-    "description: A doctrine for TDD.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
+from lore import doctrine as doctrine_module
+from lore.doctrine import (
+    _find_doctrine_dir,
+    _resolve_doctrine_mission,
+    create_doctrine,
+    delete_doctrine,
+    load_mission_sources,
+    read_doctrine,
+    update_doctrine,
 )
 
 
-FULL_UPDATED_DOCTRINE_YAML = (
-    "id: tdd\n"
-    "title: TDD v2\n"
-    "summary: Updated TDD doctrine.\n"
-    "description: Updated description.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
+DESIGN = "---\nid: tdd-lite\ntitle: TDD Lite\nsummary: A doctrine.\n---\n\n# TDD Lite\n"
+RECON = "---\nid: recon\ntitle: Recon\nsummary: A mission.\n---\n\nBody.\n"
+
+
+@pytest.fixture()
+def project(tmp_path):
+    (tmp_path / ".lore" / "doctrines").mkdir(parents=True)
+    return tmp_path
+
+
+@pytest.fixture()
+def created(project):
+    create_doctrine(project, "tdd-lite", DESIGN, {"recon": RECON})
+    return project
+
+
+def _assert_plain_value_error(excinfo) -> None:
+    assert isinstance(excinfo.value, ValueError)
+    assert not isinstance(excinfo.value, click.ClickException)
+    assert not isinstance(excinfo.value, click.UsageError)
+
+
+# ---------------------------------------------------------------------------
+# Every failure path raises a plain ValueError
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name,design,missions",
+    [
+        ("bad name", DESIGN, {"recon": RECON}),
+        ("tdd-lite", "---\nid: other\ntitle: T\nsummary: S\n---\n", {"recon": RECON}),
+        ("tdd-lite", "no frontmatter at all\n", {"recon": RECON}),
+        ("tdd-lite", DESIGN, {}),
+        ("tdd-lite", DESIGN, {"bad id": RECON}),
+        ("tdd-lite", DESIGN, {"recon": "---\nid: nope\ntitle: T\nsummary: S\n---\n"}),
+    ],
 )
+def test_create_raises_a_plain_value_error(project, name, design, missions):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(project, name, design, missions)
+
+    _assert_plain_value_error(excinfo)
 
 
-# Schema-invalid: missing required `steps` field.
-SCHEMA_INVALID_YAML = (
-    "id: tdd\n"
-    "title: TDD\n"
-    "summary: Missing steps field.\n"
-    "description: A doctrine missing the steps field.\n"
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"design_content": "---\nid: other\ntitle: T\nsummary: S\n---\n"},
+        {"missions": {"bad id": RECON}},
+        {"remove_missions": ["nope"]},
+        {"remove_missions": ["recon"]},
+    ],
 )
+def test_update_raises_a_plain_value_error(created, kwargs):
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(created, "tdd-lite", **kwargs)
+
+    _assert_plain_value_error(excinfo)
 
 
-# Name mismatch — id disagrees with caller arg.
-NAME_MISMATCH_YAML = (
-    "id: not-tdd\n"
-    "title: Wrong ID\n"
-    "summary: id mismatches caller arg.\n"
-    "description: Should be rejected.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-)
+def test_update_on_a_missing_doctrine_raises_a_plain_value_error(project):
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "nope", design_content=DESIGN)
+
+    _assert_plain_value_error(excinfo)
 
 
-# Malformed YAML (unclosed bracket).
-MALFORMED_YAML = "id: tdd\nsteps: [\n"
+def test_delete_on_a_missing_doctrine_raises_a_plain_value_error(project):
+    with pytest.raises(ValueError) as excinfo:
+        delete_doctrine(project, "nope")
+
+    _assert_plain_value_error(excinfo)
 
 
-def _write_doctrine_dir(tmp_path, *, name: str = "tdd") -> "pytest.fixture":
-    """Create a doctrines_dir with a single seeded doctrine and return it."""
-    doctrines_dir = tmp_path / ".lore" / "doctrines"
-    doctrines_dir.mkdir(parents=True)
-    (doctrines_dir / f"{name}.yaml").write_text(VALID_DOCTRINE_YAML)
-    return doctrines_dir
+def test_load_mission_sources_raises_a_plain_value_error(tmp_path):
+    with pytest.raises(ValueError) as excinfo:
+        load_mission_sources([tmp_path / "gone.md"])
 
-
-# ---------------------------------------------------------------------------
-# validate_doctrine_content — every failure path raises ValueError
-# ---------------------------------------------------------------------------
-
-
-class TestValidateDoctrineContentRaisesValueError:
-    """``validate_doctrine_content`` raises plain ``ValueError`` on failure."""
-
-    def test_schema_invalid_yaml_raises_valueerror(self):
-        """Schema failure raises ``ValueError`` (not ``DoctrineError``)."""
-        from lore import doctrine as doctrine_mod
-        from lore.doctrine import validate_doctrine_content
-
-        with pytest.raises(ValueError) as exc_info:
-            validate_doctrine_content(SCHEMA_INVALID_YAML, "tdd")
-        import click
-
-        assert not isinstance(exc_info.value, click.ClickException), (
-            "validate_doctrine_content still raises a click.ClickException "
-            "subclass — G15.5 not landed."
-        )
-        # Re-invocation through the module alias must raise the same plain ValueError.
-        with pytest.raises(ValueError):
-            doctrine_mod.validate_doctrine_content(SCHEMA_INVALID_YAML, "tdd")
-
-    def test_id_mismatch_raises_valueerror(self):
-        """``id`` disagrees with caller arg → ``ValueError``."""
-        from lore.doctrine import validate_doctrine_content
-
-        with pytest.raises(ValueError):
-            validate_doctrine_content(NAME_MISMATCH_YAML, "tdd")
-
-    def test_malformed_yaml_raises_valueerror(self):
-        """Unparseable YAML → ``ValueError`` (not ``DoctrineError``)."""
-        from lore.doctrine import validate_doctrine_content
-
-        with pytest.raises(ValueError):
-            validate_doctrine_content(MALFORMED_YAML, "tdd")
-
-    def test_non_mapping_yaml_raises_valueerror(self):
-        """YAML scalar / list at top level → ``ValueError``."""
-        from lore.doctrine import validate_doctrine_content
-
-        with pytest.raises(ValueError):
-            validate_doctrine_content("- just\n- a\n- list\n", "tdd")
-
-    def test_message_text_unchanged_for_missing_steps(self):
-        """Message text parity: ``Missing required property 'steps'.``"""
-        from lore.doctrine import validate_doctrine_content
-
-        with pytest.raises(ValueError) as exc_info:
-            validate_doctrine_content(SCHEMA_INVALID_YAML, "tdd")
-        assert "steps" in str(exc_info.value)
-
-    def test_message_text_unchanged_for_id_mismatch(self):
-        """Message text parity: ``Doctrine id "..." does not match ...``"""
-        from lore.doctrine import validate_doctrine_content
-
-        with pytest.raises(ValueError) as exc_info:
-            validate_doctrine_content(NAME_MISMATCH_YAML, "tdd")
-        msg = str(exc_info.value)
-        assert "not-tdd" in msg and "tdd" in msg
+    _assert_plain_value_error(excinfo)
 
 
 # ---------------------------------------------------------------------------
-# create_doctrine — every failure path raises ValueError
+# The path-traversal guard
 # ---------------------------------------------------------------------------
 
 
-class TestCreateDoctrineRaisesValueError:
-    """``create_doctrine`` raises plain ``ValueError`` on every failure path."""
+@pytest.mark.parametrize("name", ["../secrets", "a/b", "a\\b", "/etc/passwd"])
+def test_find_doctrine_dir_refuses_a_user_supplied_path(project, name):
+    if "/" not in name and "\\" not in name:  # pragma: no cover - guard the table
+        pytest.fail("every case here carries a separator")
 
-    def test_invalid_name_raises_valueerror(self, tmp_path):
-        """Invalid name format → ``ValueError`` before any file I/O."""
-        from lore.doctrine import create_doctrine
+    with pytest.raises(ValueError) as excinfo:
+        _find_doctrine_dir(project, name)
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            create_doctrine(
-                tmp_path,
-                "INVALID NAME",
-                tmp_path / "src.yaml",
-                tmp_path / "src.design.md",
-            )
+    _assert_plain_value_error(excinfo)
+    assert str(excinfo.value) == "Invalid doctrine name: path separators not allowed"
 
-    def test_invalid_name_is_not_click_exception(self, tmp_path):
-        """``create_doctrine`` invalid-name raise is not a ``click.ClickException``."""
-        import click
 
-        from lore.doctrine import create_doctrine
+@pytest.mark.parametrize("mission", ["../../etc/passwd", "a/b", "a\\b"])
+def test_read_doctrine_refuses_a_mission_id_that_could_escape(created, mission):
+    with pytest.raises(ValueError) as excinfo:
+        read_doctrine(created, "tdd-lite", mission=mission)
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError) as exc_info:
-            create_doctrine(
-                tmp_path,
-                "INVALID NAME",
-                tmp_path / "src.yaml",
-                tmp_path / "src.design.md",
-            )
-        assert not isinstance(exc_info.value, click.ClickException)
+    _assert_plain_value_error(excinfo)
 
-    def test_invalid_group_raises_valueerror(self, tmp_path):
-        """Invalid group format → ``ValueError``."""
-        from lore.doctrine import create_doctrine
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            create_doctrine(
-                tmp_path,
-                "tdd",
-                tmp_path / "src.yaml",
-                tmp_path / "src.design.md",
-                group="BAD GROUP",
-            )
+def test_a_stored_reference_that_would_escape_resolves_to_nothing(created, tmp_path):
+    secret = tmp_path / "secret.md"
+    secret.write_text("secret")
 
-    def test_missing_yaml_source_raises_valueerror(self, tmp_path):
-        """Missing YAML source file → ``ValueError`` with ``File not found:``."""
-        from lore.doctrine import create_doctrine
+    assert _resolve_doctrine_mission(created, "../../secret") is None
+    assert _resolve_doctrine_mission(created, str(secret)) is None
+    assert _resolve_doctrine_mission(created, "tdd-lite/../../../secret") is None
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError) as exc_info:
-            create_doctrine(
-                tmp_path,
-                "tdd",
-                tmp_path / "missing.yaml",
-                tmp_path / "missing.design.md",
-            )
-        assert "File not found" in str(exc_info.value)
 
-    def test_missing_design_source_raises_valueerror(self, tmp_path):
-        """Missing design source file → ``ValueError`` with ``File not found:``."""
-        from lore.doctrine import create_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        yaml_src = tmp_path / "src.yaml"
-        yaml_src.write_text(VALID_DOCTRINE_YAML)
-        with pytest.raises(ValueError) as exc_info:
-            create_doctrine(
-                tmp_path,
-                "tdd",
-                yaml_src,
-                tmp_path / "missing.design.md",
-            )
-        assert "File not found" in str(exc_info.value)
-
-    def test_duplicate_doctrine_raises_valueerror(self, tmp_path):
-        """Duplicate in subtree → ``ValueError`` with ``already exists``."""
-        from lore.doctrine import create_doctrine
-
-        _doctrines_dir = _write_doctrine_dir(tmp_path)
-        yaml_src = tmp_path / "src.yaml"
-        yaml_src.write_text(VALID_DOCTRINE_YAML)
-        design_src = tmp_path / "src.design.md"
-        design_src.write_text("---\nid: tdd\n---\nbody\n")
-        with pytest.raises(ValueError) as exc_info:
-            create_doctrine(tmp_path, "tdd", yaml_src, design_src)
-        assert "already exists" in str(exc_info.value)
-
-    def test_yaml_parse_error_raises_valueerror(self, tmp_path):
-        """Malformed source YAML → ``ValueError`` with ``YAML parsing error:``."""
-        from lore.doctrine import create_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        yaml_src = tmp_path / "src.yaml"
-        yaml_src.write_text(MALFORMED_YAML)
-        design_src = tmp_path / "src.design.md"
-        design_src.write_text("---\nid: tdd\n---\nbody\n")
-        with pytest.raises(ValueError) as exc_info:
-            create_doctrine(tmp_path, "tdd", yaml_src, design_src)
-        assert "YAML parsing error" in str(exc_info.value)
-
-    def test_yaml_id_mismatch_raises_valueerror(self, tmp_path):
-        """YAML id != name arg → ``ValueError``."""
-        from lore.doctrine import create_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        yaml_src = tmp_path / "src.yaml"
-        yaml_src.write_text(VALID_DOCTRINE_YAML)
-        design_src = tmp_path / "src.design.md"
-        design_src.write_text("---\nid: not-tdd\n---\nbody\n")
-        with pytest.raises(ValueError):
-            # name is `not-tdd` so YAML (id=tdd) mismatches; covers
-            # _validate_yaml_schema mismatch path.
-            create_doctrine(tmp_path, "not-tdd", yaml_src, design_src)
+def test_a_stored_reference_never_raises_on_a_bad_shape(created):
+    for ref in ("", "/", "//", "a/b/c", "..", "tdd-lite/"):
+        assert _resolve_doctrine_mission(created, ref) is None
 
 
 # ---------------------------------------------------------------------------
-# update_doctrine — every failure path raises ValueError
+# No Click inside an operational module
 # ---------------------------------------------------------------------------
 
 
-class TestUpdateDoctrineRaisesValueError:
-    """``update_doctrine`` raises plain ``ValueError`` on every failure path."""
+def test_the_module_source_imports_no_click():
+    source = Path(doctrine_module.__file__).read_text()
 
-    def test_missing_target_raises_valueerror(self, tmp_path):
-        """Missing on-disk doctrine → ``ValueError``."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "nonexistent", FULL_UPDATED_DOCTRINE_YAML)
-
-    def test_missing_target_is_not_click_exception(self, tmp_path):
-        """The raised exception must NOT be a ``click.ClickException`` subclass."""
-        import click
-
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError) as exc_info:
-            update_doctrine(tmp_path, "nonexistent", FULL_UPDATED_DOCTRINE_YAML)
-        assert not isinstance(exc_info.value, click.ClickException)
-
-    def test_missing_doctrines_dir_raises_valueerror(self, tmp_path):
-        """Missing ``doctrines_dir`` → ``ValueError``."""
-        from lore.doctrine import update_doctrine
-
-        _doctrines_dir = tmp_path / ".lore" / "doctrines"
-        # intentionally NOT created
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-
-    def test_invalid_name_raises_valueerror(self, tmp_path):
-        """Invalid name format → ``ValueError`` (validate_name).
-
-        ``validate_name`` already returns the error string; the doctrine
-        module wraps it. Post-G15.5 the wrapper raises ``ValueError`` instead
-        of ``DoctrineError``.
-        """
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "INVALID NAME", FULL_UPDATED_DOCTRINE_YAML)
-
-    def test_schema_failure_raises_valueerror(self, tmp_path):
-        """Schema-invalid content → ``ValueError`` propagated from validation."""
-        from lore.doctrine import update_doctrine
-
-        _doctrines_dir = _write_doctrine_dir(tmp_path)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "tdd", SCHEMA_INVALID_YAML)
-
-    def test_malformed_yaml_raises_valueerror(self, tmp_path):
-        """Malformed YAML content → ``ValueError`` with ``YAML parsing error:``."""
-        from lore.doctrine import update_doctrine
-
-        _doctrines_dir = _write_doctrine_dir(tmp_path)
-        with pytest.raises(ValueError) as exc_info:
-            update_doctrine(tmp_path, "tdd", MALFORMED_YAML)
-        assert "YAML parsing error" in str(exc_info.value)
-
-    def test_message_text_unchanged_for_missing_target(self, tmp_path):
-        """Parity: ``Doctrine "nonexistent" not found.`` message preserved."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError) as exc_info:
-            update_doctrine(tmp_path, "nonexistent", FULL_UPDATED_DOCTRINE_YAML)
-        assert "nonexistent" in str(exc_info.value)
-        assert "not found" in str(exc_info.value)
+    assert "import click" not in source
 
 
-# ---------------------------------------------------------------------------
-# delete_doctrine — every failure path raises ValueError
-# ---------------------------------------------------------------------------
+def test_the_module_ast_imports_no_click():
+    tree = ast.parse(Path(doctrine_module.__file__).read_text())
 
-
-class TestDeleteDoctrineRaisesValueError:
-    """``delete_doctrine`` raises plain ``ValueError`` on every failure path."""
-
-    def test_missing_target_raises_valueerror(self, tmp_path):
-        """Missing doctrine → ``ValueError`` (not idempotent)."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            delete_doctrine(tmp_path, "nonexistent")
-
-    def test_missing_target_is_not_click_exception(self, tmp_path):
-        """Delete miss must NOT raise a ``click.ClickException`` subclass."""
-        import click
-
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError) as exc_info:
-            delete_doctrine(tmp_path, "nonexistent")
-        assert not isinstance(exc_info.value, click.ClickException)
-
-    def test_missing_doctrines_dir_raises_valueerror(self, tmp_path):
-        """Missing ``doctrines_dir`` → ``ValueError``."""
-        from lore.doctrine import delete_doctrine
-
-        _doctrines_dir = tmp_path / ".lore" / "doctrines"
-        # intentionally NOT created
-        with pytest.raises(ValueError):
-            delete_doctrine(tmp_path, "tdd")
-
-    def test_invalid_name_raises_valueerror(self, tmp_path):
-        """Invalid name format → ``ValueError``."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            delete_doctrine(tmp_path, "INVALID NAME")
-
-    def test_message_text_unchanged_for_missing_target(self, tmp_path):
-        """Parity: ``Doctrine "nonexistent" not found`` message preserved."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError) as exc_info:
-            delete_doctrine(tmp_path, "nonexistent")
-        assert "nonexistent" in str(exc_info.value)
-        assert "not found" in str(exc_info.value)
-
-
-# ---------------------------------------------------------------------------
-# Module-level invariants — DoctrineError class is removed
-# ---------------------------------------------------------------------------
-
-
-class TestDoctrineErrorClassRemoved:
-    """G15.5: ``DoctrineError`` class is gone; no ``import click`` line."""
-
-    def test_doctrine_module_has_no_doctrine_error_class(self):
-        """``DoctrineError`` is no longer an attribute of ``lore.doctrine``."""
-        from lore import doctrine as doctrine_mod
-
-        assert not hasattr(doctrine_mod, "DoctrineError"), (
-            "lore.doctrine still exposes DoctrineError — G15.5 not landed."
-        )
-
-    def test_doctrine_module_source_has_no_doctrine_error_text(self):
-        """Grep-equivalent: ``DoctrineError`` substring absent from source."""
-        from pathlib import Path
-
-        import lore.doctrine as doctrine_mod
-
-        src_path = Path(doctrine_mod.__file__)
-        text = src_path.read_text()
-        assert "DoctrineError" not in text, (
-            "src/lore/doctrine.py still references DoctrineError — G15.5 not landed."
-        )
-
-    def test_doctrine_module_source_has_no_click_import(self):
-        """Grep-equivalent: no ``import click`` / ``from click`` in doctrine.py."""
-        from pathlib import Path
-
-        import lore.doctrine as doctrine_mod
-
-        src_path = Path(doctrine_mod.__file__)
-        text = src_path.read_text()
-        for line in text.splitlines():
-            stripped = line.strip()
-            assert not stripped.startswith("import click"), (
-                "src/lore/doctrine.py still has `import click` — G15.5 not landed."
-            )
-            assert not stripped.startswith("from click"), (
-                "src/lore/doctrine.py still has `from click ...` — G15.5 not landed."
-            )
-
-    def test_doctrine_module_ast_imports_no_click(self):
-        """AST check: ``lore.doctrine`` imports no ``click`` name."""
-        import ast
-        from pathlib import Path
-
-        import lore.doctrine as doctrine_mod
-
-        src_path = Path(doctrine_mod.__file__)
-        tree = ast.parse(src_path.read_text(), filename=str(src_path))
-        bad: list[str] = []
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name == "click" or alias.name.startswith("click."):
-                        bad.append(f"import {alias.name}")
-            elif isinstance(node, ast.ImportFrom):
-                if node.module == "click" or (node.module or "").startswith("click."):
-                    bad.append(f"from {node.module} import ...")
-        assert not bad, (
-            f"src/lore/doctrine.py still imports click: {bad}. "
-            "ADR-011 forbids click in operational modules."
-        )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            assert all(alias.name != "click" for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.module != "click"

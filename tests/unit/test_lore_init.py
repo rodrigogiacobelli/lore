@@ -15,8 +15,16 @@ and the corresponding wiring inside ``run_init``.
 from __future__ import annotations
 
 import importlib
+import json as _json
+import re as _re
+from pathlib import Path as _Path
 
 import pytest
+
+from lore import init as _init
+from lore import manifest as _manifest
+from lore import safewrite as _safewrite
+from lore.initplan import FileAction as _FileAction
 
 
 
@@ -422,9 +430,6 @@ def test_init_creates_rite_shared_dir(tmp_path, monkeypatch):
 # sentence of its prose is pinned.
 # ---------------------------------------------------------------------------
 
-import re as _re
-from pathlib import Path as _Path
-
 TEMPLATE_PATH = (
     _Path(__file__).resolve().parents[2]
     / "src" / "lore" / "defaults" / "docs" / "LORE-AGENT.md"
@@ -467,14 +472,14 @@ def test_skills_table_rows_sorted_and_one_per_id():
     from lore.init import _render_skills_table
 
     table = _render_skills_table(
-        ("update-knight", "inquest", "store-memory"), (_Path(".claude/skills"),)
+        ("update-watcher", "inquest", "store-memory"), (_Path(".claude/skills"),)
     )
     rows = _table_rows(table)
     assert len(rows) == 3
     assert [row.split("|")[1].strip().strip("`") for row in rows] == [
         "inquest",
         "store-memory",
-        "update-knight",
+        "update-watcher",
     ]
 
 
@@ -613,15 +618,6 @@ def test_template_has_no_table_row_naming_a_retired_skill():
 # Every branch below is a user-file-safety branch: what survives a write is the
 # whole point, so each one is asserted on bytes rather than on substrings.
 # ---------------------------------------------------------------------------
-
-import json as _json  # noqa: E402
-import os as _os  # noqa: E402
-
-from lore import init as _init  # noqa: E402
-from lore import manifest as _manifest  # noqa: E402
-from lore import safewrite as _safewrite  # noqa: E402
-from lore.initplan import FileAction as _FileAction  # noqa: E402
-
 
 HTML_BEGIN = "<!-- lore:begin -->"
 HTML_END = "<!-- lore:end -->"
@@ -1504,7 +1500,10 @@ class TestApplyOrdering:
     def test_the_documented_step_order_holds(self, tmp_path, recorded_writes):
         _init.apply_init(_init.plan_init(project_root=tmp_path, agents=["claude"]))
         steps = [
-            _index_of(recorded_writes, "doctrines/default/update-changelog.yaml"),
+            _index_of(
+                recorded_writes,
+                "doctrines/default/update-changelog/update-changelog.design.md",
+            ),
             _index_of(recorded_writes, ".claude/skills/store-memory/SKILL.md"),
             _index_of(recorded_writes, ".lore/LORE-AGENT.md"),
             _index_of(recorded_writes, "CLAUDE.md"),
@@ -2228,3 +2227,139 @@ class TestTheRecordedSetIsWhatAuthorisesDestruction:
 
         assert self.RETIRED in recorded
         assert self.RETIRED in shipped
+
+
+# ---------------------------------------------------------------------------
+# A seeded tree this release stopped shipping is removed by an explicit list.
+# Workflow: conceptual-workflows-init-reconcile
+#
+# Deleting the row from SEEDED_TREES is not enough: `_prune_seeded_tree` only
+# walks trees still in that tuple, so the seeded files would stay on disk in
+# every upgraded project forever.
+# ---------------------------------------------------------------------------
+
+
+def _seed_retired_knights(project_root: _Path) -> _Path:
+    target = project_root / ".lore" / "knights" / "default"
+    (target / "feature-implementation").mkdir(parents=True)
+    (target / "changelog-scribe.md").write_text("---\nid: x\n---\nbody\n")
+    (target / "feature-implementation" / "architect.md").write_text(
+        "---\nid: y\n---\nbody\n"
+    )
+    return target
+
+
+def test_knights_is_no_longer_a_seed_tree():
+    assert all(spec.package != "knights" for spec in _init.SEEDED_TREES)
+
+
+def test_retired_seed_trees_names_the_knights_default_tree():
+    assert [tree.relative for tree in _init.RETIRED_SEED_TREES] == ["knights/default"]
+
+
+def test_seeded_paths_names_no_knight_path():
+    assert not any("knights" in path for path in _init.seeded_paths())
+
+
+def test_the_retired_tree_walk_unlinks_every_file_and_reports_each(tmp_path):
+    _seed_retired_knights(tmp_path)
+
+    messages = _init._remove_retired_seed_trees(tmp_path)
+
+    assert messages == [
+        "  Removed knights/default/changelog-scribe.md — no longer shipped",
+        "  Removed knights/default/feature-implementation/architect.md"
+        " — no longer shipped",
+    ]
+
+
+def test_the_retired_tree_walk_prunes_the_emptied_directories(tmp_path):
+    _seed_retired_knights(tmp_path)
+
+    _init._remove_retired_seed_trees(tmp_path)
+
+    assert not (tmp_path / ".lore" / "knights" / "default").exists()
+
+
+def test_the_retired_tree_walk_leaves_a_symlink_alone(tmp_path):
+    target = _seed_retired_knights(tmp_path)
+    outside = tmp_path / "outside.md"
+    outside.write_text("mine\n")
+    (target / "linked.md").symlink_to(outside)
+
+    _init._remove_retired_seed_trees(tmp_path)
+
+    assert (target / "linked.md").is_symlink()
+    assert outside.read_text() == "mine\n"
+
+
+def test_the_retired_tree_walk_survives_an_unlinkable_file(tmp_path, monkeypatch):
+    _seed_retired_knights(tmp_path)
+    real_unlink = _Path.unlink
+
+    def refuse(self, *args, **kwargs):
+        if self.name == "changelog-scribe.md":
+            raise PermissionError("denied")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(_Path, "unlink", refuse)
+
+    messages = _init._remove_retired_seed_trees(tmp_path)
+
+    assert messages == [
+        "  Removed knights/default/feature-implementation/architect.md"
+        " — no longer shipped",
+    ]
+    assert (tmp_path / ".lore" / "knights" / "default" / "changelog-scribe.md").exists()
+
+
+def test_a_project_with_no_knights_tree_produces_no_messages(tmp_path):
+    (tmp_path / ".lore").mkdir()
+
+    assert _init._remove_retired_seed_trees(tmp_path) == []
+
+
+def test_an_authored_knight_outside_default_is_named_and_kept(tmp_path):
+    _seed_retired_knights(tmp_path)
+    authored = tmp_path / ".lore" / "knights" / "my-reviewer.md"
+    authored.write_text("mine\n")
+
+    messages = _init._remove_retired_seed_trees(tmp_path)
+
+    assert authored.read_text() == "mine\n"
+    assert messages[-1] == (
+        "  Knights outside default/ are no longer read by Lore: "
+        ".lore/knights/my-reviewer.md"
+    )
+
+
+def test_several_authored_knights_are_named_on_one_line(tmp_path):
+    knights = tmp_path / ".lore" / "knights"
+    (knights / "team").mkdir(parents=True)
+    (knights / "my-reviewer.md").write_text("mine\n")
+    (knights / "team" / "sre.md").write_text("mine\n")
+
+    messages = _init._remove_retired_seed_trees(tmp_path)
+
+    assert messages == [
+        "  Knights outside default/ are no longer read by Lore: "
+        ".lore/knights/my-reviewer.md, .lore/knights/team/sre.md"
+    ]
+
+
+def test_the_authored_notice_is_absent_when_nothing_was_authored(tmp_path):
+    _seed_retired_knights(tmp_path)
+
+    messages = _init._remove_retired_seed_trees(tmp_path)
+
+    assert all("no longer read by Lore" not in message for message in messages)
+
+
+def test_seeding_a_lore_directory_removes_the_retired_tree(tmp_path):
+    _seed_retired_knights(tmp_path)
+    (tmp_path / ".lore" / "codex").mkdir(parents=True, exist_ok=True)
+
+    messages = _init._seed_lore_directory(tmp_path)
+
+    assert any("Removed knights/default/" in message for message in messages)
+    assert not (tmp_path / ".lore" / "knights" / "default").exists()

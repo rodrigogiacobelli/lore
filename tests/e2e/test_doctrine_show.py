@@ -1,12 +1,13 @@
-"""E2E tests for the doctrine show command (text mode and JSON mode).
+"""E2E tests for ``lore doctrine show`` — the design document and the mission index.
 
-Spec: doctrine-design-file-us-004 (lore codex show doctrine-design-file-us-004)
-Spec: doctrine-design-file-us-005 (lore codex show doctrine-design-file-us-005)
-Workflow: conceptual-workflows-doctrine-show
+Spec: conceptual-workflows-doctrine-show (lore codex show conceptual-workflows-doctrine-show)
+
+A doctrine is a directory: ``<stem>/<stem>.design.md`` plus ``<stem>/missions/<id>.md``.
+``lore doctrine show`` answers with the design document and an index of the
+missions in one call; ``--mission <id>`` answers with one mission body instead.
 """
 
 import json
-from pathlib import Path
 
 from lore.cli import main
 
@@ -16,428 +17,220 @@ from lore.cli import main
 # ---------------------------------------------------------------------------
 
 
-def _write_pair(project_dir, stem, yaml_content, design_content):
-    """Write a paired .design.md + .yaml at the given stem path."""
-    base = project_dir / ".lore" / "doctrines" / stem
-    base.parent.mkdir(parents=True, exist_ok=True)
-    Path(str(base) + ".design.md").write_text(design_content)
-    Path(str(base) + ".yaml").write_text(yaml_content)
-
-
-def _write_design(project_dir, stem, design_content):
-    """Write only a .design.md (orphaned — no matching .yaml)."""
-    base = project_dir / ".lore" / "doctrines" / stem
-    base.parent.mkdir(parents=True, exist_ok=True)
-    Path(str(base) + ".design.md").write_text(design_content)
-
-
-def _write_yaml(project_dir, stem, yaml_content):
-    """Write only a .yaml (YAML-only — no matching .design.md)."""
-    base = project_dir / ".lore" / "doctrines" / stem
-    base.parent.mkdir(parents=True, exist_ok=True)
-    Path(str(base) + ".yaml").write_text(yaml_content)
-
-
-# ---------------------------------------------------------------------------
-# Scenario 1: Shows design file followed by separator followed by YAML
-# conceptual-workflows-doctrine-show step 5: CLI prints design, "---", YAML verbatim
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_show_text_mode_verbatim_dump(project_dir, runner):
-    """E2E Scenario 1: stdout shows raw design content, separator, raw YAML content."""
-    design_content = (
-        "---\n"
-        "id: feature-implementation\n"
-        "title: Feature Implementation\n"
-        "summary: E2E spec-driven pipeline...\n"
-        "---\n"
-        "\n"
-        "# Feature Implementation\n"
-        "\n"
-        "Some design content.\n"
+def _design(stem: str, title: str = "TDD Lite", summary: str = "A small loop.") -> str:
+    return (
+        f"---\nid: {stem}\ntitle: {title}\nsummary: {summary}\n---\n"
+        f"\n# {title}\n\nThe design prose an orchestrator reads.\n"
     )
-    yaml_content = (
-        "id: feature-implementation\n"
-        "steps:\n"
-        "  - id: business-scout\n"
-        "    title: Map codex from the business perspective\n"
-        "    type: knight\n"
-        "    knight: scout\n"
-        "    priority: 2\n"
-    )
-    _write_pair(
+
+
+def _mission(mission_id: str, title: str, summary: str = "s", body: str = "Do the work.\n") -> str:
+    return f"---\nid: {mission_id}\ntitle: {title}\nsummary: {summary}\n---\n\n{body}"
+
+
+def _write_doctrine(project_dir, stem, missions: dict[str, str], group: str = "") -> None:
+    """Write a doctrine directory: the design document plus its mission files."""
+    base = project_dir / ".lore" / "doctrines"
+    if group:
+        base = base / group
+    directory = base / stem
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.design.md").write_text(_design(stem))
+    if missions:
+        (directory / "missions").mkdir(exist_ok=True)
+        for mission_id, content in missions.items():
+            (directory / "missions" / f"{mission_id}.md").write_text(content)
+
+
+def _tdd_lite(project_dir) -> None:
+    _write_doctrine(
         project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content,
-        design_content,
+        "tdd-lite",
+        {
+            "recon": _mission("recon", "Map the codex", body="Read the codex first.\n"),
+            "feature-spec": _mission("feature-spec", "Write the feature spec"),
+        },
     )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 0
-    assert design_content in result.output
-    assert "\n---\n" in result.output
-    assert yaml_content in result.output
-    # Verify order: design before YAML
-    assert result.output.index(design_content) < result.output.index(yaml_content)
-
-
-def test_doctrine_show_exit_code_zero_on_success(project_dir, runner):
-    """E2E Scenario 1: exit code is 0 when both files exist."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: Spec pipeline.\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 0
-
-
-def test_doctrine_show_stdout_is_not_empty_on_success(project_dir, runner):
-    """E2E Scenario 1: stdout contains output when doctrine is found."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: Spec pipeline.\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 0
-    assert result.output.strip() != ""
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Missing design file exits with error
-# conceptual-workflows-doctrine-show step 3 / error-handling
+# E1-E2: the design document and the mission index
 # ---------------------------------------------------------------------------
 
 
-def test_doctrine_show_missing_design_file_exits_1(project_dir, runner):
-    """E2E Scenario 2: missing design file → exit 1 with 'design file missing' error."""
-    _write_yaml(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        "id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
+def test_doctrine_show_prints_the_design_then_the_mission_index(project_dir, runner):
+    """E1 — design verbatim, a blank line, the index sorted by id."""
+    _tdd_lite(project_dir)
+
+    result = runner.invoke(main, ["doctrine", "show", "tdd-lite"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == (
+        _design("tdd-lite")
+        + "\n"
+        + "--- Missions ---\n"
+        + "feature-spec  Write the feature spec\n"
+        + "recon         Map the codex\n"
     )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr if result.stderr else "")
-    assert "feature-implementation" in combined
-    assert "not found" in combined
 
 
-def test_doctrine_show_missing_design_file_error_contains_exact_phrase(project_dir, runner):
-    """E2E Scenario 2: error output contains exact phrase 'design file missing'."""
-    _write_yaml(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        "id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr if result.stderr else "")
-    # Must contain the new specific error phrase from show_doctrine()
-    assert "not found" in combined
+def test_doctrine_show_with_no_missions_directory_says_none(project_dir, runner):
+    """E2 — a doctrine with no missions/ still resolves."""
+    _write_doctrine(project_dir, "solo", {})
+
+    result = runner.invoke(main, ["doctrine", "show", "solo"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == _design("solo") + "\n--- Missions ---\n(none)\n"
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3: Missing YAML file exits with error
-# conceptual-workflows-doctrine-show step 3 / error-handling
+# E3: the JSON envelope
 # ---------------------------------------------------------------------------
 
 
-def test_doctrine_show_missing_yaml_file_exits_1(project_dir, runner):
-    """E2E Scenario 3: missing YAML file → exit 1 with 'YAML file missing' error."""
-    _write_design(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        "---\nid: feature-implementation\ntitle: Feature Implementation\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr if result.stderr else "")
-    assert "not found" in combined
+def test_doctrine_show_json_wraps_the_record_under_doctrine(project_dir, runner):
+    """E3 — one top-level key, and the step graph is gone."""
+    _tdd_lite(project_dir)
+
+    result = runner.invoke(main, ["--json", "doctrine", "show", "tdd-lite"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert list(payload) == ["doctrine"]
+    doctrine = payload["doctrine"]
+    assert set(doctrine) == {"id", "title", "summary", "design", "missions", "origin"}
+    assert "raw_yaml" not in doctrine
+    assert "steps" not in doctrine
+    assert [m["id"] for m in doctrine["missions"]] == ["feature-spec", "recon"]
+    assert set(doctrine["missions"][0]) == {"id", "title", "summary"}
 
 
-def test_doctrine_show_missing_yaml_file_references_id(project_dir, runner):
-    """E2E Scenario 3: error message references the doctrine id."""
-    _write_design(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        "---\nid: feature-implementation\ntitle: Feature Implementation\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation"])
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr if result.stderr else "")
-    assert "feature-implementation" in combined
+def test_doctrine_show_json_carries_the_whole_design_file(project_dir, runner):
+    """The design value is the file as written, frontmatter included."""
+    _tdd_lite(project_dir)
 
+    result = runner.invoke(main, ["--json", "doctrine", "show", "tdd-lite"])
 
-# ---------------------------------------------------------------------------
-# Scenario 4: Nonexistent doctrine exits with error
-# conceptual-workflows-doctrine-show step 3 / error-handling
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_show_nonexistent_exits_1(project_dir, runner):
-    """E2E Scenario 4: nonexistent doctrine → exit 1 via show_doctrine() DoctrineError."""
-    result = runner.invoke(main, ["doctrine", "show", "nonexistent"])
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr if result.stderr else "")
-    # New behavior: show_doctrine() raises DoctrineError "Doctrine 'nonexistent' not found"
-    # (note single quotes, not "not found in .lore/doctrines/" from the old code)
-    assert "Doctrine 'nonexistent' not found" in combined
-
-
-def test_doctrine_show_nonexistent_references_id_in_error(project_dir, runner):
-    """E2E Scenario 4: error uses show_doctrine() single-quoted format, not old double-quoted."""
-    result = runner.invoke(main, ["doctrine", "show", "nonexistent"])
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr if result.stderr else "")
-    # New behavior from show_doctrine(): single-quoted id, no "in .lore/doctrines/" suffix
-    assert "Doctrine 'nonexistent' not found" in combined
+    assert json.loads(result.stdout)["doctrine"]["design"] == _design("tdd-lite")
 
 
 # ---------------------------------------------------------------------------
-# Scenario 5: Doctrine in a subdirectory is found by ID
-# conceptual-workflows-doctrine-show step 2: recursive search
+# E4-E5: one mission body
 # ---------------------------------------------------------------------------
 
 
-def test_doctrine_show_subdirectory_found(project_dir, runner):
-    """E2E Scenario 5: doctrine nested in subdirectory is found by ID alone."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/quick-feature-implementation",
-        yaml_content="id: quick-feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: quick-feature-implementation\ntitle: Quick Feature Implementation\n---\n",
+def test_doctrine_show_mission_prints_the_body_alone(project_dir, runner):
+    """E4 — the body verbatim, frontmatter stripped."""
+    _tdd_lite(project_dir)
+
+    result = runner.invoke(main, ["doctrine", "show", "tdd-lite", "--mission", "recon"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Read the codex first.\n"
+
+
+def test_doctrine_show_mission_json_wraps_the_record_under_mission(project_dir, runner):
+    """E5 — the mission envelope carries exactly four keys."""
+    _tdd_lite(project_dir)
+
+    result = runner.invoke(
+        main, ["--json", "doctrine", "show", "tdd-lite", "--mission", "recon"]
     )
-    result = runner.invoke(main, ["doctrine", "show", "quick-feature-implementation"])
-    assert result.exit_code == 0
-    assert "quick-feature-implementation" in result.output
 
-
-def test_doctrine_show_subdirectory_output_contains_separator(project_dir, runner):
-    """E2E Scenario 5: output from subdirectory doctrine still contains separator."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/quick-feature-implementation",
-        yaml_content="id: quick-feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: quick-feature-implementation\ntitle: Quick Feature Implementation\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "quick-feature-implementation"])
-    assert result.exit_code == 0
-    assert "\n---\n" in result.output
-
-
-# ===========================================================================
-# US-005 JSON mode scenarios
-# Spec: doctrine-design-file-us-005 (lore codex show doctrine-design-file-us-005)
-# ===========================================================================
-
-
-# ---------------------------------------------------------------------------
-# Scenario 1: JSON output has correct shape on success
-# conceptual-workflows-doctrine-show step 3-4 + conceptual-workflows-json-output
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_show_json_mode_correct_shape(project_dir, runner):
-    """E2E Scenario 1 (JSON): stdout is valid JSON with {id, title, summary, design, steps}."""
-    design_content = (
-        "---\n"
-        "id: feature-implementation\n"
-        "title: Feature Implementation\n"
-        "summary: E2E spec-driven pipeline...\n"
-        "---\n"
-        "\n"
-        "# Feature Implementation\n"
-    )
-    yaml_content = (
-        "id: feature-implementation\n"
-        "steps:\n"
-        "  - id: business-scout\n"
-        "    title: Map codex from the business perspective\n"
-        "    type: knight\n"
-        "    knight: scout\n"
-        "    priority: 2\n"
-    )
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content,
-        design_content,
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert data["id"] == "feature-implementation"
-    assert data["title"] == "Feature Implementation"
-    assert data["summary"] == "E2E spec-driven pipeline..."
-    assert isinstance(data["design"], str)
-    assert design_content in data["design"]
-    assert isinstance(data["steps"], list)
-    step = data["steps"][0]
-    assert step == {
-        "id": "business-scout",
-        "title": "Map codex from the business perspective",
-        "priority": 2,
-        "type": "knight",
-        "knight": "scout",
-        "notes": None,
-        "needs": [],
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert list(payload) == ["mission"]
+    assert payload["mission"] == {
+        "id": "recon",
+        "title": "Map the codex",
+        "summary": "s",
+        "body": "Read the codex first.\n",
     }
 
 
-def test_doctrine_show_json_mode_exit_code_zero_on_success(project_dir, runner):
-    """E2E Scenario 1 (JSON): exit code is 0 when doctrine is found."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: Spec pipeline.\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
-    assert result.exit_code == 0
-
-
-def test_doctrine_show_json_mode_output_is_valid_json(project_dir, runner):
-    """E2E Scenario 1 (JSON): stdout is parseable JSON."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: feature-implementation\ntitle: Feature Implementation\nsummary: Spec pipeline.\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
-    assert result.exit_code == 0
-    # Must not raise
-    data = json.loads(result.output)
-    assert isinstance(data, dict)
-
-
 # ---------------------------------------------------------------------------
-# Scenario 2: JSON output error on missing design file
-# conceptual-workflows-doctrine-show step 3 / conceptual-workflows-error-handling
+# E6-E8: the two misses, and where a JSON error goes
 # ---------------------------------------------------------------------------
 
 
-def test_doctrine_show_json_error_missing_design(project_dir, runner):
-    """E2E Scenario 2 (JSON): missing design file → exit 1, stdout has {"error": ...}."""
-    _write_yaml(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        "id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
+def test_doctrine_show_reports_a_mission_miss_against_its_doctrine(project_dir, runner):
+    """E6 — the doctrine resolved; the mission did not."""
+    _tdd_lite(project_dir)
+
+    result = runner.invoke(main, ["doctrine", "show", "tdd-lite", "--mission", "nope"])
+
     assert result.exit_code == 1
-    data = json.loads(result.output)
-    assert "error" in data
-    assert "not found" in data["error"]
+    assert result.stdout == ""
+    assert result.stderr.strip() == 'Mission "nope" not found in doctrine "tdd-lite"'
 
 
-# ---------------------------------------------------------------------------
-# Scenario 3: JSON output error on missing YAML file
-# conceptual-workflows-doctrine-show step 3 / conceptual-workflows-error-handling
-# ---------------------------------------------------------------------------
+def test_doctrine_show_reports_a_doctrine_miss_before_the_mission(project_dir, runner):
+    """E7 — a doctrine miss is reported as such even when --mission is passed."""
+    _tdd_lite(project_dir)
 
+    result = runner.invoke(main, ["doctrine", "show", "nope", "--mission", "recon"])
 
-def test_doctrine_show_json_error_missing_yaml(project_dir, runner):
-    """E2E Scenario 3 (JSON): missing YAML file → exit 1, stdout has {"error": ...}."""
-    _write_design(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        "---\nid: feature-implementation\ntitle: Feature Implementation\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
     assert result.exit_code == 1
-    data = json.loads(result.output)
-    assert "error" in data
-    assert "not found" in data["error"]
+    assert result.stderr.strip() == "Doctrine 'nope' not found"
 
 
-# ---------------------------------------------------------------------------
-# Scenario 4: raw_yaml key absent from JSON output
-# conceptual-workflows-doctrine-show: raw_yaml is CLI-internal, not in JSON output
-# ---------------------------------------------------------------------------
+def test_doctrine_show_mission_with_a_path_separator_is_refused(project_dir, runner):
+    """A mission id is one segment; a path is not a mission id."""
+    _tdd_lite(project_dir)
 
-
-def test_doctrine_show_json_no_raw_yaml_key(project_dir, runner):
-    """E2E Scenario 4 (JSON): JSON output does NOT contain 'raw_yaml' key."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: feature-implementation\ntitle: Feature Implementation\n---\n",
+    result = runner.invoke(
+        main, ["doctrine", "show", "tdd-lite", "--mission", "../secrets"]
     )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert "raw_yaml" not in data
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == "Invalid mission id: path separators not allowed"
 
 
-def test_doctrine_show_json_no_name_or_description_keys(project_dir, runner):
-    """E2E Scenario 4 (JSON): JSON output does NOT contain 'name' or 'description' keys."""
-    _write_pair(
-        project_dir,
-        "feature-implementation/feature-implementation",
-        yaml_content="id: feature-implementation\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n",
-        design_content="---\nid: feature-implementation\ntitle: Feature Implementation\n---\n",
+def test_doctrine_show_local_json_flag_writes_its_error_to_stderr(project_dir, runner):
+    """E8 — an error envelope never lands on stdout, on either --json path."""
+    result = runner.invoke(main, ["doctrine", "show", "nope", "--json"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": "Doctrine 'nope' not found"}
+
+
+def test_doctrine_show_global_json_flag_writes_its_error_to_stderr(project_dir, runner):
+    """The same routing on the global flag."""
+    result = runner.invoke(main, ["--json", "doctrine", "show", "nope"])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {"error": "Doctrine 'nope' not found"}
+
+
+def test_doctrine_show_mission_miss_json_envelope_goes_to_stderr(project_dir, runner):
+    """A mission miss is an error like any other in JSON mode."""
+    _tdd_lite(project_dir)
+
+    result = runner.invoke(
+        main, ["--json", "doctrine", "show", "tdd-lite", "--mission", "nope"]
     )
-    result = runner.invoke(main, ["doctrine", "show", "feature-implementation", "--json"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    assert "name" not in data
-    assert "description" not in data
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {
+        "error": 'Mission "nope" not found in doctrine "tdd-lite"'
+    }
 
 
-# ---------------------------------------------------------------------------
-# Scenario 5: steps normalized — defaults applied for missing optional fields
-# conceptual-workflows-doctrine-show step 4: _normalize() applied
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_show_json_steps_normalized(project_dir, runner):
-    """E2E Scenario 5 (JSON): step defaults (priority=2, notes=None, needs=[]) applied."""
-    _write_pair(
+def test_doctrine_show_finds_a_doctrine_in_a_nested_group(project_dir, runner):
+    """Discovery is subtree-wide; a seeded doctrine lives under default/."""
+    _write_doctrine(
         project_dir,
-        "my-doctrine",
-        yaml_content=(
-            "id: my-doctrine\n"
-            "steps:\n"
-            "  - id: step-one\n"
-            "    title: First step\n"
-            "    type: knight\n"
-            "    knight: some-knight\n"
-        ),
-        design_content="---\nid: my-doctrine\ntitle: My Doctrine\n---\n",
+        "nested",
+        {"only": _mission("only", "The only one")},
+        group="default/feature-implementation",
     )
-    result = runner.invoke(main, ["doctrine", "show", "my-doctrine", "--json"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    step = data["steps"][0]
-    assert step["priority"] == 2
-    assert step["notes"] is None
-    assert step["needs"] == []
 
+    result = runner.invoke(main, ["doctrine", "show", "nested"])
 
-def test_doctrine_show_json_steps_all_seven_fields(project_dir, runner):
-    """E2E Scenario 5 (JSON): each step has all seven fields: id, title, priority, type, knight, notes, needs."""
-    _write_pair(
-        project_dir,
-        "my-doctrine",
-        yaml_content=(
-            "id: my-doctrine\n"
-            "steps:\n"
-            "  - id: step-one\n"
-            "    title: First step\n"
-            "    type: knight\n"
-            "    knight: some-knight\n"
-        ),
-        design_content="---\nid: my-doctrine\ntitle: My Doctrine\n---\n",
-    )
-    result = runner.invoke(main, ["doctrine", "show", "my-doctrine", "--json"])
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    step = data["steps"][0]
-    for field in ("id", "title", "priority", "type", "knight", "notes", "needs"):
-        assert field in step, f"Missing field: {field}"
+    assert result.exit_code == 0, result.output
+    assert "--- Missions ---" in result.stdout
+    assert "only  The only one" in result.stdout

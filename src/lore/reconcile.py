@@ -21,7 +21,7 @@ Inside those two sets the rule is the opposite one, and it is a product ruling
 rather than an inference: **Lore owns its own files.** A file Lore installed and
 still ships is rewritten however it has been edited, and one Lore installed and
 has since retired is removed with its successor named. Neither asks. That is
-already what happens to `.lore/knights/default/**`, `.lore/doctrines/default/**`,
+already what happens to `.lore/doctrines/default/**`,
 `.lore/artifacts/default/**` and `.lore/watchers/default/**` — every one of them
 overwritten in place on every run — and skills were the single tree that
 behaved differently. The two rules meet at the same question, "did Lore install
@@ -208,8 +208,8 @@ def reconcile(
     A file Lore installed and still ships is Lore's, so its bytes are replaced
     and the row says the edit went; a file Lore installed and has since retired
     is Lore's too, so it is removed and the row names the successor. Nobody is
-    asked, because the same thing has always happened to `.lore/knights/default`
-    and `.lore/doctrines/default` without anybody being asked.
+    asked, because the same thing has always happened to `.lore/doctrines/default`
+    and `.lore/artifacts/default` without anybody being asked.
 
     A project that predates the manifest has no record of a **current** skill it
     edited, because editing it is exactly what stops its bytes matching a
@@ -364,7 +364,7 @@ def _classify_desired(
 def _overwrite_detail(path: str, source: str) -> str:
     """Why the bytes at *path* are going, and where a copy of them would live.
 
-    Knights, doctrines, artifacts and watchers are seeded under a ``default/``
+    Doctrines, artifacts and watchers are seeded under a ``default/``
     subdirectory, and that directory name is the whole explanation: Lore owns
     what is inside it, so a project's own version goes beside it rather than in
     it. Skills install straight into ``.claude/skills/`` with no such marker, so

@@ -97,12 +97,12 @@ def test_multiline_definition_whitespace_collapsed():
     """Multiline / multi-space definitions collapse to single spaces."""
     items = [
         GlossaryItem(
-            keyword="Knight",
-            definition="An agent\n persona.   Reusable.",
+            keyword="Doctrine",
+            definition="A body\n of work.   Reusable.",
         ),
     ]
     out = cli_mod._render_glossary_block(items)
-    assert out == "\n## Glossary\n\n**Knight** — An agent persona. Reusable.\n"
+    assert out == "\n## Glossary\n\n**Doctrine** — A body of work. Reusable.\n"
 
 
 def test_single_item_uses_em_dash_separator():

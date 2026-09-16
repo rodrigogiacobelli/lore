@@ -386,7 +386,6 @@ class _SeedTree:
 
 SEEDED_TREES = (
     _SeedTree("doctrines", "doctrines/default", prune=True),
-    _SeedTree("knights", "knights/default", prune=True),
     _SeedTree(
         "artifacts", "artifacts/default", exclude=frozenset({"bootstrap"}), prune=True
     ),
@@ -394,6 +393,40 @@ SEEDED_TREES = (
     _SeedTree("watchers", "watchers/default", prune=True),
 )
 """Every packaged tree `_seed_lore_directory` copies, in the order it copies them."""
+
+
+@dataclass(frozen=True)
+class _RetiredTree:
+    """A seeded tree this release stopped shipping, and how to say so."""
+
+    root: str
+    """The `.lore/`-relative root of the entity tree, e.g. ``knights``."""
+
+    relative: str
+    """The `.lore/`-relative retired subtree, e.g. ``knights/default``."""
+
+    authored_notice: str
+    """What to call the files a project authored outside the retired subtree."""
+
+
+RETIRED_SEED_TREES = (
+    _RetiredTree(
+        root="knights",
+        relative="knights/default",
+        authored_notice="Knights outside default/ are no longer read by Lore",
+    ),
+)
+"""Every seeded tree a past release shipped and this one does not.
+
+Dropping a row from ``SEEDED_TREES`` is not enough to stop shipping a tree:
+``_prune_seeded_tree`` is only reachable from ``_seed_tree``, which only runs
+for rows still in that tuple, so nothing would ever look at the retired
+directory again and every seeded file would stay on disk in every upgraded
+project, silently, forever. This list is what walks it one last time.
+
+Files a project authored outside the retired subtree are not touched — they are
+named once so the maintainer knows Lore no longer reads them.
+"""
 
 UNTRACKED_WRITES = (
     ".lore/.gitignore",
@@ -545,6 +578,67 @@ def _prune_seeded_tree(target_dir: Path, spec: _SeedTree) -> list[str]:
     except OSError:
         pass
     return messages
+
+
+def _remove_retired_seed_trees(project_root: Path) -> list[str]:
+    """Remove every tree a past release seeded and this one no longer ships."""
+    messages: list[str] = []
+    for tree in RETIRED_SEED_TREES:
+        messages.extend(_remove_retired_seed_tree(project_root, tree))
+    return messages
+
+
+def _remove_retired_seed_tree(project_root: Path, tree: _RetiredTree) -> list[str]:
+    """Walk one retired tree: unlink what Lore put there, name what it did not.
+
+    The same restraint ``_prune_seeded_tree`` shows, for the same reason: a link
+    is left alone, an unlink the filesystem refuses is skipped rather than
+    raised, and nothing outside the retired subtree is ever removed.
+    """
+    lore_dir = paths.lore_dir(project_root)
+    target_dir = lore_dir / tree.relative
+    messages: list[str] = []
+    removed: list[Path] = []
+
+    if target_dir.is_dir() and not target_dir.is_symlink():
+        for candidate in sorted(target_dir.rglob("*")):
+            if candidate.is_symlink() or not candidate.is_file():
+                continue
+            try:
+                candidate.unlink()
+            except OSError:
+                continue
+            removed.append(candidate)
+            within = candidate.relative_to(target_dir)
+            messages.append(
+                f"  Removed {tree.relative}/{within.as_posix()} — no longer shipped"
+            )
+        try:
+            reconcile.prune_empty_dirs(removed, target_dir)
+            target_dir.rmdir()
+        except OSError:
+            pass
+
+    authored = _authored_outside(lore_dir / tree.root, target_dir)
+    if authored:
+        listed = ", ".join(
+            path.relative_to(project_root).as_posix() for path in authored
+        )
+        messages.append(f"  {tree.authored_notice}: {listed}")
+    return messages
+
+
+def _authored_outside(root_dir: Path, retired_dir: Path) -> list[Path]:
+    """Every regular file under *root_dir* that is not inside *retired_dir*."""
+    if not root_dir.is_dir() or root_dir.is_symlink():
+        return []
+    return sorted(
+        path
+        for path in root_dir.rglob("*")
+        if path.is_file()
+        and not path.is_symlink()
+        and not path.is_relative_to(retired_dir)
+    )
 
 
 def seeded_paths() -> tuple[str, ...]:
@@ -2309,11 +2403,12 @@ def _seed_lore_directory(project_root: Path) -> list[str]:
     # GETTING-STARTED.md is copied verbatim; LORE-AGENT.md is rendered from the
     # same tree and arrives with the plan, so `docs` excludes it.
     by_package = {spec.package: spec for spec in SEEDED_TREES}
-    for package in ("doctrines", "knights", "artifacts", "docs"):
+    for package in ("doctrines", "artifacts", "docs"):
         messages.extend(_seed_tree(project_root, by_package[package]))
 
     messages.extend(_seed_user_tracked(project_root))
     messages.extend(_seed_tree(project_root, by_package["watchers"]))
+    messages.extend(_remove_retired_seed_trees(project_root))
 
     for subfolder in ("main", "shared"):
         (paths.rites_dir(project_root) / subfolder).mkdir(parents=True, exist_ok=True)

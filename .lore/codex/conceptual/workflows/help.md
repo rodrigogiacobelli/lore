@@ -23,7 +23,7 @@ Every `lore` command and subcommand exposes `--help` text. The help text is the 
 The root help must describe:
 
 - The two core entity types: `Quest` and `Mission`, with one-line definitions.
-- The supporting entities: `Knight`, `Doctrine`, `Codex`, `Rite`, `Artifact`, `Watcher`.
+- The supporting entities: `Doctrine`, `Codex`, `Rite`, `Artifact`, `Watcher`.
 - That a directory holding several Lore projects is itself a Lore project — the `--project` selector and the origin-qualified export it enables (`conceptual-workflows-nested-projects`).
 - A pointer to subcommand groups: `Run any command group with --help for details on that concept.`
 
@@ -39,7 +39,6 @@ Lore organises agent work into two core entity types:
 
 Supporting entities:
 
-  Knight   — a reusable agent persona attached to missions.
   Doctrine — workflow templates that guide how missions are executed.
   Codex    — project documentation, searchable and graph-traversable.
   Rite     — procedural memory: how to do or diagnose a recurring task.
@@ -62,19 +61,13 @@ Each command group's help string (the docstring of the `@main.group()` function)
 2. Explain the primary use pattern with at least one example command.
 3. Describe the relationship to other entities where relevant.
 
-### `lore knight --help`
-
-Must explain:
-- Knights are reusable markdown files encoding how a worker agent approaches work.
-- How to assign: `lore new mission -k <name>.md`.
-- What happens on `lore show <mission-id>`: knight contents are included.
-- Distinction: knights encode the "how"; mission descriptions encode the "what".
-
 ### `lore doctrine --help`
 
 Must explain:
-- Doctrines are YAML workflow templates describing step sequences and suggested knights.
-- Doctrines have no execution engine — they are passive guidance read with `lore doctrine show <name>`.
+- A doctrine is a directory of prose: a design document that says how the work is done, and one mission file per reusable instruction.
+- How to read it: `lore doctrine show <name>` returns the design and a mission index in one call; `lore doctrine show <name> --mission <id>` returns one mission's body, which is what a worker agent is given.
+- How to assign: `lore new mission -D <doctrine>/<mission>`, and what happens on `lore show <mission-id>` — the mission body is spliced in.
+- Doctrines have no execution engine — Lore parses none of it; an orchestrator reads the design prose and decides the order, the type and the dependencies itself.
 
 ### `lore artifact --help`
 
@@ -85,7 +78,7 @@ Must explain:
 
 ### Entity `new` subcommands — `--group` teaching contract
 
-Every enriched `--help` block for `lore doctrine new`, `lore knight new`, `lore watcher new`, and `lore artifact new` must:
+Every enriched `--help` block for `lore doctrine new`, `lore watcher new`, and `lore artifact new` must:
 
 - Document the `--group <path>` option, explicitly noting it is a slash-delimited relative path (e.g., `seo-analysis/keyword-analysers`).
 - State that omitting `--group` places the entity at the entity root.
@@ -93,13 +86,13 @@ Every enriched `--help` block for `lore doctrine new`, `lore knight new`, `lore 
 - State that duplicate detection is subtree-wide: a name collision anywhere under the entity root blocks the create regardless of group.
 - Include at least one nested example matching a User Workflow from the PRD, for example:
   - `lore doctrine new keyword-ranker --group seo-analysis/keyword-analysers -f ranker.yaml -d ranker.design.md`
-  - `lore knight new reviewer --group feature-implementation/reviewers --from reviewer.md`
+  - `lore doctrine new ranker --group seo-analysis/keyword-analysers -d r.md -m recon.md rank.md`
   - `lore watcher new on-prd-ready --group feature-implementation --from watcher.yaml`
   - `lore artifact new fi-review --group codex/templates --from review.md`
 
 ### Entity `list` subcommands — slash-delimited filter teaching contract
 
-Every enriched `--help` block for `lore doctrine list`, `lore knight list`, `lore watcher list`, `lore artifact list`, and `lore codex list` must:
+Every enriched `--help` block for `lore doctrine list`, `lore watcher list`, `lore artifact list`, and `lore codex list` must:
 
 - State that `--filter GROUP...` tokens are slash-delimited and match the on-disk subdirectory layout exactly (e.g., `--filter seo-analysis/keyword-analysers`).
 - Note that the hyphen-delimited input grammar is no longer accepted — this is a breaking change in the filter grammar.
@@ -108,7 +101,7 @@ Every enriched `--help` block for `lore doctrine list`, `lore knight list`, `lor
 
 ### `--project`-accepting commands — teaching contract
 
-Every one of the 19 read commands that accepts `--project` (`codex list|show|search|map`, `doctrine list|show`, `knight list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, `impacts` — `conceptual-workflows-nested-projects`) states, in its own or its group's `--help` text, that `--project <name>` (or `all`, or `self`) reads the same entities in another project in this tree. The seven `@main.group()` docstrings among them — knight, doctrine, watcher, artifact, rite, codex, glossary — carry this line. `lore impacts --help`, a top-level command rather than a group, does not.
+Every one of the 17 read commands that accepts `--project` (`codex list|show|search|map`, `doctrine list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, `impacts` — `conceptual-workflows-nested-projects`) states, in its own or its group's `--help` text, that `--project <name>` (or `all`, or `self`) reads the same entities in another project in this tree. The six `@main.group()` docstrings among them — doctrine, watcher, artifact, rite, codex, glossary — carry this line. `lore impacts --help`, a top-level command rather than a group, does not.
 
 ### `lore codex --help`
 

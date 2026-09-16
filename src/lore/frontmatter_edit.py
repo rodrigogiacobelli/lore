@@ -20,12 +20,11 @@ import yaml
 
 from lore import artifact as _artifact_mod
 from lore import codex as _codex_mod
-from lore import knight as _knight_mod
 from lore import projects as _projects
 from lore import schemas as _schemas
 from lore import validators as _validators
 from lore import watcher as _watcher_mod
-from lore.paths import entity_location
+from lore.paths import doctrine_design_path
 
 
 # ---------------------------------------------------------------------------
@@ -45,15 +44,24 @@ class _KindConfig:
     locator: Callable[[Path, str], Path | None]
 
 
-def _doctrine_locator(project_root: Path, name: str) -> Path | None:
-    doctrines_dir = entity_location(project_root, "doctrine")
-    direct = doctrines_dir / f"{name}.yaml"
-    if direct.exists():
-        return direct
-    if not doctrines_dir.exists():
+def _doctrine_design_locator(project_root: Path, name: str) -> Path | None:
+    """The design document a doctrine's frontmatter lives in.
+
+    A doctrine is a directory now, so the editable frontmatter is the design
+    document's. Resolution goes through ``doctrine._find_doctrine_dir`` rather
+    than a second search, so a doctrine under ``default/`` is reachable here
+    exactly as it is everywhere else.
+    """
+    from lore.doctrine import _find_doctrine_dir
+
+    try:
+        directory = _find_doctrine_dir(project_root, name)
+    except ValueError:
         return None
-    match = next(iter(doctrines_dir.rglob(f"{name}.yaml")), None)
-    return match
+    if directory is None:
+        return None
+    design = doctrine_design_path(directory)
+    return design if design.exists() else None
 
 
 def _codex_schema_selector(
@@ -75,19 +83,12 @@ def _codex_schema_selector(
 
 
 _KINDS: dict[str, _KindConfig] = {
-    "knight": _KindConfig(
-        kind="knight",
-        schema_kind="knight-frontmatter",
-        extension=".md",
-        shape="md_fm",
-        locator=_knight_mod._find_knight,
-    ),
     "doctrine": _KindConfig(
         kind="doctrine",
-        schema_kind="doctrine-yaml",
-        extension=".yaml",
-        shape="yaml",
-        locator=_doctrine_locator,
+        schema_kind="doctrine-design-frontmatter",
+        extension=".md",
+        shape="md_fm",
+        locator=_doctrine_design_locator,
     ),
     "artifact": _KindConfig(
         kind="artifact",

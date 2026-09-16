@@ -7,12 +7,12 @@ binds:
 - src/lore/cli.py
 - tests/e2e/test_artifact_list.py
 - tests/unit/test_artifact.py
-related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "ref-lore_cli-commands", "conceptual-workflows-knight-list", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
+related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-new", "ref-lore_cli-commands", "conceptual-workflows-doctrine-list", "conceptual-workflows-filter-list", "conceptual-workflows-health", "tech-arch-schemas"]
 ---
 
 # `lore artifact list` Behaviour
 
-`lore artifact list` discovers and displays all artifact template files found recursively under `.lore/artifacts/`. Unlike knights (which fall back to defaults for missing metadata), artifacts are **strict**: any file missing one or more required frontmatter fields is silently skipped and does not appear in the output. Files silently skipped here are no longer invisible — `lore health --scope schemas` validates every file under `.lore/artifacts/` against `lore://schemas/artifact-frontmatter` and surfaces the skipped files as loud audit errors.
+`lore artifact list` discovers and displays all artifact template files found recursively under `.lore/artifacts/`. Unlike doctrines (whose design frontmatter falls back to the directory name for a missing title), artifacts are **strict**: any file missing one or more required frontmatter fields is silently skipped and does not appear in the output. Files silently skipped here are no longer invisible — `lore health --scope schemas` validates every file under `.lore/artifacts/` against `lore://schemas/artifact-frontmatter` and surfaces the skipped files as loud audit errors.
 
 ## Preconditions
 
@@ -92,9 +92,9 @@ The `group` key is slash-joined when the artifact lives in a subdirectory and `n
 
 Note: `lore artifact list` accepts `--json` as a **local** flag in addition to the global `--json` on the `lore` command. Both have the same effect.
 
-## Key Difference from Knight and Doctrine List
+## Key Difference from Doctrine List
 
-- **Knights:** missing fields fall back to defaults (id → stem, title → id, summary → ""). The file always appears.
+- **Doctrines:** a missing `title` or `summary` falls back to the directory name and `""`. The doctrine still appears; only a missing `id` hides it.
 - **Doctrines:** missing fields fall back to defaults; invalid YAML shows as `[INVALID]`. The file always appears.
 - **Artifacts:** missing required fields → file is silently skipped. No fallbacks.
 
@@ -109,7 +109,7 @@ Note: `lore artifact list` accepts `--json` as a **local** flag in addition to t
 
 ## Related
 
-- conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — lenient fallback behaviour for knights
+- conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — lenient fallback behaviour for doctrines
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — doctrine listing with validation marking
 - conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

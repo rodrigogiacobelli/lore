@@ -18,9 +18,6 @@ Plus the rename parity checks:
 * ``artifact list`` (CLI path unchanged) routes through ``list_artifacts``.
 * ``doctrine show`` of a missing doctrine emits the not-found path WITHOUT
   raising ``DoctrineError`` internally (``read_doctrine`` returns ``None``).
-* ``knight show`` consumes ``read_knight(...)["body"]`` rather than calling
-  ``find_knight`` (path-resolution) + ``read_text``.
-
 Red phase — every test below MUST fail until G16 Green lands.
 """
 
@@ -31,16 +28,6 @@ import textwrap
 
 
 from lore.cli import main
-
-
-PERSONA_MD = (
-    "---\n"
-    "id: reviewer\n"
-    "title: Reviewer\n"
-    "summary: A reviewer persona.\n"
-    "---\n"
-    "# body text\n"
-)
 
 
 ARTIFACT_MD = (
@@ -187,35 +174,3 @@ class TestDoctrineShowConsumesReadDoctrineNoneOnMiss:
         assert "show_doctrine" not in src, (
             "cli.py must not reference show_doctrine; use read_doctrine."
         )
-
-
-class TestKnightShowConsumesReadKnightDict:
-    """``knight show`` routes through ``read_knight(...)["body"]``."""
-
-    def _seed(self, project_dir):
-        knights = project_dir / ".lore" / "knights"
-        knights.mkdir(parents=True, exist_ok=True)
-        (knights / "reviewer.md").write_text(PERSONA_MD)
-
-    def test_cli_does_not_call_find_knight_for_show(self):
-        from pathlib import Path
-
-        src = (
-            Path(__file__).resolve().parents[2] / "src" / "lore" / "cli.py"
-        ).read_text()
-        assert "find_knight" not in src, (
-            "cli.py must not reference find_knight; use read_knight."
-        )
-
-    def test_knight_show_json_emits_full_record(self, runner, project_dir):
-        """JSON mode emits the full read_knight dict (id/title/summary/body/...)."""
-        self._seed(project_dir)
-        result = runner.invoke(
-            main, ["--json", "knight", "show", "reviewer"]
-        )
-        payload = json.loads(result.stdout)
-        # Per Section D: "Text mode emits body; JSON mode emits whole dict."
-        for key in ("id", "title", "summary", "body"):
-            assert key in payload, (
-                f"knight show --json must emit '{key}' from read_knight dict."
-            )

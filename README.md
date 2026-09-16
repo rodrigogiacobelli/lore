@@ -30,7 +30,7 @@ Lore solves both.
 
 Lore is two systems in one tool.
 
-**Task engine** — Quests, Missions, Doctrines, and Knights give agents structured state. An agent always knows what to work on, what it is blocked by, and how to behave. The orchestrator always knows what is done, what is in progress, and what is waiting.
+**Task engine** — Quests, Missions, and Doctrines give agents structured state. An agent always knows what to work on, what it is blocked by, and how to behave: a Mission points at a doctrine mission file, and `lore show` hands the worker its instructions alongside its task. The orchestrator always knows what is done, what is in progress, and what is waiting.
 
 **Project memory (Codex)** — A queryable knowledge graph of typed markdown documents living in `.lore/codex/`. Architecture decisions, conceptual guides, workflow standards, design records — all linked and searchable. Any agent can orient itself before acting. New features stay consistent with old ones. You stop repeating yourself.
 
@@ -107,8 +107,7 @@ New agents orient using the Codex before doing anything else. This is how consis
 |---|---|
 | **Quest** | A body of work — a feature, bug fix, refactor, or spike |
 | **Mission** | One task inside a Quest. The unit an agent picks up and closes. |
-| **Knight** | An agent persona — a markdown file telling a worker *how* to behave |
-| **Doctrine** | A workflow template — YAML describing the steps and ordering of a body of work |
+| **Doctrine** | A workflow template — a directory of prose: a design document describing the missions and their ordering, plus one mission file telling a worker *how* to do its part |
 | **Artifact** | A reusable document template agents scaffold new files from |
 | **Watcher** | A YAML definition for an agent that monitors and reacts to project state |
 | **Codex** | The project knowledge graph — decisions, concepts, standards |
@@ -139,10 +138,10 @@ Any orchestrator can consume Lore. The Camelot stack is one way to use it — no
 Realm and other orchestrators consume Lore via Python import rather than CLI:
 
 ```python
-from lore.models import Quest, Mission, MissionStatus, Doctrine, Knight
+from lore.api import Quest, Mission, MissionStatus, DoctrineListEntry
 ```
 
-`lore.models.__all__` defines the stable public API surface. Every name in `__all__` is a typed, immutable dataclass with full semver stability guarantees. Anything not in `__all__` is an internal detail.
+`lore.api.__all__` defines the stable public API surface. `lore.api` is a facade that re-exports selected names from the internal modules; every name in it carries semver stability guarantees, and anything not in `__all__` is an internal detail that may change without notice.
 
 Every CLI command is backed by a Python function. The CLI is a thin wrapper — the real interface is the Python modules underneath.
 
@@ -164,7 +163,7 @@ Three principles drive every design decision in Lore:
 
 Every line of code in Lore was written by an AI agent. The human role throughout was: write a requirement, dispatch a mission, review the result, mark it done.
 
-The requirements were tracked in Lore. The agents oriented using the Codex. The workflow followed Doctrines. The personas were defined by Knights.
+The requirements were tracked in Lore. The agents oriented using the Codex. The workflow followed Doctrines, and each worker's brief was the doctrine mission file it was pointed at.
 
 Lore built itself using itself. That is what it is designed to let you do.
 

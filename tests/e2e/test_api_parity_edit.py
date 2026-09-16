@@ -107,7 +107,8 @@ class TestEditMissionJsonParity:
 
         insert_quest(project_dir, "q-a1b2", "Q")
         insert_mission(
-            project_dir, "q-a1b2/m-aaaa", "q-a1b2", "M1", knight="reviewer.md"
+            project_dir, "q-a1b2/m-aaaa", "q-a1b2", "M1",
+            doctrine_mission="tdd-lite/review",
         )
 
         result = runner.invoke(

@@ -9,7 +9,6 @@ summary: 'What the Glossary is — a single canonical YAML file at `.lore/codex/
   '
 related:
 - conceptual-entities-artifact
-- conceptual-entities-knight
 - conceptual-entities-mission
 - conceptual-entities-quest
 - conceptual-entities-doctrine
@@ -30,7 +29,7 @@ related:
 
 The Glossary is a project's canonical vocabulary record — a single YAML file at `.lore/codex/glossary.yaml` whose `items:` list holds short definitions keyed by `keyword`. Where Codex documents (lore codex show codex) carry full conceptual or technical content, the Glossary holds inline term definitions that are too small to deserve their own document but too important to leave undefined. The Glossary is the project's living vocabulary surface and the substrate the system uses to disambiguate terms inside other Codex documents.
 
-The Glossary is a first-class file-based entity alongside Artifacts (lore codex show conceptual-entities-artifact), Knights (lore codex show conceptual-entities-knight), Doctrines (lore codex show conceptual-entities-doctrine), and Watchers (lore codex show conceptual-entities-watcher). Like Artifacts, the CLI is read-only — `lore glossary list/search/show` — and maintainers edit `.lore/codex/glossary.yaml` directly on disk.
+The Glossary is a first-class file-based entity alongside Artifacts (lore codex show conceptual-entities-artifact), Doctrines (lore codex show conceptual-entities-doctrine), Rites (lore codex show conceptual-entities-rite), and Watchers (lore codex show conceptual-entities-watcher). Like Artifacts, the CLI is read-only — `lore glossary list/search/show` — and maintainers edit `.lore/codex/glossary.yaml` directly on disk.
 
 ## Properties
 
@@ -50,7 +49,7 @@ The Glossary holds **small, project-specific terms** that are too tiny to deserv
 A term is glossary-worthy only when ALL three are true:
 
 1. **Project-specific.** Generic IT vocabulary (ADR, soft-delete, E2E, mock, fixture, idempotent, RBAC, …) does not qualify — assume the reader knows IT.
-2. **Not an entity.** Entities (Quest, Mission, Knight, Doctrine, Codex, Artifact, Watcher, Glossary itself, plus system-level entities Camelot, Lore, Realm, Citadel) live in their own `conceptual-entities-<name>` doc. Link to that doc instead.
+2. **Not an entity.** Entities (Quest, Mission, Doctrine, Codex, Artifact, Watcher, Glossary itself, plus system-level entities Camelot, Lore, Realm, Citadel) live in their own `conceptual-entities-<name>` doc. Link to that doc instead.
 3. **Not a named workflow, command, or feature.** Anything with a `conceptual-workflows-<name>` doc, a CLI command, or a feature surface (auto-surface, ready queue, board, oracle, health, codex show, …) is already documented there. Link to the workflow doc instead.
 
 If any answer is NO, the term goes in an entity doc, a workflow doc, an ADR, a standards doc, or nowhere — never the Glossary.

@@ -9,6 +9,13 @@ from typing import TYPE_CHECKING, Callable
 import yaml
 
 from lore.config import load_config
+from lore.paths import (
+    DESIGN_SUFFIX,
+    MISSIONS_DIRNAME,
+    doctrine_design_path,
+    doctrine_mission_path,
+    doctrine_missions_dir,
+)
 
 # Re-exported at module scope so tests can monkeypatch `health.get_validator`
 # and `_check_schemas` can resolve its default via `sys.modules[__name__]`.
@@ -23,11 +30,11 @@ if TYPE_CHECKING:
 class HealthIssue:
     """Structured health check issue (severity, entity_type, id, check, detail)."""
     severity: str      # "error" | "warning"
-    entity_type: str   # "codex" | "artifacts" | "doctrines" | "knights" | "watchers" | schema kind
+    entity_type: str   # "codex" | "artifacts" | "doctrines" | "watchers" | schema kind
     id: str            # entity ID or filepath string when ID is unknown
     check: str         # e.g. "broken_related_link", "missing_frontmatter", "schema"
     detail: str        # human-readable explanation
-    schema_id: str | None = None  # e.g. "lore://schemas/knight-frontmatter" (schema check only)
+    schema_id: str | None = None  # e.g. "lore://schemas/doctrine-mission-frontmatter"
     rule: str | None = None       # JSON Schema validator name (schema check only)
     pointer: str | None = None    # JSON pointer to offending field (schema check only)
 
@@ -75,7 +82,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "glossary", "schemas", "bindings", "rites", "voice", "skills")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "watchers", "glossary", "schemas", "bindings", "rites", "voice", "skills")
 
 # Report persistence policies, in the order the error message lists them.
 #   none   — write nothing (default; pre-existing reports are left alone)
@@ -89,9 +96,8 @@ _RETENTION_VALUES = ("none", "latest", "all")
 #    entity root under .lore/,
 #    glob pattern evaluated under that root).
 _SCHEMA_KINDS: tuple[tuple[str, str, str, str], ...] = (
-    ("doctrine-yaml",               "doctrine-yaml",               "doctrines", "**/*.yaml"),
     ("doctrine-design-frontmatter", "doctrine-design-frontmatter", "doctrines", "**/*.design.md"),
-    ("knight",                      "knight-frontmatter",          "knights",   "**/*.md"),
+    ("doctrine-mission-frontmatter", "doctrine-mission-frontmatter", "doctrines", "**/missions/*.md"),
     ("watcher",                     "watcher-yaml",                "watchers",  "**/*.yaml"),
     ("codex",                       "codex-frontmatter",           "codex",     "**/*.md"),
     ("artifact",                    "artifact-frontmatter",        "artifacts", "**/*.md"),
@@ -102,7 +108,7 @@ _SCHEMA_KINDS: tuple[tuple[str, str, str, str], ...] = (
 
 # Schema kinds whose payload lives in a leading YAML frontmatter block.
 _FRONTMATTER_SCHEMA_KINDS: frozenset[str] = frozenset({
-    "knight-frontmatter",
+    "doctrine-mission-frontmatter",
     "codex-frontmatter",
     "codex-source-frontmatter",
     "artifact-frontmatter",
@@ -146,11 +152,23 @@ def _parse_frontmatter(filepath: Path) -> dict | None:
         return None
 
 
-def _is_knight_soft_deleted(knights_dir: Path, knight_stem: str) -> bool:
-    """Return True if the knight has a .md.deleted file in knights_dir."""
-    if not knights_dir.exists():
+def _is_doctrine_mission_soft_deleted(project_root: Path, ref: str) -> bool:
+    """Whether a stored reference names a mission file that was soft-deleted.
+
+    A removed mission leaves ``missions/<id>.md.deleted`` behind
+    (``decisions-003``), and a mission still pointing at one is a reference to
+    something the author retired on purpose — not a broken link.
+    """
+    from lore.doctrine import _find_doctrine_dir, _split_doctrine_mission_ref
+
+    split = _split_doctrine_mission_ref(ref)
+    if split is None:
         return False
-    return bool(list(knights_dir.rglob(f"{knight_stem}.md.deleted")))
+    directory = _find_doctrine_dir(project_root, split[0])
+    if directory is None:
+        return False
+    live = doctrine_mission_path(directory, split[1])
+    return live.with_name(live.name + ".deleted").is_file()
 
 
 def _build_artifact_index(artifacts_dir: Path) -> set[str]:
@@ -165,16 +183,36 @@ def _build_artifact_index(artifacts_dir: Path) -> set[str]:
     return ids
 
 
-def _build_doctrine_name_index(doctrines_dir: Path) -> set[str]:
-    """Return set of doctrine stems where both .yaml AND .design.md exist (complete pairs)."""
+def _doctrine_directories(doctrines_dir: Path) -> list[Path]:
+    """Every doctrine directory under *doctrines_dir*, in path order.
+
+    A directory ``D`` is a doctrine iff ``D/<D.name>.design.md`` exists, and any
+    path segment that starts with ``.`` or ends ``.deleted`` hides everything at
+    and below it — the one rule that makes a soft-deleted doctrine and a
+    half-written staging directory invisible here as they are to every read.
+    """
     if not doctrines_dir.exists():
-        return set()
-    stems = set()
-    for p in doctrines_dir.rglob("*.design.md"):
-        stem = p.name.replace(".design.md", "")
-        if (doctrines_dir / (stem + ".yaml")).exists():
-            stems.add(stem)
-    return stems
+        return []
+    directories = []
+    for design_file in sorted(doctrines_dir.rglob(f"*{DESIGN_SUFFIX}")):
+        directory = design_file.parent
+        if design_file.name != f"{directory.name}{DESIGN_SUFFIX}":
+            continue
+        relative = directory.relative_to(doctrines_dir)
+        if not relative.parts or any(_is_hidden_segment(p) for p in relative.parts):
+            continue
+        directories.append(directory)
+    return directories
+
+
+def _is_hidden_segment(segment: str) -> bool:
+    """Whether a path segment hides everything at and below it."""
+    return segment.startswith(".") or segment.endswith(".deleted")
+
+
+def _build_doctrine_name_index(doctrines_dir: Path) -> set[str]:
+    """Return the name of every doctrine directory under *doctrines_dir*."""
+    return {directory.name for directory in _doctrine_directories(doctrines_dir)}
 
 
 def _check_codex(codex_dir: Path) -> list[HealthIssue]:
@@ -286,152 +324,240 @@ def _check_artifacts(artifacts_dir: Path) -> list[HealthIssue]:
 
 def _check_doctrines(
     doctrines_dir: Path,
-    knights_dir: Path,
     artifacts_dir: Path,
+    project_root: Path,
 ) -> list[HealthIssue]:
-    """Audit doctrines for orphaned files, broken knight refs, and broken artifact refs."""
-    from lore.knight import _knight_ref_stem, _resolve_knight_ref
-    project_root = knights_dir.parent.parent
+    """Audit what JSON Schema cannot express about a doctrine.
 
-    issues: list[HealthIssue] = []
-
+    Frontmatter *shape* is validated by ``--scope schemas`` through
+    ``_SCHEMA_KINDS``, which carries a row for both doctrine kinds. What is left
+    is everything that depends on more than one file: id against directory name,
+    id against filename stem, duplicate ids across the tree, leftovers from the
+    old two-file shape, artifact ids named in a body, and references stored on a
+    mission row that no longer resolve.
+    """
     if not doctrines_dir.exists():
-        return issues
+        return []
 
     artifact_index = _build_artifact_index(artifacts_dir)
+    declarations: dict[str, list[Path]] = {}
+    issues: list[HealthIssue] = []
 
-    # Collect stems for .design.md and .yaml files
-    design_stems: set[str] = set()
-    yaml_stems: set[str] = set()
-
-    for filepath in doctrines_dir.rglob("*.design.md"):
-        stem = filepath.name.replace(".design.md", "")
-        design_stems.add(stem)
-
-    for filepath in doctrines_dir.rglob("*.yaml"):
-        yaml_stems.add(filepath.stem)
-
-    # Orphaned .yaml without .design.md
-    for stem in yaml_stems - design_stems:
-        issues.append(HealthIssue(
-            severity="error",
-            entity_type="doctrines",
-            id=stem,
-            check="orphaned_file",
-            detail=".design.md missing",
-        ))
-
-    # Orphaned .design.md without .yaml
-    for stem in design_stems - yaml_stems:
-        issues.append(HealthIssue(
-            severity="error",
-            entity_type="doctrines",
-            id=stem,
-            check="orphaned_file",
-            detail=".yaml missing",
-        ))
-
-    # Check complete pairs for knight refs and artifact refs
-    for stem in design_stems & yaml_stems:
-        # Find the yaml file
-        yaml_files = list(doctrines_dir.rglob(f"{stem}.yaml"))
-        if not yaml_files:
+    for design_file in sorted(doctrines_dir.rglob(f"*{DESIGN_SUFFIX}")):
+        if _is_hidden_path(design_file, doctrines_dir):
             continue
-        yaml_file = yaml_files[0]
+        issues.extend(
+            _check_one_doctrine(
+                design_file, doctrines_dir, artifact_index, declarations
+            )
+        )
 
-        try:
-            data = yaml.safe_load(yaml_file.read_text())
-            if not isinstance(data, dict):
-                continue
-            steps = data.get("steps") or []
-            for position, step in enumerate(steps, start=1):
-                if not isinstance(step, dict):
-                    continue
-                # Use step id trailing number if available (e.g. "step-3" → 3)
-                step_num = position
-                step_id = step.get("id", "")
-                if step_id and step_id.startswith("step-"):
-                    try:
-                        step_num = int(step_id[5:])
-                    except ValueError:
-                        pass
-
-                # Knight ref check
-                knight_name = step.get("knight")
-                if knight_name:
-                    # Doctrines write the group-qualified filename form
-                    # ("tdd-feature/scout.md") as well as a bare name.
-                    knight_path = _resolve_knight_ref(project_root, knight_name)
-                    knight_stem = _knight_ref_stem(knight_name)
-                    if knight_path is None and not _is_knight_soft_deleted(knights_dir, knight_stem):
-                        issues.append(HealthIssue(
-                            severity="error",
-                            entity_type="doctrines",
-                            id=stem,
-                            check="broken_knight_ref",
-                            detail=f"'{knight_name}' not found (step {step_num})",
-                        ))
-
-                # Artifact ref in notes
-                notes = step.get("notes")
-                if notes and isinstance(notes, str):
-                    for match in _ARTIFACT_ID_PATTERN.finditer(notes):
-                        artifact_id = match.group(0)
-                        if artifact_id not in artifact_index:
-                            issues.append(HealthIssue(
-                                severity="error",
-                                entity_type="doctrines",
-                                id=stem,
-                                check="broken_artifact_ref",
-                                detail=f"'{artifact_id}' not found (step {step_num})",
-                            ))
-        except Exception:
-            continue
-
+    issues.extend(_missing_design_warnings(doctrines_dir))
+    issues.extend(_duplicate_id_errors(declarations))
+    issues.extend(_dangling_doctrine_missions(project_root))
     return issues
 
 
-def _check_knights(knights_dir: Path, project_root: Path) -> list[HealthIssue]:
-    """Audit knight refs from active missions."""
-    from lore.db import list_missions
-    from lore.knight import _knight_ref_stem, _resolve_knight_ref
+def _is_hidden_path(path: Path, base: Path) -> bool:
+    """Whether any segment of *path* below *base* hides it from every read."""
+    return any(_is_hidden_segment(part) for part in path.relative_to(base).parts)
 
+
+def _check_one_doctrine(
+    design_file: Path,
+    doctrines_dir: Path,
+    artifact_index: set[str],
+    declarations: dict[str, list[Path]],
+) -> list[HealthIssue]:
+    """Audit the doctrine *design_file* identifies, recording its declared id.
+
+    A design file that is not inside a directory of its own name is the old
+    two-file shape. It is reported as a leftover and nothing more: every
+    remaining check reads a directory it has not got.
+    """
+    stem = design_file.name.removesuffix(DESIGN_SUFFIX)
+    directory = design_file.parent
+    is_doctrine_dir = directory != doctrines_dir and directory.name == stem
+    missions_dir = doctrine_missions_dir(directory)
     issues: list[HealthIssue] = []
+
+    if not is_doctrine_dir or not missions_dir.is_dir():
+        issues.append(HealthIssue(
+            severity="warning",
+            entity_type="doctrines",
+            id=stem,
+            check="missing_missions_dir",
+            detail=(
+                "no missions/ directory — this doctrine is not readable in "
+                "the current shape"
+            ),
+        ))
+
+    if (directory / f"{stem}.yaml").exists():
+        issues.append(HealthIssue(
+            severity="warning",
+            entity_type="doctrines",
+            id=stem,
+            check="stray_yaml",
+            detail=f"{stem}.yaml is no longer read",
+        ))
+
+    if not is_doctrine_dir:
+        return issues
+
+    declared = (_parse_frontmatter(design_file) or {}).get("id")
+    if declared is not None and str(declared) != stem:
+        issues.append(HealthIssue(
+            severity="error",
+            entity_type="doctrines",
+            id=stem,
+            check="id_mismatch",
+            detail=(
+                f"design frontmatter id '{declared}' does not match directory name"
+            ),
+        ))
+    declarations.setdefault(
+        str(declared) if declared is not None else stem, []
+    ).append(design_file)
+
+    issues.extend(
+        _broken_artifact_refs(design_file, stem, "design", artifact_index)
+    )
+    if missions_dir.is_dir():
+        issues.extend(_check_doctrine_missions(missions_dir, stem, artifact_index))
+    return issues
+
+
+def _check_doctrine_missions(
+    missions_dir: Path, stem: str, artifact_index: set[str]
+) -> list[HealthIssue]:
+    """Audit every live mission file of one doctrine."""
+    issues: list[HealthIssue] = []
+    for mission_file in sorted(missions_dir.glob("*.md")):
+        if mission_file.name.startswith("."):
+            continue
+        mission_id = mission_file.stem
+        declared = (_parse_frontmatter(mission_file) or {}).get("id")
+        if declared is not None and str(declared) != mission_id:
+            issues.append(HealthIssue(
+                severity="error",
+                entity_type="doctrines",
+                id=f"{stem}/{mission_id}",
+                check="mission_id_mismatch",
+                detail=(
+                    f"frontmatter id '{declared}' does not match "
+                    f"filename stem '{mission_id}'"
+                ),
+            ))
+        issues.extend(
+            _broken_artifact_refs(
+                mission_file, stem, f"mission {mission_id}", artifact_index
+            )
+        )
+    return issues
+
+
+def _missing_design_warnings(doctrines_dir: Path) -> list[HealthIssue]:
+    """A directory holding missions but no design document of its own name."""
+    issues: list[HealthIssue] = []
+    for missions_dir in sorted(doctrines_dir.rglob(MISSIONS_DIRNAME)):
+        if not missions_dir.is_dir():
+            continue
+        directory = missions_dir.parent
+        relative = directory.relative_to(doctrines_dir)
+        if not relative.parts or _is_hidden_path(directory, doctrines_dir):
+            continue
+        if doctrine_design_path(directory).is_file():
+            continue
+        issues.append(HealthIssue(
+            severity="warning",
+            entity_type="doctrines",
+            id=directory.name,
+            check="missing_design",
+            detail=(
+                f"no {directory.name}{DESIGN_SUFFIX} — this directory is not a doctrine"
+            ),
+        ))
+    return issues
+
+
+def _duplicate_id_errors(declarations: dict[str, list[Path]]) -> list[HealthIssue]:
+    """One row per id two or more design documents declare."""
+    return [
+        HealthIssue(
+            severity="error",
+            entity_type="doctrines",
+            id=doctrine_id,
+            check="duplicate_id",
+            detail="declared by " + " and ".join(str(p) for p in paths),
+        )
+        for doctrine_id, paths in declarations.items()
+        if len(paths) > 1
+    ]
+
+
+def _body_of(filepath: Path) -> str:
+    """The text below a file's frontmatter block, or the whole file without one."""
+    try:
+        text = filepath.read_text()
+    except Exception:
+        return ""
+    parts = text.split("---", 2)
+    return parts[2] if len(parts) >= 3 else text
+
+
+def _broken_artifact_refs(
+    filepath: Path, doctrine_stem: str, where: str, artifact_index: set[str]
+) -> list[HealthIssue]:
+    """Every ``fi-`` id named in *filepath*'s body that no artifact declares."""
+    return [
+        HealthIssue(
+            severity="error",
+            entity_type="doctrines",
+            id=doctrine_stem,
+            check="broken_artifact_ref",
+            detail=f"'{match.group(0)}' not found ({where})",
+        )
+        for match in _ARTIFACT_ID_PATTERN.finditer(_body_of(filepath))
+        if match.group(0) not in artifact_index
+    ]
+
+
+def _dangling_doctrine_missions(project_root: Path) -> list[HealthIssue]:
+    """Stored references on active missions that resolve to no file on disk.
+
+    One row per reference, however many missions carry it, because the repair is
+    one edit to one doctrine.
+    """
+    from lore.db import list_missions
+    from lore.doctrine import _resolve_doctrine_mission
 
     try:
         grouped = list_missions(project_root, include_closed=False)
     except Exception:
-        return issues
+        return []
 
-    # Group mission IDs by knight name
-    knight_to_missions: dict[str, list[str]] = {}
+    references: dict[str, list[str]] = {}
     for mission_list in grouped.values():
         for mission in mission_list:
-            knight_name = mission["knight"]
-            if not knight_name:
+            reference = mission["doctrine_mission"]
+            if not reference:
                 continue
-            knight_to_missions.setdefault(knight_name, []).append(mission["id"])
+            references.setdefault(reference, []).append(mission["id"])
 
-    for knight_name, mission_ids in knight_to_missions.items():
-        # A mission's knight field carries whatever the doctrine wrote —
-        # usually the group-qualified filename form.
-        knight_path = _resolve_knight_ref(project_root, knight_name)
-        if knight_path is not None:
+    issues: list[HealthIssue] = []
+    for reference, mission_ids in references.items():
+        if _resolve_doctrine_mission(project_root, reference) is not None:
             continue
-
-        knight_stem = _knight_ref_stem(knight_name)
-        if _is_knight_soft_deleted(knights_dir, knight_stem):
+        if _is_doctrine_mission_soft_deleted(project_root, reference):
             continue
-
-        mission_ids_str = ", ".join(mission_ids)
         issues.append(HealthIssue(
             severity="error",
-            entity_type="knights",
-            id=knight_name,
+            entity_type="doctrines",
+            id=reference,
             check="missing_file",
-            detail=f"referenced by {mission_ids_str} but not found on disk",
+            detail=f"referenced by {', '.join(mission_ids)} but not found on disk",
         ))
-
     return issues
 
 
@@ -1635,8 +1761,9 @@ _VOICE_SKIP_LAYERS: dict[str, frozenset[str]] = {
 
 # Phrases that narrate a change in a main clause but state a present fact in a
 # subordinate one. "The `bootstrap/` subdirectory no longer exists" is
-# narration; "if the Knight file no longer exists, `lore show` warns" is a fact
-# about today. A subordinator anywhere before the match suppresses the row.
+# narration; "if the doctrine mission file no longer exists, `lore health`
+# reports it" is a fact about today. A subordinator anywhere before the match
+# suppresses the row.
 _VOICE_SUBORDINATE_EXEMPT = re.compile(r"\bno longer exists?\b", re.IGNORECASE)
 _SUBORDINATOR_PATTERN = re.compile(
     r"\b(?:if|when|once|after|unless|until|whether|should|while|where)\b",
@@ -1942,7 +2069,6 @@ def health_check(
     codex_dir = lore_dir / "codex"
     artifacts_dir = lore_dir / "artifacts"
     doctrines_dir = lore_dir / "doctrines"
-    knights_dir = lore_dir / "knights"
     watchers_dir = lore_dir / "watchers"
 
     errors: list[HealthIssue] = []
@@ -1951,8 +2077,7 @@ def health_check(
     checkers = {
         "codex": lambda: _check_codex(codex_dir) + _check_dangling_codex_rites(project_root),
         "artifacts": lambda: _check_artifacts(artifacts_dir),
-        "doctrines": lambda: _check_doctrines(doctrines_dir, knights_dir, artifacts_dir),
-        "knights": lambda: _check_knights(knights_dir, project_root),
+        "doctrines": lambda: _check_doctrines(doctrines_dir, artifacts_dir, project_root),
         "watchers": lambda: _check_watchers(watchers_dir, doctrines_dir),
         "schemas": lambda: _check_schemas(project_root),
         "glossary": lambda: _check_glossary(project_root),

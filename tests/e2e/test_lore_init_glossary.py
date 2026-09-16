@@ -376,7 +376,7 @@ def test_init_seeded_config_parses_as_toml_with_known_key(runner, fresh_dir):
 
 
 # ===========================================================================
-# US-007 — Default-seeded doc, skill, and knight glossary updates
+# US-007 — Default-seeded doc and skill glossary updates
 # ===========================================================================
 #
 # Removed per ADR-006 (decisions-006-no-seed-content-tests). Every US-007

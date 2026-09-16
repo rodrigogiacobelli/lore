@@ -9,13 +9,13 @@ This file enforces the grep-equivalent invariant from G2 acceptance:
 
     grep -l "^import click\\|^from click" src/lore/<module>.py == empty
 
-G2 lands the invariant for ``knight`` and ``artifact`` (the two
-``_validate_frontmatter`` raise sites flipped to ``ValueError``). Later
-chunks extend the parametrize list as each module is hoisted clean. The
-end-state ADR-011 target is the full list:
+G2 lands the invariant for ``artifact`` (its ``_validate_frontmatter``
+raise site flipped to ``ValueError``). Later chunks extend the parametrize
+list as each module is hoisted clean. The end-state ADR-011 target is the
+full list:
 
-    knight, artifact, doctrine, watcher, db, codex, glossary, impacts,
-    health, validators, frontmatter, priority, schemas, init, oracle
+    artifact, doctrine, watcher, db, codex, glossary, impacts, health,
+    validators, frontmatter, priority, schemas, init, oracle
 
 Red phase — these tests MUST fail before G2 Green flips the raises.
 """
@@ -31,8 +31,9 @@ import pytest
 SRC_LORE = Path(__file__).resolve().parents[2] / "src" / "lore"
 
 
-# G2-scope modules — flipped in this chunk.
-G2_MODULES = ("knight", "artifact")
+# G2-scope modules — flipped in this chunk. A second module was one of them
+# until its entity was removed and the module with it.
+G2_MODULES = ("artifact",)
 
 # G15.5-scope modules — `DoctrineError` removed, doctrine module raises
 # `ValueError`. Adds `doctrine` to the no-click invariant.
@@ -64,7 +65,7 @@ def test_g2_module_source_has_no_click_text_reference(module_name: str) -> None:
 
 @pytest.mark.parametrize("module_name", G2_MODULES)
 def test_g2_module_ast_imports_no_click(module_name: str) -> None:
-    """AST check: module imports no ``click`` name (G2 scope — knight + artifact)."""
+    """AST check: module imports no ``click`` name (G2 scope — artifact)."""
     path = _module_path(module_name)
     tree = ast.parse(path.read_text(), filename=str(path))
     bad_imports: list[str] = []

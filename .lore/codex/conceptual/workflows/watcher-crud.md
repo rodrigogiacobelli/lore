@@ -9,7 +9,6 @@ binds:
 - tests/unit/test_watcher.py
 related:
   - conceptual-entities-watcher
-  - conceptual-workflows-knight-crud
   - ref-lore_cli-commands
   - tech-arch-schemas
   - conceptual-workflows-health
@@ -22,13 +21,13 @@ Watchers are YAML files stored in `.lore/watchers/` (optionally nested in subdir
 ## Preconditions
 
 - The Lore project has been initialised.
-- Watcher `name` must match the pattern `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (same rule as knights and doctrines, enforced by `validate_name` in `lore.validators`).
+- Watcher `name` must match the pattern `^[a-zA-Z0-9][a-zA-Z0-9_-]*$` (same rule as doctrines and artifacts, enforced by `validate_name` in `lore.validators`).
 - Content is provided via `--from <file>` or stdin.
 - The `--group <path>` value (when provided) is a slash-delimited relative path. Each segment must satisfy the name rule independently. Rejected: `..`, backslash, absolute path, leading/trailing `/`, empty segment, bad-char segment.
 
 ## Name Validation
 
-The same rule applies to knight, doctrine, and watcher names. `validate_name` in `lore.validators` enforces:
+The same rule applies to doctrine, artifact, and watcher names. `validate_name` in `lore.validators` enforces:
 
 - Must start with an alphanumeric character.
 - May contain letters, digits, hyphens, and underscores.
@@ -132,5 +131,5 @@ Watcher YAML shape is validated at create/edit time via `lore.schemas.validate_e
 ## Related
 
 - conceptual-entities-watcher (lore codex show conceptual-entities-watcher) — what a Watcher is
-- conceptual-workflows-knight-crud (lore codex show conceptual-workflows-knight-crud) — mirrors this pattern for knights
+- conceptual-workflows-artifact-new (lore codex show conceptual-workflows-artifact-new) — mirrors this pattern for artifacts
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

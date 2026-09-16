@@ -15,7 +15,6 @@ Usage: lore [OPTIONS] COMMAND [ARGS]...
 
   Supporting entities:
 
-  Knight   — a reusable agent persona attached to missions.
   Doctrine — workflow templates that guide how missions are executed.
   Codex    — project documentation, searchable and graph-traversable.
   Rite     — procedural memory: how to do or diagnose a recurring task.
@@ -51,16 +50,15 @@ Commands:
   unneed    Remove dependencies between missions using colon-pair syntax.
   list      List quests.
   missions  List missions across all quests, or scoped to one quest.
-  knight    Manage knight personas — reusable markdown files that tell...
-  doctrine  Manage doctrine templates — YAML files that describe the...
+  doctrine  Manage doctrines — a directory of prose for a standard body...
   edit      Edit a quest or mission.
   delete    Delete a quest or mission.
   show      Show details of a quest or mission.
   rite      Manage rites — procedural memory ("how to do or diagnose...
-  codex     Access project documentation — a set of typed markdown...
+  codex     Access project documentation — a set of typed markdown files...
   impacts   Surface codex<->code bindings.
   glossary  Access the project glossary — the controlled vocabulary at...
-  artifact  Access project artifacts — reusable template files stored...
+  artifact  Access project artifacts — reusable template files stored in...
   board     Manage board messages for quests and missions.
   watcher   Manage watcher definitions stored in .lore/watchers/.
   health    Audit the file-based entity types plus the schemas, bindings,...
@@ -78,19 +76,15 @@ A body of work — a feature, a fix, or a refactor — that holds one or more Mi
 
 ### Mission
 
-A single executable task assigned to one agent. Each Mission has a type (`knight`, `constable`, or `human`), a status, a priority, a description, acceptance criteria, and an optional Knight persona. Mission *type* drives orchestrator dispatch: `knight` missions are claimed and handed to a worker agent; `constable` missions are inline orchestrator chores; `human` missions are left for the human. (`lore new mission` / `lore claim` / `lore ready` / `lore done` / `lore block` / `lore unblock`)
+A single executable task assigned to one agent. Each Mission has a type (`agent`, `constable`, or `human`), a status, a priority, a description, acceptance criteria, and an optional doctrine mission reference. Mission *type* drives orchestrator dispatch: `agent` missions are claimed and handed to a worker agent; `constable` missions are inline orchestrator chores; `human` missions are left for the human. (`lore new mission` / `lore claim` / `lore ready` / `lore done` / `lore block` / `lore unblock`)
 
-*Example:* "Write the failing E2E test for the new /login endpoint" is a `knight` Mission inside the OAuth Quest.
+*Example:* "Write the failing E2E test for the new /login endpoint" is an `agent` Mission inside the OAuth Quest.
 
-### Knight
-
-A reusable agent persona stored as markdown under `.lore/knights/`. Attached to a Mission to tell the worker agent how to behave — voice, focus, output format. (`lore knight list` / `lore knight show` / `lore knight new` / `lore knight edit` / `lore knight delete`)
-
-*Example:* The `tech-writer` knight tells the worker to update codex docs in place rather than draft new ones.
+A Mission reaches its reusable instructions through `-D <doctrine-id>/<mission-id>`. `lore show <mission-id>` resolves that reference and prints the doctrine mission's body under `--- Mission Instructions ---`, so a worker gets its feature-specific description and its reusable instructions in one call.
 
 ### Doctrine
 
-A workflow template stored as YAML under `.lore/doctrines/`. Generates a Quest's Missions when the user runs `/start-quest`. A Doctrine encodes the *shape* of a kind of work — which Missions, in which order, with which Knights. (`lore doctrine list` / `lore doctrine show` / `lore doctrine new` / `lore doctrine edit` / `lore doctrine delete`)
+A directory of prose under `.lore/doctrines/` describing a standard body of work: `<doctrine-id>.design.md` for the orchestrator, and one `missions/<mission-id>.md` for each worker. The design document encodes the *shape* of the work — which missions, in which order, of which type, feeding which. Each mission file is one worker's whole brief: the role it adopts, how it works, its hard rules, its inputs, its steps, its done criteria, and what it hands on. Lore parses none of it; an orchestrator reads the design prose and decides the order itself, and `/start-quest` turns a doctrine into a Quest's Missions. (`lore doctrine list` / `lore doctrine show` / `lore doctrine show --mission` / `lore doctrine new` / `lore doctrine edit` / `lore doctrine delete`)
 
 *Example:* The `feature-implementation` doctrine generates Scout → PRD → Tech Spec → Stories → Dev cycle Missions for any new feature.
 
@@ -118,9 +112,9 @@ Reusable template files referenced by stable ID under `.lore/artifacts/`. Agents
 
 ### Watcher
 
-A reactive-agent definition stored under `.lore/watchers/`. Declares a project-state condition and a Knight that runs when the condition fires. (`lore watcher list` / `lore watcher show` / `lore watcher new` / `lore watcher edit` / `lore watcher delete`)
+A reactive-agent definition stored under `.lore/watchers/`. Declares a project-state condition and a doctrine that runs when the condition fires. (`lore watcher list` / `lore watcher show` / `lore watcher new` / `lore watcher edit` / `lore watcher delete`)
 
-*Example:* A `pr-ready` watcher could run a `code-reviewer` knight whenever a Mission transitions to `done`.
+*Example:* A `pr-ready` watcher could run a `code-review` doctrine whenever a Mission transitions to `done`.
 
 ### Board message
 
@@ -141,11 +135,11 @@ You are either the orchestrator (dispatching missions) or a worker (executing on
 ### Orchestrator
 
 - `lore ready` → next available mission. Dispatch by type:
-  - **`knight`** — claim (`lore claim <id>`), spawn worker agent with the mission ID
+  - **`agent`** — claim (`lore claim <id>`), spawn worker agent with the mission ID
   - **`constable`** — claim and handle inline (commit, housekeeping, etc.)
   - **`human`** — do NOT claim, leave for human
 - Start a new quest from a doctrine via `/start-quest`.
-- Use the relevant skill (table below): the `update-*` skills author a doctrine, knight, watcher, artifact or custom schema — creating or editing as the request requires — and `store-memory` / `retrieve-memory` write and read project memory.
+- Use the relevant skill (table below): the `update-*` skills author a doctrine, watcher, artifact or custom schema — creating or editing as the request requires — and `store-memory` / `retrieve-memory` write and read project memory.
 
 Default doctrines shipped via `lore init`:
 
@@ -153,12 +147,12 @@ Default doctrines shipped via `lore init`:
 |-------------------------------|-----------------------------------------------------------------------------------------------|
 | `feature-implementation`      | Full E2E spec pipeline — Scout, PRD (crazy + draft + final), Tech Spec, Stories. Four phases. |
 | `quick-feature-implementation`| Streamlined spec pipeline — single scout, no crazy phases, single commit at the end.          |
-| `tdd-implementation`          | Strict Red-Green-Refactor cycle for one dev-ready story. Hard boundaries between each step.   |
-| `update-changelog`            | Single-step changelog update after a merge to `develop`. Triggered by the changelog watcher.  |
+| `tdd-implementation`          | Strict Red-Green-Refactor cycle for one dev-ready story. Hard boundaries between each mission.|
+| `update-changelog`            | Single-mission changelog update after a merge to `develop`. Triggered by the changelog watcher.|
 
 ### Worker
 
-- You have a mission ID. Run `lore show <id>` — returns description, acceptance criteria, and knight persona in one call.
+- You have a mission ID. Run `lore show <id>` — returns description, acceptance criteria, and the doctrine mission instructions in one call.
 - Execute. Run `lore done <id>` when finished. Run `lore block <id> "<reason>"` if stuck.
 - Do not create quests or missions. Do not claim unassigned work.
 
@@ -206,10 +200,10 @@ whichever way your project reads the rest:
   report file unless `health-report-retention` in `.lore/config.toml` is
   `"latest"` or `"all"`.
 
-Everything else — artifacts, knights, doctrines, watchers, quests, missions and
-board messages — is reached by id through the Lore CLI in every mode. Those
-commands run normalisation, validation, cycle detection and content splicing
-that no file read reproduces.
+Everything else — artifacts, doctrines, watchers, quests, missions and board
+messages — is reached by id through the Lore CLI in every mode. Those commands
+run validation, mission-index assembly and content splicing that no file read
+reproduces.
 
 ## Available skills
 

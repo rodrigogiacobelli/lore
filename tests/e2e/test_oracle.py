@@ -30,14 +30,15 @@ def _create_quest_direct(project_dir, quest_id, title, status="open", priority=2
 
 
 def _create_mission_direct(project_dir, mission_id, quest_id, title, status="open",
-                           priority=2, knight=None, description="", block_reason=None,
-                           mission_type=None):
+                           priority=2, doctrine_mission=None, description="",
+                           block_reason=None, mission_type=None):
     conn = db_conn(project_dir)
     conn.execute(
-        "INSERT INTO missions (id, quest_id, title, description, status, priority, knight, "
-        "block_reason, mission_type, created_at, updated_at) "
+        "INSERT INTO missions (id, quest_id, title, description, status, priority, "
+        "doctrine_mission, block_reason, mission_type, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '2025-01-15T09:30:00Z', '2025-01-15T09:30:00Z')",
-        (mission_id, quest_id, title, description, status, priority, knight, block_reason, mission_type),
+        (mission_id, quest_id, title, description, status, priority, doctrine_mission,
+         block_reason, mission_type),
     )
     conn.commit()
     conn.close()
@@ -292,7 +293,7 @@ class TestOracleMissionTypeInReports:
     def test_quest_index_has_type_column(self, runner, project_dir):
         _create_quest_direct(project_dir, "q-aaaa", "Quest Alpha")
         _create_mission_direct(project_dir, "q-aaaa/m-aa01", "q-aaaa", "Mission One",
-                               mission_type="knight")
+                               mission_type="agent")
         result = runner.invoke(main, ["oracle"])
         assert result.exit_code == 0
         quest_dir = list((project_dir / ".lore" / "reports" / "quests").iterdir())[0]
@@ -316,3 +317,56 @@ class TestOracleMissionTypeInReports:
         assert len(files) == 1
         content = files[0].read_text()
         assert "**Type:** constable" in content
+
+
+# ---------------------------------------------------------------------------
+# The doctrine mission reference in the reports
+# ---------------------------------------------------------------------------
+
+
+class TestOracleRendersTheDoctrineMission:
+    """Oracle prints the stored reference and interprets none of it (ADR-004)."""
+
+    def test_quest_index_column_names_the_doctrine_mission(self, runner, project_dir):
+        _create_quest_direct(project_dir, "q-aaaa", "Quest Alpha")
+        _create_mission_direct(
+            project_dir, "q-aaaa/m-aa01", "q-aaaa", "Mission One",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        result = runner.invoke(main, ["oracle"])
+
+        assert result.exit_code == 0
+        quest_dir = list((project_dir / ".lore" / "reports" / "quests").iterdir())[0]
+        content = (quest_dir / "index.md").read_text()
+        assert "| Doctrine Mission |" in content
+        assert "tdd-lite/recon" in content
+
+    def test_mission_file_names_the_doctrine_mission(self, runner, project_dir):
+        _create_quest_direct(project_dir, "q-aaaa", "Quest Alpha")
+        _create_mission_direct(
+            project_dir, "q-aaaa/m-aa01", "q-aaaa", "Mission One",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        result = runner.invoke(main, ["oracle"])
+
+        assert result.exit_code == 0
+        quest_dir = list((project_dir / ".lore" / "reports" / "quests").iterdir())[0]
+        mission_file = next(f for f in quest_dir.iterdir() if f.name != "index.md")
+        assert "**Doctrine Mission:** tdd-lite/recon" in mission_file.read_text()
+
+    def test_an_unresolvable_reference_is_rendered_as_stored(self, runner, project_dir):
+        """Oracle resolves nothing — the reference is an opaque string here."""
+        _create_quest_direct(project_dir, "q-aaaa", "Quest Alpha")
+        _create_mission_direct(
+            project_dir, "q-aaaa/m-aa01", "q-aaaa", "Mission One",
+            doctrine_mission="gone/missing",
+        )
+
+        result = runner.invoke(main, ["oracle"])
+
+        assert result.exit_code == 0
+        quest_dir = list((project_dir / ".lore" / "reports" / "quests").iterdir())[0]
+        mission_file = next(f for f in quest_dir.iterdir() if f.name != "index.md")
+        assert "**Doctrine Mission:** gone/missing" in mission_file.read_text()

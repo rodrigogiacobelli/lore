@@ -33,7 +33,7 @@ The CRUD completeness spec served agents interacting with Lore via the CLI. Huma
 All delete operations use soft-delete semantics. No rows are removed from the database and no files are permanently deleted.
 
 - **Database entities (quests, missions, dependencies):** A `deleted_at TEXT` column is added to the `quests`, `missions`, and `dependencies` tables. `lore delete` sets `deleted_at` to the current UTC ISO 8601 timestamp. All queries add `WHERE deleted_at IS NULL` so soft-deleted entities are invisible to normal operations.
-- **File entities (knights, doctrines):** Soft-deleted by renaming with a `.deleted` suffix (e.g., `.lore/knights/reviewer.md` → `.lore/knights/reviewer.md.deleted`). Existing glob patterns (`*.md`, `*.yaml`) naturally exclude `.deleted` files.
+- **File entities (doctrines, watchers, artifacts, rites):** Soft-deleted by renaming with a `.deleted` suffix (e.g., `.lore/watchers/reviewer.yaml` → `.lore/watchers/reviewer.yaml.deleted`). A doctrine is a directory, so the rename lands on the directory: `<name>` → `<name>.deleted`; one of its missions renames to `missions/<id>.md.deleted`. Discovery skips any path segment ending `.deleted`, and existing glob patterns (`*.md`, `*.yaml`) naturally exclude `.deleted` files.
 
 Restore commands are not provided. Manual SQL or file rename can recover soft-deleted entities if needed.
 
@@ -47,7 +47,7 @@ Application-level filtering (`deleted_at IS NULL` on joined mission rows) is the
 
 ## Scope
 
-This ADR governs soft-delete semantics for data entities managed by the `lore` CLI — specifically quests, missions, and dependency rows in the Lore SQLite database, and file entities (knights, doctrines) in the `.lore/` directory. It does **not** govern the development practices of the Lore project's own source code. When Lore source code is modified — for example, removing a CLI command, deleting a Python module, or dropping a function — standard hard-delete (permanent removal) is the correct approach. No soft-delete ceremony applies to source code changes.
+This ADR governs soft-delete semantics for data entities managed by the `lore` CLI — specifically quests, missions, and dependency rows in the Lore SQLite database, and file entities (doctrines, watchers, artifacts, rites) in the `.lore/` directory. It does **not** govern the development practices of the Lore project's own source code. When Lore source code is modified — for example, removing a CLI command, deleting a Python module, or dropping a function — standard hard-delete (permanent removal) is the correct approach. No soft-delete ceremony applies to source code changes.
 
 ## Rationale
 
@@ -74,3 +74,9 @@ This ADR governs soft-delete semantics for data entities managed by the `lore` C
 **FK constraints enabled via `PRAGMA foreign_keys = ON`.** Rejected because FK enforcement on the dependencies table would conflict with soft-delete semantics: a `DELETE FROM missions` (which Lore never does) would cascade-delete dependency rows, but a soft-delete (UPDATE `deleted_at`) would not trigger FK cascade actions. The FK mechanism and the soft-delete mechanism would be semantically inconsistent. Application-level filtering is the correct and consistent approach.
 
 **Separate audit/history tables.** Rejected as over-engineering. Soft-delete in the same table provides sufficient history for Lore's scale and use case without the complexity of separate tables or change-data-capture patterns.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The file-entity enumeration drops Knight, and the doctrine soft-delete is now a directory rename — `<name>` becomes `<name>.deleted`, and one removed mission becomes `missions/<id>.md.deleted`. |

@@ -24,11 +24,18 @@ from tests.conftest import (
 # ---------------------------------------------------------------------------
 
 
-def _create_knight_file(project_dir: Path, filename: str, content: str) -> None:
-    """Create a knight file in .lore/knights/."""
-    knights_dir = project_dir / ".lore" / "knights"
-    knights_dir.mkdir(parents=True, exist_ok=True)
-    (knights_dir / filename).write_text(content)
+def _write_doctrine_mission(
+    project_dir: Path, doctrine: str, mission_id: str, body: str
+) -> None:
+    """Write one mission file inside a doctrine directory."""
+    directory = project_dir / ".lore" / "doctrines" / doctrine
+    (directory / "missions").mkdir(parents=True, exist_ok=True)
+    (directory / f"{doctrine}.design.md").write_text(
+        f"---\nid: {doctrine}\ntitle: {doctrine}\nsummary: A doctrine.\n---\n\nDesign.\n"
+    )
+    (directory / "missions" / f"{mission_id}.md").write_text(
+        f"---\nid: {mission_id}\ntitle: {mission_id}\nsummary: A mission.\n---\n\n{body}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -99,20 +106,36 @@ class TestCreateMissionInQuest:
             rows = conn.execute("SELECT quest_id FROM missions").fetchall()
         assert rows[0]["quest_id"] == "q-a1b2"
 
-    def test_with_knight_flag(self, runner, project_dir):
+    def test_with_doctrine_mission_flag(self, runner, project_dir):
         r = runner.invoke(main, ["--json", "new", "quest", "Q One"])
         quest_id = json.loads(r.output)["id"]
         result = runner.invoke(
             main,
-            ["--json", "new", "mission", "Auth Task", "-q", quest_id, "-k", "developer.md"],
+            ["--json", "new", "mission", "Auth Task", "-q", quest_id, "-D", "tdd-lite/recon"],
         )
         assert_exit_ok(result)
         mission_id = json.loads(result.output)["id"]
         with db_conn(project_dir) as conn:
             row = conn.execute(
-                "SELECT knight FROM missions WHERE id = ?", (mission_id,)
+                "SELECT doctrine_mission FROM missions WHERE id = ?", (mission_id,)
             ).fetchone()
-        assert row["knight"] == "developer.md"
+        assert row["doctrine_mission"] == "tdd-lite/recon"
+
+    def test_the_reference_is_not_resolved_at_write_time(self, runner, project_dir):
+        """A doctrine edited after the mission was created changes what it reads."""
+        r = runner.invoke(main, ["--json", "new", "quest", "Q One"])
+        quest_id = json.loads(r.output)["id"]
+        result = runner.invoke(
+            main,
+            ["--json", "new", "mission", "T", "-q", quest_id, "-D", "nothing/here"],
+        )
+        assert_exit_ok(result)
+        mission_id = json.loads(result.output)["id"]
+        with db_conn(project_dir) as conn:
+            row = conn.execute(
+                "SELECT doctrine_mission FROM missions WHERE id = ?", (mission_id,)
+            ).fetchone()
+        assert row["doctrine_mission"] == "nothing/here"
 
 
 # ---------------------------------------------------------------------------
@@ -258,12 +281,12 @@ class TestMissionDefaultValues:
             rows = conn.execute("SELECT description FROM missions").fetchall()
         assert rows[0]["description"] == ""
 
-    def test_default_knight_is_null(self, runner, project_dir):
+    def test_default_doctrine_mission_is_null(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Test Quest")
         runner.invoke(main, ["new", "mission", "Simple task", "-q", "q-a1b2"])
         with db_conn(project_dir) as conn:
-            rows = conn.execute("SELECT knight FROM missions").fetchall()
-        assert rows[0]["knight"] is None
+            rows = conn.execute("SELECT doctrine_mission FROM missions").fetchall()
+        assert rows[0]["doctrine_mission"] is None
 
     def test_default_status_is_open(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Test Quest")
@@ -735,16 +758,26 @@ class TestShowMissionFull:
         assert data["id"] == m_id
         assert data["title"] == "Task A"
         assert data["description"] == "Desc A"
-        assert "status" in data
-        assert "mission_type" in data
-        assert "priority" in data
-        assert "knight" in data
-        assert "knight_contents" in data
-        assert "block_reason" in data
-        assert "dependencies" in data
+        # The whole key set, so a renamed key cannot survive alongside its successor.
+        assert set(data) == {
+            "id",
+            "quest_id",
+            "title",
+            "description",
+            "status",
+            "priority",
+            "mission_type",
+            "doctrine_mission",
+            "doctrine_mission_contents",
+            "block_reason",
+            "created_at",
+            "updated_at",
+            "closed_at",
+            "dependencies",
+            "board",
+        }
         assert "needs" in data["dependencies"]
         assert "blocks" in data["dependencies"]
-        assert "board" in data
 
     def test_dependencies_populated(self, runner, project_dir):
         r = runner.invoke(main, ["--json", "new", "quest", "Q"])
@@ -845,53 +878,120 @@ class TestShowMissionNullType:
 
 
 # ---------------------------------------------------------------------------
-# Show mission — knight file inline
+# Show mission — the doctrine mission body, spliced in
 # ---------------------------------------------------------------------------
 
 
-class TestKnightContentsInline:
-    """When knight file exists, show includes its contents inline."""
+class TestMissionInstructionsInline:
+    """The referenced mission body is what a worker reads, spliced into the brief."""
 
-    def test_knight_contents_displayed(self, runner, project_dir):
+    def test_the_body_is_printed_under_its_own_heading(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Test Quest")
-        insert_mission(project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug", knight="developer.md")
-        _create_knight_file(project_dir, "developer.md", "# Developer Knight\nWrite clean code.")
+        insert_mission(
+            project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug",
+            doctrine_mission="tdd-lite/recon",
+        )
+        _write_doctrine_mission(project_dir, "tdd-lite", "recon", "Read the codex first.\n")
+
         result = runner.invoke(main, ["show", "q-a1b2/m-f3c1"])
-        assert result.exit_code == 0
-        assert "# Developer Knight" in result.output
-        assert "Write clean code." in result.output
 
-    def test_no_knight_flag_omits_contents(self, runner, project_dir):
-        insert_quest(project_dir, "q-a1b2", "Test Quest")
-        insert_mission(project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug", knight="developer.md")
-        _create_knight_file(project_dir, "developer.md", "# Developer Knight\nWrite clean code.")
-        result = runner.invoke(main, ["show", "q-a1b2/m-f3c1", "--no-knight"])
         assert result.exit_code == 0
-        assert "Write clean code." not in result.output
+        assert "Doctrine Mission: tdd-lite/recon" in result.output
+        assert "--- Mission Instructions ---" in result.output
+        assert "Read the codex first." in result.output
 
-    def test_no_knight_flag_still_shows_mission_details(self, runner, project_dir):
+    def test_the_frontmatter_is_not_re_rendered(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Test Quest")
-        insert_mission(project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug", knight="developer.md")
-        _create_knight_file(project_dir, "developer.md", "# Developer Knight\nWrite clean code.")
-        result = runner.invoke(main, ["show", "q-a1b2/m-f3c1", "--no-knight"])
+        insert_mission(
+            project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug",
+            doctrine_mission="tdd-lite/recon",
+        )
+        _write_doctrine_mission(project_dir, "tdd-lite", "recon", "Read the codex first.\n")
+
+        result = runner.invoke(main, ["show", "q-a1b2/m-f3c1"])
+
+        section = result.output.split("--- Mission Instructions ---", 1)[1]
+        assert section == "\nRead the codex first.\n"
+
+    def test_no_doctrine_mission_flag_omits_the_section(self, runner, project_dir):
+        insert_quest(project_dir, "q-a1b2", "Test Quest")
+        insert_mission(
+            project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug",
+            doctrine_mission="tdd-lite/recon",
+        )
+        _write_doctrine_mission(project_dir, "tdd-lite", "recon", "Read the codex first.\n")
+
+        result = runner.invoke(
+            main, ["show", "q-a1b2/m-f3c1", "--no-doctrine-mission"]
+        )
+
+        assert result.exit_code == 0
+        assert "--- Mission Instructions ---" not in result.output
+        assert "Read the codex first." not in result.output
+
+    def test_no_doctrine_mission_flag_still_shows_the_mission(self, runner, project_dir):
+        insert_quest(project_dir, "q-a1b2", "Test Quest")
+        insert_mission(
+            project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug",
+            doctrine_mission="tdd-lite/recon",
+        )
+        _write_doctrine_mission(project_dir, "tdd-lite", "recon", "Read the codex first.\n")
+
+        result = runner.invoke(
+            main, ["show", "q-a1b2/m-f3c1", "--no-doctrine-mission"]
+        )
+
         assert result.exit_code == 0
         assert "Fix Login Bug" in result.output
-        assert "developer.md" in result.output
+        assert "Doctrine Mission: tdd-lite/recon" in result.output
 
-    def test_missing_knight_file_shows_warning(self, runner, project_dir):
+    def test_an_unresolvable_reference_is_silent(self, runner, project_dir):
+        """A read never reports a broken reference — lore health is its one reporter."""
         insert_quest(project_dir, "q-a1b2", "Test Quest")
-        insert_mission(project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug", knight="foo.md")
-        result = runner.invoke(main, ["show", "q-a1b2/m-f3c1"])
-        assert result.exit_code == 0
-        assert 'Warning: knight file "foo.md" not found in .lore/knights/' in result.output
+        insert_mission(
+            project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug",
+            doctrine_mission="gone/missing",
+        )
 
-    def test_no_knight_assigned_no_warning(self, runner, project_dir):
+        result = runner.invoke(main, ["show", "q-a1b2/m-f3c1"])
+
+        assert result.exit_code == 0
+        assert "Doctrine Mission: gone/missing" in result.output
+        assert "Warning" not in result.output
+        assert "--- Mission Instructions ---" not in result.output
+        assert result.stderr == ""
+
+    def test_a_mission_with_no_reference_prints_no_section(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Test Quest")
         insert_mission(project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug")
+
         result = runner.invoke(main, ["show", "q-a1b2/m-f3c1"])
+
         assert result.exit_code == 0
         assert "Fix Login Bug" in result.output
-        assert "not found in .lore/knights/" not in result.output
+        assert "Doctrine Mission:" not in result.output
+        assert "--- Mission Instructions ---" not in result.output
+
+    def test_resolution_happens_at_read_time(self, runner, project_dir, tmp_path):
+        """Editing the doctrine changes what the next read splices in."""
+        insert_quest(project_dir, "q-a1b2", "Test Quest")
+        insert_mission(
+            project_dir, "q-a1b2/m-f3c1", "q-a1b2", "Fix Login Bug",
+            doctrine_mission="tdd-lite/recon",
+        )
+        _write_doctrine_mission(project_dir, "tdd-lite", "recon", "The first text.\n")
+        source = tmp_path / "recon.md"
+        source.write_text(
+            "---\nid: recon\ntitle: recon\nsummary: A mission.\n---\n\nThe new text.\n"
+        )
+        assert runner.invoke(
+            main, ["doctrine", "edit", "tdd-lite", "-m", str(source)]
+        ).exit_code == 0
+
+        result = runner.invoke(main, ["show", "q-a1b2/m-f3c1"])
+
+        assert "The new text." in result.output
+        assert "The first text." not in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -942,16 +1042,19 @@ class TestMissionIdRouting:
         assert result.exit_code == 0
         assert "Standalone Task" in result.output
 
-    def test_standalone_with_knight(self, runner, project_dir):
-        insert_mission(project_dir, "m-f3c1", None, "Standalone Task", knight="developer.md")
-        _create_knight_file(project_dir, "developer.md", "Knight instructions here.")
+    def test_standalone_with_doctrine_mission(self, runner, project_dir):
+        insert_mission(
+            project_dir, "m-f3c1", None, "Standalone Task",
+            doctrine_mission="tdd-lite/recon",
+        )
+        _write_doctrine_mission(project_dir, "tdd-lite", "recon", "Mission instructions here.")
         result = runner.invoke(main, ["show", "m-f3c1"])
         assert result.exit_code == 0
-        assert "Knight instructions here." in result.output
+        assert "Mission instructions here." in result.output
 
 
 # ---------------------------------------------------------------------------
-# Edit mission — title, description, priority, knight
+# Edit mission — title, description, priority, doctrine mission
 # ---------------------------------------------------------------------------
 
 
@@ -967,14 +1070,15 @@ class TestEditMissionFields:
         result = runner.invoke(
             main,
             ["--json", "edit", m_id, "--title", "New Title",
-             "--description", "New desc", "--priority", "0", "--knight", "reviewer.md"],
+             "--description", "New desc", "--priority", "0",
+             "--doctrine-mission", "tdd-lite/review"],
         )
         assert_exit_ok(result)
         data = json.loads(result.output)
         assert data["title"] == "New Title"
         assert data["description"] == "New desc"
         assert data["priority"] == 0
-        assert data["knight"] == "reviewer.md"
+        assert data["doctrine_mission"] == "tdd-lite/review"
 
     def test_updated_at_in_output(self, runner, project_dir):
         r = runner.invoke(main, ["--json", "new", "quest", "Q"])
@@ -1021,43 +1125,59 @@ class TestEditMissionFields:
 
 
 # ---------------------------------------------------------------------------
-# Edit mission — knight assignment and removal
+# Edit mission — doctrine mission assignment and removal
 # ---------------------------------------------------------------------------
 
 
-class TestEditMissionKnight:
-    """Edit mission knight: set, reassign, remove."""
+class TestEditMissionDoctrineMission:
+    """Edit a mission's doctrine mission: set, reassign, remove."""
 
-    def test_reassign_knight(self, runner, project_dir):
+    def test_reassign_the_reference(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Quest")
-        insert_mission(project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Title", knight="reviewer.md")
-        result = runner.invoke(main, ["edit", "q-a1b2/m-c3d4", "--knight", "coder.md"])
+        insert_mission(
+            project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Title",
+            doctrine_mission="tdd-lite/review",
+        )
+        result = runner.invoke(
+            main, ["edit", "q-a1b2/m-c3d4", "--doctrine-mission", "tdd-lite/code"]
+        )
         assert result.exit_code == 0
         with db_conn(project_dir) as conn:
-            row = conn.execute("SELECT knight FROM missions WHERE id = ?", ("q-a1b2/m-c3d4",)).fetchone()
-        assert row["knight"] == "coder.md"
+            row = conn.execute(
+                "SELECT doctrine_mission FROM missions WHERE id = ?", ("q-a1b2/m-c3d4",)
+            ).fetchone()
+        assert row["doctrine_mission"] == "tdd-lite/code"
 
-    def test_no_knight_clears_knight(self, runner, project_dir):
+    def test_no_doctrine_mission_clears_the_reference(self, runner, project_dir):
         r = runner.invoke(main, ["--json", "new", "quest", "Q"])
         quest_id = json.loads(r.output)["id"]
         r1 = runner.invoke(
             main,
-            ["--json", "new", "mission", "M", "-q", quest_id, "-k", "developer.md"],
+            ["--json", "new", "mission", "M", "-q", quest_id, "-D", "tdd-lite/recon"],
         )
         m_id = json.loads(r1.output)["id"]
-        result = runner.invoke(main, ["edit", m_id, "--no-knight"])
+        result = runner.invoke(main, ["edit", m_id, "--no-doctrine-mission"])
         assert_exit_ok(result)
         with db_conn(project_dir) as conn:
-            row = conn.execute("SELECT knight FROM missions WHERE id = ?", (m_id,)).fetchone()
-        assert row["knight"] is None
+            row = conn.execute(
+                "SELECT doctrine_mission FROM missions WHERE id = ?", (m_id,)
+            ).fetchone()
+        assert row["doctrine_mission"] is None
 
-    def test_knight_and_no_knight_mutually_exclusive(self, runner, project_dir):
+    def test_setting_and_clearing_are_mutually_exclusive(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Quest")
-        insert_mission(project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Title", knight="reviewer.md")
-        result = runner.invoke(main, ["edit", "q-a1b2/m-c3d4", "--knight", "coder.md", "--no-knight"])
+        insert_mission(
+            project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Title",
+            doctrine_mission="tdd-lite/review",
+        )
+        result = runner.invoke(
+            main,
+            ["edit", "q-a1b2/m-c3d4", "-D", "tdd-lite/code", "--no-doctrine-mission"],
+        )
         assert result.exit_code == 2
-        assert "mutually exclusive" in result.output.lower() or (
-            "knight" in result.output.lower() and "no-knight" in result.output.lower()
+        assert (
+            "Error: --doctrine-mission and --no-doctrine-mission are mutually exclusive."
+            in result.stderr
         )
 
 
@@ -1104,7 +1224,7 @@ class TestEditMissionRequiresFlag:
         result = runner.invoke(main, ["edit", "q-a1b2/m-c3d4"])
         assert result.exit_code == 2
         assert "at least one" in result.output.lower()
-        assert "knight" in result.output.lower() or "-k" in result.output
+        assert "--doctrine-mission" in result.output
 
     def test_no_flags_does_not_modify_mission(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Quest")
@@ -1320,7 +1440,7 @@ class TestEditMissionJsonOutput:
         insert_quest(project_dir, "q-a1b2", "Quest")
         insert_mission(
             project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Title",
-            knight="reviewer.md",
+            doctrine_mission="tdd-lite/review",
         )
         result = runner.invoke(main, ["--json", "edit", "q-a1b2/m-c3d4", "--title", "New Title"])
         assert result.exit_code == 0
@@ -1331,7 +1451,7 @@ class TestEditMissionJsonOutput:
         assert "description" in data
         assert "priority" in data
         assert "status" in data
-        assert "knight" in data
+        assert "doctrine_mission" in data
         assert "created_at" in data
         assert "updated_at" in data
         assert "closed_at" in data
@@ -1342,19 +1462,19 @@ class TestEditMissionJsonOutput:
         insert_quest(project_dir, "q-a1b2", "Quest")
         insert_mission(
             project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Old Title",
-            knight="reviewer.md",
+            doctrine_mission="tdd-lite/review",
         )
         result = runner.invoke(
             main,
             ["--json", "edit", "q-a1b2/m-c3d4", "-t", "New Title",
-             "-d", "New Desc", "-p", "1", "-k", "coder.md"],
+             "-d", "New Desc", "-p", "1", "-D", "tdd-lite/code"],
         )
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["title"] == "New Title"
         assert data["description"] == "New Desc"
         assert data["priority"] == 1
-        assert data["knight"] == "coder.md"
+        assert data["doctrine_mission"] == "tdd-lite/code"
 
     def test_json_dependencies_present(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Quest")
@@ -1379,7 +1499,7 @@ class TestEditMissionPreservesUnchangedFields:
         insert_quest(project_dir, "q-a1b2", "Quest")
         insert_mission(
             project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Title",
-            knight="reviewer.md", priority=3,
+            doctrine_mission="tdd-lite/review", priority=3,
         )
         result = runner.invoke(main, ["edit", "q-a1b2/m-c3d4", "--title", "New Title"])
         assert result.exit_code == 0
@@ -1387,20 +1507,20 @@ class TestEditMissionPreservesUnchangedFields:
             row = conn.execute("SELECT * FROM missions WHERE id = ?", ("q-a1b2/m-c3d4",)).fetchone()
         assert row["title"] == "New Title"
         assert row["priority"] == 3
-        assert row["knight"] == "reviewer.md"
+        assert row["doctrine_mission"] == "tdd-lite/review"
 
-    def test_edit_knight_preserves_title_and_description(self, runner, project_dir):
+    def test_edit_reference_preserves_title_and_description(self, runner, project_dir):
         insert_quest(project_dir, "q-a1b2", "Quest")
         insert_mission(
             project_dir, "q-a1b2/m-c3d4", "q-a1b2", "Keep Title",
-            knight="reviewer.md",
+            doctrine_mission="tdd-lite/review",
         )
-        result = runner.invoke(main, ["edit", "q-a1b2/m-c3d4", "-k", "coder.md"])
+        result = runner.invoke(main, ["edit", "q-a1b2/m-c3d4", "-D", "tdd-lite/code"])
         assert result.exit_code == 0
         with db_conn(project_dir) as conn:
             row = conn.execute("SELECT * FROM missions WHERE id = ?", ("q-a1b2/m-c3d4",)).fetchone()
         assert row["title"] == "Keep Title"
-        assert row["knight"] == "coder.md"
+        assert row["doctrine_mission"] == "tdd-lite/code"
 
 
 # ---------------------------------------------------------------------------
@@ -1761,7 +1881,7 @@ EXPECTED_MISSION_LISTING_FIELDS = {
     "status",
     "priority",
     "mission_type",
-    "knight",
+    "doctrine_mission",
     "created_at",
 }
 

@@ -25,7 +25,7 @@ def _help_surface(cmd) -> str:
 
 @pytest.mark.parametrize(
     "handler_name",
-    ["doctrine_new", "knight_new", "watcher_new", "artifact_new"],
+    ["doctrine_new", "watcher_new", "artifact_new"],
 )
 def test_new_click_help_contains_group_and_slash(handler_name):
     from lore import cli
@@ -39,7 +39,7 @@ def test_new_click_help_contains_group_and_slash(handler_name):
 @pytest.mark.parametrize(
     "handler_name",
     # doctrine_new already ships a hyphenated nested example — exclude from red.
-    ["knight_new", "watcher_new", "artifact_new"],
+    ["watcher_new", "artifact_new"],
 )
 def test_new_group_option_help_includes_example(handler_name):
     """The --group option's help= string shows a concrete `a/b` example."""
@@ -55,7 +55,7 @@ def test_new_group_option_help_includes_example(handler_name):
     import re as _re
 
     # Match a hyphenated multi-segment nested example (e.g. `seo-analysis/keyword-analysers`),
-    # not a mere path hint like `.lore/knights/`. Require at least one hyphen in
+    # not a mere path hint like `.lore/watchers/`. Require at least one hyphen in
     # one of the segments to distinguish from bare directory names.
     assert _re.search(
         r"(?<![./\w])[a-z][a-z0-9\-_]*-[a-z0-9\-_]*/[a-z][a-z0-9\-_/]*",
@@ -72,7 +72,6 @@ def test_new_group_option_help_includes_example(handler_name):
     "handler_name",
     [
         "doctrine_list",
-        "knight_list",
         "watcher_list",
         "artifact_list",
         "codex_list",
@@ -91,7 +90,6 @@ def test_list_click_help_documents_slash_filter(handler_name):
     "handler_name",
     [
         "doctrine_list",
-        "knight_list",
         "watcher_list",
         "artifact_list",
         "codex_list",
@@ -109,3 +107,36 @@ def test_list_filter_option_help_teaches_slash_delimited(handler_name):
     assert filter_opt is not None, f"{handler_name} has no --filter option"
     opt_help = (filter_opt.help or "").lower()
     assert "slash" in opt_help or "/" in (filter_opt.help or "")
+
+
+# ---------------------------------------------------------------------------
+# The `lore doctrine` group paragraph teaches the entity, not the syntax
+# ---------------------------------------------------------------------------
+
+
+def _group_help(group_name: str) -> str:
+    from lore import cli
+
+    group = getattr(cli, group_name)
+    return " ".join(((group.help or "") + " " + (group.callback.__doc__ or "")).split())
+
+
+def test_doctrine_group_help_describes_a_directory_of_prose():
+    """ADR-008 — the group paragraph is where a reader learns what a doctrine is."""
+    text = _group_help("doctrine")
+    assert "directory" in text
+    assert "mission" in text.lower()
+
+
+def test_doctrine_group_help_names_the_two_reads():
+    """One call returns the design and the index; --mission returns one body."""
+    text = _group_help("doctrine")
+    assert "lore doctrine show" in text
+    assert "--mission" in text
+
+
+def test_doctrine_group_help_no_longer_promises_a_step_graph():
+    """The YAML step sequence is gone; the help cannot keep describing one."""
+    text = _group_help("doctrine").lower()
+    for gone in ("yaml", "step sequence", "steps into quests"):
+        assert gone not in text, f"doctrine group help still mentions {gone!r}: {text}"

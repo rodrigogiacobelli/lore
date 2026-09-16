@@ -1,0 +1,1939 @@
+---
+id: doctrine-missions-spec
+title: Feature Spec — Doctrine Missions
+summary: The single planning document for Doctrine Missions — a doctrine becomes a
+  directory of prose (<doctrine>.design.md plus missions/<id>.md) and the Knight entity
+  is removed outright. Carries the PRD forward into exact commands, exact output,
+  exact Python signatures, a file-by-file structure table naming every addition and
+  every deletion, the binding-rule obligations, five open conflicts, five draft ADRs,
+  the full test strategy, and the ordered per-lane implementation plan that is also
+  the dispatch order.
+related:
+- doctrine-missions-prd
+- doctrine-missions-recon-map
+---
+
+# Feature Spec — Doctrine Missions
+
+**Author:** Architect
+**Date:** 2026-09-15
+**Recon map:** `doctrine-missions-recon-map`
+**Upstream PRD:** `doctrine-missions-prd`
+
+---
+
+## Part 1 — Intent and Requirements
+
+### Summary
+
+A doctrine stops being a pair of files with a satellite of Knight personas and
+becomes one directory: `<doctrine>.design.md` for the orchestrator, and one
+`missions/<id>.md` of prose for each worker. Each mission file carries what used
+to be split between a YAML step's `notes:` and a Knight's persona body. Lore
+parses no workflow structure out of a doctrine any more — no step ids, no
+`type`, no `phase`, no `needs` — and the Knight entity is removed outright:
+module, CLI group, public API names, schema, health scope and seeded files.
+
+A Lore mission points at a doctrine mission by the reference
+`<doctrine-id>/<mission-id>`, stored verbatim and resolved only at read time, so
+`lore show <mission-id>` hands a worker its feature-specific description and its
+reusable instructions in one call. There is exactly one authoritative copy of
+every reusable instruction and it lives beside the doctrine that uses it.
+
+### Success Criteria
+
+Every criterion below is checkable by running the command named.
+
+- `lore doctrine show <id>` prints the design document and a `--- Missions ---`
+  index in one call, and exits 0.
+- `lore doctrine show <id> --mission <mission-id>` prints exactly that mission
+  file's body, frontmatter stripped, and exits 0.
+- `lore doctrine show <id> --mission nope` exits 1 with
+  `Mission "nope" not found in doctrine "<id>"`, distinct from the message a
+  missing doctrine produces.
+- `lore doctrine new <name> -d <design> -m <f1> <f2> <f3>` creates the whole
+  directory in one call, or writes nothing at all.
+- `lore doctrine edit <name> -m <one-file>` replaces one mission and leaves every
+  other file in the directory byte-identical.
+- `lore doctrine edit <name> --remove-mission a b` leaves `missions/a.md.deleted`
+  and `missions/b.md.deleted` on disk and no live `a.md` or `b.md`.
+- `lore new mission ... -D <doctrine>/<mission>` stores the reference verbatim;
+  `lore show <mission-id>` prints its body under `--- Mission Instructions ---`.
+- `lore show <mission-id>` on an unresolvable reference exits 0, prints no
+  warning, and `--json` carries `"doctrine_mission_contents": null`.
+- `lore knight` is not a command: `lore knight list` exits 2 with Click's
+  `No such command 'knight'.`
+- `lore health --scope knights` exits 2 with Click's
+  `Error: Invalid value for '--scope': 'knights' is not one of ...`.
+- `lore health --scope doctrines` reports an unresolvable `doctrine_mission` on
+  an active mission as an ERROR and exits 1; it reports an old-shape doctrine as
+  a WARNING and exits 0 on that alone.
+- `grep -rn "knight" src/lore/ --include='*.py'` returns nothing.
+- A v6 database opened by this release reports `schema_version` 7, has no
+  `missions.knight` column, has `missions.doctrine_mission`, and holds no row
+  whose `mission_type` is `knight`.
+
+### In Scope / Out of Scope
+
+**In scope:** everything the PRD's MVP section lists, plus three surfaces the
+PRD does not name and this spec adds because the change breaks them otherwise:
+
+- `src/lore/oracle.py` — it reads `mission["knight"]` at three sites and renders
+  a `Knight` column and a `**Knight:**` line. The column rename makes those a
+  lookup error, so oracle is in the core lane.
+- `src/lore/prompts.py` — `ACCESS_SCOPE_NOTE` names knights in a user-visible
+  `lore init` prompt and `DEFAULT_SKILL_FAMILIES`' docstring says "the five
+  skills that do", which becomes four. prompts.py is in the surface lane.
+- An explicit retired-seed-tree removal in `src/lore/init.py`. Deleting the
+  `knights` row from `SEEDED_TREES` does **not** remove `.lore/knights/default/**`
+  on upgrade — `_prune_seeded_tree` only walks trees still listed — so FR-24's
+  first half needs a mechanism that does not exist today. See Draft ADR 4.
+
+**Out of scope.** The PRD's Out of Scope list is a floor. A dev knight builds
+none of the following, however natural it looks while the file is open:
+
+- **Lore does not execute a doctrine.** No dispatcher, no step runner, no
+  "next mission" query over a doctrine. Lore stores prose and surfaces it.
+- **No machine-readable step graph, in any file, under any key.** No step ids,
+  no `type`, no `phase`, no `needs`, no ordering field. `_validate_steps`,
+  `_check_cycles`, `_normalize`, `load_doctrine`, `validate_doctrine_content`
+  and `scaffold_doctrine` are **deleted**, not relocated and not reimplemented
+  under another name. If a dev knight finds itself writing a topological sort in
+  `doctrine.py`, it has left the spec.
+- **No `lore doctrine mission` subcommand group.** Per-mission create, replace
+  and remove are flags on `lore doctrine edit` and nothing else.
+- **No `doctrine-mission` kind in `frontmatter_edit`.** A mission file's
+  frontmatter is edited by supplying a replacement file. This is distinct from
+  the pre-existing `doctrine` kind, which is repointed onto the design document
+  and kept (R19a).
+- **No migration of authored knights into doctrine missions.** Lore names the
+  orphaned files in the upgrade report and leaves them on disk. Converting them
+  is the project's editorial work, not code.
+- **No compatibility shim.** No `lore knight` alias, no deprecated `knight=`
+  keyword, no `.yaml` reader kept "just in case". Removal is outright.
+- **No changes to quest and mission management** beyond the two mission flags
+  named in R13. `lore new`, `claim`, `done`, `block`, `needs`, `ready`, `board`
+  and the priority model keep their current behaviour.
+- **No new doctrine authoring beyond the four seeded ones.** The scribe converts
+  the four that ship; it does not invent a fifth.
+- **No repair of the codex staleness recon found** (`tech-cli-entity-crud-matrix`
+  on codex CRUD, `tech-arch-source-layout`'s three missing modules,
+  `preexisting-bugs-handoff` bug #1, the decision-006 numbering collision) beyond
+  the rows this feature already has to touch. Those are named in Part 3 for the
+  scribe, not for a dev knight. This exclusion covers staleness that exists
+  **today**. It does not cover a document this feature's own code change
+  falsifies — every one of those is scribe work and is listed in Part 3's
+  Expected Codex Updates, the block the ADR & Standards Audit added included.
+
+### Workflows
+
+Every command below is the exact invocation, and every block is the exact
+output, character for character. `⏎` is not printed; it marks where a line ends
+with no trailing content.
+
+---
+
+**W1 — Read a doctrine to plan a quest** (FR-5, FR-7, FR-8)
+
+```
+$ lore doctrine show tdd-feature-lite
+---
+id: tdd-feature-lite
+title: TDD Feature Lite
+summary: A three-mission TDD cycle.
+---
+
+# TDD Feature Lite
+
+## Missions
+
+- **recon** — map the codex and the code surface
+- **feature-spec** — write the one planning document
+- **scribe** — reconcile the codex
+
+--- Missions ---
+feature-spec  Write the feature spec
+recon         Map the codex and the binding decisions
+scribe        Reconcile the codex against what shipped
+```
+
+Exit 0. The design document is printed **verbatim, whole file, frontmatter
+included** — unchanged from today's behaviour for the `design` key. Then one
+blank line, then `--- Missions ---`, then one row per mission sorted by id, with
+the id left-padded to the widest id and two spaces before the title.
+
+A doctrine with no `missions/` directory still resolves:
+
+```
+$ lore doctrine show update-changelog
+---
+id: update-changelog
+...design body...
+
+--- Missions ---
+(none)
+```
+
+Exit 0.
+
+```
+$ lore --json doctrine show tdd-feature-lite
+{"doctrine": {"id": "tdd-feature-lite", "title": "TDD Feature Lite", "summary": "A three-mission TDD cycle.", "design": "---\nid: tdd-feature-lite\n...", "missions": [{"id": "feature-spec", "title": "Write the feature spec", "summary": "..."}, {"id": "recon", "title": "Map the codex and the binding decisions", "summary": "..."}, {"id": "scribe", "title": "Reconcile the codex against what shipped", "summary": "..."}], "origin": "self"}}
+```
+
+`raw_yaml` and `steps` are gone. The envelope is wrapped under a `doctrine` key.
+
+---
+
+**W2 — Read one mission body** (FR-6, FR-7)
+
+```
+$ lore doctrine show tdd-feature-lite --mission recon
+# Recon
+
+You are Recon. You map the ground before anyone builds on it.
+
+...body verbatim, frontmatter stripped...
+```
+
+Exit 0.
+
+```
+$ lore --json doctrine show tdd-feature-lite --mission recon
+{"mission": {"id": "recon", "title": "Map the codex and the binding decisions", "summary": "...", "body": "# Recon\n\nYou are Recon...\n"}}
+```
+
+Doctrine resolves, mission does not:
+
+```
+$ lore doctrine show tdd-feature-lite --mission nope
+Mission "nope" not found in doctrine "tdd-feature-lite"
+```
+
+stderr, exit 1. With `--json`, stderr carries
+`{"error": "Mission \"nope\" not found in doctrine \"tdd-feature-lite\""}`.
+
+Doctrine does not resolve:
+
+```
+$ lore doctrine show nope --mission recon
+Doctrine 'nope' not found
+```
+
+stderr, exit 1 — today's message and code, unchanged. See **Conflict C-1**: the
+PRD renders this message with double quotes while the live code uses single
+quotes and the PRD's own instruction is "unchanged". This spec ships the live
+text pending the gate's ruling.
+
+---
+
+**W3 — Create a doctrine** (FR-9, FR-12)
+
+```
+$ lore doctrine new tdd-feature-lite --group default -d /tmp/design.md -m /tmp/recon.md /tmp/feature-spec.md /tmp/scribe.md
+Created doctrine tdd-feature-lite with 3 missions in group default
+```
+
+Exit 0. Ungrouped:
+
+```
+$ lore doctrine new tdd-feature-lite -d /tmp/design.md -m /tmp/recon.md
+Created doctrine tdd-feature-lite with 1 mission
+```
+
+```
+$ lore --json doctrine new tdd-feature-lite --group default -d /tmp/design.md -m /tmp/recon.md /tmp/feature-spec.md /tmp/scribe.md
+{"created": "tdd-feature-lite", "group": "default", "missions": ["feature-spec", "recon", "scribe"], "path": ".lore/doctrines/default/tdd-feature-lite/"}
+```
+
+`group` is `null` and `path` is `.lore/doctrines/tdd-feature-lite/` when
+`--group` is absent. `missions` is sorted by id.
+
+Failures write nothing:
+
+```
+$ lore doctrine new tdd-feature-lite -d /tmp/design.md
+At least one mission file is required (-m)
+```
+
+stderr, exit 1.
+
+```
+$ lore doctrine new tdd-feature-lite -m /tmp/recon.md
+Error: -d/--design is required
+```
+
+stderr, exit 1.
+
+```
+$ lore doctrine new tdd-feature-lite -d /tmp/design.md -m /tmp/a/recon.md /tmp/b/recon.md
+Duplicate mission id "recon": two -m files share a filename stem
+```
+
+stderr, exit 1.
+
+---
+
+**W4 — Edit a doctrine** (FR-10, FR-11, FR-12)
+
+```
+$ lore doctrine edit tdd-feature-lite -m /tmp/recon.md
+Updated doctrine tdd-feature-lite (missions replaced: recon)
+```
+
+```
+$ lore doctrine edit tdd-feature-lite -d /tmp/design.md
+Updated doctrine tdd-feature-lite (design replaced)
+```
+
+```
+$ lore doctrine edit tdd-feature-lite --remove-mission refactor lint
+Updated doctrine tdd-feature-lite (missions removed: lint, refactor)
+```
+
+```
+$ lore doctrine edit tdd-feature-lite -d /tmp/d.md -m /tmp/recon.md --remove-mission lint
+Updated doctrine tdd-feature-lite (design replaced; missions replaced: recon; missions removed: lint)
+```
+
+All exit 0. Clause order is fixed: design, replaced, removed. Clauses are joined
+with `; `. Each list is sorted by id and joined with `, `.
+
+```
+$ lore --json doctrine edit tdd-feature-lite -m /tmp/recon.md
+{"updated": "tdd-feature-lite", "design_replaced": false, "missions_replaced": ["recon"], "missions_removed": []}
+```
+
+Failures, all exit 1 with nothing written:
+
+```
+$ lore doctrine edit tdd-feature-lite
+Nothing to update: pass -d, -m, or --remove-mission
+```
+
+See **Conflict C-2** — the PRD calls this a usage error and specifies exit 1,
+while `conceptual-workflows-error-handling` and the sibling `lore edit` command
+make a usage error exit 2 through `click.UsageError`.
+
+```
+$ lore doctrine edit tdd-feature-lite --remove-mission lint
+Mission "lint" not found in doctrine "tdd-feature-lite"
+```
+
+```
+$ lore doctrine edit tdd-feature-lite --remove-mission recon
+Cannot remove every mission: a doctrine keeps at least one mission.
+```
+
+```
+$ lore doctrine edit nope -m /tmp/recon.md
+Doctrine "nope" not found.
+```
+
+Field-edit mode is unchanged in shape and now targets the design document
+(R19a):
+
+```
+$ lore doctrine edit tdd-feature-lite --set title="TDD Feature Lite v2"
+Updated doctrine tdd-feature-lite
+```
+
+Exit 0. `--set/--unset/--add/--remove` stay mutually exclusive with `-d`, `-m`
+and `--remove-mission`.
+
+---
+
+**W5 — Assign a doctrine mission to a Lore mission** (FR-13)
+
+```
+$ lore new mission -q q-a1b2 "Map the codex and the binding decisions" -D tdd-feature-lite/recon -T agent -p 1 -d "<feature context>"
+Created mission q-a1b2/m-c3d4
+```
+
+Exit 0, output unchanged from today. The reference is stored verbatim and is not
+resolved or validated at write time.
+
+```
+$ lore edit q-a1b2/m-c3d4 -D tdd-feature-lite/feature-spec
+Updated mission q-a1b2/m-c3d4
+```
+
+```
+$ lore edit q-a1b2/m-c3d4 --no-doctrine-mission
+Updated mission q-a1b2/m-c3d4
+```
+
+```
+$ lore edit q-a1b2/m-c3d4 -D x/y --no-doctrine-mission
+Error: --doctrine-mission and --no-doctrine-mission are mutually exclusive.
+```
+
+stderr, exit 2 — Click's `UsageError`, exactly as `--knight`/`--no-knight` is
+today.
+
+---
+
+**W6 — Receive a mission as a worker** (FR-14, FR-15)
+
+```
+$ lore show q-a1b2/m-c3d4
+Mission: q-a1b2/m-c3d4
+Title: Map the codex and the binding decisions
+Status: in_progress
+Priority: 1
+Type: agent
+Description: <feature context>
+Doctrine Mission: tdd-feature-lite/recon
+Created: 2026-09-15T19:27:21Z
+Updated: 2026-09-15T20:36:54Z
+
+Board:
+  [2026-09-15T20:34:47Z] PRD: doctrine-missions-prd
+
+--- Mission Instructions ---
+# Recon
+
+You are Recon. You map the ground before anyone builds on it.
+```
+
+Exit 0. The body is printed verbatim with no trailing newline added and **no
+re-rendered frontmatter block** — this differs from today's
+`--- Knight Contents ---`, which re-rendered `id`/`title`/`summary` above the
+body.
+
+Unresolvable reference:
+
+```
+$ lore show q-a1b2/m-c3d4
+Mission: q-a1b2/m-c3d4
+Title: Map the codex and the binding decisions
+Status: in_progress
+Priority: 1
+Type: agent
+Doctrine Mission: gone/missing
+Created: 2026-09-15T19:27:21Z
+Updated: 2026-09-15T20:36:54Z
+```
+
+Exit 0, **silent** — no `Warning:` line. This deletes the
+`Warning: knight file "..." not found in .lore/knights/` line that exists today.
+See Draft ADR 5.
+
+```
+$ lore show q-a1b2/m-c3d4 --json
+{"id": "q-a1b2/m-c3d4", ..., "mission_type": "agent", "doctrine_mission": "tdd-feature-lite/recon", "doctrine_mission_contents": "# Recon\n\nYou are Recon...\n", ...}
+```
+
+`knight` and `knight_contents` no longer exist as keys.
+`doctrine_mission_contents` is `null` when the reference does not resolve and
+when `--no-doctrine-mission` is passed.
+
+---
+
+**W7 — Audit a project after upgrading** (FR-21, FR-22)
+
+```
+$ lore health --scope doctrines
+WARNING  doctrines  tdd-feature  missing_missions_dir: no missions/ directory — this doctrine is not readable in the current shape
+WARNING  doctrines  tdd-feature  stray_yaml: tdd-feature.yaml is no longer read
+Health check passed. No issues found.
+```
+
+The last line is not printed when issues exist; it is shown here only to name
+the renderer. The real no-issue output is that line alone. Exit **0** — warnings
+never raise the exit code.
+
+```
+$ lore health --scope doctrines
+ERROR  doctrines  tdd-feature-lite/recon  missing_file: referenced by q-a1b2/m-c3d4 but not found on disk
+```
+
+Exit 1.
+
+```
+$ lore health --scope knights
+Usage: lore health [OPTIONS] [EXTRA_SCOPES]...
+Try 'lore health --help' for help.
+
+Error: Invalid value for '--scope': 'knights' is not one of 'codex', 'artifacts', 'doctrines', 'watchers', 'schemas', 'glossary', 'bindings', 'rites', 'voice', 'skills'.
+```
+
+stderr, exit 2 — Click's own wording, produced by dropping the token from the
+`click.Choice` set (ADR-017).
+
+> The PRD renders these health lines without the severity prefix and with a
+> space instead of `: ` before the detail. That is the PRD describing the check
+> name, severity and detail; the rendering above is what `cli.health_cmd`'s
+> existing renderer actually emits and is not being changed. The normative
+> content — severity, `entity_type`, `id`, `check`, `detail` — is exactly what
+> the PRD specifies.
+
+---
+
+**W8 — Upgrade a project** (FR-23, FR-24)
+
+```
+$ lore init --yes
+...
+  Removed knights/default/changelog-scribe.md — no longer shipped
+  Removed knights/default/feature-implementation/architect.md — no longer shipped
+  ...
+  Knights outside default/ are no longer read by Lore: .lore/knights/my-reviewer.md
+  Removed doctrines/default/update-changelog.yaml — no longer shipped
+  Created doctrines/default/update-changelog/update-changelog.design.md
+  Created doctrines/default/update-changelog/missions/update-changelog-entry.md
+  ...
+```
+
+Exit 0. The database migrates v6→v7 on the first connection. Authored knights
+outside `default/` are left on disk and named once, on one line listing every
+such path.
+
+### Requirements
+
+| # | Requirement | Type |
+|---|-------------|------|
+| R1 | A doctrine is a directory named for its stem, holding `<stem>.design.md` and an optional `missions/` directory of `.md` files. | functional (FR-1) |
+| R2 | A doctrine's group is derived from the parent of the doctrine **directory**, so `lore doctrine list --filter` behaves exactly as today. | functional (FR-2) |
+| R3 | A doctrine mission file carries `id`, `title`, `summary` frontmatter validated by a packaged `doctrine-mission-frontmatter` schema, and its `id` equals its filename stem. | functional (FR-3) |
+| R4 | No file in a doctrine carries step order, step type, phase or dependencies, and Lore parses no workflow structure from a doctrine. | functional (FR-4) |
+| R5 | An agent reads a doctrine's design and mission index in one command. | functional (FR-5) |
+| R6 | An agent reads one mission body by doctrine id and mission id. | functional (FR-6) |
+| R7 | Both retrievals are available on the CLI and through `lore.api` with identical return shapes. | functional (FR-7, ADR-011) |
+| R8 | A doctrine is addressed by id, never by file path. | functional (FR-8, ADR-006) |
+| R9 | An agent creates a complete doctrine — design plus one or more missions — in a single atomic call. | functional (FR-9) |
+| R10 | An agent replaces the design, replaces or adds individual missions, and removes missions in a single call, without re-supplying untouched files. | functional (FR-10) |
+| R11 | A removed mission is soft-deleted to `<id>.md.deleted`. | functional (FR-11, ADR-003) |
+| R12 | A doctrine always has at least one mission; create and edit both enforce it. | functional (FR-12) |
+| R13 | A Lore mission records `<doctrine-id>/<mission-id>`, stored verbatim and never interpreted at write time. | functional (FR-13, ADR-004) |
+| R14 | `lore show <mission-id>` resolves that reference at read time and splices the body into its output. | functional (FR-14) |
+| R15 | An unresolvable reference yields null contents, exit 0 and no output; `lore health` reports it. | functional (FR-15) |
+| R16 | No `lore knight` command exists. | functional (FR-16) |
+| R17 | No knight name appears in `lore.api.__all__`. | functional (FR-17) |
+| R18 | No knight schema ships and no knight files are seeded. | functional (FR-18) |
+| R19 | `lore health` offers no `knights` scope. | functional (FR-19) |
+| R19a | `lore doctrine edit --set/--unset/--add/--remove` keeps working, now against the design document, with schema `doctrine-design-frontmatter`. | functional (FR-19a) |
+| R19b | `decisions-006-id-references` is edited in place with a dated status-history line; its decision is unchanged and it is not marked superseded. | functional (FR-19b) |
+| R20 | `mission_type` uses `agent`, `constable` and `human`; `knight` is not a token any seeded doctrine, skill or document uses. | functional (FR-20) |
+| R21 | `lore health --scope doctrines` reports old-shape doctrines and stray doctrine YAML as warnings. | functional (FR-21) |
+| R22 | `lore health --scope doctrines` reports an unresolvable `doctrine_mission` on an active mission as an error. | functional (FR-22) |
+| R23 | The v6→v7 migration drops `missions.knight`, adds `missions.doctrine_mission TEXT`, and rewrites `mission_type` `knight` to `agent`. | functional (FR-23) |
+| R24 | `reconcile` removes seeded knights, leaves authored knights on disk, and names both outcomes in its report. | functional (FR-24) |
+| R25 | A `mission-design.md` artifact ships under `src/lore/defaults/artifacts/lore-design-documents/`. | functional (FR-25) |
+| R26 | `doctrine-design.md` is rewritten — no Knight column, no New Knights section, Type tokens `agent \| constable \| human`, and a Missions section. | functional (FR-26) |
+| R27 | The four seeded doctrines ship in the new shape, each former knight persona merged into the mission file that used it. | functional (FR-27) |
+| R28 | `skills-catalogue.yaml` retires `update-knight` into `update-doctrine`; the machinery family carries four skills. | functional (FR-28) |
+| R29 | `start-quest`, `update-doctrine`, `inquest` and `sync-codex-guide` are updated for the new shape; `update-knight` is removed. | functional (FR-29) |
+| R30 | `LORE-AGENT.md`, `GETTING-STARTED.md` and the repository's own agent instruction file describe six entity types and the `agent` mission type. | functional (FR-30) |
+| R31 | `src/lore/oracle.py` renders the doctrine-mission reference where it rendered the knight. | functional (spec addition) |
+| R32 | `src/lore/prompts.py`'s `ACCESS_SCOPE_NOTE` and `DEFAULT_SKILL_FAMILIES` docstring stop naming knights and say four skills. | functional (spec addition) |
+| N1 | An orchestrator reads a doctrine in 1 command; a worker receives description and instructions in 1 command. | non-functional (ADR-001) |
+| N2 | Authoring a complete doctrine is 1 command regardless of mission count; replacing one mission is 1 command. | non-functional |
+| N3 | `lore doctrine new` and `lore doctrine edit` write nothing when validation fails; `lore doctrine new` additionally leaves no partial directory on disk under any failure, including a crash mid-write. | non-functional |
+| N4 | A reference containing `..`, a path separator where none is allowed, or an absolute path resolves to nothing rather than escaping `.lore/`. | non-functional |
+| N5 | The v6→v7 migration runs inside the existing chain and is idempotent under the version gate. | non-functional |
+| N6 | Cross-project reads stay read-only: every doctrine write function calls `projects.reject_foreign` first. | non-functional (ADR-025) |
+
+---
+
+## Part 2 — Architecture
+
+### Core Decisions
+
+| # | Decision | Choice | Rationale | Requirement |
+|---|----------|--------|-----------|-------------|
+| D1 | How a doctrine is found on disk | A directory `D` under `.lore/doctrines/` is a doctrine iff `D/<D.name>.design.md` exists. Any path segment starting with `.` or ending `.deleted` is skipped at every level. | Directory identity replaces the `.design.md`+`.yaml` pairing. The skip rule is what makes the staged-write temp directory (D8) and soft-deleted doctrines invisible to discovery in the same one line. | R1, R11 |
+| D2 | How the group is derived | `derive_group(doctrine_dir, doctrines_dir)` — the **directory**, not the design file. | `derive_group` takes `relative.parts[:-1]`; passing the design file would fold the doctrine id into the group and break every `--filter` expectation. Passing the directory yields exactly today's answer. No change to `paths.derive_group` itself. | R2 |
+| D3 | What `filename` means in a list record | Still `"<stem>.design.md"`. | `scoped.select(..., alias=_doctrine_stem)` and `_doctrine_stem` both key off that string. Keeping it means the nested-projects resolution path needs no change at all. | R7 |
+| D4 | What `read_doctrine` returns on a mission miss | A bare `None` means **the doctrine** missed. When the doctrine resolves and the named mission does not, the returned dict carries `"mission": None`. | Settled by the PRD. It is what lets `cli.doctrine_show` emit two different messages from the return value alone, which ADR-011 requires and which forbids the CLI doing its own existence check. | R7 |
+| D5 | Where multi-mission validation lives | Entirely in `doctrine.py`. `cli.py` reads files and formats; it validates nothing the module does not. | ADR-011 and `standards-separation-of-concerns`. | R7, R9 |
+| D6 | Duplicate `-m` stems | Detected by `doctrine.load_mission_sources(paths)`, a module-level helper that turns a list of paths into the `{id: content}` mapping and raises on a duplicate stem or a missing file. | A `dict` cannot represent a duplicate key, so a Python caller passing `missions={...}` physically cannot express the mistake — the same reasoning `cli.py:299-304` already records for `--project`. Putting the path→content step in `doctrine.py` gives the rule a module home anyway, so nothing lives only in `cli.py`. | R9, ADR-011 |
+| D7 | Frontmatter shape rules | JSON Schema only: `doctrine-design-frontmatter` for the design, the new `doctrine-mission-frontmatter` for each mission file. Cross-field rules (`id` == command argument, `id` == filename stem) stay inline in `doctrine.py`. | `standards-dry` — shape validation lives in JSON Schema, never inline; the split mirrors today's `_validate_yaml_schema` / id-match split exactly. | R3 |
+| D8 | Atomicity of `lore doctrine new` | Validate everything, build the complete tree in `<doctrines_dir>/.<name>.lore-tmp/`, write each file through `safewrite.atomic_write_text`, then `os.replace(staging, target)`. | The PRD promises "no partial doctrine is ever left on disk". A single directory rename delivers that literally, including under a crash mid-write, and it is six lines. `doctrine.py` becomes the first entity module to use `lore.safewrite`. See Draft ADR 3. | N3, R9 |
+| D9 | Atomicity of `lore doctrine edit` | Validate everything first, then per-file `safewrite.atomic_write_text` and per-file `rename` for soft-deletes. No directory swap. | The PRD's own reliability wording scopes the guarantee to validation failure: "a validation failure leaves the tree exactly as it was". A directory swap on edit would have to copy the whole tree including `.deleted` tombstones to preserve them, for a crash window nobody has reported. Stated as the limit of the guarantee rather than left implied. | N3, R10 |
+| D10 | Soft-deleting a whole doctrine | `lore doctrine delete <name>` renames the **directory** `<name>/` → `<name>.deleted/`. Envelope `{"id", "deleted": true, "deleted_at": null}` unchanged. | ADR-003 requires a `.deleted` rename for a file entity; the directory is now the entity. D1's skip rule makes the renamed directory invisible to discovery and to health without a second rule. | R11, ADR-003 |
+| D11 | The stored reference resolver | Two resolvers, the dual pattern `knight.py` already proved: `_find_doctrine_dir(root, stem)` is strict (rejects `/` and `\` — user input), `_resolve_doctrine_mission(root, ref)` is permissive (accepts exactly one `/`, refuses absolute paths and any `..` segment — stored input). | Directly inherited from `_find_knight` / `_resolve_knight_ref`, which is the fix `preexisting-bugs-handoff` bug #1 led to. Re-deriving it would reintroduce that bug in a new place. | R13, N4 |
+| D12 | When a reference resolves | Read time, never write time. `create_mission`/`update_mission` store the string and do not touch the filesystem. | ADR-004's storage posture, and what makes a doctrine edited after a mission was created change what that mission's worker reads. | R13 |
+| D13 | `lore show` on an unresolvable reference | Silent. No warning line, exit 0, `doctrine_mission_contents: null`. | Settled by the PRD and the mission brief. It deletes the `Warning: knight file ... not found` line that exists today, so it is a deliberate removal, not an omission. `lore health --scope doctrines` is the single reporter. See Draft ADR 5. | R15 |
+| D14 | Where the design body is cut for display | Nowhere. `read_doctrine`'s `design` key is the whole file text, frontmatter included, exactly as today. Only the `--mission` body is frontmatter-stripped, which the PRD states explicitly. | The PRD says "frontmatter stripped" for the mission and does not say it for the design. Changing the design's rendering would break `test_doctrine_show.py` for no stated requirement. | R5 |
+| D15 | The `doctrine show --json` envelope | Wrapped: `{"doctrine": {...}}` and `{"mission": {...}}`. Today's is flat. | The PRD specifies the exact envelope and the mission brief makes it authoritative on exactly that. `lore rite show` already wraps (`{"rites": [...]}`), so the shape is not novel. Recorded here because it is a breaking change to an envelope nothing but prior code pinned. | R5, R6 |
+| D16 | JSON errors go to stderr on both `--json` paths | `doctrine show`'s local-`--json` branch currently writes its error envelope to **stdout** (`cli.py:2057`); it moves to stderr. **`doctrine_edit` is worse and is also corrected here:** its whole-file branch writes *every* error to stdout in both modes — `File not found: <path>` (`cli.py:2191-2195`), `No content provided on stdin.` (`cli.py:2202-2206`) and the `update_doctrine` `ValueError` (`cli.py:2213-2217`) all call `click.echo(msg)` with no `err=True`. The rewritten `doctrine edit` handler routes every error to stderr, text and JSON alike, matching its `doctrine new` and `doctrine delete` siblings. | `conceptual-workflows-error-handling`: "Error messages go to stderr (`click.echo(..., err=True)`)" and "In JSON mode, error envelopes are also written to stderr." Both of today's deviations are pre-existing; the PRD's "stderr carries `{"error": …}`" is the correction, and this feature rewrites both handlers, so carrying the deviation forward would be a new choice rather than an inherited one. | R6, R10 |
+| D17 | Health scope split | `--scope schemas` validates both doctrine frontmatter schemas through the `_SCHEMA_KINDS` table. `--scope doctrines` audits only what JSON Schema cannot express: id-vs-stem, duplicate ids, old-shape leftovers, dangling references, broken artifact refs. | `standards-dry` gives shape validation one home, and `health_check` dedups only `dangling_codex_rite` — running the same validation under two scopes would print every schema error twice on a full `lore health`. See **Conflict C-5**: the mission brief's wording can be read as putting schema validation under `doctrines`. | R21, R22 |
+| D18 | `broken_artifact_ref` survives | The check moves from YAML step `notes:` to the design body and every `missions/*.md` body, same regex `\bfi-[a-z0-9-]+\b`, same ERROR severity. Detail becomes `'<id>' not found (mission <mission-id>)`, or `(design)` for a hit in the design body. | The PRD is silent, and silence is not a removal instruction. This is a live capability; the same reasoning the mission brief applies to `frontmatter_edit`'s `doctrine` kind applies here. | R21 |
+| D19 | `frontmatter_edit`'s `doctrine` kind | Repointed onto `<doctrine>/<stem>.design.md`, `schema_kind="doctrine-design-frontmatter"`, `shape="md_fm"`, `extension=".md"`, new locator `_doctrine_design_locator`. The `knight` kind and its import are deleted. | R19a, settled by the mission brief. | R19a |
+| D20 | Path helpers | `paths.py` gains `DESIGN_SUFFIX`, `MISSIONS_DIRNAME`, `doctrine_design_path(doctrine_dir)`, `doctrine_missions_dir(doctrine_dir)` and `doctrine_mission_path(doctrine_dir, mission_id)`. `knights_dir` and the `"knight"` row in `_ENTITY_LOCATION_BASES` are deleted. | Recon marked the helpers "not strictly required". Verified: `doctrine.py` builds paths inline today, but `health.py` now needs the same three calculations, and `standards-dry` gives that one home. These take a doctrine directory rather than a project root; `derive_group` and `group_matches_filter` already set that precedent in this module. | R1, R3 |
+| D21 | Migration mechanism | `v6_to_v7.py` uses the rename-create-copy-drop pattern, recreating `missions` with `doctrine_mission TEXT` where `knight` was, copying rows with `knight` mapped to `doctrine_mission`, then `UPDATE missions SET mission_type = 'agent' WHERE mission_type = 'knight'`, then recreating both indexes. | `v4_to_v5.py` is the direct precedent and does exactly this; `ALTER TABLE … DROP COLUMN` needs SQLite ≥ 3.35 and would leave column order disagreeing with `schema.sql`. Carrying `knight` values across into `doctrine_mission` preserves the operator's data rather than discarding it — an old bare knight name becomes an unresolvable reference that `lore health` reports, which is the designed outcome for a reference that does not resolve. | R23 |
+| D22 | Multi-value flag mechanism | `-m` on both `doctrine new` and `doctrine edit`, and `--remove-mission` on `doctrine edit`, all use `cls=SpaceSeparatedChoice, multiple=True` with the default string type. | ADR-012's **decision** is space-separated, never repeatable; both mechanisms deliver it. `doctrine edit` carries two multi-value flags and therefore requires `SpaceSeparatedChoice`; using it on `doctrine new` too keeps one flag spelled one way across a command group, and avoids `lore doctrine new -m a.md b.md tdd` binding `a.md` as `NAME` under the trailing-variadic shape. `SpaceSeparatedChoice` changes the parser, not the validator, so it works with an unconstrained type. | R9, R10, ADR-012 |
+| D23 | `--mission` is single-value | Plain `@click.option("--mission", default=None)`. | The PRD states it explicitly; ADR-012 governs multi-value flags and does not apply. | R6 |
+| D24 | Removing a retired seed tree | A new `RETIRED_SEED_TREES` tuple in `init.py` naming `.lore/knights/default`, walked on every run, every file unlinked and reported `Removed knights/default/<path> — no longer shipped`, then empty directories pruned. Authored knights outside `default/` are collected and named on one line. | **Verified against source and recon was wrong by omission here.** `_prune_seeded_tree` only walks trees still in `SEEDED_TREES`; deleting the `knights` row means nothing ever looks at `.lore/knights/default/` again and the seeded knights stay on disk forever, contradicting FR-24. See Draft ADR 4. | R24 |
+| D25 | `mission_type` token swap | Seeded content and documentation only. No enum, no `CHECK`, no `click.Choice`, no validator. | ADR-004: `mission_type` is stored and exposed, never interpreted. `v4_to_v5.py` already stripped the enum and the CHECK constraint. The only code that touches the token is the migration's one-row-class `UPDATE`. | R20 |
+| D26 | Where `api.py`'s knight lines are deleted | In the core lane's excision unit, together with `knight.py` itself. **`Doctrine` and `DoctrineStep` leave `api.py` in the same unit**, for the same reason: C2 deletes them from `models.py`, and `api.py:15` imports them from `models.py`. | `api.py` is a pure re-export facade; a re-export of a deleted module — or of a deleted dataclass — is an `ImportError` at import time, not a lint warning. Every other `api.py` change is the surface lane's. | R17 |
+| D27 | Who resolves the reference for `lore show` | `db.get_mission_detail` alone. `cli._show_mission` renders `mission["doctrine_mission_contents"]` and performs no lookup of its own; `cli.py` imports nothing from `lore.doctrine` for this. | **Pre-existing breach being closed, not a new rule.** Today `_show_mission` (`cli.py:2675-2693`) calls `knight_module.read_knight(...)` itself — a second resolution of the same reference the envelope at `cli.py:2603` already carries — and the `Warning: knight file "…" not found` branch exists **only** in `cli.py`, invisible to every `lore.api` caller. `decisions-011` ("no behaviour may live only in `cli.py`"), `standards-separation-of-concerns` ("`cli.py` formats and exits") and `standards-dry` (one resolution home) all forbid it. The fix becomes available for free here because D13 deletes the warning branch and W6 drops the re-rendered frontmatter block, so the body string is the whole of what the CLI needs. | R14, R15 |
+| D28 | `-f/--from` and the stdin path leave `lore doctrine edit` | Both are removed. Whole-file mode is `-d`, `-m` and `--remove-mission` only. `lore doctrine edit <name> < file.yaml` stops working; there is no replacement stdin path. | `-f` named the deleted `<name>.yaml`, and a doctrine is now 1 + N files, which one unnamed stdin stream cannot address. Stated explicitly because the CLI Surface tables show the new flags but never say the old ones are gone, and a dev knight reading only those tables would keep `-f` alive beside `-d`. This is a user-visible CLI removal and belongs in the C-4 changelog notice beside the API removals. `-f` on `doctrine new` goes the same way (S4 already says so). | R10 |
+| D29 | How `update_doctrine` and `delete_doctrine` find the doctrine | Both go through `_find_doctrine_dir`, which searches the subtree and prefers the shallower match. | **Pre-existing breach being closed.** Today `update_doctrine` looks only at `doctrines_dir / f"{name}.yaml"` (`doctrine.py:358-361`) — flat, no `rglob` — while `delete_doctrine` and `read_doctrine` both resolve recursively. So `lore doctrine edit` on any doctrine under `default/` already fails with `Doctrine "x" not found.` today. After FR-27 every seeded doctrine lives under `default/`, so E17–E25 and E26 are unreachable unless the lookup is recursive. `standards-dry` — one resolver, used by every write function in the module. | R10, R2 |
+| D30 | `safewrite` calls pass `project_root` | Every `safewrite.atomic_write_text(...)` call in `doctrine.py` passes `project_root=project_root`. | `safewrite`'s containment property ("Never outside the project root") is only enforced when the keyword is supplied; with it omitted only the symlink refusal runs. `doctrine.py` writes paths built from a user-supplied name and group, which is the case the property exists for. | N3, N4 |
+
+### Data and Storage
+
+**On disk.** A doctrine is:
+
+```
+.lore/doctrines/<group…>/<stem>/
+├── <stem>.design.md          # required — frontmatter id/title/summary + prose
+└── missions/                 # optional
+    ├── <mission-id>.md       # frontmatter id/title/summary + prose
+    └── <mission-id>.md.deleted   # soft-deleted, invisible to every read
+```
+
+`<group…>` is zero or more directory levels; the group string is
+`derive_group(<stem>-dir, .lore/doctrines)`. Seeded doctrines live under
+`default/`, which `projects.is_seeded_default` already recognises from the
+derived group string alone — the extra nesting level changes nothing there.
+
+`.lore/knights/` is no longer written, read, seeded or gitignored. It is not
+deleted when a project authored files there.
+
+**Schema (SQLite).** Migration **v6 → v7**, `SCHEMA_VERSION` 6 → 7.
+
+| Change | Statement |
+|--------|-----------|
+| Drop `missions.knight` | rename-create-copy-drop (D21) |
+| Add `missions.doctrine_mission TEXT` | in the position `knight` held |
+| Carry data | `INSERT INTO missions SELECT id, quest_id, title, description, status, priority, knight, block_reason, created_at, updated_at, closed_at, deleted_at, mission_type FROM missions_old` |
+| Rewrite the token | `UPDATE missions SET mission_type = 'agent' WHERE mission_type = 'knight'` |
+| Recreate indexes | `idx_missions_quest_id`, `idx_missions_status_priority` |
+
+`src/lore/defaults/schema.sql` changes `knight TEXT` → `doctrine_mission TEXT`
+and `INSERT INTO lore_meta … '6'` → `'7'`, so a fresh database and a migrated
+one are identical.
+
+**Packaged schemas.** 12 → 11.
+
+| File | Action |
+|------|--------|
+| `src/lore/schemas/doctrine-mission-frontmatter.yaml` | **new** — `$id: lore://schemas/doctrine-mission-frontmatter`, `type: object`, `additionalProperties: false`, `required: [id, title, summary]`, each a `string` with `minLength: 1`; `id`'s description reads "Doctrine mission id. Must match the filename stem." |
+| `src/lore/schemas/knight-frontmatter.yaml` | **deleted** |
+| `src/lore/schemas/doctrine-yaml.yaml` | **deleted** |
+| `src/lore/schemas/doctrine-design-frontmatter.yaml` | edited — `id`'s description stops saying "Must match the paired YAML file's id" and reads "Doctrine id. Must match the doctrine directory name." The required set stays `[id, title, summary]`. **Recon recorded this file as requiring only `id`; verified against source, it requires all three.** |
+
+### Python API Surface
+
+```python
+# lore/doctrine.py
+
+def list_doctrines(
+    project_root: Path,
+    filter_groups: list[str] | None = None,
+    *,
+    scope: str | None = None,
+) -> list[dict]: ...
+# [{"id", "group", "title", "summary", "valid", "filename", "origin"}] — keys unchanged.
+# "filename" is "<stem>.design.md". Order is path order per project, concatenated
+# across projects — unchanged (D-16).
+
+def read_doctrine(
+    project_root: Path,
+    doctrine_id: str,
+    *,
+    scope: str | None = None,
+    mission: str | None = None,
+) -> dict | None: ...
+# {"id", "title", "summary", "design", "missions": [{"id","title","summary"}], "origin"}
+# plus "mission": {"id","title","summary","body"} | None when mission is not None.
+# None means the DOCTRINE missed, and only that.
+
+def create_doctrine(
+    project_root: Path,
+    name: str,
+    design_content: str,
+    missions: dict[str, str],
+    *,
+    group: str | None = None,
+) -> dict: ...
+# {"created": name, "group": group, "missions": sorted(missions), "path": "<repo-relative>/"}
+
+def update_doctrine(
+    project_root: Path,
+    name: str,
+    design_content: str | None = None,
+    missions: dict[str, str] | None = None,
+    remove_missions: list[str] | None = None,
+) -> dict: ...
+# {"updated": name, "design_replaced": bool,
+#  "missions_replaced": sorted[...], "missions_removed": sorted[...]}
+# Resolves the doctrine directory through _find_doctrine_dir — subtree-wide,
+# shallower match wins (D29). Today's flat lookup is a bug; a doctrine under
+# default/ cannot be edited at all.
+
+def delete_doctrine(project_root: Path, name: str) -> dict: ...
+# {"id": name, "deleted": True, "deleted_at": None} — unchanged
+
+def load_mission_sources(paths: Sequence[Path]) -> dict[str, str]: ...
+# Internal. Path list -> {stem: content}. Raises ValueError on a missing file or
+# a duplicate stem.
+
+def _find_doctrine_dir(project_root: Path, stem: str) -> Path | None: ...
+def _resolve_doctrine_mission(project_root: Path, ref: str) -> Path | None: ...
+def _doctrine_mission_stem(ref: str) -> str: ...
+# Internal. The strict/permissive resolver pair and the stem extractor (D11).
+```
+
+```python
+# lore/db.py
+
+def create_mission(
+    project_root: Path,
+    title: str,
+    quest_id: str | None = None,
+    description: str = "",
+    priority: int = 2,
+    doctrine_mission: str | None = None,
+    mission_type: str | None = None,
+) -> dict: ...
+
+def update_mission(
+    project_root: Path,
+    mission_id: str,
+    title: str | None = None,
+    description: str | None = None,
+    priority: int | None = None,
+    doctrine_mission: str | None = None,
+    remove_doctrine_mission: bool = False,
+    mission_type: str | None = None,
+) -> dict: ...
+
+def update_mission_full(
+    project_root: Path,
+    mission_id: str,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    priority: int | None = None,
+    doctrine_mission: str | None = None,
+    remove_doctrine_mission: bool = False,
+    mission_type: str | None = None,
+) -> dict: ...
+
+def get_mission_detail(
+    project_root: Path,
+    mission_id: str,
+    *,
+    include_doctrine_mission: bool = True,
+) -> dict | None: ...
+```
+
+`get_mission_detail` hydrates through a lazy
+`from lore.doctrine import _resolve_doctrine_mission` — the same documented
+dependency-inversion exception the lazy `from lore.knight import read_knight`
+occupies today, moved one module across. It reads the resolved file and strips
+frontmatter; it does not call `read_doctrine`, because it needs one body and not
+a whole doctrine record.
+
+```python
+# lore/health.py
+def _check_doctrines(
+    doctrines_dir: Path, artifacts_dir: Path, project_root: Path
+) -> list[HealthIssue]: ...
+# _check_knights is DELETED. project_root is now a parameter rather than
+# derived from knights_dir.parent.parent.
+```
+
+```python
+# lore/paths.py
+DESIGN_SUFFIX = ".design.md"
+MISSIONS_DIRNAME = "missions"
+
+def doctrine_design_path(doctrine_dir: Path) -> Path: ...
+def doctrine_missions_dir(doctrine_dir: Path) -> Path: ...
+def doctrine_mission_path(doctrine_dir: Path, mission_id: str) -> Path: ...
+# knights_dir() is DELETED. _ENTITY_LOCATION_BASES loses its "knight" row.
+```
+
+| Name | Module | In `lore.api.__all__`? | Raises |
+|------|--------|------------------------|--------|
+| `list_doctrines` | `lore.doctrine` | yes (kept) | `UnknownProjectError` on an unknown `scope` |
+| `read_doctrine` | `lore.doctrine` | yes (kept, new `mission=` keyword) | `ValueError` when `mission` contains a path separator |
+| `create_doctrine` | `lore.doctrine` | yes (signature changed) | `ForeignEntityError`; `ValueError` on every condition in the CLI failure table |
+| `update_doctrine` | `lore.doctrine` | yes (signature changed) | `ForeignEntityError`; `ValueError` on every condition in the CLI failure table |
+| `delete_doctrine` | `lore.doctrine` | yes (unchanged) | `ForeignEntityError`; `ValueError` on a miss |
+| `load_mission_sources` | `lore.doctrine` | no (internal) | `ValueError` on a missing file or duplicate stem |
+| `_find_doctrine_dir`, `_resolve_doctrine_mission`, `_doctrine_mission_stem` | `lore.doctrine` | no (internal) | `ValueError` on a path separator (strict resolver only) |
+| `create_mission`, `update_mission`, `update_mission_full`, `get_mission_detail` | `lore.db` | yes (keywords renamed) | `ValueError` as today |
+| `Knight` | `lore.models` | **removed from both `lore.api.__all__` and `lore.models.__all__`** — verified at `api.py:211` and `models.py:474` | — |
+| `list_knights`, `read_knight`, `create_knight`, `update_knight`, `delete_knight` | — | **removed** | — |
+| `_knight`, `_validate_frontmatter` (private aliases) | — | **removed**; `api._validate_frontmatter` has no caller in `src/` or `tests/` | — |
+| `Doctrine`, `DoctrineStep` | `lore.models` | **removed from `lore.api.__all__` AND `lore.models.__all__`** — both are public names today, verified at `api.py:15` (the `from lore.models import …` line), `api.py:208-210` and `models.py:473-474`. Both describe a step graph that no longer exists; `DoctrineListEntry` stays. Deleting them from `models.py` while `api.py` still re-exports them is an `ImportError` at import time — D26's own reasoning about `knight.py` applies unchanged to a deleted dataclass — so both edits land in the same unit (C4). | — |
+
+**Breaking-change accounting (ADR-010).** **Eight** names leave
+`lore.api.__all__` — `list_knights`, `read_knight`, `create_knight`,
+`update_knight`, `delete_knight`, `Knight`, `Doctrine`, `DoctrineStep` — and
+**three** leave `lore.models.__all__` (`Knight`, `Doctrine`, `DoctrineStep`).
+Two exported callables change their positional parameter lists
+(`create_doctrine`, `update_doctrine`). Four change keyword names
+(`create_mission`, `update_mission`, `update_mission_full`,
+`get_mission_detail`). One exported dataclass changes a field name
+(`Mission.knight` → `Mission.doctrine_mission`).
+
+**Return shapes change on nine exported callables**, which ADR-010's table
+scores identically to a positional-list change: `read_doctrine` (drops
+`raw_yaml` and `steps`, gains `missions` and the optional `mission` key),
+`create_doctrine` (`{id, filename, group, design_filename}` →
+`{created, group, missions, path}`), `update_doctrine` (`{id, filename,
+updated_at}` → `{updated, design_replaced, missions_replaced,
+missions_removed}`), and the six mission-bearing envelopes whose per-mission
+`knight` key becomes `doctrine_mission` — `get_mission_detail` (also
+`knight_contents` → `doctrine_mission_contents`), `list_missions`,
+`list_missions_grouped`, `read_mission`, `get_quest_detail` and
+`get_ready_missions`.
+
+Every one of those rows is "major bump **or** explicit breaking-change notice"
+in ADR-010's semver table. Separately and unconditionally, ADR-010's
+Consequences and `standards-public-api-stability`'s Rules for Contributors both
+state that **every release that changes the public API must include a
+`CHANGELOG.md` entry** — that obligation does not depend on which branch of the
+semver table is taken. `CHANGELOG.md` exists at the repository root and
+`pyproject.toml` reads `version = "0.11.0"`. The PRD names v0.12.0 and scopes
+no changelog work, and no requirement, lane or unit in this spec produces
+either. See **Conflict C-4**.
+
+### CLI Surface
+
+**`lore doctrine show NAME [--mission ID] [--json]`**
+
+```
+$ lore doctrine show tdd-feature-lite
+<design file, verbatim, whole>
+
+--- Missions ---
+feature-spec  Write the feature spec
+recon         Map the codex and the binding decisions
+```
+
+Renderer, exactly:
+
+```python
+click.echo(d["design"], nl=False)
+click.echo("")
+click.echo("--- Missions ---")
+if not d["missions"]:
+    click.echo("(none)")
+else:
+    width = max(len(m["id"]) for m in d["missions"])
+    for m in d["missions"]:
+        click.echo(f"{m['id'].ljust(width)}  {m['title']}")
+```
+
+```json
+{"doctrine": {"id": "…", "title": "…", "summary": "…", "design": "…", "missions": [{"id": "…", "title": "…", "summary": "…"}], "origin": "self"}}
+```
+
+```json
+{"mission": {"id": "recon", "title": "…", "summary": "…", "body": "…"}}
+```
+
+| Failure | Message | Exit |
+|---------|---------|------|
+| Doctrine does not resolve | `Doctrine 'nope' not found` (stderr; see C-1) | 1 |
+| Doctrine resolves, mission does not | `Mission "nope" not found in doctrine "tdd-feature-lite"` (stderr) | 1 |
+| `--mission` contains `/` or `\` | `Invalid mission id: path separators not allowed` (stderr) | 1 |
+
+**`lore doctrine new NAME -d DESIGN -m FILE [FILE ...] [--group G] [--json]`**
+
+```
+Created doctrine tdd-feature-lite with 3 missions in group default
+Created doctrine tdd-feature-lite with 1 mission
+Created doctrine tdd-feature-lite with 3 missions
+```
+
+```json
+{"created": "tdd-feature-lite", "group": "default", "missions": ["feature-spec", "recon", "scribe"], "path": ".lore/doctrines/default/tdd-feature-lite/"}
+```
+
+Validation order in `create_doctrine`, and the exact message each step raises:
+
+| # | Check | Message | Exit |
+|---|-------|---------|------|
+| 0 | `projects.reject_foreign(name)` | `Cannot write "camelot:x": an entity from another project is read-only.` | 1 |
+| 1 | `validate_name(name)` | `Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.` | 1 |
+| 2 | `validate_group(group)` | as `validators.validate_group` returns it | 1 |
+| 3 | duplicate anywhere in the subtree | `Error: doctrine 'tdd-feature-lite' already exists at <path>` | 1 |
+| 4 | design frontmatter present, `id` matches | `Design file id "x" does not match command argument "tdd-feature-lite"` | 1 |
+| 5 | design frontmatter schema | schema issue messages joined by `\n` | 1 |
+| 6 | at least one mission | `At least one mission file is required (-m)` | 1 |
+| 7 | each mission id is a valid name | `Invalid mission id "bad id": must start with alphanumeric and contain only letters, digits, hyphens, underscores.` | 1 |
+| 8 | each mission frontmatter `id` == stem | `Mission file id "x" does not match filename stem "recon"` | 1 |
+| 9 | each mission frontmatter schema | `Mission "recon": <issue messages joined by \n>` | 1 |
+| — | CLI-only: `-d` absent | `Error: -d/--design is required` | 1 |
+| — | CLI-only: a source file is missing | `File not found: /tmp/recon.md` | 1 |
+| — | CLI-only (`load_mission_sources`): two `-m` files share a stem | `Duplicate mission id "recon": two -m files share a filename stem` | 1 |
+
+**`lore doctrine edit NAME [-d DESIGN] [-m FILE ...] [--remove-mission ID ...]`**
+**`lore doctrine edit NAME [--set K=V] [--unset K] [--add K=V] [--remove K=V]`**
+
+`-f/--from` and the read-from-stdin fallback are **removed** (D28). The
+subcommand docstring, which today reads "Field-edit mode (mutually exclusive
+with -f / --from) targets the `<name>.yaml` file. To edit the `.design.md`
+partner, use `-f`.", is rewritten: field-edit mode is mutually exclusive with
+`-d`, `-m` and `--remove-mission`, and targets the design document.
+
+```
+Updated doctrine tdd-feature-lite (design replaced)
+Updated doctrine tdd-feature-lite (missions replaced: recon)
+Updated doctrine tdd-feature-lite (missions removed: lint, refactor)
+Updated doctrine tdd-feature-lite (design replaced; missions replaced: feature-spec, recon; missions removed: lint)
+Updated doctrine tdd-feature-lite
+```
+
+The last form is field-edit mode, unchanged.
+
+```json
+{"updated": "tdd-feature-lite", "design_replaced": true, "missions_replaced": ["recon"], "missions_removed": []}
+```
+
+| Failure | Message | Exit |
+|---------|---------|------|
+| Foreign name | `Cannot write "camelot:x": an entity from another project is read-only.` | 1 |
+| Doctrine miss | `Doctrine "nope" not found.` (trailing period — today's text) | 1 |
+| No `-d`, `-m` or `--remove-mission` | `Nothing to update: pass -d, -m, or --remove-mission` | 1 — see C-2 |
+| Whole-file flags mixed with field-edit flags | today's `_reject_mutex` message, unchanged | 1 |
+| `--remove-mission` names a missing mission | `Mission "lint" not found in doctrine "tdd-feature-lite"` | 1 |
+| The removal would empty the doctrine | `Cannot remove every mission: a doctrine keeps at least one mission.` | 1 |
+| A `-m` file fails schema or id-vs-stem | as the `doctrine new` table, rows 7–9 | 1 |
+| `-d` file fails schema or id match | as the `doctrine new` table, rows 4–5 | 1 |
+
+**`lore doctrine list`** — unchanged in every respect: same columns, same JSON,
+same `--filter` behaviour, same ordering. Only discovery underneath changes.
+
+**`lore doctrine delete NAME`** — unchanged message `Deleted doctrine <name>`
+and envelope; the directory is renamed rather than two files (D10).
+
+**`lore new mission … -D REF`** and **`lore edit MISSION -D REF | --no-doctrine-mission`**
+
+`-k/--knight` and `--no-knight` are removed. Help text:
+`-D, --doctrine-mission TEXT   Doctrine mission reference <doctrine>/<mission>.`
+and `--no-doctrine-mission  Remove doctrine mission assignment.`
+
+| Failure | Message | Exit |
+|---------|---------|------|
+| Both `-D` and `--no-doctrine-mission` | `Error: --doctrine-mission and --no-doctrine-mission are mutually exclusive.` | 2 |
+| `lore edit` with no field flags | `Error: At least one of --title, --description, --priority, --doctrine-mission, --no-doctrine-mission, --auto-close, --no-auto-close, or --type is required.` | 2 |
+
+**`lore show MISSION [--no-doctrine-mission] [--json]`**
+
+The `Knight: <x>` line becomes `Doctrine Mission: <x>`. The
+`--- Knight Contents ---` section becomes `--- Mission Instructions ---` and
+prints the resolved body alone, with `nl=False`. The `--no-knight` flag becomes
+`--no-doctrine-mission`, help `Omit doctrine mission instructions.` The JSON
+envelope replaces `knight`/`knight_contents` with
+`doctrine_mission`/`doctrine_mission_contents`.
+
+The body the section prints is `mission["doctrine_mission_contents"]` — the key
+`get_mission_detail` already returns. `_show_mission` performs **no** resolution
+of its own and `cli.py` gains no `lore.doctrine` import for it (D27). The
+section is emitted when that value is non-null and `--no-doctrine-mission` was
+not passed; a null value emits nothing at all, which is D13's silence.
+
+**`lore missions`, `lore ready`, `lore show QUEST`, `lore oracle`** — the
+`knight` JSON key becomes `doctrine_mission`; the text-mode bracketed suffix
+`  [<ref>]` keeps its exact form; oracle's `| Knight |` column header becomes
+`| Doctrine Mission |` and its `**Knight:** x` line becomes
+`**Doctrine Mission:** x`.
+
+**`lore health --scope …`** — the `knights` token leaves both
+`health._ALL_SCOPES` and `cli._VALID_SCOPES`. New rows under `doctrines`:
+
+| severity | entity_type | id | check | detail |
+|----------|-------------|-----|-------|--------|
+| warning | doctrines | `<stem>` | `missing_missions_dir` | `no missions/ directory — this doctrine is not readable in the current shape` |
+| warning | doctrines | `<stem>` | `stray_yaml` | `<stem>.yaml is no longer read` |
+| warning | doctrines | `<dirname>` | `missing_design` | `no <dirname>.design.md — this directory is not a doctrine` |
+| error | doctrines | `<stem>` | `id_mismatch` | `design frontmatter id '<id>' does not match directory name` |
+| error | doctrines | `<stem>/<mission>` | `mission_id_mismatch` | `frontmatter id '<id>' does not match filename stem '<mission>'` |
+| error | doctrines | `<id>` | `duplicate_id` | `declared by <pathA> and <pathB>` |
+| error | doctrines | `<doctrine>/<mission>` | `missing_file` | `referenced by q-a1b2/m-c3d4, q-a1b2/m-e5f6 but not found on disk` |
+| error | doctrines | `<stem>` | `broken_artifact_ref` | `'fi-x' not found (mission recon)` or `'fi-x' not found (design)` |
+
+`orphaned_file` and `broken_knight_ref` are removed. A directory holding neither
+`missions/` nor `<name>.design.md` is a grouping directory and produces nothing.
+
+**`lore --help`** — the entity block drops the `Knight` line, leaving **five**
+supporting-entity lines (Doctrine, Codex, Rite, Artifact, Watcher) below the two
+core lines (Quest, Mission), for **seven** named entities in the block. Verified
+against `cli.py`'s top-level docstring, which lists six supporting entities
+today. ADR-008: the group and top-level help teach the entity model, so an
+entity that no longer exists cannot stay listed.
+
+> Do not conflate this count with FR-30's "six entity types". That figure is the
+> PRD's Technical Success metric (7 → 6) and counts Quest, Mission, Doctrine,
+> Rite, Artifact and Watcher — Codex is excluded from it. The help block counts
+> Codex. The two numbers describe different sets and are both correct.
+
+**`lore doctrine --help`** — the group paragraph is rewritten: a doctrine is a
+directory of prose, not a YAML step graph; `lore doctrine show <id>` returns the
+design and the mission index; `--mission <id>` returns one mission body; an
+orchestrator decides order and type from the design prose.
+
+**`lore init --help`** — the paragraph at `cli.py:738-747` stops naming knights
+in "A skill, knight, doctrine, artifact or watcher Lore shipped…" and in
+"Knights and the rest are seeded under a default/ subdirectory".
+
+### Project Structure
+
+Every file this feature creates, modifies or deletes, with the rule that binds
+it written out.
+
+**Foundation lane**
+
+| Path | New/Modified | Binding rule, stated |
+|------|--------------|---------------------|
+| `src/lore/schemas/doctrine-mission-frontmatter.yaml` | **new** | `standards-dry` — a frontmatter *shape* rule lives in JSON Schema and nowhere else; the cross-field `id == stem` rule does not go here because JSON Schema cannot see the filename. |
+| `src/lore/schemas/__init__.py` | modified | `_FRONTMATTER_KINDS` gains `doctrine-mission-frontmatter`. In the core lane's excision unit it loses `knight-frontmatter` and `_YAML_KINDS` loses `doctrine-yaml`. `tech-arch-schemas` documents this dispatch table; `standards-dependency-inversion` — this module imports only `lore.paths`. |
+| `src/lore/schemas/doctrine-design-frontmatter.yaml` | modified | Description text only. The required set stays `[id, title, summary]` — `doctrine.py` raises the id-presence error before full validation and depends on that ordering. |
+| `src/lore/paths.py` | modified | `standards-dependency-inversion` — `paths.py` imports nothing from `lore.*`, so the new helpers take `Path` arguments and never a project object. The magic string `".lore"` is centralised here and must not appear in any other module. |
+
+**Core lane**
+
+| Path | New/Modified | Binding rule, stated |
+|------|--------------|---------------------|
+| `src/lore/doctrine.py` | **rewritten** | `standards-dependency-inversion` — may import `lore.paths`, `lore.frontmatter`, `lore.validators`, `lore.schemas`, `lore.projects`, `lore.scoped`, `lore.safewrite`; never `lore.cli`, never `lore.db`. `standards-single-responsibility` — it owns the doctrine directory and everything inside it, including mission files; no separate module appears for missions. `decisions-011` — every validation the CLI surfaces is enforced here. `decisions-025` — `projects.reject_foreign(name)` is the first statement of `create_doctrine`, `update_doctrine` and `delete_doctrine`. `decisions-003` — `--remove-mission` renames to `.md.deleted`; it never unlinks. |
+| `src/lore/knight.py` | **deleted outright** | `decisions-003` Scope section: this ADR governs entities the `lore` CLI manages, not Lore's own source; deleting a module is a plain hard delete with no soft-delete ceremony. `standards-single-responsibility` — its logic is not folded into `doctrine.py`; the resolver *pattern* is reproduced, the code is not moved. |
+| `src/lore/db.py` | modified | `decisions-004` — `mission_type` is stored and exposed, never interpreted: no enum, no CHECK, no validation of the token. `decisions-011` — validation lives here, not in `cli.py`. `standards-dependency-inversion` — the lazy `from lore.doctrine import …` inside `get_mission_detail` is the documented exception and stays a *function-local* import. |
+| `src/lore/models.py` | modified | `decisions-010` — a field rename on an exported dataclass and two names leaving `models.__all__` are breaking changes; see Conflict C-4. `Mission.knight` → `doctrine_mission`; `Doctrine` and `DoctrineStep` deleted. |
+| `src/lore/migrations/v6_to_v7.py` | **new** | `conceptual-workflows-schema-migrations` — a migration module exposes exactly `migrate(conn)`, is discovered by module name from `db._run_migrations`, and never commits: the runner owns the transaction and the `schema_version` write. |
+| `src/lore/defaults/schema.sql` | modified | A fresh database must equal a migrated one; `decisions-006-no-seed-content-tests` does not apply — this is DDL, not seed content. |
+| `src/lore/health.py` | modified | `conceptual-workflows-health` — a warning never raises the exit code unless its check is in `_ESCALATED_WARNING_CHECKS`, and nothing here is added to that set. `standards-dry` — schema validation stays in `_check_schemas`/`_SCHEMA_KINDS` (D17). `_check_doctrines` reuses `doctrine._resolve_doctrine_mission` rather than re-deriving reference resolution. |
+| `src/lore/frontmatter_edit.py` | modified | `decisions-025` — `_projects.reject_foreign(name)` stays the first statement of `update_frontmatter_fields`. The `knight` kind and `from lore import knight as _knight_mod` are deleted; the `doctrine` kind is repointed (D19) because removing a live capability is not this change's purpose. |
+| `src/lore/oracle.py` | modified | `decisions-004` — oracle renders `mission_type` and the reference as opaque strings and interprets neither. **Recon inferred oracle needed no change; verified false** at `oracle.py:161,162,170,182`. |
+| `src/lore/init.py` | modified | `decisions-024` — an entity is a seeded default iff its derived group is `default` or starts with `default/`; the install manifest is never consulted for that test. `conceptual-workflows-init-reconcile` — "a path in neither the desired nor the recorded set is never read, never written and never deleted", which is exactly why an authored knight is left alone and why a retired seeded tree needs its own explicit list (D24). |
+| `src/lore/defaults/gitignore` | modified | `tech-arch-initialized-project-structure` — the three `knights` lines (`!knights`, `!knights/**`, `knights/default/`) are removed; the `doctrines` triad is unchanged because `doctrines/default/` still matches a directory-of-directories. |
+| `src/lore/defaults/knights/**` (12 files) | **deleted** | `decisions-024` — these are seeded defaults; they are Lore's to remove. |
+| `tests/conftest.py` | modified | `technical-test-guidelines` §7 — there are exactly three conftest files and shared helpers live in the root one. `insert_mission`'s `knight=` keyword and its `INSERT` column list become `doctrine_mission`. |
+| `tests/unit/conftest.py` | modified | Same rule. `bare_lore_dir` drops `knights`; `_ENTITY_DIRS` drops `knights`; `NestedTree.entity` drops the `"knight"` kind; `NestedTree.doctrine` writes the new directory shape. |
+
+**Surface lane**
+
+| Path | New/Modified | Binding rule, stated |
+|------|--------------|---------------------|
+| `src/lore/api.py` | modified | `standards-facade` — zero `def`, zero `class`; names arrive only as re-exports and new names go in the operational-callables block. `decisions-010` — `__all__` is the contract and its **grouped order** is pinned by `tests/unit/test_api_all_matches_spec.py`, so removing six names means editing that test's literal tuple too. |
+| `src/lore/cli.py` | modified | `standards-separation-of-concerns` — `cli.py` formats and exits; no directory-write logic, no duplicate-detection, no schema call. `decisions-008` — the top-level and group `--help` paragraphs teach the entity model and must be updated, while subcommand and flag help stays terse. `decisions-012` — `-m` and `--remove-mission` are space-separated, never repeatable. `decisions-017` — `--scope` keeps `click.Choice`; only the token set shrinks, and the flag's own help string loses its `knights` example. `conceptual-workflows-error-handling` — **errors go to stderr in both modes**, which closes two pre-existing stdout deviations in the handlers this feature rewrites (D16). `decisions-011` + `standards-separation-of-concerns` — `_show_mission` renders the body the envelope already carries and resolves nothing itself (D27). |
+| `src/lore/prompts.py` | modified | `conceptual-workflows-init-interactive` — `ACCESS_SCOPE_NOTE` is user-visible prompt text and its two-line wrap is part of the rendering. **Recon marked prompts.py out of scope; verified in scope** at `prompts.py:37` and `prompts.py:41`. |
+
+**Test files deleted outright (8)**
+
+`tests/e2e/test_knight_list.py`, `tests/e2e/test_knight_crud.py`,
+`tests/e2e/test_api_parity_knight.py`,
+`tests/e2e/test_health_grouped_knight_refs.py`,
+`tests/unit/test_knight_crud.py`, `tests/unit/test_knight.py`,
+`tests/unit/test_knight_crud_holistic.py`,
+`tests/unit/test_health_grouped_knight_refs.py`.
+
+Each covers the Knight entity and nothing else. `decisions-003`'s Scope section
+puts source and test removal outside soft-delete ceremony: they are `git rm`.
+
+**Test files edited, heaviest first.** 78 further files mention "knight". They
+are edited, not deleted — each covers something that survives. The ones that
+need a decision rather than a rename:
+
+| File | What changes |
+|------|--------------|
+| `tests/unit/test_health.py` | `_check_knights` cases deleted; `_check_doctrines` cases rewritten for the eight new rows; `knights` scope cases deleted. |
+| `tests/e2e/test_health.py` | `--scope knights` becomes an exit-2 assertion; doctrine-scope scenarios rewritten. |
+| `tests/e2e/test_mission_crud.py` | `-k`→`-D`, `--no-knight`→`--no-doctrine-mission`, `Knight Contents`→`Mission Instructions`, `knight`→`doctrine_mission` JSON keys, and the "warning on unresolvable" assertion is **deleted**, not rewritten (D13). |
+| `tests/unit/test_doctrine.py`, `test_doctrine_crud.py`, `test_doctrine_crud_holistic.py`, `test_doctrine_valueerror.py` | rewritten for the directory model; every cycle/step/normalise test deleted. |
+| `tests/e2e/test_doctrine_show.py`, `test_doctrine_new.py`, `test_doctrine_list.py` | rewritten for the new commands and the wrapped JSON envelope. |
+| `tests/e2e/test_api_parity_doctrine.py` | rewritten — it is the existing E2E home of `lore doctrine edit`/`delete`. See Conflict C-3. |
+| `tests/unit/test_models.py`, `test_api_surface.py`, `test_api_all_matches_spec.py` | `Knight`, `Doctrine`, `DoctrineStep` removed; the literal `__all__` tuple edited. |
+| `tests/unit/test_db_mission_detail.py`, `test_db_edit_full.py`, `test_db_list_missions_grouped.py`, `test_db_quest_detail.py` | keyword and key renames. |
+| `tests/e2e/test_filter_list.py`, `test_list_group_audit.py`, `test_help_group_param.py`, `tests/unit/test_derive_group.py`, `test_paths_entity_location.py` | the knight entity row drops out of each parametrised matrix. |
+| `tests/unit/test_frontmatter_edit.py`, `test_frontmatter_edit_overlay.py`, `tests/e2e/test_frontmatter_edit_cli.py` | the `knight` kind drops out; the `doctrine` kind's fixtures move from `<name>.yaml` to `<dir>/<name>.design.md`. |
+| `tests/unit/test_schemas.py`, `test_health_schemas*.py`, `test_schema_defaults_regression.py`, `tests/e2e/test_health_schemas*.py`, `test_lore_init_schema_clean.py` | the two deleted kinds drop out and `doctrine-mission-frontmatter` is added. |
+| `tests/e2e/test_nested_projects.py`, `test_nested_projects_cost.py`, `tests/e2e/goldens/nested_projects_sc7.json` | the knight entity drops out of the scoped-read matrix and the golden file is regenerated. |
+| `tests/e2e/test_lore_init.py`, `test_init_upgrade_journey.py`, `tests/unit/test_lore_init.py`, `test_reconcile.py`, `test_initplan.py` | the `knights` seed tree disappears and the retired-tree removal is asserted **structurally only** — `decisions-006-no-seed-content-tests` forbids asserting on the content of any file under `src/lore/defaults/`. |
+| `tests/e2e/test_schema_migrations.py` | a v6→v7 case is added. |
+| `tests/e2e/test_oracle.py` | the column header and the `**Doctrine Mission:**` line. |
+| `tests/unit/test_prompts.py` | the `ACCESS_SCOPE_NOTE` assertion. |
+| `tests/e2e/test_python_api.py`, `test_api_parity_*.py` | the knight parity cases go; the doctrine parity cases are rewritten. |
+| the long tail (~45 files with 1–20 hits) | mechanical: a `knight=` keyword, a `--knight` flag, a `knights` directory in a fixture, or the word in a docstring. |
+
+---
+
+## Part 3 — Decision and Standards Impact
+
+### Binding Table
+
+| Rule id | The rule, in one line | Obligation on the dev knight |
+|---------|----------------------|------------------------------|
+| `decisions-001-dumb-infrastructure` | Lore stores and answers queries; it never interprets, orchestrates or runs a template engine, and minimising tool calls is a design constraint. | Do not parse, interpret or execute a mission-file body anywhere. `read_doctrine` reads frontmatter for the index and returns the body as an opaque string. Keep `lore doctrine show` a single call that returns design **and** index; do not add a second command to list missions. |
+| `decisions-003-soft-delete-semantics` | File entities are soft-deleted by a `.deleted` rename, never unlinked; the ADR's Scope section excludes Lore's own source code. | `--remove-mission` renames `missions/<id>.md` → `missions/<id>.md.deleted`. `lore doctrine delete` renames the directory to `<name>.deleted`. Deleting `src/lore/knight.py`, the 12 seeded knight files and the 8 knight test files is plain `git rm` — no `.deleted` ceremony, no deprecation period. |
+| `decisions-004-mission-type-dumb-storage` | `mission_type` is stored and exposed, never interpreted; no enum, no CHECK, no `click.Choice`. | Do not add validation for `agent`. The only code that touches the token is one `UPDATE` inside `v6_to_v7.py`. Do not add a `click.Choice` to `-T/--type`. |
+| `decisions-006-id-references` | Agents address entities by ID through the CLI, never by constructed path; the by-ID rule holds in both access modes for artifacts, doctrines and watchers. | Never emit a `.lore/doctrines/...` path in help text, an error message, a seeded skill or a mission-file body as the way to reach a doctrine. A mission-file body that references an artifact names the artifact id and the `lore artifact show <id>` command. The stale enumeration is FR-19b's edit-in-place, the scribe's job. |
+| `decisions-006-no-seed-content-tests` | Tests never assert a field *value* or a prose string from `src/lore/defaults/`; existence, parseability and structural-key presence only. | Every test touching the converted doctrines, the new `mission-design.md`, the rewritten `doctrine-design.md`, `skills-catalogue.yaml` or the deleted knights asserts only that a path exists or does not exist, that a file parses, and that required keys are present. No assertion on a doctrine's title, a mission's summary, or the text of a retirement reason. |
+| `decisions-008-help-as-teaching-interface` | Top-level and command-group `--help` teach the entity and workflow model; subcommand and flag help stay terse. | Update the top-level entity block (**five** supporting entities after the `Knight` line goes, seven named entities in the block), the `lore doctrine` group paragraph (directory of prose, `--mission`, no step graph) and the `lore init` ownership paragraph. Also fix `--scope`'s own help string on `lore health`, which reads `(space-separated, e.g. --scope codex knights schemas)` — a flag help that demonstrates a token which will exit 2. Keep the new flag help to one line each. Do not put a tutorial on `doctrine new`. |
+| `decisions-010-public-api-stability` | `lore.api.__all__` is the sole public contract; removing a name, renaming one, changing a positional list or a return shape is major-bump-or-explicit-breaking-change-notice. | Remove the six knight names *and* update `tests/unit/test_api_all_matches_spec.py`'s literal tuple in the same commit — the test pins membership **and order**. Do not invent a version number; the release decision is Conflict C-4. |
+| `decisions-011-api-parity-with-cli` | Every `lore.api` function is self-contained and behaviourally identical to the CLI; no validation or behaviour may live only in `cli.py`. | Multi-mission validation, atomicity, the ≥1-mission rule and the last-mission guard all live in `doctrine.py`. The CLI performs no existence check before calling `read_doctrine`; it distinguishes the two misses from the return value alone (D4). The one CLI-only check, duplicate `-m` stems, is unrepresentable in the Python signature and its helper still lives in `doctrine.py` (D6). |
+| `decisions-012-multi-value-cli-param-convention` | Multi-value flags are space-separated, never repeatable. | `lore doctrine new -m a.md b.md c.md`, `lore doctrine edit --remove-mission a b`. Never `-m a.md -m b.md`. `--mission` on `doctrine show` is single-value and outside this rule. |
+| `decisions-017-constrained-flags-use-click-choice` | Constrained-value flags use `click.Choice`; the `BadParameter`/stderr/exit-2 behaviour is a pinned contract amendable only in place. | Drop `"knights"` from `_VALID_SCOPES` and `_ALL_SCOPES` and change nothing else about `--scope`. Do not hand-roll a validator, do not reword the message, do not change the exit code. Adding no new token means no ADR amendment is triggered. |
+| `decisions-021-health-reports-are-ephemeral-by-default` | `lore health` writes a markdown report only under the `latest` or `all` retention policy. | The new doctrine checks change what the report contains, never whether it is written. Do not touch `_write_report` or `_prune_reports`. |
+| `decisions-024-default-group-is-seeded-boundary` | An entity is a seeded default iff its derived group is `default` or starts with `default/`; the install manifest is never consulted for that test. | The extra nesting level (`default/<doctrine>/missions/`) does not change `is_seeded_default`, which reads only the derived group string. Do not add a depth check. The retired-tree removal (D24) is keyed on the path `.lore/knights/default`, which is the same boundary stated as a path. |
+| `decisions-025-cross-boundary-reads-are-read-only` | `projects.reject_foreign` is the first statement of every externally callable write on a file-backed entity. | It is the first statement of `create_doctrine`, `update_doctrine` and `delete_doctrine` — before name validation, before any filesystem call, before mission-file validation. |
+| `standards-dependency-inversion` | `doctrine.py` may import `paths`, `frontmatter`, `validators` and the other leaf modules — never `cli.py`, never `db.py`. | The rewritten `doctrine.py` gains `lore.safewrite` (a leaf, stdlib-only) and keeps `lore.projects`/`lore.scoped`. It must not gain a `db` import to check which missions are referenced — that direction belongs to `health.py`. `db.get_mission_detail`'s import of `lore.doctrine` stays function-local. |
+| `standards-dry` | Doctrine loading and validation have exactly one module home; shape validation lives in JSON Schema, never inline. | One resolver pair in `doctrine.py`, used by `doctrine.py`, `db.py` and `health.py`. One path calculation in `paths.py`, used by `doctrine.py` and `health.py`. No second copy of the mission-file frontmatter rules inside `health.py` (D17). |
+| `standards-facade` | `lore.api` is a pure re-export facade — zero `def`, zero `class`. | Do not write a wrapper for the new `mission=` keyword. `read_doctrine` is re-exported as-is. |
+| `standards-public-api-stability` | The same semver table as ADR-010, restated as a standards document. | Same obligation; see Conflict C-4. |
+| `standards-separation-of-concerns` | `cli.py` formats and exits; validation, atomicity and duplicate detection live in the entity module. | The `doctrine new`/`edit` handlers read files, call one module function, format the message and exit. No `mkdir`, no `write_text`, no `rename`, no `validate_entity` in `cli.py`. |
+| `standards-single-responsibility` | Each module owns exactly one concern. | Mission-file logic goes inside `doctrine.py`, which already owns the doctrine directory. Do not create `src/lore/doctrine_mission.py`. Do not fold `knight.py`'s code into `doctrine.py` — reproduce the resolver pattern, delete the module. |
+| `technical-test-guidelines` | Unit tests never import `lore.cli`; every E2E file cites exactly one existing `conceptual-workflows-*` doc and is named for its slug; no locally defined `runner`/`project_dir` fixtures; no `US-N`/`SCENARIO-NNN` naming. | New unit tests import `lore.doctrine`, `lore.db`, `lore.health` directly. New E2E tests go into the existing anchored files wherever one exists; the one place no anchor exists is Conflict C-3. |
+
+### Conflicts
+
+| # | Rule id | The conflict | Options | Resolution |
+|---|---------|-------------|---------|------------|
+| C-1 | `doctrine-missions-prd` (internal), `conceptual-workflows-doctrine-show` | The PRD renders the doctrine-miss message as `Doctrine "tdd-feature-lite" not found` (double quotes) and in the same sentence instructs "the existing message and code for that case, **unchanged**". The live code at `cli.py:2055` emits `Doctrine 'tdd-feature-lite' not found` — single quotes. The two halves of the PRD sentence cannot both be satisfied. | **(a)** Ship the live single-quote text: honours "unchanged", keeps `tests/e2e/test_doctrine_show.py`'s current assertion green, and leaves the quoting style inconsistent with the new `Mission "x" not found in doctrine "y"` message the PRD also specifies. **(b)** Ship the PRD's literal double-quote text: the two `doctrine show` messages then match each other and the rest of the CLI's `"…"` convention, at the cost of a deliberate breaking change to an error string the PRD said was unchanged, and one rewritten E2E assertion. | **(a) — ship the live single-quote text.** `Doctrine 'x' not found`, byte-identical to `cli.py:2055`. The new mission-miss message keeps its double quotes. See Pre-Dev Notes. |
+| C-2 | `conceptual-workflows-error-handling`, `decisions-017` | The PRD calls `lore doctrine edit` with no `-d`, `-m` or `--remove-mission` "a usage error" and specifies **exit 1** with a bare message. The error-handling contract assigns exit **2** to "an invalid flag, value or option combination… a command's own body raises others itself", and the sibling `lore edit` already raises `click.UsageError` (exit 2, `Error: ` prefix) for the identical "no field flags supplied" condition. | **(a)** Follow the PRD literally: `click.echo("Nothing to update: pass -d, -m, or --remove-mission", err=True); ctx.exit(1)`. Two commands then answer the same class of mistake with two different exit codes, and an orchestrator scripting against exit codes cannot tell "you passed nothing" from "the doctrine does not exist". **(b)** Raise `click.UsageError("Nothing to update: pass -d, -m, or --remove-mission")`: exit 2, stderr, `Error: ` prefix, consistent with `lore edit` and with the error-handling contract, at the cost of contradicting the PRD's stated exit code. **(c)** (b) plus an ADR pinning "a missing-required-combination error is exit 2" so the next feature does not re-decide it. | **(c) — `click.UsageError`, exit 2**, plus a new ADR pinning it. The PRD's exit 1 is overruled. See Pre-Dev Notes. |
+| C-3 | `technical-test-guidelines` §3 | Every `tests/e2e/test_*.py` must cite exactly one existing `conceptual-workflows-*` document and be written **after** that document exists. `lore doctrine edit`'s new whole-file mode needs E2E coverage, and `conceptual-workflows-doctrine-edit` does not exist. The scribe, who writes codex documents, runs **after** the dev lanes. **Correction to the state of the tree:** §3 is not honoured by one outlier file — it is breached across most of `tests/e2e/`. All 23 `test_api_parity_*.py` files carry no `Spec:` anchor at all; neither do `tests/e2e/test_health.py`, `test_health_schemas*.py`, `test_codex_map.py`, `test_lore_init_schema_clean.py`, `test_schema_defaults_regression.py` or `test_init_*.py`. Several files anchor to transient ids that no longer exist in the codex (`test_doctrine_show.py` → `doctrine-design-file-us-004`, `test_doctrine_new.py` → `doctrine-design-file-us-007`, `test_doctrine_list.py` → `doctrine-design-file-us-001`, `test_knight_crud.py` → `group-param-us-002`, `test_filter_list.py` → `filter-list-subcommands-us-1`). Nothing validates the anchor, so `lore health` reports none of it. The files this feature rewrites (`test_doctrine_show.py`, `test_doctrine_new.py`, `test_doctrine_list.py`) get correct `conceptual-workflows-*` anchors in passing, because the E-table already names one per row. | **(a)** The surface-lane dev knight writes `conceptual-workflows-doctrine-edit` itself before its test, then `tests/e2e/test_doctrine_edit.py`: satisfies the rule literally, but a dev lane authors a codex document, which is the scribe's job and is in no lane's brief — and the scribe would then inherit a document it did not write, into a worklist row (`conceptual-workflows-doctrine-edit`, **create**) that already exists. **(b)** Coverage goes into the existing `tests/e2e/test_api_parity_doctrine.py`, whose stated subject is already `lore doctrine edit / delete`: no new document needed, and given the correction above it conforms to the suite's actual dominant practice rather than perpetuating a lone exception — at the cost of mixing parity assertions with functional ones in a file the spec already rewrites for E61. **(c)** The dev knight writes `tests/e2e/test_doctrine_edit.py` with no anchor and the scribe adds `conceptual-workflows-doctrine-edit` afterwards: the rule is violated for the length of the quest, `lore health --scope codex` cannot catch it, and the end state is identical to (a) one mission later. | **(c), amended — write the anchor anyway.** Surface lane writes `tests/e2e/test_doctrine_edit.py` anchored to `conceptual-workflows-doctrine-edit`; the scribe creates that document in the same quest. See Pre-Dev Notes. |
+| C-4 | `decisions-010-public-api-stability`, `standards-public-api-stability` | **Eight** names leave `lore.api.__all__` (the five knight callables plus `Knight`, `Doctrine` and `DoctrineStep` — all three dataclasses are public today, `api.py:208-211`), **three** leave `lore.models.__all__`, two exported callables change their positional lists, four change keyword names, one exported dataclass field is renamed, and **nine exported callables change their return shape** (see the Breaking-change accounting block above). ADR-010's semver table makes every one of those "major bump **or** explicit `CHANGELOG.md` breaking-change notice". **Note the "or" does not reach the changelog entry itself**: ADR-010's Consequences ("Contributors update `CHANGELOG.md` and `lore.api.__all__` together whenever the public API changes") and `standards-public-api-stability`'s Rules for Contributors ("Every release that changes the public API must include a `CHANGELOG.md` entry") both impose a changelog entry unconditionally; the "or" only decides whether that entry is a `BREAKING CHANGE:` block under 0.12.0 or a major-version release note. `CHANGELOG.md` exists at the repository root; `pyproject.toml` reads `version = "0.11.0"`. The PRD's Success Criteria table targets "v0.12.0" and scopes no version bump and no changelog entry; nothing in this feature's requirements produces either. | **(a)** Ship 0.12.0 with an explicit `BREAKING CHANGE:` block in `CHANGELOG.md` naming every removed, renamed and reshaped symbol: satisfies the "or" branch of the table, keeps the pre-1.0 minor cadence, and relies on consumers reading the changelog. **(b)** Ship 1.0.0 (or 0.12.0 declared as the breaking release with major-bump semantics recorded): unambiguous for the `>=0.x,<1.0` pin `standards-public-api-stability` tells Realm to use, but commits the project to 1.0 semantics — "a deliberate decision, not a scheduled event" per that document's Transition to 1.0.0 section — earlier than planned. **(c)** Defer the release decision to a follow-up quest and land the code without a version or changelog change: leaves Realm able to take the breaking change on a minor bump with no notice, which is the exact outcome ADR-010 exists to prevent, and breaches the unconditional changelog obligation above regardless of which version number is eventually chosen. **In every option the changelog entry itself is owed.** Whichever is chosen, the obligation lands on a named unit — this feature currently has none, and the `CHANGELOG.md` row in Expected Codex Updates is the scribe's, who runs after the code lands and is not a release manager. | **(a) — `BREAKING:` bullets under `## [Unreleased]`, no version bump in this quest.** The **surface lane** owns the entry and `CHANGELOG.md` joins its file list. See Pre-Dev Notes. |
+| C-5 | `standards-dry`, `conceptual-workflows-health` | The mission brief states "`--scope doctrines` audits **both frontmatter schemas**, id-vs-stem, duplicate ids, and … dangling `doctrine_mission` refs". Today all frontmatter schema validation runs in `_check_schemas` under `--scope schemas`, driven by the `_SCHEMA_KINDS` table, and `health_check` dedups only `dangling_codex_rite`. Putting schema validation into `_check_doctrines` as well would print every doctrine schema error twice on a bare `lore health`. **Both precedents exist in the tree and point opposite ways.** (i) `_check_glossary` calls `_glossary_schema_issues` *and* `_SCHEMA_KINDS` carries a `glossary` row, with no dedup — so a malformed `glossary.yaml` is already reported twice on a bare `lore health`, and `conceptual-workflows-health` records that as intentional: "The `glossary` schema kind also runs as part of `--scope schemas`" and "`--scope schemas` continues to validate every schema kind, including `glossary`, so a malformed glossary surfaces in `--scope schemas` even without `glossary` in the scope set." (ii) `dangling_codex_rite` runs under both `codex` and `rites` and **is** deduped by the one check-name gate in `health_check`. Today `_check_doctrines` performs no schema validation at all, so `doctrines` currently follows pattern (i)'s opposite — the `artifacts`/`watchers`/`codex` shape, where shape lives only in `--scope schemas`. | **(a)** Read "audits both frontmatter schemas" as "the `_SCHEMA_KINDS` table gains a `doctrine-mission-frontmatter` row and keeps the design row", leaving `--scope doctrines` to the cross-field checks JSON Schema cannot express — one home per rule, no duplicate rows, but `lore health --scope doctrines` alone reports no schema errors (which is already true today). **(b)** Run the two frontmatter validations inside `_check_doctrines` as well and extend the dedup set in `health_check` to cover them: `--scope doctrines` becomes self-contained as the brief's wording suggests, at the cost of two callers of one rule and a dedup mechanism that grows per check. **(c)** Move the two doctrine rows out of `_SCHEMA_KINDS` entirely and into `_check_doctrines`: self-contained and no duplication, but doctrine files stop being validated by `--scope schemas`, breaking the "schemas validates every entity file on disk" contract `conceptual-workflows-health` states. **What each choice costs, given the precedents:** (a) keeps `doctrines` where it is and is the no-code-change answer for the seam; (b) migrates `doctrines` onto the glossary pattern and therefore needs the dedup gate widened from one check name to a set, which is the one mechanism `health_check` has and the one `standards-dry` is being read against; (c) is the only option that removes a live capability (`--scope schemas` stops covering doctrine files) and is the only one that contradicts a codex document rather than a brief sentence. | **(a) — one home per rule.** `_SCHEMA_KINDS` gains a `doctrine-mission-frontmatter` row and keeps the design row; `_check_doctrines` does no schema validation. See Pre-Dev Notes. |
+
+### New Decisions Needing an ADR
+
+**Draft ADR 1 — A doctrine is prose for an orchestrator, not a graph Lore parses**
+
+- **Context:** A doctrine has always carried a machine-readable step graph in
+  `<name>.yaml` — step ids, `type`, `priority`, `knight`, `needs`, `notes` — and
+  `doctrine.py` validated it, detected cycles in it and normalised it, while
+  ADR-001 has always said Lore does not orchestrate. Nothing consumed the graph:
+  `lore doctrine show` printed the YAML verbatim and an orchestrator read the
+  prose to decide the order anyway. The validation machinery was a contract Lore
+  enforced on a structure Lore never used.
+- **Decision:** A doctrine carries no machine-readable workflow structure. Lore
+  reads a doctrine's frontmatter for identity (`id`, `title`, `summary`) and a
+  mission file's frontmatter for its index entry, and treats every body as an
+  opaque string. Step ordering, step type, phases and dependencies are decided by
+  the orchestrator from the design prose. `_validate_steps`, `_check_cycles`,
+  `_normalize`, `load_doctrine`, `validate_doctrine_content`, `scaffold_doctrine`,
+  `Doctrine`, `DoctrineStep` and the `doctrine-yaml` schema are deleted.
+- **Alternatives rejected:** *Keep a reduced YAML with ordering only* — rejected:
+  any parsed structure re-opens "what does Lore do with it", and an orchestrator
+  that can read prose can read an ordered list in prose. *Move cycle detection
+  into `lore health`* — rejected: there is no graph left to have a cycle in;
+  relocating the code would preserve a concept the feature exists to delete.
+  *Keep `Doctrine`/`DoctrineStep` in `models.__all__` as deprecated shells* —
+  rejected: the PRD forbids compatibility shims, and a dataclass describing a
+  structure that cannot be produced is a trap for Realm.
+
+**Draft ADR 2 — The Knight entity is removed; a doctrine mission file is the only home for a reusable instruction**
+
+- **Context:** A Knight held "how to be" and a doctrine step's `notes:` held
+  "what to do", and every doctrine author decided afresh which of the two an
+  instruction belonged in. The same guidance routinely landed in both. The
+  `missions.knight` column, the `lore knight` command group, five public API
+  names, a packaged schema, a health scope, a seeded tree and a `.gitignore`
+  triad all existed to keep the second copy addressable.
+- **Decision:** The Knight entity is removed outright — module, CLI group, the
+  five API callables and the `Knight` type, `knight-frontmatter.yaml`,
+  `lore health --scope knights`, `paths.knights_dir`, the `knight`
+  `entity_location` row, the `knight` kind in `frontmatter_edit`, and
+  `src/lore/defaults/knights/**`. Lore has six entity types. The one place a
+  reusable instruction lives is the doctrine mission file that uses it, and a
+  Lore mission reaches it through `missions.doctrine_mission`. No shim, no
+  deprecation window, no alias.
+- **Alternatives rejected:** *Deprecate `lore knight` for one release* —
+  rejected: the PRD rules out a compatibility shim, and a deprecated command is
+  a second addressable copy for exactly as long as it exists. *Keep Knight as a
+  standalone reusable persona that a mission file can `include`* — rejected: an
+  include is a template engine, which ADR-001 forbids, and it restores the
+  two-places-to-put-an-instruction problem under a new name. *Auto-migrate
+  authored knights into doctrine missions* — rejected by the PRD: Lore cannot
+  know which doctrine a project's knight belongs to, and a wrong guess writes
+  into a file the project owns.
+
+**Draft ADR 3 — A multi-file entity write is staged in a temp directory and renamed into place**
+
+- **Context:** No entity module has ever used `lore.safewrite`; `doctrine.py`,
+  `knight.py`, `rite.py`, `artifact.py` and `watcher.py` all write with plain
+  `Path.write_text()`, and today's two-file `create_doctrine` writes the YAML and
+  then the design file with no atomicity between them. `safewrite` exists and is
+  used by `init.py`, `manifest.py` and `reconcile.py`, and gives per-file
+  atomicity plus a symlink and escape refusal. This feature's create path writes
+  1 + N files at once and the PRD promises "no partial doctrine is ever left on
+  disk".
+- **Decision:** `doctrine.py` uses `lore.safewrite`. `create_doctrine` validates
+  everything, builds the complete directory in a staging directory whose name
+  begins with `.` inside `.lore/doctrines/`, writes each file through
+  `safewrite.atomic_write_text`, and moves the whole tree into place with one
+  `os.replace`. Doctrine discovery skips any path segment beginning with `.` or
+  ending `.deleted`, which is what makes the staging directory invisible while it
+  exists. `update_doctrine` validates everything first and then writes per file;
+  its guarantee is scoped to validation failure and is stated as such.
+- **Alternatives rejected:** *Sequential `write_text` as today* — rejected: it
+  cannot deliver the PRD's stated guarantee for 1 + N files and would leave a
+  half-built doctrine that `lore doctrine show` would then half-answer.
+  *`tempfile.mkdtemp` outside `.lore/`* — rejected: `os.replace` across
+  filesystems fails, and `/tmp` on the user's machine is routinely a different
+  one. *Extend the swap to `update_doctrine`* — rejected: a rebuild would have to
+  copy every `.md.deleted` tombstone to preserve it, for a crash window nobody
+  has reported, and the PRD's own wording scopes the edit guarantee to validation
+  failure.
+
+**Draft ADR 4 — A seeded tree Lore stops shipping is removed by an explicit retired-tree list**
+
+- **Context:** `lore init` re-seeds four `default/` trees and prunes each of what
+  the release no longer ships, driven by `init.SEEDED_TREES`. The prune walks
+  only trees still in that tuple. Removing the `knights` row — the obvious way to
+  stop shipping knights — therefore stops anything from ever looking at
+  `.lore/knights/default/` again, so every seeded knight stays on disk in every
+  upgraded project, silently, forever. FR-24 requires the opposite.
+  `conceptual-workflows-init-reconcile`'s reconciliation table cannot help: those
+  paths are inside `.lore/` and the manifest records nothing inside `.lore/`.
+- **Decision:** `init.py` carries a `RETIRED_SEED_TREES` tuple naming a seeded
+  tree this release no longer ships. Every run walks each named tree, unlinks
+  every regular file in it, reports each as
+  `Removed <label>/<path> — no longer shipped`, and prunes the emptied
+  directories, leaving any symlink and any unlinkable file alone exactly as
+  `_prune_seeded_tree` does. `.lore/knights/default` is its first entry. Files a
+  project authored outside the retired tree are not touched; they are collected
+  and named once so the maintainer knows they are no longer read.
+- **Alternatives rejected:** *Leave the `knights` row in `SEEDED_TREES` with an
+  empty package* — rejected: `_defaults_tree_files` would have to walk a package
+  that no longer exists, and the row would claim Lore still ships knights.
+  *A one-off v0.12 cleanup in `run_init`* — rejected: this module was written
+  specifically to avoid a per-version migration chain, and the second retired
+  tree would have to repeat the trick. *Hard-code the removal in `reconcile.py`* —
+  rejected: `reconcile` is about paths outside `.lore/` and its safety property
+  is that a path in neither the desired nor the recorded set is never touched;
+  a seeded tree is in neither set.
+
+**Draft ADR 5 — An unresolvable doctrine mission is silent on read and reported only by `lore health`**
+
+- **Context:** Today `lore show <mission-id>` prints
+  `Warning: knight file "x" not found in .lore/knights/` on stdout when a
+  mission's knight does not resolve, and `lore health --scope knights` reports
+  the same condition as an error. A worker agent parsing `lore show` sees a
+  warning line inside what it is reading as its brief, and the same fact is
+  reported twice by two commands with two severities.
+- **Decision:** A read never reports a broken reference. `lore show` on an
+  unresolvable `doctrine_mission` prints the stored reference, omits the
+  `--- Mission Instructions ---` section entirely, exits 0 and prints nothing
+  else; `--json` carries the stored reference and `doctrine_mission_contents:
+  null`. `lore health --scope doctrines` is the single reporter, at ERROR
+  severity, for active missions only.
+- **Alternatives rejected:** *Keep the warning line* — rejected: it puts
+  diagnostic text inside a worker's instructions, where it is indistinguishable
+  from content, and the PRD settles the behaviour as silent. *Exit non-zero on an
+  unresolvable reference* — rejected: a worker would be unable to read a mission
+  whose doctrine was edited under it, which is a read failing for an authoring
+  mistake. *Report it on stderr instead of stdout* — rejected: it is still a
+  second reporter of a fact `lore health` owns, and stderr noise on a successful
+  read trains agents to ignore stderr.
+
+### Expected Codex Updates
+
+The scribe's worklist. It is long because this feature removes an entity type.
+
+| Codex ID or seed path | Action | What changed |
+|----------------------|--------|--------------|
+| `conceptual-entities-doctrine` | update | A doctrine is a directory: `<stem>.design.md` plus `missions/<id>.md`. No YAML, no steps. Discovery, group derivation and the `.deleted` directory rename. |
+| `conceptual-entities-knight` | retire | The entity no longer exists. |
+| `conceptual-entities-mission` | update | `knight` field → `doctrine_mission`; `mission_type` token `agent`. |
+| `conceptual-relationships-doctrine--knight` | retire | The relationship no longer exists. |
+| `conceptual-relationships-knight--mission` | retire | Replaced by doctrine-mission → mission. |
+| `conceptual-relationships-doctrine--mission` | update | `step.knight` → `missions.doctrine_mission`; a doctrine mission file is the unit, not a step. |
+| `conceptual-relationships-artifact--doctrine` | update | Artifact ids are referenced from mission-file bodies and the design body; `lore health --scope doctrines` checks both (D18). |
+| `conceptual-relationships-watcher--doctrine` | update | A watcher's `action:` still names a doctrine by stem; the "complete pair" wording becomes "a doctrine directory". |
+| `conceptual-workflows-doctrine-list` | update | Directory discovery replaces `.design.md`+`.yaml` pairing; the skip rule for `.`-prefixed and `.deleted` segments. |
+| `conceptual-workflows-doctrine-new` | update | `-d` plus one-or-more `-m`; the ten-step validation order; the staged-directory write. |
+| `conceptual-workflows-doctrine-show` | update | Design plus `--- Missions ---` index; `--mission`; the wrapped JSON envelopes; the two distinct miss messages. |
+| `conceptual-workflows-doctrine-edit` | **create** | The document `tests/e2e/test_doctrine_edit.py` anchors to — see Conflict C-3. Merge-by-stem, `--remove-mission` soft-delete, the last-mission guard, field-edit mode against the design document. |
+| `conceptual-workflows-knight-crud` | retire | — |
+| `conceptual-workflows-knight-list` | retire | — |
+| `conceptual-workflows-mission-crud` | update | `-D`/`--no-doctrine-mission` replace `-k`/`--no-knight`; the mutual-exclusion error. |
+| `conceptual-workflows-mission-type` | update | Tokens are `agent`, `constable`, `human`; the display sites now render `doctrine_mission`. |
+| `conceptual-workflows-show` | update | `Doctrine Mission:` line, `--- Mission Instructions ---`, body-only rendering, silence on a miss. |
+| `conceptual-workflows-health` | update | Ten scopes, not eleven; the eight `doctrines` rows; `_check_knights` gone; the C-5 ruling. |
+| `conceptual-workflows-filter-list` | update | Drop the `knight list` row. |
+| `conceptual-workflows-json-output` | update | Drop the two knight rows; correct the `lore doctrine new` envelope (already stale today); add the `doctrine show`/`--mission` envelopes; `missions`/`ready` key rename. |
+| `conceptual-workflows-schema-migrations` | update | The v6→v7 contract. |
+| `conceptual-workflows-init-reconcile` | update | The retired-seed-tree mechanism (Draft ADR 4) and the authored-knights notice. |
+| `conceptual-workflows-lore-init` | update | Four seeded trees become three plus one retired; the write sequence. |
+| `conceptual-workflows-init-interactive` | update | `ACCESS_SCOPE_NOTE` text; the machinery family carries four skills. |
+| `conceptual-workflows-oracle` | update | `Doctrine Mission` column and `**Doctrine Mission:**` line. |
+| `conceptual-workflows-help` | update | The top-level entity block lists six supporting entities; the `lore doctrine` group paragraph. |
+| `conceptual-workflows-error-handling` | update | Only if C-2 rules (c): record the missing-required-combination exit code. |
+| `tech-cli-entity-crud-matrix` | update | Remove the Knight row; rewrite the Doctrine row's create/update signatures. While in the file, correct the stale "Codex ✗ disk only" entry and its Gaps row — `lore codex new/edit/delete` all exist. |
+| `ref-lore_doctrine-module` | update | Rewritten wholesale for the directory model, the resolver pair and the staged write. |
+| `tech-arch-knight-module` | retire | — |
+| `tech-arch-schemas` | update | 11 packaged kinds; `doctrine-mission-frontmatter` added, `knight-frontmatter` and `doctrine-yaml` removed; `_FRONTMATTER_KINDS`/`_YAML_KINDS` membership. |
+| `tech-arch-source-layout` | update | `knight.py` removed. While in the file, add the three modules its table has always been missing — `rite.py`, `safewrite.py`, `frontmatter_edit.py`. |
+| `tech-arch-agents-md` | update | Mission type `agent`, six entity types. |
+| `tech-arch-skill-catalogue` | update | Machinery drops to four skills; `update-knight` in the retired ledger. Note that `new-knight`'s existing `into: update-knight` row is left untouched — the ledger is append-only and a two-hop chain is the correct record. |
+| `tech-arch-initialized-project-structure` | update | `.lore/knights/` is gone; `.lore/doctrines/<group>/<doctrine>/missions/`; the three removed `.gitignore` lines. |
+| `tech-arch-install-manifest` | update | Confirm the retired-skill reporting path for `update-knight`; no mechanism change. |
+| `tech-arch-api-facade` | update | Six names removed; the doctrine signatures. |
+| `ref-lore_api-core` | update | New signatures for `create_doctrine`, `update_doctrine`, `read_doctrine`, `create_mission`, `update_mission`, `update_mission_full`, `get_mission_detail`. |
+| `decisions-006-id-references` | **update in place** | FR-19b: the by-ID enumeration loses "knights", in both the Decision bullet list and the agent-native carve-out. **One further sentence, which FR-19b does not name:** the carve-out justifies keeping doctrines CLI-only in `native` mode because "`lore doctrine show` additionally runs normalisation, step validation and cycle detection" — Draft ADR 1 deletes all three, so the stated reason evaporates while the rule it supports stays (a doctrine still hides a `default/` split, slash-derived groups and `.deleted` naming, and `lore doctrine show` now additionally assembles a mission index across a directory). The sentence is rewritten to the surviving reason. The DECISION is unchanged and the document is **not** superseded and **not** marked superseded. Add one dated status-history row. |
+| `decisions-003-soft-delete-semantics` | update in place | Its "File entities (knights, doctrines)" sentence names an entity that no longer exists, and the doctrine soft-delete is now a directory rename. Dated status-history row; decision unchanged. |
+| `preexisting-bugs-handoff` | update | Bug #1 is already fixed; the resolver pattern it produced now lives in `doctrine.py`. |
+| Draft ADRs 1–5 | create, per the gate's ruling | The scribe writes only the ones the gate approves, after the code lands. |
+
+#### Added by the ADR & Standards Audit — documents the table above omitted
+
+`grep -ril knight .lore/codex/` returns **88 files**, of which 6 are the transient
+feature docs and 6 are the documents this table retires. The table above named
+about half the remainder. These are the rest. Every one describes the Knight
+entity, `knight.py`, `missions.knight` or `lore knight` as **current state**, so
+`decisions-020-codex-voice-is-enforced` ("a canonical codex document carries what
+is true now") makes each one a defect the moment the code lands. This is not the
+pre-existing staleness the In Scope / Out of Scope section declines to repair —
+it is staleness this feature creates.
+
+**Two rows are mechanically enforced**, not stylistic: `_check_codex` emits
+`broken_related_link` at **severity `error`** (`health.py:229-234`) for a
+`related:` entry naming a document that does not exist. Retiring the six knight
+documents without editing the fourteen documents whose frontmatter names them
+makes `lore health` exit 1 on this repository — which is exactly what S7's
+"`lore health` on this repository reports no new errors" gate measures, one lane
+before the scribe runs.
+
+| Codex ID | Action | What changed |
+|----------|--------|--------------|
+| **Inbound `related:` edges — each is a `broken_related_link` ERROR if missed** | | |
+| `conceptual-entities-watcher`, `conceptual-entities-skill`, `conceptual-entities-glossary`, `conceptual-entities-artifact` | update | `related:` names `conceptual-entities-knight`; each also names Knights in a prose "first-class entities alongside…" enumeration. |
+| `conceptual-workflows-artifact-new`, `conceptual-workflows-watcher-crud` | update | `related:` names `conceptual-workflows-knight-crud`; each has a "See Also" line pointing at it as the sibling pattern. |
+| `conceptual-workflows-artifact-list`, `conceptual-workflows-watcher-list` | update | `related:` names `conceptual-workflows-knight-list`; each has a "See Also" line. (`conceptual-workflows-doctrine-list` and `conceptual-workflows-filter-list` carry the same edge and are already in the table above — the edge must be removed there too, not only the behaviour row.) |
+| `tech-arch-frontmatter` | update | `related:` names `tech-arch-knight-module`. Also the `list_knights` row in the parse-callers table, the "codex documents, artifacts, and knights" required-fields sentence, and the importers list. |
+| `conceptual-workflows-typical-workflow` | update | Body links to `conceptual-entities-knight` twice; step 4 describes the orchestrator "assigning Knights". |
+| **The public-API reference layer — falsified by the eight `__all__` removals** | | |
+| `api-reference` | update | **The heaviest omission (42 hits).** The whole `## 3. Knight CRUD` section (five functions with signatures, returns and examples) goes. Also: the `Knight`, `Doctrine` and `DoctrineStep` dataclass lines in §Types; `Mission(...)`'s field list; the `create_mission` / `update_mission` / `update_mission_full` / `get_mission_detail` signatures and the `remove_knight` / `include_knight` prose; `list_missions_grouped`'s "exact keys" list; the `kind ∈ {"knight", …}` sets on `update_frontmatter_fields` and `entity_location`; the `knight-frontmatter` examples on `validate_entity`, `validate_entity_file` and `load_schema`; and the §1 sentence "Every read function on Knight, Doctrine, Watcher, …". |
+| `api-guide` | update | The `### Knight` section; `mission_type="knight"` and `knight=` in the create-mission example; `step.get("knight")` in the doctrine example; the `update_knight` / `ForeignEntityError` example; `read_knight` in the returns-`None` list; the internal-module enumeration; the nested-projects sentence. |
+| `standards-public-api-stability` | update | **Load-bearing and omitted.** It restates `lore.api.__all__` **verbatim**, so all eight removed names sit in it; its internal-module list carries `lore.knight — knight filesystem operations`; and it names `lore.api._paths.knights_dir` as the worked example of the CLI's namespace aliases. It is also where the `BREAKING CHANGE:` changelog format and the "every release that changes the public API must include a `CHANGELOG.md` entry" rule live — so whatever the gate rules on C-4 lands here as well. |
+| `ref-lore_cli-commands` | update | The `lore knight` group in both the **Covers** list and the command tree; the `--project` "accepted on 19 read commands" list and its count; the `--scope` token set; `mission_type`'s "common values are `knight`, `constable`, `human`"; the "Knight / doctrine / watcher / artifact name validation" heading; `lore init`'s "doctrines, knights, artifacts, gitignore"; and "`lore show <mission-id> --json` includes `knight_contents` … unless `--no-knight` is passed". |
+| `tech-overview` | update | The Module Layering graph's three `knight.py` edges; the `cli.py imports …` list; the importer lists under `frontmatter.py`, `schemas.py` and `paths.py`; and the two anti-pattern rows "Inline Knights" and "Renaming knight/doctrine files". |
+| `ref-lore_db-core` | update | The `missions` column list and the `knight` column; "or in a sibling file-based store (knights, doctrines, watchers, artifacts, …)"; the "Pre-v5 it was an enum (`knight \| constable \| human`)" note; and a v6→v7 row beside the v4→v5 one. |
+| `tech-oracle-internals` | update | The mission table's column list `ID, Title, Status, Priority, Type, Knight` and the per-mission field list `Mission ID, status, priority, type, knight`. (`conceptual-workflows-oracle` is already in the table above; this is its internals counterpart.) |
+| **The five remaining standards documents — each names `knight.py` as a live module** | | |
+| `standards-dry` | update | The Canonical Module Homes table's `Knight filesystem operations \| knight.py \| lore.knight` row. |
+| `standards-single-responsibility` | update | The Module Responsibilities table's `knight.py \| Knight filesystem operations only` row; also `doctrine.py \| Doctrine YAML loading, validation, and storage`, which stops being true. |
+| `standards-separation-of-concerns` | update | The Layer Responsibilities table's `Filesystem entities \| knight.py, doctrine.py, codex.py, artifact.py` row. |
+| `standards-dependency-inversion` | update | The Import Rules table names `knight.py` twice, and the **envelope-hydration exception** documents `db.get_mission_detail` resolving a knight through a function-local `from lore.knight import read_knight` with a "G7 swap" source marker. That is the exception this feature moves to `from lore.doctrine import _resolve_doctrine_mission`; the exception's shape is unchanged, its worked example is not. |
+| `standards-facade` | update | The internal-module list names `lore.knight`, and the closing paragraph names `lore.api._knight` and `lore.api._validate_frontmatter` as the CLI's namespace aliases — both deleted by C4. |
+| **ADRs whose body prose is falsified. In-place body edit plus one dated Status History row; the DECISION is unchanged in every case and none is superseded or marked superseded** | | |
+| `decisions-012-multi-value-cli-param-convention` | update in place | Its **Examples** block shows `lore health --scope doctrines knights` as the correct form and `lore health --scope doctrines --scope knights` as the counter-example. After this feature both demonstrate a token that exits 2, so the ADR teaches its own rule with an invalid instance. |
+| `decisions-017-constrained-flags-use-click-choice` | update in place | Its Context enumerates the `--scope` token set, `knights` included, as "the canonical example". |
+| `decisions-024-default-group-is-seeded-boundary` | update in place | Its Context states that `lore init` "already seeds doctrines, knights, artifacts and watchers into a `default/` subtree" and that `.lore/.gitignore` "already names exactly those four subtrees (`doctrines/default/`, `knights/default/`, …)" — the four become three, and the `.gitignore` triad is removed by C5. |
+| `decisions-010-public-api-stability` | update in place | Its **Decision** section enumerates the modules the facade sources callables from, `lore.knight` included, and its Context repeats the list. |
+| `decisions-001-dumb-infrastructure` | update in place | "Agents only set business fields (title, description, priority, knight)". |
+| `decisions-004-mission-type-dumb-storage`, `decisions-007`, `decisions-013`, `decisions-015`, `decisions-016`, `decisions-018`, `decisions-006-no-seed-content-tests` | update in place | Each names knights in a live enumeration of entity kinds or seeded trees. `decisions-004` additionally names `knight` as a `mission_type` token. Per `decisions-020`, `decisions/` is exempt from the past-tense rules, so a Context sentence that was true when the ADR was written may stand; an enumeration written in the present tense may not. The scribe applies that test per sentence rather than deleting the word wholesale. |
+| **Remaining conceptual and technical documents** | | |
+| `conceptual-relationships-doctrine--quest` | update | Describes a quest planned from a doctrine's steps and their knights. |
+| `conceptual-workflows-ready`, `conceptual-workflows-claim` | update | The `knight` key / column in ready-queue and claim output. |
+| `conceptual-workflows-validators` | update | `validate_name` / `validate_group` described as "knight/doctrine name" validators, with `knight.create_knight` in the caller lists. |
+| `tech-arch-validators` | update | Same three caller lists, in the architecture counterpart. |
+| `conceptual-workflows-rite-crud`, `conceptual-workflows-rite-list`, `conceptual-workflows-impacts`, `conceptual-workflows-codex-map`, `tech-arch-codex-map`, `tech-arch-projects-module`, `tech-arch-project-root-detection`, `conceptual-entities-quest`, `conceptual-entities-rite`, `vision-benchmarks` | update | One or two incidental mentions each — an entity list, a path example, a fixture name. Mechanical. |
+| `src/lore/validators.py` docstring | modify (code, not codex) | `validate_name`'s docstring reads "not a valid knight/doctrine name". Belongs to the surface lane's long tail, not the scribe. |
+| `CHANGELOG.md` | update | The breaking-change notice ADR-010 requires — scope and wording pending Conflict C-4. |
+| `src/lore/defaults/artifacts/lore-design-documents/mission-design.md` | **create** | FR-25 — the mission-file template: frontmatter, the role the worker adopts, how it works, its hard rules, its inputs, its steps, its done criteria, what it hands on. |
+| `src/lore/defaults/artifacts/lore-design-documents/doctrine-design.md` | rewrite | FR-26 — no Knight column, no New Knights section, Type tokens `agent \| constable \| human`, a Missions section listing each mission with a one-line purpose. |
+| `src/lore/defaults/doctrines/**` (4 doctrines) | rewrite | FR-27 — converted to the directory shape, each former knight persona merged into the mission file that used it. `update-changelog`, `feature-implementation`, `quick-feature-implementation`, `tdd-implementation`. |
+| `src/lore/defaults/skills/update-knight/` | delete | FR-29. |
+| `src/lore/defaults/skills/{update-doctrine,start-quest,inquest,sync-codex-guide}/` | update | FR-29 — the new doctrine shape, `lore doctrine new -d -m`, `-D` on `lore new mission`, mission type `agent`, no Knight step. |
+| `src/lore/defaults/skills-catalogue.yaml` | update | FR-28 — move `update-knight` from `skills:` into `retired:` as `{into: update-doctrine, reason: …}`. |
+| `src/lore/defaults/docs/LORE-AGENT.md` | update | FR-30 — six entity types, dispatch on type `agent`, the doctrine directory shape. |
+| `src/lore/defaults/docs/GETTING-STARTED.md` | update | FR-30 — six entity types, the new doctrine walkthrough. |
+| repository `CLAUDE.md` | update | FR-30 — the same shared-section edits `LORE-AGENT.md` receives, so the seeded copy and the repository's own instruction file do not drift. |
+
+---
+
+## Part 4 — Test Strategy
+
+### Conventions
+
+Unit tests live in `tests/unit/`, import `lore.*` modules directly, never
+`lore.cli`, and use `bare_lore_dir` or `tree` from `tests/unit/conftest.py`.
+E2E tests live in `tests/e2e/`, use the root `project_dir` and `runner`
+fixtures, and cite one `conceptual-workflows-*` id in the module docstring. No
+file defines its own `runner` or `project_dir`. No `US-N`, `AC-N` or
+`SCENARIO-NNN` in any name, comment or docstring.
+
+The anchoring rule is `technical-test-guidelines` §3, and the existing suite
+breaches it widely — see C-3's corrected statement of the tree. Every E2E file
+this feature **creates or rewrites** carries the anchor its E-table row names,
+which repairs the anchor on `test_doctrine_show.py`, `test_doctrine_new.py` and
+`test_doctrine_list.py` in passing. Files this feature only edits keep whatever
+anchor they have. Repairing the suite-wide breach is not this feature's work,
+and no file this feature touches may lose an anchor it already has.
+
+Nothing is mocked around a failure path: a missing file is a missing file on
+disk, a dangling reference is a real row pointing at a real absent path, and a
+migration test opens a real v6 database. The one sanctioned mock in this area is
+the existing `health.get_validator` monkeypatch anchor, which is unchanged.
+
+`decisions-006-no-seed-content-tests` governs every assertion touching
+`src/lore/defaults/`: existence, parseability and required-key presence only.
+Never assert a seeded doctrine's title, a seeded mission's summary, the prose of
+`mission-design.md`, or the text of a retirement reason. "The four seeded
+doctrines each have a `missions/` directory containing at least one `.md` file
+whose frontmatter parses and carries `id`, `title` and `summary`" is a valid
+assertion; "the `recon` mission's title is `Map the codex`" is not.
+
+CliRunner note: on Click 8.3 `mix_stderr=False` no longer exists; read
+`result.stdout` and `result.stderr` separately.
+
+### E2E
+
+| # | Scenario | Test file | Exact command | Exact expected output | Workflow codex ID |
+|---|----------|-----------|---------------|----------------------|-------------------|
+| E1 | Doctrine show returns design plus index | `tests/e2e/test_doctrine_show.py` | `lore doctrine show tdd-lite` | design file verbatim, blank line, `--- Missions ---`, one padded row per mission sorted by id; exit 0 | `conceptual-workflows-doctrine-show` |
+| E2 | Doctrine with no `missions/` still resolves | `tests/e2e/test_doctrine_show.py` | `lore doctrine show solo` | design verbatim, blank line, `--- Missions ---`, `(none)`; exit 0 | `conceptual-workflows-doctrine-show` |
+| E3 | Doctrine show JSON envelope | `tests/e2e/test_doctrine_show.py` | `lore --json doctrine show tdd-lite` | one top-level key `doctrine`; inner keys exactly `id, title, summary, design, missions, origin`; **no** `raw_yaml`, **no** `steps`; `missions` sorted by id | `conceptual-workflows-doctrine-show` |
+| E4 | One mission body by id | `tests/e2e/test_doctrine_show.py` | `lore doctrine show tdd-lite --mission recon` | the mission body verbatim, frontmatter stripped; exit 0 | `conceptual-workflows-doctrine-show` |
+| E5 | Mission body JSON envelope | `tests/e2e/test_doctrine_show.py` | `lore --json doctrine show tdd-lite --mission recon` | `{"mission": {"id": "recon", "title": …, "summary": …, "body": …}}` | `conceptual-workflows-doctrine-show` |
+| E6 | Doctrine resolves, mission does not | `tests/e2e/test_doctrine_show.py` | `lore doctrine show tdd-lite --mission nope` | stderr `Mission "nope" not found in doctrine "tdd-lite"`, stdout empty, exit 1 | `conceptual-workflows-doctrine-show` |
+| E7 | Doctrine does not resolve | `tests/e2e/test_doctrine_show.py` | `lore doctrine show nope --mission recon` | stderr `Doctrine 'nope' not found` (pending C-1), exit 1 | `conceptual-workflows-doctrine-show` |
+| E8 | JSON error goes to stderr on the local flag | `tests/e2e/test_doctrine_show.py` | `lore doctrine show nope --json` | `result.stdout == ""`; stderr parses to `{"error": …}`; exit 1 | `conceptual-workflows-doctrine-show` |
+| E9 | Create a doctrine with three missions | `tests/e2e/test_doctrine_new.py` | `lore doctrine new tdd-lite --group default -d d.md -m a.md b.md c.md` | `Created doctrine tdd-lite with 3 missions in group default`; exit 0; `.lore/doctrines/default/tdd-lite/tdd-lite.design.md` and three `missions/*.md` exist | `conceptual-workflows-doctrine-new` |
+| E10 | Create with one mission, no group | `tests/e2e/test_doctrine_new.py` | `lore doctrine new solo -d d.md -m a.md` | `Created doctrine solo with 1 mission`; exit 0 | `conceptual-workflows-doctrine-new` |
+| E11 | Create JSON envelope | `tests/e2e/test_doctrine_new.py` | `lore --json doctrine new tdd-lite --group default -d d.md -m a.md b.md` | keys exactly `created, group, missions, path`; `missions` sorted; `path` ends with `/` | `conceptual-workflows-doctrine-new` |
+| E12 | Create with no `-m` | `tests/e2e/test_doctrine_new.py` | `lore doctrine new tdd-lite -d d.md` | stderr `At least one mission file is required (-m)`; exit 1; **no directory created** | `conceptual-workflows-doctrine-new` |
+| E13 | Create with no `-d` | `tests/e2e/test_doctrine_new.py` | `lore doctrine new tdd-lite -m a.md` | stderr `Error: -d/--design is required`; exit 1; no directory created | `conceptual-workflows-doctrine-new` |
+| E14 | Duplicate `-m` stems | `tests/e2e/test_doctrine_new.py` | `lore doctrine new tdd-lite -d d.md -m x/recon.md y/recon.md` | stderr `Duplicate mission id "recon": two -m files share a filename stem`; exit 1; no directory created | `conceptual-workflows-doctrine-new` |
+| E15 | A bad mission file leaves nothing on disk | `tests/e2e/test_doctrine_new.py` | `lore doctrine new tdd-lite -d d.md -m good.md bad.md` where `bad.md` has no `summary` | stderr `Mission "bad": Missing required property 'summary'.`; exit 1; `.lore/doctrines/` contains no `tdd-lite` directory and no `.tdd-lite.lore-tmp` | `conceptual-workflows-doctrine-new` |
+| E16 | Duplicate doctrine anywhere in the subtree | `tests/e2e/test_doctrine_new.py` | `lore doctrine new tdd-lite -d d.md -m a.md` twice | second run: stderr `Error: doctrine 'tdd-lite' already exists at <path>`; exit 1 | `conceptual-workflows-doctrine-new` |
+| E17 | Replace one mission, leave the rest byte-identical | `tests/e2e/test_doctrine_edit.py` (anchor per C-3) | `lore doctrine edit tdd-lite -m recon.md` | `Updated doctrine tdd-lite (missions replaced: recon)`; exit 0; the other two mission files and the design file are byte-identical to before | `conceptual-workflows-doctrine-edit` |
+| E18 | Replace the design only | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit tdd-lite -d d.md` | `Updated doctrine tdd-lite (design replaced)`; exit 0; every mission byte-identical | `conceptual-workflows-doctrine-edit` |
+| E19 | A new `-m` stem adds a mission | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit tdd-lite -m lint.md` | `Updated doctrine tdd-lite (missions replaced: lint)`; `missions/lint.md` now exists | `conceptual-workflows-doctrine-edit` |
+| E20 | Remove two missions, soft-delete | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit tdd-lite --remove-mission refactor lint` | `Updated doctrine tdd-lite (missions removed: lint, refactor)`; exit 0; `missions/lint.md.deleted` and `missions/refactor.md.deleted` exist; no live `lint.md`/`refactor.md` | `conceptual-workflows-doctrine-edit` |
+| E21 | Combined clauses | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit tdd-lite -d d.md -m recon.md --remove-mission lint` | `Updated doctrine tdd-lite (design replaced; missions replaced: recon; missions removed: lint)` | `conceptual-workflows-doctrine-edit` |
+| E22 | Nothing to update | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit tdd-lite` | message `Nothing to update: pass -d, -m, or --remove-mission`; exit code per C-2 | `conceptual-workflows-doctrine-edit` |
+| E23 | Remove a mission that does not exist | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit tdd-lite --remove-mission nope` | stderr `Mission "nope" not found in doctrine "tdd-lite"`; exit 1; nothing removed | `conceptual-workflows-doctrine-edit` |
+| E24 | Remove the last mission | `tests/e2e/test_doctrine_edit.py` | `lore doctrine edit solo --remove-mission only` | stderr `Cannot remove every mission: a doctrine keeps at least one mission.`; exit 1; `missions/only.md` still live | `conceptual-workflows-doctrine-edit` |
+| E25 | Edit JSON envelope | `tests/e2e/test_doctrine_edit.py` | `lore --json doctrine edit tdd-lite -m recon.md` | keys exactly `updated, design_replaced, missions_replaced, missions_removed` | `conceptual-workflows-doctrine-edit` |
+| E26 | Field-edit mode still targets the design | `tests/e2e/test_frontmatter_edit_cli.py` | `lore doctrine edit tdd-lite --set title=X` | `Updated doctrine tdd-lite`; exit 0; `tdd-lite.design.md` frontmatter `title` is `X` and its body is byte-identical | `conceptual-workflows-doctrine-edit` |
+| E27 | `lore doctrine list` is unchanged | `tests/e2e/test_doctrine_list.py` | `lore doctrine list --filter default/feature-implementation` | same columns, same rows, same JSON keys as before the change, for doctrines in the new shape | `conceptual-workflows-doctrine-list` |
+| E28 | Soft-deleted doctrine disappears from list and show | `tests/e2e/test_doctrine_list.py` | `lore doctrine delete tdd-lite` then `lore doctrine list` | `Deleted doctrine tdd-lite`; the id is absent from the listing; `.lore/doctrines/.../tdd-lite.deleted/` exists | `conceptual-workflows-doctrine-list` |
+| E29 | Create a mission with `-D` | `tests/e2e/test_mission_crud.py` | `lore new mission -q q-a1b2 "T" -D tdd-lite/recon -T agent` | `Created mission q-a1b2/m-xxxx`; exit 0; the DB row's `doctrine_mission` is exactly `tdd-lite/recon` | `conceptual-workflows-mission-crud` |
+| E30 | `-D` is not validated at write time | `tests/e2e/test_mission_crud.py` | `lore new mission -q q-a1b2 "T" -D nothing/here` | exit 0; the row stores `nothing/here` | `conceptual-workflows-mission-crud` |
+| E31 | Change and clear the reference | `tests/e2e/test_mission_crud.py` | `lore edit q-a1b2/m-c3d4 -D tdd-lite/scribe` then `--no-doctrine-mission` | `Updated mission …` both times; the column holds `tdd-lite/scribe` then `NULL` | `conceptual-workflows-mission-crud` |
+| E32 | Mutual exclusion | `tests/e2e/test_mission_crud.py` | `lore edit q-a1b2/m-c3d4 -D a/b --no-doctrine-mission` | stderr contains `Error: --doctrine-mission and --no-doctrine-mission are mutually exclusive.`; exit 2 | `conceptual-workflows-mission-crud` |
+| E33 | `lore show` splices the body | `tests/e2e/test_mission_crud.py` | `lore show q-a1b2/m-c3d4` | `Doctrine Mission: tdd-lite/recon` line present; `--- Mission Instructions ---` followed by the body with no re-rendered frontmatter; exit 0 | `conceptual-workflows-show` |
+| E34 | `lore show` is silent on an unresolvable reference | `tests/e2e/test_mission_crud.py` | `lore show q-a1b2/m-c3d4` with `doctrine_mission = 'gone/missing'` | exit 0; stdout contains `Doctrine Mission: gone/missing`; stdout contains neither `Warning` nor `--- Mission Instructions ---`; stderr empty | `conceptual-workflows-show` |
+| E35 | `--no-doctrine-mission` omits the section | `tests/e2e/test_mission_crud.py` | `lore show q-a1b2/m-c3d4 --no-doctrine-mission` | stdout has no `--- Mission Instructions ---`; exit 0 | `conceptual-workflows-show` |
+| E36 | Show JSON keys | `tests/e2e/test_mission_crud.py` | `lore show q-a1b2/m-c3d4 --json` | `doctrine_mission` and `doctrine_mission_contents` present; `knight` and `knight_contents` absent | `conceptual-workflows-show` |
+| E37 | Resolution happens at read time | `tests/e2e/test_mission_crud.py` | create the mission, then `lore doctrine edit tdd-lite -m recon.md` with new text, then `lore show` | the spliced body is the new text | `conceptual-workflows-show` |
+| E38 | `lore knight` is gone | `tests/e2e/test_error_handling.py` | `lore knight list` | stderr contains `No such command 'knight'.`; exit 2 | `conceptual-workflows-error-handling` |
+| E39 | `--scope knights` is gone | `tests/e2e/test_health.py` | `lore health --scope knights` | stderr contains `Invalid value for '--scope': 'knights' is not one of`; exit 2 | `conceptual-workflows-health` |
+| E40 | Old-shape doctrine warns and exits 0 | `tests/e2e/test_health.py` | `lore health --scope doctrines` with a flat `x.design.md` + `x.yaml` on disk | stdout has `WARNING  doctrines  x  missing_missions_dir: …` and `WARNING  doctrines  x  stray_yaml: x.yaml is no longer read`; exit 0 | `conceptual-workflows-health` |
+| E41 | Dangling reference errors and exits 1 | `tests/e2e/test_health.py` | `lore health --scope doctrines` with an active mission whose `doctrine_mission` is absent | stdout has `ERROR  doctrines  gone/missing  missing_file: referenced by q-a1b2/m-c3d4 but not found on disk`; exit 1 | `conceptual-workflows-health` |
+| E42 | A closed mission's dangling reference is not reported | `tests/e2e/test_health.py` | same, with the mission closed | no `missing_file` row; exit 0 | `conceptual-workflows-health` |
+| E43 | A soft-deleted mission file is not a dangling reference | `tests/e2e/test_health.py` | `lore health --scope doctrines` with `missions/recon.md.deleted` and an active mission pointing at `tdd-lite/recon` | no `missing_file` row | `conceptual-workflows-health` |
+| E44 | `id` vs directory name and `id` vs stem | `tests/e2e/test_health.py` | `lore health --scope doctrines` with a design whose `id` disagrees with the directory and a mission whose `id` disagrees with the stem | one `id_mismatch` row and one `mission_id_mismatch` row; exit 1 | `conceptual-workflows-health` |
+| E45 | Duplicate doctrine ids | `tests/e2e/test_health.py` | two directories whose designs declare the same `id` | one `duplicate_id` row; exit 1 | `conceptual-workflows-health` |
+| E46 | Broken artifact ref in a mission body | `tests/e2e/test_health.py` | a mission body naming `fi-nope` | `ERROR  doctrines  tdd-lite  broken_artifact_ref: 'fi-nope' not found (mission recon)`; exit 1 | `conceptual-workflows-health` |
+| E47 | Mission frontmatter schema under `--scope schemas` | `tests/e2e/test_health_schemas.py` | `lore health --scope schemas` with a mission file missing `summary` | a schema block naming kind `doctrine-mission-frontmatter` and schema `lore://schemas/doctrine-mission-frontmatter`; exit 1 | `conceptual-workflows-health` |
+| E48 | The two removed schema kinds are gone | `tests/e2e/test_health_schemas.py` | `lore health --scope schemas` on a project holding a stray `x.yaml` under `.lore/doctrines/` | no `doctrine-yaml` schema block is produced | `conceptual-workflows-health` |
+| E49 | v6 → v7 migration | `tests/e2e/test_schema_migrations.py` | open a hand-built v6 database with one `mission_type='knight'` row | `schema_version` is `7`; `missions` has `doctrine_mission` and no `knight`; the row's `mission_type` is `agent`; the previous `knight` value is in `doctrine_mission`; both indexes exist | `conceptual-workflows-schema-migrations` |
+| E50 | A fresh database equals a migrated one | `tests/e2e/test_schema_migrations.py` | `lore init` in an empty directory | `PRAGMA table_info(missions)` column names and order match the v7 migration's output exactly | `conceptual-workflows-schema-migrations` |
+| E51 | Upgrade removes seeded knights and keeps authored ones | `tests/e2e/test_init_upgrade_journey.py` | seed `.lore/knights/default/x.md` and `.lore/knights/mine.md`, then `lore init --yes` | messages contain `Removed knights/default/x.md — no longer shipped`; `.lore/knights/default/` is gone; `.lore/knights/mine.md` still exists and is named in the report as no longer read | `conceptual-workflows-init-reconcile` |
+| E52 | Seeded doctrines land in the new shape | `tests/e2e/test_lore_init.py` | `lore init --yes` | for each of the four seeded doctrines, `<dir>/<stem>.design.md` exists, `<dir>/missions/` exists and holds at least one `.md`, and each parses with `id`, `title`, `summary` present. **Existence and structure only** | `conceptual-workflows-lore-init` |
+| E53 | Old seeded doctrine files are pruned | `tests/e2e/test_lore_init.py` | plant `.lore/doctrines/default/update-changelog.yaml`, then `lore init --yes` | the file is gone | `conceptual-workflows-lore-init` |
+| E54 | The gitignore no longer un-ignores knights | `tests/e2e/test_init_git_tracking.py` | `lore init --yes` | `.lore/.gitignore` contains no line matching `knights` | `conceptual-workflows-lore-init` |
+| E55 | `update-knight` is retired | `tests/e2e/test_health_skills.py` | `lore init --yes` on a project holding an installed `update-knight` skill | the skill directory is removed and the removal row names `update-doctrine` as the successor; `update-knight` is absent from the installed set. **No assertion on the reason text** | `conceptual-workflows-init-reconcile` |
+| E56 | `lore missions` and `lore ready` key rename | `tests/e2e/test_mission_crud.py`, `tests/e2e/test_ready.py` | `lore --json missions`, `lore --json ready` | each entry carries `doctrine_mission` and no `knight`; text mode still renders `  [<ref>]` | `conceptual-workflows-mission-crud`, `conceptual-workflows-ready` |
+| E57 | Oracle renders the reference | `tests/e2e/test_oracle.py` | `lore oracle` | the quest report's mission table header is `\| Doctrine Mission \|` and the mission file carries `**Doctrine Mission:**` | `conceptual-workflows-oracle` |
+| E58 | Top-level help lists five supporting entities | `tests/e2e/test_help_group_param.py` | `lore --help` | the output contains no `Knight` line and contains the seven remaining entity lines — `Quest`, `Mission` above the split and `Doctrine`, `Codex`, `Rite`, `Artifact`, `Watcher` below it | `conceptual-workflows-help` |
+| E59 | Cross-project doctrine read still works | `tests/e2e/test_nested_projects.py` | `lore --project all doctrine show <qualified-id>` | the design and index of the ancestor's doctrine; `origin` is the ancestor's name | `conceptual-workflows-nested-projects` |
+| E60 | A doctrine write across a boundary is refused | `tests/e2e/test_nested_projects.py` | `lore doctrine edit camelot:x -m a.md` | the `read-only` message; exit as today | `conceptual-workflows-nested-projects` |
+| E61 | API and CLI produce the same doctrine result | `tests/e2e/test_api_parity_doctrine.py` | `create_doctrine(...)` vs `lore doctrine new …` | same files on disk, same envelope keys, same `ValueError` message as the CLI's stderr for each failure row | `decisions-011-api-parity-with-cli` |
+| E62 | `lore.api` has no knight names | `tests/e2e/test_python_api.py` | `import lore.api` | none of `Knight`, `list_knights`, `read_knight`, `create_knight`, `update_knight`, `delete_knight` is in `dir(lore.api)` or `lore.api.__all__` | `conceptual-workflows-python-api` |
+
+### Unit
+
+| Module / function | Test file | What to assert |
+|-------------------|-----------|----------------|
+| `lore.doctrine.list_doctrines` | `tests/unit/test_doctrine.py` | a directory with a matching design file is listed; one without is not; a `missions/`-only directory is not; group is derived from the directory's parent chain, so `default/feature-implementation/tdd/` yields `default/feature-implementation`; `filename` is `<stem>.design.md`; a `.`-prefixed directory and a `<name>.deleted/` directory are both invisible; a design file with no `id` frontmatter is silently skipped; `filter_groups` behaves exactly as today; an empty `.lore/doctrines/` returns `[]`. |
+| `lore.doctrine.read_doctrine` | `tests/unit/test_doctrine.py` | returns `design` as the **whole file text**; `missions` sorted by id with `id`/`title`/`summary`; empty `missions` when no `missions/` directory; `None` for an unknown doctrine; with `mission="recon"` the dict carries `mission` with a frontmatter-stripped `body`; with `mission="nope"` on a real doctrine the dict carries `mission: None` and is **not** `None` itself; with `mission=…` on an unknown doctrine the whole return is `None`; a `mission` value containing `/` or `\` raises `ValueError`; a `.md.deleted` mission is neither indexed nor readable. |
+| `lore.doctrine.create_doctrine` | `tests/unit/test_doctrine_crud.py` | the exact `{created, group, missions, path}` envelope with `missions` sorted; files land at the right paths; `group=None` puts the directory at the doctrines root and reports `group: None`; each failure row of the `doctrine new` table raises `ValueError` with that exact message; a qualified name raises `ForeignEntityError` **before** `validate_name` runs; after any failure `.lore/doctrines/` holds neither the target directory nor a `.`-prefixed staging directory; a pre-existing staging directory from a crashed run is replaced, not merged. |
+| `lore.doctrine.update_doctrine` | `tests/unit/test_doctrine_crud.py` | `-m` merges by stem and never wipes the set; an unknown stem adds; untouched files are byte-identical afterwards; `remove_missions` produces `.md.deleted` and no live file; the exact `{updated, design_replaced, missions_replaced, missions_removed}` envelope with both lists sorted; every failure row raises its exact `ValueError` and leaves the tree byte-identical; removing the last mission raises; removing a mission that is already soft-deleted raises the not-found message. |
+| `lore.doctrine.delete_doctrine` | `tests/unit/test_doctrine_crud.py` | the directory is renamed to `<name>.deleted`; the envelope is `{"id", "deleted": True, "deleted_at": None}`; a missing doctrine raises; a qualified name raises `ForeignEntityError`. |
+| `lore.doctrine.load_mission_sources` | `tests/unit/test_doctrine.py` | maps stem to content; raises `File not found: <path>` for a missing path; raises `Duplicate mission id "recon": two -m files share a filename stem` for two paths with the same stem in different directories; an empty sequence returns `{}` (the ≥1 rule belongs to `create_doctrine`). |
+| `lore.doctrine._find_doctrine_dir` | `tests/unit/test_doctrine.py` | raises `ValueError` on a name containing `/` or `\`; prefers a shallower match over a deeper one; returns `None` when the doctrines directory does not exist. |
+| `lore.doctrine._resolve_doctrine_mission` | `tests/unit/test_doctrine.py` | resolves `tdd-lite/recon`; returns `None` for a bare `recon` with no doctrine part; returns `None` for `../../etc/passwd`, for an absolute path, and for a reference with two slashes; returns `None` when the mission file is absent; returns the path when the doctrine lives in a nested group; is unaffected by a `.md.deleted` sibling. |
+| `lore.doctrine` deletions | `tests/unit/test_doctrine.py` | `hasattr(doctrine, name)` is False for `load_doctrine`, `validate_doctrine_content`, `scaffold_doctrine`, `_validate_steps`, `_check_cycles`, `_normalize`, `_validate_yaml_schema`. |
+| `lore.db.create_mission` | `tests/unit/test_db_mission_crud_holistic.py` | `doctrine_mission=` stores the string verbatim including one with a `/`; `None` stores NULL; no filesystem access occurs; the returned envelope is unchanged. |
+| `lore.db.update_mission` | `tests/unit/test_db_edit_full.py` | `doctrine_mission=` sets; `remove_doctrine_mission=True` sets NULL; passing both means remove wins (today's `remove_knight` precedence, unchanged); neither leaves the column untouched. |
+| `lore.db.get_mission_detail` | `tests/unit/test_db_mission_detail.py` | `doctrine_mission_contents` holds the frontmatter-stripped body when the reference resolves; `None` when it does not; `None` when `include_doctrine_mission=False`; the envelope has no `knight` or `knight_contents` key; a reference with a traversal segment yields `None` rather than reading outside the tree. |
+| `lore.db.list_missions_grouped`, `get_quest_detail`, `update_mission_full` | `tests/unit/test_db_list_missions_grouped.py`, `test_db_quest_detail.py`, `test_db_edit_full.py` | every per-mission dict carries `doctrine_mission` and no `knight`. |
+| `lore.migrations.v6_to_v7.migrate` | `tests/unit/test_db_*` plus `tests/e2e/test_schema_migrations.py` | against a real v6 connection: the column is renamed and repositioned; values carry across; `mission_type='knight'` becomes `'agent'` and other tokens are untouched; both indexes exist afterwards; `missions_old` is gone; the function does not commit and does not write `schema_version`. |
+| `lore.models.Mission.from_row` | `tests/unit/test_models.py` | builds from a v7 row and exposes `doctrine_mission`; `Knight`, `Doctrine` and `DoctrineStep` are absent from `models.__all__` and from the module namespace. |
+| `lore.health._check_doctrines` | `tests/unit/test_health.py` | each of the eight rows in the health table is produced for its condition, with the exact `check` token and `detail` string; a grouping directory with neither `missions/` nor a design file produces nothing; a `.deleted` directory produces nothing; a closed or soft-deleted mission's dangling reference produces nothing; several missions sharing one broken reference produce **one** row whose detail lists their ids comma-joined in insertion order; a soft-deleted mission file suppresses the `missing_file` row; an empty `.lore/doctrines/` produces nothing. |
+| `lore.health._check_schemas` | `tests/unit/test_health_schemas.py` | `doctrine-mission-frontmatter` is dispatched for `doctrines/**/missions/*.md`; `doctrine-yaml` and `knight` produce nothing because their rows are gone; a mission file with no frontmatter produces the `missing-frontmatter` issue. |
+| `lore.health.health_check` | `tests/unit/test_health.py` | `"knights"` in `scope` raises `ValueError` whose message lists the ten valid scopes; `_ALL_SCOPES` has ten entries; a warning-only doctrines run yields `has_errors == False`. |
+| `lore.health` deletions | `tests/unit/test_health.py` | `hasattr(health, "_check_knights")` and `hasattr(health, "_is_knight_soft_deleted")` are both False. |
+| `lore.paths` | `tests/unit/test_paths.py`, `test_paths_entity_location.py` | `doctrine_design_path`, `doctrine_missions_dir` and `doctrine_mission_path` return the expected paths and create nothing; `hasattr(paths, "knights_dir")` is False; `entity_location(root, "knight")` raises `ValueError` whose message lists the four remaining kinds. |
+| `lore.schemas` | `tests/unit/test_schemas.py` | `load_schema("doctrine-mission-frontmatter")` returns a dict with `required == ["id","title","summary"]`; `load_schema("knight-frontmatter")` and `load_schema("doctrine-yaml")` raise `FileNotFoundError` with `Unknown schema kind: '<kind>'`; `validate_entity("doctrine-mission-frontmatter", {...})` reports a missing field and an unknown property with the standard messages; the packaged kind count is 11. |
+| `lore.frontmatter_edit` | `tests/unit/test_frontmatter_edit.py` | `_KINDS` has no `knight` key; `_KINDS["doctrine"].schema_kind == "doctrine-design-frontmatter"` and `.shape == "md_fm"`; `update_frontmatter_fields(root, "doctrine", name, set_fields={"title": "X"})` rewrites the design file's frontmatter and leaves its body byte-identical; a mutation that breaks the schema raises before any write; `update_frontmatter_fields(root, "knight", …)` raises `Unknown kind: knight`; the module does not import `lore.knight`. |
+| `lore.oracle` | `tests/unit/` is not the home — covered by `tests/e2e/test_oracle.py` | the renderer reads `doctrine_mission` and never `knight`. |
+| `lore.init` | `tests/unit/test_lore_init.py`, `test_reconcile.py` | `SEEDED_TREES` has no `knights` row; `RETIRED_SEED_TREES` names `.lore/knights/default`; the retired-tree walk unlinks files, skips symlinks, tolerates an `OSError` on unlink, prunes emptied directories and returns one message per removal; `seeded_paths()` names no knight path; a run on a project with no `.lore/knights/` produces no messages and no error. |
+| `lore.prompts` | `tests/unit/test_prompts.py` | `ACCESS_SCOPE_NOTE` contains no `knights`, still names codex, rites, the glossary, quests, missions, artifacts, doctrines and watchers, and still renders as two lines with the same indent; `DEFAULT_SKILL_FAMILIES` is unchanged in value. |
+| `lore.skills` | `tests/unit/test_skills.py` | `skills_in_families(["machinery"])` returns four ids and none is `update-knight`; `retirement_for("update-knight").into == "update-doctrine"`; `retirement_for("new-knight").into` is still `"update-knight"` — the ledger is append-only. |
+| `lore.api` | `tests/unit/test_api_surface.py`, `test_api_all_matches_spec.py` | `__all__` matches the updated literal tuple element-for-element including order; no knight name is importable from `lore.api`; `lore.api._knight` and `lore.api._validate_frontmatter` do not exist; `lore.api._doctrine` still resolves. |
+| `lore.cli` structure | `tests/unit/test_cli_imports_only_api.py`, `test_cli_health.py`, `test_help_enrichment.py` | `cli.py` imports nothing from `lore.knight`; `_VALID_SCOPES` has ten entries and no `knights`, in the order `codex, artifacts, doctrines, watchers, schemas, glossary, bindings, rites, voice, skills` (the order Click's invalid-value message prints); the `--scope` option's own help string contains no `knights`; `_PROJECT_READ_COMMANDS` has no `knight list`/`knight show`; the top-level help block lists five supporting entities; the `lore doctrine` group help names the directory model and `--mission`. |
+
+---
+
+## Part 5 — Implementation Plan
+
+This section is the dispatch order. The orchestrator creates one mission per
+in-scope lane, in this order, and each dev knight executes its own section end to
+end.
+
+> **Read this before dispatching.** This feature is a single coordinated
+> breaking change, not three independent ones. The suite is green at the end of
+> the **foundation** lane and again only at the end of the **surface** lane.
+> From core unit C1 until the last surface unit the tree is red by construction:
+> C1 changes `doctrine.py`'s return shape while `cli.py` still reads `raw_yaml`,
+> and core's excision unit deletes `knight.py` while `api.py` still re-exports
+> from it. Each unit below therefore carries a **Done when** that is runnable at
+> that moment — a targeted test selection, an import check, or a `grep` — and
+> never "the suite is green". The orchestrator must not read a red suite between
+> C1 and S7 as a regression, and must not stop after core: core alone leaves
+> `lore.api` unimportable.
+
+### Lane: foundation
+
+_In scope._ Purely additive. Ends with the full suite green.
+
+| # | Unit | Files | Tests first | Done when |
+|---|------|-------|-------------|-----------|
+| F1 | Add the `doctrine-mission-frontmatter` schema and register the kind | `src/lore/schemas/doctrine-mission-frontmatter.yaml` (new), `src/lore/schemas/__init__.py` (`_FRONTMATTER_KINDS` gains the kind) | `tests/unit/test_schemas.py` — `load_schema("doctrine-mission-frontmatter")` returns `required == ["id","title","summary"]`; `validate_entity` reports a missing field and an unknown property with the standard messages | Those tests pass and `pytest tests/unit tests/e2e` is green — nothing else reads the new kind yet |
+| F2 | Add the doctrine path helpers | `src/lore/paths.py` — `DESIGN_SUFFIX`, `MISSIONS_DIRNAME`, `doctrine_design_path`, `doctrine_missions_dir`, `doctrine_mission_path`; module docstring notes that these take a doctrine directory | `tests/unit/test_paths.py` — each helper returns the expected path and creates nothing on disk | Those tests pass; `knights_dir` is **still present** (it leaves in C4); full suite green |
+| F3 | Correct the design-frontmatter schema description | `src/lore/schemas/doctrine-design-frontmatter.yaml` — `id`'s description becomes "Doctrine id. Must match the doctrine directory name."; required set unchanged | `tests/unit/test_schemas.py` — the required set is still `["id","title","summary"]` | That test passes; full suite green |
+
+### Lane: core
+
+_In scope._ The largest lane. Everything under `src/lore/` except `api.py`,
+`cli.py` and `prompts.py`, plus the test-suite excision.
+
+| # | Unit | Files | Tests first | Done when |
+|---|------|-------|-------------|-----------|
+| C1 | Rewrite `doctrine.py` for the directory model | `src/lore/doctrine.py` (wholesale), `tests/unit/conftest.py` (`NestedTree.doctrine` writes the new shape) | `tests/unit/test_doctrine.py`, `test_doctrine_crud.py`, `test_doctrine_crud_holistic.py`, `test_doctrine_valueerror.py` — rewritten first, covering every `lore.doctrine.*` row of the Unit table: discovery and the skip rule, `read_doctrine`'s two miss shapes, the ten-step create validation order with each exact message, merge-by-stem, soft-delete, the last-mission guard, the staged write leaving nothing behind on failure, and both resolvers including the traversal refusals | `pytest tests/unit/test_doctrine.py tests/unit/test_doctrine_crud.py tests/unit/test_doctrine_crud_holistic.py tests/unit/test_doctrine_valueerror.py` is green; `grep -n "steps\|cycle\|_normalize\|raw_yaml" src/lore/doctrine.py` returns nothing |
+| C2 | Rename the column end to end and migrate | `src/lore/models.py`, `src/lore/db.py`, `src/lore/migrations/v6_to_v7.py` (new), `src/lore/defaults/schema.sql`, `src/lore/oracle.py`, `tests/conftest.py` (`insert_mission`) | `tests/unit/test_models.py`, `test_db_mission_detail.py`, `test_db_edit_full.py`, `test_db_mission_crud_holistic.py`, `test_db_list_missions_grouped.py`, `test_db_quest_detail.py` — rewritten for `doctrine_mission`, the two `remove_*` precedence cases, and hydration through `_resolve_doctrine_mission` including the traversal refusal | `pytest tests/unit/test_models.py tests/unit/test_db_*.py` is green; `sqlite3` on a hand-built v6 file reports version 7 with the new column and no `knight`; `grep -n "knight" src/lore/db.py src/lore/models.py src/lore/oracle.py` returns nothing |
+| C3 | Rework the health doctrines scope | `src/lore/health.py` — `_check_doctrines` rewritten to the eight rows, `_check_knights` and `_is_knight_soft_deleted` deleted, `knights` dropped from `_ALL_SCOPES` and the `checkers` map, `_SCHEMA_KINDS` and `_FRONTMATTER_SCHEMA_KINDS` updated | `tests/unit/test_health.py`, `test_health_schemas.py`, `test_health_schemas_us007.py` — rewritten for every row of the health table, the closed-mission and soft-delete suppressions, the one-row-per-reference grouping, and the ten-scope `ValueError` message | `pytest tests/unit/test_health.py tests/unit/test_health_schemas*.py` is green; `grep -n "knight" src/lore/health.py` returns nothing |
+| C4 | Excise the Knight entity from the code | `src/lore/knight.py` (deleted), `src/lore/schemas/knight-frontmatter.yaml` (deleted), `src/lore/schemas/doctrine-yaml.yaml` (deleted), `src/lore/schemas/__init__.py`, `src/lore/paths.py` (`knights_dir` and the `"knight"` row deleted), `src/lore/frontmatter_edit.py` (`knight` kind and import deleted, `doctrine` kind repointed, `_doctrine_design_locator` added), `src/lore/api.py` (the five knight callable re-exports, `_knight`, `_validate_frontmatter`, and `Knight`/`Doctrine`/`DoctrineStep` from the `lore.models` import at `api.py:15` — **only** these lines; see D26. `__all__` itself is S1's, but the `models` import line is C4's, because C2 already deleted the three dataclasses and `import lore.api` raises `ImportError` until this lands) | `tests/unit/test_paths.py`, `test_paths_entity_location.py`, `test_schemas.py`, `test_frontmatter_edit.py`, `test_frontmatter_edit_overlay.py` — rewritten for the removed kinds, the `entity_location` `ValueError` message, and the repointed `doctrine` kind editing the design file's frontmatter with a byte-identical body | `python -c "import lore.api"` succeeds; `grep -rn "knight" src/lore/ --include='*.py'` returns only `cli.py` and `prompts.py`; `pytest tests/unit/test_paths.py tests/unit/test_paths_entity_location.py tests/unit/test_schemas.py tests/unit/test_frontmatter_edit*.py` is green |
+| C5 | Stop seeding knights and remove the retired tree | `src/lore/init.py` (`SEEDED_TREES` loses the `knights` row; `RETIRED_SEED_TREES` added with its walk, its report lines and the authored-knights notice; the `for package in (...)` loop updated), `src/lore/defaults/gitignore` (three lines removed), `src/lore/defaults/knights/**` (12 files deleted) | `tests/unit/test_lore_init.py`, `test_reconcile.py`, `test_initplan.py` — the retired-tree walk unlinks files, skips symlinks, survives an unlinkable file, prunes emptied directories and produces one message per removal; `seeded_paths()` names no knight path; a project with no `.lore/knights/` produces no messages | `pytest tests/unit/test_lore_init.py tests/unit/test_reconcile.py tests/unit/test_initplan.py` is green; `find src/lore/defaults/knights` reports no such path; `grep -n knights src/lore/defaults/gitignore` returns nothing |
+| C6 | Excise Knight from the test suite's shared surface | `tests/e2e/test_knight_list.py`, `test_knight_crud.py`, `test_api_parity_knight.py`, `test_health_grouped_knight_refs.py`, `tests/unit/test_knight_crud.py`, `test_knight.py`, `test_knight_crud_holistic.py`, `test_health_grouped_knight_refs.py` (all deleted); `tests/unit/conftest.py` (`bare_lore_dir`, `_ENTITY_DIRS`, `NestedTree.entity`) | None — this unit removes tests and fixtures | The eight files are gone; `grep -rn "knight" tests/conftest.py tests/unit/conftest.py tests/e2e/conftest.py` returns nothing; `pytest --collect-only tests/` completes without a collection error |
+
+### Lane: surface
+
+_In scope._ `api.py`, `cli.py`, `prompts.py`, and the E2E suite. Ends with the
+full suite green — this lane is what closes the red window.
+
+| # | Unit | Files | Tests first | Done when |
+|---|------|-------|-------------|-----------|
+| S1 | Finish `api.py` | `src/lore/api.py` — `__all__` updated (**eight** names removed: `list_knights`, `read_knight`, `create_knight`, `update_knight`, `delete_knight`, `Knight`, `Doctrine`, `DoctrineStep`; grouped order otherwise preserved); the doctrine block's comment updated | `tests/unit/test_api_surface.py`, `test_api_all_matches_spec.py` — the literal `__all__` tuple edited to match, asserted element-for-element including order; `tests/e2e/test_python_api.py` — no knight name is reachable and neither `Doctrine` nor `DoctrineStep` is | `pytest tests/unit/test_api_surface.py tests/unit/test_api_all_matches_spec.py` is green; `python -c "from lore.api import *"` raises nothing |
+| S2 | Delete the `lore knight` command group and every knight touchpoint in `cli.py` | `src/lore/cli.py` — the five `knight_*` commands and the `knight` group (≈360 lines), `from lore.api import _knight as knight_module`, the two `_PROJECT_READ_COMMANDS` entries, `"knights"` in `_VALID_SCOPES`, the `Knight` line in the top-level help, the knight sentences in the `lore init` help paragraph | `tests/e2e/test_error_handling.py` — `lore knight list` exits 2 with `No such command 'knight'.`; `tests/e2e/test_health.py` — `--scope knights` exits 2; `tests/unit/test_cli_imports_only_api.py`, `test_cli_health.py`, `test_help_enrichment.py` | `grep -rn "knight" src/lore/cli.py` returns nothing; those tests pass |
+| S3 | Rewrite `lore doctrine show` | `src/lore/cli.py` — `doctrine_show` gains `--mission`, prints design + index, wraps both JSON envelopes, routes JSON errors to stderr on both flag paths | `tests/e2e/test_doctrine_show.py` rewritten first — E1–E8 | `pytest tests/e2e/test_doctrine_show.py` is green |
+| S4 | Rewrite `lore doctrine new` | `src/lore/cli.py` — `-d` required, `-m` as `SpaceSeparatedChoice`, `load_mission_sources`, the new message and envelope; the `-f/--from` flag removed | `tests/e2e/test_doctrine_new.py` rewritten first — E9–E16 | `pytest tests/e2e/test_doctrine_new.py` is green |
+| S5 | Rewrite `lore doctrine edit`, and `lore doctrine list`/`delete` follow-through | `src/lore/cli.py` — `-d`, `-m` and `--remove-mission` as whole-file mode beside the unchanged field-edit mode; `-f/--from` and the stdin fallback removed (D28); the mutex check extended; the subcommand docstring rewritten; **every error routed to stderr** (D16 — today all three whole-file error sites print to stdout); the clause-joined message; `doctrine list` and `doctrine delete` verified unchanged | `tests/e2e/test_doctrine_edit.py` (new, anchor per C-3) — E17–E25; `tests/e2e/test_frontmatter_edit_cli.py` — E26; `tests/e2e/test_doctrine_list.py` — E27–E28; `tests/e2e/test_api_parity_doctrine.py` — E61 | `pytest tests/e2e/test_doctrine_edit.py tests/e2e/test_doctrine_list.py tests/e2e/test_frontmatter_edit_cli.py tests/e2e/test_api_parity_doctrine.py` is green |
+| S6 | The mission surface | `src/lore/cli.py` — `-D`/`--no-doctrine-mission` on `new mission` and `edit`, the updated mutex and "at least one of" messages, `_show_mission`'s `Doctrine Mission:` line and `--- Mission Instructions ---` section rendered **from `mission["doctrine_mission_contents"]`** with the warning branch and the CLI's own `read_knight` call both deleted (D27 — `cli.py` gains no `lore.doctrine` import), `--no-doctrine-mission` on `lore show`, and the `doctrine_mission` key in `ready`, `missions` and `show <quest>` | `tests/e2e/test_mission_crud.py`, `test_ready.py`, `test_oracle.py`, `test_api_parity_show.py`, `test_api_parity_missions.py`, `test_api_parity_edit.py` — E29–E37, E56, E57 | `pytest tests/e2e/test_mission_crud.py tests/e2e/test_ready.py tests/e2e/test_oracle.py tests/e2e/test_api_parity_*.py` is green |
+| S7 | `prompts.py` and the long tail | `src/lore/prompts.py` — `ACCESS_SCOPE_NOTE` drops "knights" keeping its two-line wrap, `DEFAULT_SKILL_FAMILIES`' docstring says "the four skills that do"; then every remaining test file in the Part 2 edited-test list | `tests/unit/test_prompts.py`; then the whole suite | `grep -rn "knight" src/lore/ tests/` returns nothing outside `src/lore/defaults/` (the scribe's territory); `pytest` is **fully green**; `lore health` on this repository reports no new errors |
+
+### Suggested Splits
+
+Each split becomes its own mission on the same knight, run **sequentially** —
+never in parallel, because concurrent committing agents race the git index.
+
+- **core splits at C4.** C1–C3 are "storage and reads": the doctrine directory
+  model, the column rename with its migration, and the health scope. C4–C6 are
+  "the Knight excision": the module, the schemas, the paths, the seeding and the
+  test surface. The two halves touch disjoint files apart from
+  `src/lore/schemas/__init__.py`, and the second half is the one that makes
+  `lore.api` importable again.
+- **core may split again at C2** if C1's rewrite of `doctrine.py` runs long. C1
+  alone is a whole module rewritten with about twelve unit-test groups behind it.
+- **surface splits at S3.** S1–S2 are "remove the Knight surface" — `api.py`'s
+  `__all__` and `cli.py`'s command group, both mechanical. S3–S7 are "the new
+  doctrine and mission surface", where every unit has a rewritten E2E file in
+  front of it.
+- **surface may split again at S6.** S3–S5 are the `lore doctrine` command
+  group; S6–S7 are the mission surface plus the long tail of test edits, which is
+  the largest single body of mechanical work in the feature.
+- **The scribe is not a lane and is not listed above.** Its worklist is Part 3's
+  Expected Codex Updates table, and it runs after the surface lane is green.
+
+---
+
+## ADR & Standards Audit
+
+**Auditor:** ADR & Standards Enforcer · **Date:** 2026-09-15 · **Mission:** `q-b0f6/m-dfe1`
+
+Read in full: every document in the `decisions` group (28), all six `standards`
+documents, `technical-test-guidelines`, `conceptual-workflows-error-handling`,
+`-health`, `-help`, `-json-output`, and the PRD. Read in source: `doctrine.py`,
+`knight.py`, `paths.py`, `models.py`, `api.py`, `safewrite.py`, plus the
+doctrine / knight / health / mission / show regions of `cli.py`, `db.py`,
+`health.py`, `frontmatter_edit.py`, `oracle.py`, `init.py` and `prompts.py`.
+
+Three conflicts settled before this mission — `decisions-006-id-references`
+edited in place, `read_doctrine`'s two miss shapes, and `frontmatter_edit`'s
+repointed `doctrine` kind — were treated as closed and are not reopened.
+
+### Reconciled — spec lines rewritten (old → new, with the rule that forced it)
+
+| # | Where | Old | New | Rule |
+|---|-------|-----|-----|------|
+| 1 | Part 2, Python API Surface table + Breaking-change accounting | "Six names leave `lore.api.__all__` and two leave `lore.models.__all__`" | "**Eight** names leave `lore.api.__all__` … **three** leave `lore.models.__all__`", with the eight named | `decisions-010` — `Doctrine` and `DoctrineStep` are in `api.__all__` at `api.py:208-210`, not only in `models.__all__`; `Knight` is in both. Verified in source. |
+| 2 | Part 2, Breaking-change accounting | (return-shape changes unlisted) | Nine exported callables' return shapes enumerated — `read_doctrine`, `create_doctrine`, `update_doctrine`, `get_mission_detail`, `list_missions`, `list_missions_grouped`, `read_mission`, `get_quest_detail`, `get_ready_missions` | `decisions-010` semver table scores "changing … a return shape" identically to a positional-list change; the spec counted only positional lists and keywords. |
+| 3 | Part 2, Breaking-change accounting; Part 3 C-4 | "Every one of those rows is 'major bump **or** explicit breaking-change notice'" | Same, plus: the **changelog entry itself is unconditional** — the "or" only chooses the entry's form | `decisions-010` Consequences ("Contributors update `CHANGELOG.md` and `lore.api.__all__` together whenever the public API changes") and `standards-public-api-stability` Rules ("Every release that changes the public API must include a `CHANGELOG.md` entry"). Both are unconditional; neither is an "or" branch. |
+| 4 | Part 2, D26 + Part 5, C4 | api.py's excision in C4 is "the six re-exports, `_knight`, `_validate_frontmatter` and `Knight` … **only** these lines" | `Doctrine` and `DoctrineStep` leave the `api.py:15` `lore.models` import in the same unit | `decisions-010` + D26's own reasoning. **C4's Done-when was unsatisfiable as written:** C2 deletes both dataclasses from `models.py`, `api.py:15` still imports them, so `python -c "import lore.api"` raises `ImportError` and the core lane cannot close. |
+| 5 | Part 5, S1 | "`__all__` updated (six knight names removed …)" | "**eight** names removed", each named; `from lore.api import *` added to the gate | `decisions-010`, `standards-facade`. |
+| 6 | Part 2, CLI Surface `lore --help`; Part 3 `decisions-008` binding row; E58; the `lore.cli` unit row | "leaving **six** supporting-entity lines"; "lists six supporting entities"; "contains the six remaining entity lines" | **five** supporting-entity lines / **seven** entity lines in the block, each named | Arithmetic against `cli.py`'s top-level docstring: the block lists six supporting entities today (Knight, Doctrine, Codex, Rite, Artifact, Watcher). Six minus one is five. Left as written in three places, this ships a wrong number in the CLI's own teaching text (`decisions-008`) and two test assertions that cannot both pass and be correct. A note distinguishes it from FR-30's "six entity types", which is the PRD's 7→6 metric over a different set (Codex excluded) and is correct. |
+| 7 | Part 2, D16 | D16 covered only `doctrine show`'s local-`--json` stdout branch | Extended to `doctrine_edit`'s **three** stdout error sites (`cli.py:2191-2195`, `2202-2206`, `2213-2217`) | `conceptual-workflows-error-handling` — "Error messages go to stderr". All three call `click.echo(msg)` with no `err=True`, in both text and JSON mode. This feature rewrites that handler, so carrying it forward is a new choice. |
+| 8 | Part 2, Core Decisions (new D27); CLI Surface `lore show`; Part 5, S6 | `_show_mission` "…with the warning branch deleted" | `_show_mission` renders `mission["doctrine_mission_contents"]` and resolves nothing itself; `cli.py` gains no `lore.doctrine` import | `decisions-011` ("no behaviour may live only in `cli.py`"), `standards-separation-of-concerns`, `standards-dry`. Today `cli.py:2675-2693` re-resolves the reference the envelope at `cli.py:2603` already carries, and the not-found warning exists only in the CLI. A mechanical rename would carry both defects across into a new module. |
+| 9 | Part 2, Core Decisions (new D28); CLI Surface `doctrine edit`; Part 5, S5 | (silent) | `-f/--from` and the stdin fallback are removed from `lore doctrine edit`; the subcommand docstring is rewritten | Completeness: the CLI Surface tables show the new flags but never retire the old ones, and `cli.py:2199-2208` supports `lore doctrine edit x < file.yaml` today. A removed CLI flag is a user-visible breaking change and belongs in C-4's changelog notice. |
+| 10 | Part 2, Core Decisions (new D29); `update_doctrine` signature block | (silent — the spec never says how `update_doctrine` finds the doctrine) | Both write functions resolve through `_find_doctrine_dir`, subtree-wide, shallower wins | `standards-dry`. `doctrine.py:358-361` looks only at the flat path today while `delete_doctrine` and `read_doctrine` both recurse, so `lore doctrine edit` on any `default/` doctrine already fails. After FR-27 every seeded doctrine is under `default/`, which makes E17–E26 unreachable without this. |
+| 11 | Part 2, Core Decisions (new D30) | `safewrite.atomic_write_text` named with no arguments | Every call passes `project_root=project_root` | `safewrite`'s "never outside the project root" property only runs when the keyword is supplied; `doctrine.py` builds paths from a user-supplied name and group, which is the case it exists for. |
+| 12 | Part 3, `decisions-006-id-references` row | "the by-ID enumeration loses 'knights'" | Plus: the `native`-mode carve-out's justification sentence ("`lore doctrine show` additionally runs normalisation, step validation and cycle detection") is rewritten to the surviving reason | Draft ADR 1 deletes all three named behaviours. The rule stands; its stated reason does not. FR-19b named only the enumeration. |
+| 13 | Part 3, `decisions-008` binding row; `cli.py` structure row | (silent) | `--scope`'s own help string, `(space-separated, e.g. --scope codex knights schemas)`, loses its `knights` example | `decisions-017` — `click.Choice` keeps the `--help` **listing** in sync automatically, but this hand-written example is a second copy that would demonstrate a token exiting 2. |
+| 14 | Part 1, Out of Scope | "No repair of the codex staleness recon found … beyond the rows this feature already has to touch." | Same, plus: the exclusion covers staleness that exists **today**, never a document this feature's own change falsifies | `decisions-020` — a canonical codex document carries what is true now. Without this clause the ~40 documents added below read as excluded. |
+| 15 | Part 4, Conventions; Part 3, C-3 | "the one place no anchor exists is Conflict C-3" | Corrected: §3 is breached across most of `tests/e2e/` — all 23 `test_api_parity_*.py` files and `tests/e2e/test_health.py` (which takes E39–E46) carry no anchor, and five more anchor to transient ids that no longer exist | `technical-test-guidelines` §3. C-3's ruling turns on how exceptional option (b)'s file is; it is not exceptional. |
+
+### Coverage filled
+
+| # | Gap | Filled with | Rule that required it |
+|---|-----|-------------|----------------------|
+| 1 | The Expected Codex Updates table named roughly half the codex documents this change falsifies. | A new block, "Added by the ADR & Standards Audit", with **~40 further rows** across five groups: fourteen inbound `related:` editors, the public-API reference layer (`api-reference`, `api-guide`, `standards-public-api-stability`, `ref-lore_cli-commands`, `tech-overview`, `ref-lore_db-core`, `tech-oracle-internals`, `tech-arch-frontmatter`), all five remaining `standards/` documents, twelve ADRs needing an in-place body edit, and the conceptual long tail. | `decisions-020` (current state), `decisions-014` (a stored edge that stops resolving is the staleness class `lore health` must catch), and `health.py:229-234`, where `broken_related_link` is severity **error**. |
+| 2 | `standards-public-api-stability` was in no worklist despite restating `lore.api.__all__` verbatim. | Its own row, naming the `__all__` copy, the `lore.knight` internal-module line, the `lore.api._paths.knights_dir` example, and its ownership of the `BREAKING CHANGE:` changelog format C-4 rules on. | `decisions-010`, `standards-facade`. |
+| 3 | `standards-dependency-inversion` documents the envelope-hydration exception using `db.get_mission_detail`'s `from lore.knight import read_knight` as its only worked example — the exact line this feature moves. | Its own row. The exception's shape is unchanged; its example is not. | `standards-dependency-inversion`; the spec's own binding table cites this document but its worklist omitted it. |
+| 4 | `_VALID_SCOPES`' post-change order was asserted nowhere, though W7 pins Click's message text character for character. | The `lore.cli` unit row now pins the ten-token order that produces W7's message. | `decisions-017` — the message text is a contract. |
+| 5 | C-5 was stated without the two precedents already in the tree. | Both added: the glossary schema check runs under `--scope glossary` **and** `--scope schemas` with no dedup (documented as intentional in `conceptual-workflows-health`), while `dangling_codex_rite` runs under two scopes **and is** deduped. | `standards-dry`, `conceptual-workflows-health`. |
+
+### Pre-existing breaches found in the code
+
+Each was verified in source. "Must fix" means this feature's own rewrite passes
+through the defect, so leaving it is a new choice rather than an inherited one.
+
+| # | Breach | Where | Rule | Verdict |
+|---|--------|-------|------|---------|
+| 1 | `_show_mission` re-resolves the mission's knight itself, duplicating `get_mission_detail`'s work, and the `Warning: knight file "…" not found` line exists **only** in `cli.py` — no `lore.api` caller can see that condition. | `cli.py:2675-2693` vs `cli.py:2603` | `decisions-011`, `standards-separation-of-concerns`, `standards-dry` | **Must fix** — D27. The fix is free here: D13 deletes the warning and W6 drops the re-rendered frontmatter, so the body string is all the CLI needs. |
+| 2 | `doctrine_edit`'s whole-file branch writes every error to **stdout** in both text and JSON mode — three sites. Its `doctrine new` and `doctrine delete` siblings use `err=True`. | `cli.py:2191-2195`, `2202-2206`, `2213-2217` | `conceptual-workflows-error-handling` | **Must fix** — D16. S5 rewrites this handler. |
+| 3 | `doctrine show`'s local-`--json` branch writes its error envelope to stdout. | `cli.py:2057` | `conceptual-workflows-error-handling` | **Must fix** — already D16; confirmed in source. |
+| 4 | `update_doctrine` resolves the doctrine flat (`doctrines_dir / f"{name}.yaml"`) while `delete_doctrine` and `read_doctrine` both recurse. `lore doctrine edit` on any doctrine under `default/` fails today. | `doctrine.py:358-361` vs `doctrine.py:421-432`, `517-540` | `standards-dry` | **Must fix** — D29. After FR-27 every seeded doctrine is under `default/`, so E17–E26 are otherwise unreachable. |
+| 5 | `technical-test-guidelines` §3 is breached across most of `tests/e2e/`: all 23 `test_api_parity_*.py` files plus `test_health.py`, `test_health_schemas*.py`, `test_codex_map.py`, `test_init_*.py` and others carry no `Spec:` anchor; five more anchor to transient ids that no longer exist. Nothing validates an anchor, so `lore health` reports none of it. | `tests/e2e/` | `technical-test-guidelines` §3 | **Must not extend.** Out of scope to repair, but decisive for C-3 — recorded there. The three doctrine E2E files this feature rewrites get correct anchors in passing. |
+| 6 | `health._ALL_SCOPES` and `cli._VALID_SCOPES` hold the same eleven tokens in **different orders** (`glossary`/`schemas` are transposed). Two copies of one list. | `health.py:78`, `cli.py:4831` | `standards-dry` | **Must not extend.** Both lose `knights`; neither gains anything. Unifying them is a separate change. |
+| 7 | `_check_glossary` runs schema validation that `_SCHEMA_KINDS`' `glossary` row also runs, with no dedup, so a malformed `glossary.yaml` is reported twice on a bare `lore health`. | `health.py:936-947` + `health.py:97` | `standards-dry` | **Must not extend** — and it is the precedent C-5 option (b) would follow. Recorded in C-5, not repaired. |
+| 8 | `doctrine._read_doctrine_local` calls `_parse_yaml`, which **raises** `ValueError` on malformed YAML, inside a function whose documented contract is "returns `None` on miss". | `doctrine.py:563` | The read-shape rule the PRD restates ("a `read_*` function returns `None` on a miss rather than raising") | **Must fix by construction** — C1 deletes `_parse_yaml` and the YAML read entirely. Noted so the rewrite does not reintroduce a raising path in `read_doctrine`. |
+| 9 | `create_doctrine` writes two files with `shutil.copy2` and no atomicity between them; `doctrine.py` uses no `safewrite`. | `doctrine.py:161-163` | The PRD's reliability clause | **Must fix** — already D8 / Draft ADR 3; confirmed in source. |
+
+### Unrecorded decisions
+
+Part 3 drafts ADRs 1–5 and they cover the architectural choices this spec makes.
+Four additions this audit made are **not** new decisions and need no ADR — each
+is a settled rule applied to a line the spec had not reached:
+
+- **D27** applies `decisions-011` to `_show_mission`. It removes a CLI-only behaviour; it creates none.
+- **D28** records a flag removal; no ADR governs which flags a command carries.
+- **D29** applies `standards-dry` to a resolver that already exists in two of the module's three write functions.
+- **D30** passes an argument `safewrite` already accepts.
+
+If the gate rules **C-2 option (c)**, that option's own text schedules one
+further ADR — "a missing-required-combination error is exit 2" — and
+`conceptual-workflows-error-handling` already has a row for it in the scribe's
+worklist, conditional on that ruling.
+
+### Deferral violations
+
+**None.** Checked every PRD Post-MVP and Out of Scope item against the spec:
+`lore doctrine mission` as a subcommand group, a `doctrine-mission` kind in
+`frontmatter_edit`, field-level frontmatter editing of a mission file,
+auto-migration of authored knights, any compatibility shim, any machine-readable
+step graph, and any change to quest/mission management beyond the two flags in
+R13. The spec's Out of Scope section restates each as a floor and adds three
+surfaces (`oracle.py`, `prompts.py`, the retired-seed-tree mechanism) that are
+consequences of the in-scope change, not new capability. No section builds a
+deferred capability.
+
+### Escalations — for the gate, not for a dev knight
+
+Five conflict rows stay open with blank Resolution cells. None is resolvable
+from a settled decision; each needs a judgment the decision record does not make.
+
+1. **C-1** — the PRD's own sentence contradicts itself (double-quoted message text vs "unchanged"). Product call on error-string consistency. The spec currently ships the live single-quote text pending the ruling, and E7 is written against that.
+2. **C-2** — the PRD says exit 1; `conceptual-workflows-error-handling` assigns exit 2 to an invalid option combination and the sibling `lore edit` already raises `click.UsageError` for the identical condition (verified at `cli.py:2316-2318`). Note which side is which: the PRD is a transient working document, and the error-handling contract is a settled cross-cutting codex document. Option (c) additionally schedules an ADR.
+3. **C-3** — where `lore doctrine edit`'s E2E coverage lives, given that `conceptual-workflows-doctrine-edit` does not yet exist and the scribe runs last. Ruled on the corrected picture of the tree (breach #5 above), option (b) is no longer the outlier the row originally described.
+4. **C-4** — the release and changelog decision. **The changelog entry is owed under every option**; what the gate is choosing is its form (a `BREAKING CHANGE:` block under 0.12.0, or a major-version release note) and, in every case, **which unit owns it** — no lane currently does, and the scribe runs after the code lands and is not a release manager. This is the one open row that can ship a violation rather than an inconsistency.
+5. **C-5** — where doctrine frontmatter schema validation runs. Both patterns already exist in `health.py` (glossary duplicates without dedup; `dangling_codex_rite` duplicates with dedup), so this is a choice between two established shapes, not between a rule and a breach. Option (c) is the only one that removes a live capability.
+
+Also for the gate, though not a conflict row: **Draft ADRs 1–5** need approval
+before the scribe writes any of them, and `decisions-017` is untouched by this
+feature (removing a token is not an amendment trigger under its Constraint 3, so
+no in-place amendment to ADR-017 is owed).
+
+### Verdict
+
+**RECONCILED.** The spec no longer contradicts any settled decision. Fifteen
+lines were rewritten against eleven rule ids, five coverage gaps were filled,
+nine pre-existing breaches were recorded (four must-fix, five must-not-extend),
+and roughly forty codex documents were added to the scribe's worklist. Five
+conflict rows and five draft ADRs remain open for the gate, by design; none of
+them is a contradiction with a settled decision, and each is stated with the
+options, the governing rule and the cost of each choice.
+
+---
+
+## Pre-Dev Notes
+
+_Written by the orchestrator acting as the gate. The `spec-gate` human mission was
+dropped at the user's request, with the user's explicit instruction to decide from
+the purpose of the change rather than pause. Everything below is a ruling, not a
+suggestion. A dev knight does not re-open any of it._
+
+**The purpose these were ruled against.** One authoritative copy of every reusable
+instruction. A doctrine is prose an orchestrator reads, not a graph Lore parses. No
+second entity to keep in sync. Where a row was a genuine toss-up, the tie went to
+whichever option removed no live capability and changed no contract this feature
+did not have to change.
+
+### Conflict rulings
+
+**C-1 — option (a). Ship the live single-quote text.**
+`Doctrine 'tdd-feature-lite' not found` stays byte-identical to `cli.py:2055`. The
+PRD's double-quoted rendering was a transcription slip in a transient document, and
+the same sentence's word "unchanged" is the half that carries the intent. An error
+string is a contract a consumer may match on, and this feature has no reason to
+change it — a contract enforced only by prior code and one E2E assertion is kept,
+not quietly rewritten inside a story. `tests/e2e/test_doctrine_show.py`'s existing
+assertion stays green and is not touched.
+
+The new `Mission "recon" not found in doctrine "tdd-feature-lite"` keeps its double
+quotes. The CLI's quoting is already mixed — the `Knight "x" not found in
+.lore/knights/` message this one descends from is double-quoted — so the new string
+follows its own nearest precedent. This leaves `doctrine show`'s two messages
+quoting differently. That inconsistency is accepted deliberately: it is pre-existing,
+it is cosmetic, and unifying it means breaking a live string for style. Do not
+"fix" it in passing.
+
+**C-2 — option (c). `click.UsageError`, exit 2, plus an ADR.**
+The PRD's exit 1 is **overruled**. `conceptual-workflows-error-handling` is a settled
+cross-cutting codex document; the PRD is a transient working one, and where they
+disagree the codex wins. The sibling `lore edit` already raises `click.UsageError`
+for the identical "no field flags supplied" condition at `cli.py:2316-2318`, so
+exit 1 here would have two commands answering one class of mistake two ways.
+
+Implement as `raise click.UsageError("Nothing to update: pass -d, -m, or --remove-mission")`
+— exit 2, stderr, Click's `Error: ` prefix. Do not hand-roll it; ADR-017 forbids
+rewording or re-coding a usage error.
+
+Option (c) over (b) because the contract being followed here lives only in prior code
+and a workflow document. That is exactly the case that earns an ADR rather than
+another undocumented precedent. **Draft ADR 6 is approved on that basis** — see below.
+
+**C-3 — option (c), amended. Write the anchor anyway.**
+The surface lane writes `tests/e2e/test_doctrine_edit.py` and anchors it to
+`conceptual-workflows-doctrine-edit`. The scribe creates that document later in this
+same quest; the row is already in its worklist.
+
+Rejected (a): a dev lane authoring a codex document crosses a lane boundary the
+doctrine draws deliberately, and hands the scribe a document it did not write.
+Rejected (b): mixing functional coverage into `test_api_parity_doctrine.py` bends the
+file's stated subject to dodge a sequencing problem.
+
+The amendment matters. Option (c) as written said "with no anchor"; that ships a file
+permanently missing something the rule requires, because nothing later goes back to
+add it. Writing the anchor now means the rule is satisfied at quest completion, which
+is the unit that matters — the quest lands as one squash-merge, not as eight separate
+states of the tree. The anchor naming a document that does not exist yet is invisible
+to tooling either way: nothing validates it, which is the audit's own finding.
+
+The suite-wide §3 anchor breach is **must-not-extend**, confirmed. Fix the anchors on
+the three files this feature already rewrites, because they are open on the desk.
+Repair nothing else.
+
+**C-4 — option (a). `BREAKING:` bullets under `## [Unreleased]`. Surface lane owns it.**
+`CHANGELOG.md` already carries a `## [Unreleased]` heading and an exact precedent for
+this shape at line 211 — `BREAKING: removed from lore.api.__all__`, covering a prior
+`find_knight` removal, written as a breaking-change notice in lieu of a major bump.
+Follow that form.
+
+Rejected (b): `standards-public-api-stability` calls the move to 1.0.0 "a deliberate
+decision, not a scheduled event." This feature is not that decision and does not get
+to make it by side effect. Rejected (c) outright: shipping a removal on a minor bump
+with no notice is the precise outcome ADR-010 exists to prevent.
+
+**No version bump in this quest.** `pyproject.toml` stays at `0.11.0`. The entry lands
+under `[Unreleased]` and the human moves it under a version heading at release. A
+feature branch does not bump a version.
+
+**Owner: the surface lane, in its second commit.** `CHANGELOG.md` joins the surface
+lane's file list — this is a gate decision, and it overrides the lane boundary as
+written, because surface runs last among the code lanes and is the only one holding
+both the `api.__all__` list and the core lane's `models.__all__` and field-rename
+lists by the time it commits. Core lane: post your removals and renames to the surface
+board so they reach the entry. Scribe: `CHANGELOG.md` is **not** yours; leave it alone.
+
+The entry names every removed, renamed and reshaped symbol — eight from
+`lore.api.__all__`, three from `lore.models.__all__`, the two changed positional lists,
+the four renamed keywords, the renamed dataclass field, and all nine changed return
+shapes.
+
+**C-5 — option (a). One home per rule.**
+`_SCHEMA_KINDS` gains a `doctrine-mission-frontmatter` row and keeps the existing
+design row. `_check_doctrines` performs **no** frontmatter schema validation; it keeps
+the cross-field checks JSON Schema cannot express — id-vs-stem, duplicate ids,
+old-shape leftovers, dangling `doctrine_mission` refs.
+
+The brief's phrase "`--scope doctrines` audits both frontmatter schemas" was mine and
+it was imprecise. It is satisfied by both rows existing in the table. Rejected (b):
+widening the dedup gate from one check name to a set adds a mechanism to `health.py`
+to work around a duplication this option simply does not create. Rejected (c): it is
+the only option that removes a live capability — `--scope schemas` would stop covering
+doctrine files, contradicting `conceptual-workflows-health` rather than a brief
+sentence.
+
+This also leaves `doctrines` in the shape it already has, alongside
+`artifacts`/`watchers`/`codex`. No seam moves.
+
+### ADR rulings
+
+**Draft ADRs 1 through 5: all APPROVED, as drafted.** Each records a genuinely new
+load-bearing decision, and each one's alternatives-rejected section is sound.
+
+- **ADR 1** — a doctrine is prose, not a graph. This is the change's spine.
+- **ADR 2** — the Knight entity is removed outright; no shim, no deprecation window.
+- **ADR 3** — a multi-file entity write stages in a dot-prefixed directory and renames
+  into place. `doctrine.py` becomes the first entity module to use `lore.safewrite`,
+  which is a precedent worth recording.
+- **ADR 4** — `RETIRED_SEED_TREES`. Independently verified against source before
+  approval: `_prune_seeded_tree` is only reachable from `_seed_tree`, which only runs
+  for rows still in `SEEDED_TREES`, and `init.py:2312` additionally hardcodes
+  `"knights"` in its package tuple. Deleting the row alone both orphans the files
+  permanently and raises `KeyError`. FR-24 is unsatisfiable without this.
+- **ADR 5** — an unresolvable reference is silent on read and reported only by
+  `lore health`.
+
+**Draft ADR 6 — NEW, approved: a missing-required-combination error is exit 2.**
+Created by the C-2 ruling. Records that when a command requires at least one of a set
+of flags and receives none, it raises `click.UsageError` — exit 2, stderr, Click's
+standard prefix — rather than emitting its own message at exit 1. Existing behaviour on
+`lore edit`, previously enforced by nothing but prior code. Scribe: write this one too.
+`conceptual-workflows-error-handling` gains the conditional row the audit already
+staged for it.
+
+**No other ADR is written.** D27 through D30 are settled rules applied to lines the
+spec had not reached, exactly as the audit classified them — no ADR is owed and none
+should be invented. ADR-017 is untouched: removing a token from a `click.Choice` is not
+an amendment trigger under its Constraint 3.
+
+`decisions-006-id-references` is amended **in place** with a dated status-history line.
+Its decision — agents address entities by ID through the CLI, never by file path — is
+unchanged; only its enumeration of entity categories is stale. It is not superseded and
+is not marked superseded.
+
+### Standing rulings for every lane
+
+**The four must-fix pre-existing breaches are in scope and are to be fixed**, because
+this feature's own rewrite passes through each one. Leaving them is a new choice, not
+inheritance: `_show_mission`'s CLI-only not-found warning (ADR-011), `doctrine_edit`'s
+three whole-file errors on stdout, `doctrine show`'s local-`--json` error envelope on
+stdout, and `update_doctrine`'s flat resolution — which, note, means `lore doctrine edit`
+fails today on any `default/` doctrine, and after FR-27 every seeded doctrine is under
+`default/`.
+
+**The five must-not-extend breaches are not to be repaired.** Do not widen scope into
+them. If one blocks a unit, block the mission and surface it.
+
+**A decision conflict is never a dev knight's to resolve.** If a lane finds a row that
+needs a ruling and does not have one here, `lore block` and surface it. Do not infer a
+ruling from this document's reasoning and apply it to a new case.
+
+**Where the committed tree and this spec disagree, the committed tree wins.** Record the
+divergence on your board rather than rewriting an already-committed lane.
+
+### Quality-gate ruling — added by the gate after the foundation lane
+
+The foundation lane reported, and the gate independently verified, that
+`uv run ruff check src/ tests/` and `uv run mypy src/` were **already failing on the
+pre-quest tree at `9cce372`**, before any quest commit. The lane briefs say "gates
+clean before each commit, never by suppression". Read literally against a dirty
+baseline that instruction is unachievable, and an unachievable gate is an invitation
+to the exact `# type: ignore` / `# noqa` suppression it was written to forbid. So it
+is ruled, not left to each lane to reinterpret.
+
+**Verified pre-quest baseline — `uv run mypy src/`: 183 errors in 17 files.**
+
+| File | Errors | File | Errors |
+|---|---|---|---|
+| `cli.py` | 134 | `skills.py` | 2 |
+| `db.py` | 21 | `rite.py` | 2 |
+| `init.py` | 13 | `oracle.py` | 2 |
+| `schemas/__init__.py` | 6 | `glossary.py` | 2 |
+| `agents.py` | 6 | `frontmatter.py` | 2 |
+| `health.py` | 4 | `watcher.py` | 1 |
+| `doctrine.py` | 4 | `knight.py` | 1 |
+| `frontmatter_edit.py` | 1 | `codex.py` | 1 |
+| `artifact.py` | 1 | | |
+
+**Verified pre-quest baseline — `uv run ruff check src/ tests/`: 3 errors**, all in
+`tests/unit/test_lore_init.py` — `E402` ×2 at 425–426, `F401` unused `os` at 618.
+
+**MYPY — the gate is "no new errors against the per-file baseline above", not zero.**
+Repairing 183 pre-existing type errors is not this change's purpose; 134 of them sit in
+`cli.py`, which would hand the surface lane a second feature's worth of work. The audit
+listed none of them as a must-fix breach, and `standards`-driven type debt is a project
+concern, not a doctrine-shape concern. Each lane records its files' counts before and
+after and reports the delta. **A delta above zero on a file you touched is a defect —
+fix it.** A file whose count is unchanged is fine, however high the count.
+
+Never close the delta by suppression. A new `# type: ignore`, a broadened `Any`, a
+loosened config setting or a deleted annotation is a failure of this gate, not a pass.
+
+**RUFF — the gate stays a true zero, and the core lane clears it.**
+Three trivial errors in one file is not debt, it is litter, and leaving it means the
+two remaining lanes cannot tell their own lint failures from the tree's. **The core
+lane fixes all three** as part of its work — it already owns `init.py` and therefore
+`tests/unit/test_lore_init.py`. Remove the unused import; move or properly justify the
+two late imports. After the core lane commits, `uv run ruff check src/ tests/` reports
+zero, and the surface lane and the scribe are held to zero.
+
+This is the only scope the gate adds beyond the spec, it is three lines, and it buys a
+hard gate for the rest of the quest.
+
+### Two further gate rulings — added after the core lane
+
+**S7's `grep -rn knight src/lore/ tests/` gate is redefined. It is not zero.**
+The core lane reported it unsatisfiable as written and the gate verified the tree.
+Two categories of match are **legitimate and permanent — do not remove them**:
+
+- `src/lore/migrations/v3_to_v4.py`, `v4_to_v5.py`, `v6_to_v7.py` (14 matches). A
+  migration is a historical record of DDL that ran. `missions.knight` existed; the
+  migration chain must keep naming it. Editing these to satisfy a grep would falsify
+  the schema history and break the upgrade path off an older database.
+- `src/lore/init.py` lines 403, 406, 414–415 — the `RETIRED_SEED_TREES` entry for
+  `knights/default` and its field docstrings. This is the mechanism that *removes*
+  seeded knights; it cannot do that without naming them. Approved as ADR 4.
+- The corresponding migration tests under `tests/` for the same reason.
+
+**Everything else is zero.** After S7, the only matches outside those two categories
+are a defect. Surface lane: that means `api.py`, `cli.py`, `prompts.py` (lines 37 and
+41 — the `ACCESS_SCOPE_NOTE` entity list and the "five skills" docstring), **and
+`src/lore/scoped.py` lines 55 and 79**, two knight docstring sentences that sit in no
+lane's file list. `scoped.py` joins the surface lane for those two lines only — a
+docstring-only edit, the same call the foundation lane made on its own files, and the
+alternative is a knight reference surviving in the tree because no unit happened to
+own it.
+
+**The full suite is NOT green at the end of the surface lane, and that is expected.**
+`tests/unit/test_health_write_report.py::test_write_report_true_report_file_contains_markdown_table`
+asserts `"No issues found."` on a fresh `lore init`. Verified: a fresh init still seeds
+old-shape doctrines, `--scope doctrines` now warns on them, and the assertion fails.
+It closes when the scribe lands FR-27 and the seeded doctrines convert. This is a real
+ordering consequence of `src/lore/defaults/` belonging to the scribe rather than to a
+dev lane, not a defect and not something the surface lane may fix by weakening the
+assertion.
+
+- **Surface lane:** finish with the suite green *except* for tests failing solely on
+  this dependency. Name every one of them explicitly, by full test id, on the scribe's
+  board. A test you cannot name and justify that way is a failure you own.
+- **Scribe:** those named tests are part of your done-criteria. `uv run pytest` is
+  fully green before you mark done — no exceptions inherited, no exceptions added. If
+  one of them still fails after FR-27, it is a defect and you block rather than
+  documenting it.

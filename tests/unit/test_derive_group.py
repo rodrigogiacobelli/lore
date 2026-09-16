@@ -4,7 +4,7 @@ all entity types.
 Acceptance criteria (US-006):
 - The GROUP value for any entity is derived from its folder path relative
   to its base directory, using slashes as separators, excluding the filename
-- Given files at identical relative paths under the artifacts, knights,
+- Given files at identical relative paths under the artifacts, watchers
   and doctrines directories, the GROUP values produced are identical
 - Entities stored directly in their base directory (no subfolder) show
   an empty group
@@ -69,35 +69,32 @@ class TestDeriveGroupGroupFromFolderPathWithSlashSeparators:
 class TestDeriveGroupIdenticalGroupsAcrossEntityTypes:
     """Identical relative paths under different base dirs produce identical GROUP values."""
 
-    def test_knight_and_artifact_with_same_relative_path_produce_same_group(
+    def test_watcher_and_artifact_with_same_relative_path_produce_same_group(
         self, tmp_path
     ):
         """derive_group is base-dir-agnostic: same relative path always yields same group."""
-        knights_dir = tmp_path / ".lore" / "knights"
+        watchers_dir = tmp_path / ".lore" / "watchers"
         artifacts_dir = tmp_path / ".lore" / "artifacts"
 
-        knight_file = knights_dir / "default" / "pm.md"
+        watcher_file = watchers_dir / "default" / "on-close.yaml"
         artifact_file = artifacts_dir / "default" / "some-artifact.md"
 
-        knight_group = derive_group(knight_file, knights_dir)
+        watcher_group = derive_group(watcher_file, watchers_dir)
         artifact_group = derive_group(artifact_file, artifacts_dir)
 
-        assert knight_group == artifact_group
+        assert watcher_group == artifact_group
 
-    def test_knight_and_doctrine_with_same_relative_path_produce_same_group(
+    def test_a_doctrine_directory_derives_the_group_of_its_parent_chain(
         self, tmp_path
     ):
-        """Knights and doctrines at the same relative path share the same group."""
-        knights_dir = tmp_path / ".lore" / "knights"
+        """derive_group takes the doctrine DIRECTORY, so the id never folds in."""
         doctrines_dir = tmp_path / ".lore" / "doctrines"
 
-        knight_file = knights_dir / "workflow" / "feature" / "knight.md"
-        doctrine_file = doctrines_dir / "workflow" / "feature" / "doctrine.yaml"
+        doctrine_dir = doctrines_dir / "default" / "feature-implementation" / "tdd"
 
-        knight_group = derive_group(knight_file, knights_dir)
-        doctrine_group = derive_group(doctrine_file, doctrines_dir)
-
-        assert knight_group == doctrine_group
+        assert derive_group(doctrine_dir, doctrines_dir) == (
+            "default/feature-implementation"
+        )
 
     def test_artifact_and_doctrine_with_same_relative_path_produce_same_group(
         self, tmp_path
@@ -107,7 +104,7 @@ class TestDeriveGroupIdenticalGroupsAcrossEntityTypes:
         doctrines_dir = tmp_path / ".lore" / "doctrines"
 
         artifact_file = artifacts_dir / "codex" / "spec.md"
-        doctrine_file = doctrines_dir / "codex" / "doctrine.yaml"
+        doctrine_file = doctrines_dir / "codex" / "bugfix"
 
         artifact_group = derive_group(artifact_file, artifacts_dir)
         doctrine_group = derive_group(doctrine_file, doctrines_dir)
@@ -116,36 +113,36 @@ class TestDeriveGroupIdenticalGroupsAcrossEntityTypes:
 
     def test_group_value_does_not_include_base_dir_name(self, tmp_path):
         """The base directory name itself must not appear in the returned group."""
-        knights_dir = tmp_path / ".lore" / "knights"
-        filepath = knights_dir / "sub" / "file.md"
-        result = derive_group(filepath, knights_dir)
-        # "knights" should not appear in result — only relative path components do
-        assert "knights" not in result
+        watchers_dir = tmp_path / ".lore" / "watchers"
+        filepath = watchers_dir / "sub" / "file.yaml"
+        result = derive_group(filepath, watchers_dir)
+        # "watchers" should not appear in result — only relative path components do
+        assert "watchers" not in result
         assert result == "sub"
 
     def test_all_three_entity_types_with_single_sub_dir_produce_identical_group(
         self, tmp_path
     ):
         """All three entity dirs produce the same group for files one level deep."""
-        knights_dir = tmp_path / "knights"
+        watchers_dir = tmp_path / "watchers"
         artifacts_dir = tmp_path / "artifacts"
         doctrines_dir = tmp_path / "doctrines"
 
-        k_group = derive_group(knights_dir / "ops" / "sre.md", knights_dir)
+        w_group = derive_group(watchers_dir / "ops" / "sre.yaml", watchers_dir)
         a_group = derive_group(artifacts_dir / "ops" / "template.md", artifacts_dir)
-        d_group = derive_group(doctrines_dir / "ops" / "bugfix.yaml", doctrines_dir)
+        d_group = derive_group(doctrines_dir / "ops" / "bugfix", doctrines_dir)
 
-        assert k_group == a_group == d_group == "ops"
+        assert w_group == a_group == d_group == "ops"
 
 
 class TestDeriveGroupRootLevelEntityShowsEmptyGroup:
     """Entities stored directly in their base directory show an empty group."""
 
-    def test_file_in_root_of_knights_dir_returns_empty_string(self, tmp_path):
-        """A knight file directly in .lore/knights/ has group ''."""
-        knights_dir = tmp_path / ".lore" / "knights"
-        filepath = knights_dir / "developer.md"
-        assert derive_group(filepath, knights_dir) == ""
+    def test_doctrine_in_root_of_doctrines_dir_returns_empty_string(self, tmp_path):
+        """A doctrine directory directly in .lore/doctrines/ has group ''."""
+        doctrines_dir = tmp_path / ".lore" / "doctrines"
+        doctrine_dir = doctrines_dir / "tdd-lite"
+        assert derive_group(doctrine_dir, doctrines_dir) == ""
 
     def test_file_in_root_of_artifacts_dir_returns_empty_string(self, tmp_path):
         """An artifact file directly in .lore/artifacts/ has group ''."""
@@ -172,8 +169,8 @@ class TestDeriveGroupRootLevelEntityShowsEmptyGroup:
         self,
     ):
         """Deeply nested absolute base dir doesn't affect root-level group derivation."""
-        base_dir = Path("/very/deep/nested/path/.lore/knights")
-        filepath = base_dir / "qa.md"
+        base_dir = Path("/very/deep/nested/path/.lore/watchers")
+        filepath = base_dir / "qa.yaml"
         assert derive_group(filepath, base_dir) == ""
 
 
@@ -209,12 +206,12 @@ class TestDeriveGroupEdgeCasesAndErrorHandling:
         assert result == "my-group"
         assert "my-file" not in result
 
-    def test_exact_spec_example_knights_default_pm(self, tmp_path):
-        """Spec example: derive_group(.lore/knights/default/pm.md, .lore/knights/) => 'default'."""
+    def test_exact_spec_example_doctrines_default_tdd(self, tmp_path):
+        """Spec example: derive_group(.lore/doctrines/default/tdd, .lore/doctrines/) => 'default'."""
         lore_dir = tmp_path / ".lore"
-        knights_dir = lore_dir / "knights"
-        filepath = knights_dir / "default" / "pm.md"
-        assert derive_group(filepath, knights_dir) == "default"
+        doctrines_dir = lore_dir / "doctrines"
+        doctrine_dir = doctrines_dir / "default" / "tdd"
+        assert derive_group(doctrine_dir, doctrines_dir) == "default"
 
     def test_exact_spec_example_artifacts_deep_nesting(self, tmp_path):
         """Spec example: codex/conceptual/entities/task.md => 'codex/conceptual/entities'."""
@@ -223,12 +220,12 @@ class TestDeriveGroupEdgeCasesAndErrorHandling:
         filepath = artifacts_dir / "codex" / "conceptual" / "entities" / "task.md"
         assert derive_group(filepath, artifacts_dir) == "codex/conceptual/entities"
 
-    def test_exact_spec_example_root_level_knight(self, tmp_path):
-        """Spec example: .lore/knights/pm.md relative to .lore/knights/ => ''."""
+    def test_exact_spec_example_root_level_doctrine(self, tmp_path):
+        """Spec example: .lore/doctrines/tdd relative to .lore/doctrines/ => ''."""
         lore_dir = tmp_path / ".lore"
-        knights_dir = lore_dir / "knights"
-        filepath = knights_dir / "pm.md"
-        assert derive_group(filepath, knights_dir) == ""
+        doctrines_dir = lore_dir / "doctrines"
+        doctrine_dir = doctrines_dir / "tdd"
+        assert derive_group(doctrine_dir, doctrines_dir) == ""
 
 
 class TestDeriveGroupSlashMigrationUS006:

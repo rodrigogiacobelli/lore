@@ -299,6 +299,6 @@ issue-refund            billing  A customer asks for a refund on an order they h
 ## Rite vs doctrine
 
 A **doctrine** is an upstream, authored template that *spawns* quests and missions
-— it plans work. A **rite** is procedural knowledge any agent (knight or not)
+— it plans work. A **rite** is procedural knowledge any agent
 follows to carry out or diagnose a recurring task. Doctrine = how work is
 organised; rite = how a task is actually done.

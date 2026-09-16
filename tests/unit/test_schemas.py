@@ -18,9 +18,8 @@ from lore.schemas import (
 )
 
 KINDS = [
-    "doctrine-yaml",
     "doctrine-design-frontmatter",
-    "knight-frontmatter",
+    "doctrine-mission-frontmatter",
     "watcher-yaml",
     "codex-frontmatter",
     "artifact-frontmatter",
@@ -111,41 +110,13 @@ def _good_watcher(**overrides):
     return base
 
 
-def _good_doctrine(**overrides):
-    base = {
-        "id": "d",
-        "steps": [
-            {"id": "s1", "title": "S1", "type": "knight", "knight": "pm"},
-        ],
-    }
-    base.update(overrides)
-    return base
-
-
-def _doctrine_with_step(**step_overrides):
-    step = {"id": "s1", "title": "S1", "type": "knight", "knight": "pm"}
-    step.update(step_overrides)
-    return {"id": "d", "steps": [step]}
-
-
 GOOD = {
-    "knight-frontmatter": {"id": "pm", "title": "PM", "summary": "s"},
     "codex-frontmatter": {"id": "c", "title": "C", "summary": "s"},
     "artifact-frontmatter": {"id": "a", "title": "A", "summary": "s"},
     "doctrine-design-frontmatter": {"id": "d", "title": "D", "summary": "s"},
-    "doctrine-yaml": _good_doctrine(),
+    "doctrine-mission-frontmatter": {"id": "recon", "title": "Recon", "summary": "s"},
     "watcher-yaml": _good_watcher(),
 }
-
-
-VALID_DOCTRINE_YAML_TEXT = (
-    "id: d\n"
-    "steps:\n"
-    "  - id: s1\n"
-    "    title: S1\n"
-    "    type: knight\n"
-    "    knight: pm\n"
-)
 
 
 class TestSchemaIssueDataclass:
@@ -165,8 +136,10 @@ class TestValidateEntityHappyPath:
 
 
 class TestValidateEntityRequired:
-    def test_missing_summary_on_knight_frontmatter(self):
-        issues = validate_entity("knight-frontmatter", {"id": "pm", "title": "PM"})
+    def test_missing_summary_on_doctrine_mission_frontmatter(self):
+        issues = validate_entity(
+            "doctrine-mission-frontmatter", {"id": "recon", "title": "Recon"}
+        )
         assert len(issues) == 1
         assert issues[0].rule == "required"
         assert issues[0].pointer == "/"
@@ -222,10 +195,10 @@ class TestValidateEntityUniqueItems:
 
 
 class TestValidateEntityMinLength:
-    def test_knight_summary_empty_string_rejected(self):
+    def test_doctrine_mission_summary_empty_string_rejected(self):
         issues = validate_entity(
-            "knight-frontmatter",
-            {"id": "pm", "title": "PM", "summary": ""},
+            "doctrine-mission-frontmatter",
+            {"id": "recon", "title": "Recon", "summary": ""},
         )
         matching = [i for i in issues if i.rule == "minLength"]
         assert len(matching) == 1
@@ -243,17 +216,11 @@ class TestValidateEntityOneOf:
         assert all(i.pointer.startswith("/action") for i in matching)
 
 
-class TestValidateEntityIfThenElse:
-    def test_doctrine_step_empty_knight_string_flagged(self):
-        issues = validate_entity("doctrine-yaml", _doctrine_with_step(knight=""))
-        assert any(i.pointer.startswith("/steps/") for i in issues)
-
-
 class TestValidateEntityMultiError:
     def test_collects_both_missing_title_and_unknown_stability(self):
         issues = validate_entity(
-            "knight-frontmatter",
-            {"id": "pm", "stability": "x"},
+            "doctrine-mission-frontmatter",
+            {"id": "recon", "stability": "x"},
         )
         rules = sorted(i.rule for i in issues)
         assert rules == ["additionalProperties", "required"]
@@ -266,11 +233,6 @@ class TestValidateEntityUnknownKind:
 
 
 class TestValidateEntityFileFullYamlDispatch:
-    def test_doctrine_yaml_loaded_via_yaml_safe_load(self, tmp_path):
-        p = tmp_path / "d.yaml"
-        p.write_text(VALID_DOCTRINE_YAML_TEXT)
-        assert validate_entity_file(str(p), "doctrine-yaml") == []
-
     def test_watcher_yaml_loaded_via_yaml_safe_load(self, tmp_path):
         import yaml as _yaml
 
@@ -280,10 +242,10 @@ class TestValidateEntityFileFullYamlDispatch:
 
 
 class TestValidateEntityFileFrontmatterDispatch:
-    def test_knight_frontmatter_via_parse_frontmatter_raw(self, tmp_path):
-        p = tmp_path / "k.md"
-        p.write_text("---\nid: pm\ntitle: PM\nsummary: s\n---\nbody\n")
-        assert validate_entity_file(str(p), "knight-frontmatter") == []
+    def test_doctrine_mission_frontmatter_via_parse_frontmatter_raw(self, tmp_path):
+        p = tmp_path / "recon.md"
+        p.write_text("---\nid: recon\ntitle: Recon\nsummary: s\n---\nbody\n")
+        assert validate_entity_file(str(p), "doctrine-mission-frontmatter") == []
 
     def test_codex_frontmatter_via_parse_frontmatter_raw(self, tmp_path):
         p = tmp_path / "c.md"
@@ -310,7 +272,7 @@ class TestValidateEntityFileOSError:
             raise PermissionError("denied")
 
         monkeypatch.setattr("builtins.open", boom)
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert len(issues) == 1
         assert issues[0].rule == "read-failed"
         assert issues[0].pointer == "/"
@@ -330,7 +292,7 @@ class TestValidateEntityFileMissingFrontmatter:
     def test_returns_missing_frontmatter_issue(self, tmp_path):
         p = tmp_path / "k.md"
         p.write_text("just body\n")
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert len(issues) == 1
         assert issues[0].rule == "missing-frontmatter"
         assert issues[0].pointer == "/"
@@ -339,8 +301,8 @@ class TestValidateEntityFileMissingFrontmatter:
 class TestValidateEntityMessageFormatting:
     def test_additional_properties_message_lists_allowed_keys(self):
         issues = validate_entity(
-            "knight-frontmatter",
-            {"id": "pm", "title": "PM", "summary": "s", "stability": "x"},
+            "doctrine-mission-frontmatter",
+            {"id": "recon", "title": "Recon", "summary": "s", "stability": "x"},
         )
         matching = [i for i in issues if i.rule == "additionalProperties"]
         assert len(matching) == 1
@@ -349,7 +311,9 @@ class TestValidateEntityMessageFormatting:
         assert "allowed keys" in msg
 
     def test_required_message_names_missing_property(self):
-        issues = validate_entity("knight-frontmatter", {"id": "pm", "title": "PM"})
+        issues = validate_entity(
+            "doctrine-mission-frontmatter", {"id": "recon", "title": "Recon"}
+        )
         matching = [i for i in issues if i.rule == "required"]
         assert len(matching) == 1
         assert "summary" in matching[0].message
@@ -383,11 +347,11 @@ class TestUs006YamlParseSingleIssue:
     def test_yaml_parse_short_circuits_other_schema_rules(self, tmp_path):
         """FR-10: malformed doctrine yaml returns exactly one yaml-parse issue,
         not additional required/additionalProperties issues for same file."""
-        p = tmp_path / "d.yaml"
+        p = tmp_path / "w.yaml"
         # Content both fails YAML parsing and (if it parsed) would be missing
-        # required fields like steps.
-        p.write_text("id: : :\nsteps: :")
-        issues = validate_entity_file(str(p), "doctrine-yaml")
+        # required fields.
+        p.write_text("id: : :\nevent: :")
+        issues = validate_entity_file(str(p), "watcher-yaml")
         assert len(issues) == 1
         assert issues[0].rule == "yaml-parse"
 
@@ -395,7 +359,7 @@ class TestUs006YamlParseSingleIssue:
         """FR-10: bad yaml inside frontmatter block → one yaml-parse, no others."""
         p = tmp_path / "k.md"
         p.write_text("---\nid: : :\ntitle: [unclosed\n---\nbody\n")
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert len(issues) == 1
         assert issues[0].rule == "yaml-parse"
         assert issues[0].pointer == "/"
@@ -416,7 +380,7 @@ class TestUs006MissingFrontmatterExactMessage:
         """Zero-byte frontmatter-kind file emits a single missing-frontmatter issue."""
         p = tmp_path / "k.md"
         p.write_text("")
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert len(issues) == 1
         assert issues[0].rule == "missing-frontmatter"
         assert issues[0].message == "File has no YAML frontmatter block"
@@ -451,7 +415,7 @@ class TestUs006ReadFailedBranch:
             return real_open(path, *a, **kw)
 
         monkeypatch.setattr("builtins.open", boom)
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert len(issues) == 1
         assert issues[0].rule == "read-failed"
         assert issues[0].pointer == "/"
@@ -462,7 +426,7 @@ class TestUs006ReadFailedBranch:
         p = tmp_path / "k.md"
         # 0xff is invalid as UTF-8 start byte.
         p.write_bytes(b"---\nid: pm\ntitle: \xff\xfe\nsummary: s\n---\n")
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert len(issues) == 1
         assert issues[0].rule == "read-failed"
         assert issues[0].pointer == "/"
@@ -658,7 +622,7 @@ class TestUs010CreateTimeModulesDelegateToSchemas:
     """After US-010 green, the four create-time modules must import validate_entity
     from lore.schemas and must not hand-code JSON-Schema-style rules."""
 
-    _MODULES = ("doctrine.py", "knight.py", "watcher.py", "artifact.py")
+    _MODULES = ("doctrine.py", "watcher.py", "artifact.py")
 
     def _read(self, name: str) -> str:
         import pathlib
@@ -666,9 +630,6 @@ class TestUs010CreateTimeModulesDelegateToSchemas:
 
     def test_doctrine_module_imports_validate_entity(self):
         assert "validate_entity" in self._read("doctrine.py")
-
-    def test_knight_module_imports_validate_entity(self):
-        assert "validate_entity" in self._read("knight.py")
 
     def test_watcher_module_imports_validate_entity(self):
         assert "validate_entity" in self._read("watcher.py")
@@ -1122,3 +1083,176 @@ class TestPackagedDataSchemaKinds:
                 f"{kind} describes a file inside the wheel — a project must not be able "
                 "to change how it validates"
             )
+
+
+# ---------------------------------------------------------------------------
+# The doctrine mission frontmatter kind.
+#
+# Spec: doctrine-missions-spec (lore codex show doctrine-missions-spec) — F1, D7.
+#
+# A doctrine is a directory: one `<stem>.design.md` beside `missions/<id>.md`,
+# one file per worker. The mission file's frontmatter *shape* lives here and
+# nowhere else (standards-dry). The cross-field rule — `id` equals the filename
+# stem — is not expressible in JSON Schema, which cannot see the filename, and
+# stays inline in `doctrine.py`.
+# ---------------------------------------------------------------------------
+
+
+MISSION_FM = {"id": "recon", "title": "Recon", "summary": "s"}
+
+
+class TestDoctrineMissionFrontmatterSchema:
+    def test_loads_as_a_draft_2020_schema(self):
+        schema = load_schema("doctrine-mission-frontmatter")
+        assert isinstance(schema, dict)
+        assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+
+    def test_carries_the_canonical_id(self):
+        schema = load_schema("doctrine-mission-frontmatter")
+        assert schema["$id"] == "lore://schemas/doctrine-mission-frontmatter"
+
+    def test_requires_id_title_and_summary(self):
+        schema = load_schema("doctrine-mission-frontmatter")
+        assert schema["required"] == ["id", "title", "summary"]
+
+    def test_pins_additional_properties_false_at_the_root(self):
+        assert load_schema("doctrine-mission-frontmatter")["additionalProperties"] is False
+
+    def test_every_field_is_a_non_empty_string(self):
+        properties = load_schema("doctrine-mission-frontmatter")["properties"]
+        assert set(properties) == {"id", "title", "summary"}
+        for name, rules in properties.items():
+            assert rules["type"] == "string", f"{name}: expected a string field"
+            assert rules["minLength"] == 1, f"{name}: expected minLength 1"
+
+    def test_id_description_names_the_filename_stem(self):
+        # The stem rule is enforced in doctrine.py; the schema carries it as
+        # documentation so a reader of the shape knows where the id comes from.
+        schema = load_schema("doctrine-mission-frontmatter")
+        assert (
+            schema["properties"]["id"]["description"]
+            == "Doctrine mission id. Must match the filename stem."
+        )
+
+    def test_ships_as_a_package_resource(self):
+        names = {p.name for p in files("lore.schemas").iterdir()}
+        assert "doctrine-mission-frontmatter.yaml" in names
+
+
+class TestDoctrineMissionFrontmatterValidation:
+    def test_a_complete_frontmatter_block_validates_clean(self):
+        assert validate_entity("doctrine-mission-frontmatter", MISSION_FM) == []
+
+    def test_a_missing_field_reports_the_standard_required_message(self):
+        issues = validate_entity(
+            "doctrine-mission-frontmatter", {"id": "recon", "title": "Recon"}
+        )
+        assert len(issues) == 1
+        assert issues[0].rule == "required"
+        assert issues[0].pointer == "/"
+        assert issues[0].message == "Missing required property 'summary'."
+
+    def test_an_unknown_property_reports_the_standard_message(self):
+        issues = validate_entity(
+            "doctrine-mission-frontmatter", {**MISSION_FM, "type": "agent"}
+        )
+        assert len(issues) == 1
+        assert issues[0].rule == "additionalProperties"
+        assert issues[0].pointer == "/type"
+        assert issues[0].message == (
+            "Unknown property 'type' — allowed keys are id, title, summary."
+        )
+
+    def test_an_empty_summary_is_rejected(self):
+        issues = validate_entity(
+            "doctrine-mission-frontmatter", {**MISSION_FM, "summary": ""}
+        )
+        assert _rules(issues) == ["minLength"]
+
+
+class TestDoctrineMissionFrontmatterFileDispatch:
+    """The kind is registered as a frontmatter kind, so a mission `.md` file is
+    parsed through the frontmatter branch rather than ``yaml.safe_load``."""
+
+    def test_a_mission_file_validates_clean(self, tmp_path):
+        p = tmp_path / "recon.md"
+        p.write_text("---\nid: recon\ntitle: Recon\nsummary: s\n---\nbody\n")
+        assert validate_entity_file(str(p), "doctrine-mission-frontmatter") == []
+
+    def test_a_mission_file_with_no_frontmatter_reports_missing_frontmatter(self, tmp_path):
+        p = tmp_path / "recon.md"
+        p.write_text("just body\n")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
+        assert len(issues) == 1
+        assert issues[0].rule == "missing-frontmatter"
+        assert issues[0].pointer == "/"
+
+    def test_a_mission_file_missing_a_field_reports_it(self, tmp_path):
+        p = tmp_path / "recon.md"
+        p.write_text("---\nid: recon\ntitle: Recon\n---\nbody\n")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
+        assert _rules(issues) == ["required"]
+        assert issues[0].message == "Missing required property 'summary'."
+
+
+# ---------------------------------------------------------------------------
+# The doctrine design frontmatter kind.
+#
+# Spec: doctrine-missions-spec — F3. The `<stem>.yaml` partner is gone, so the
+# `id` description no longer has a paired file to point at: a design file's id
+# is bound to the directory that holds it. The required set is deliberately
+# unchanged — `doctrine.py` raises its own id-presence error before running
+# full validation and depends on that ordering.
+# ---------------------------------------------------------------------------
+
+
+class TestDoctrineDesignFrontmatterSchema:
+    def test_id_description_names_the_doctrine_directory(self):
+        schema = load_schema("doctrine-design-frontmatter")
+        assert (
+            schema["properties"]["id"]["description"]
+            == "Doctrine id. Must match the doctrine directory name."
+        )
+
+    def test_required_set_is_unchanged(self):
+        assert load_schema("doctrine-design-frontmatter")["required"] == [
+            "id",
+            "title",
+            "summary",
+        ]
+
+
+# ---------------------------------------------------------------------------
+# The two retired kinds, and the packaged kind count
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["knight-frontmatter", "doctrine-yaml"])
+def test_a_retired_kind_no_longer_loads(kind):
+    with pytest.raises(FileNotFoundError) as excinfo:
+        load_schema(kind)
+
+    assert f"Unknown schema kind: '{kind}'" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("kind", ["knight-frontmatter", "doctrine-yaml"])
+def test_a_retired_kind_is_in_neither_dispatch_set(kind):
+    from lore.schemas import _FRONTMATTER_KINDS, _YAML_KINDS
+
+    assert kind not in _FRONTMATTER_KINDS
+    assert kind not in _YAML_KINDS
+
+
+def test_the_packaged_kind_count_is_eleven():
+    from importlib import resources
+
+    names = sorted(
+        entry.name
+        for entry in resources.files("lore.schemas").iterdir()
+        if entry.name.endswith(".yaml")
+    )
+
+    assert len(names) == 11, names
+    assert "knight-frontmatter.yaml" not in names
+    assert "doctrine-yaml.yaml" not in names
+    assert "doctrine-mission-frontmatter.yaml" in names

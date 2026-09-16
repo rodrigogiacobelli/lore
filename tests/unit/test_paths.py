@@ -207,3 +207,85 @@ def test_resolve_beneath_resolves_a_path_that_does_not_exist(tmp_path):
     assert resolve_beneath(tmp_path, "nowhere/at/all") == (
         tmp_path / "nowhere" / "at" / "all"
     ).resolve()
+
+
+# ---------------------------------------------------------------------------
+# Doctrine directory layout.
+#
+# Spec: doctrine-missions-spec (lore codex show doctrine-missions-spec) — F2, D20.
+#
+# A doctrine is a directory holding `<stem>.design.md` beside `missions/`, so
+# these three helpers take the DOCTRINE DIRECTORY rather than the project root
+# — `derive_group` and `group_matches_filter` already set that precedent in
+# this module. `doctrine.py` and `health.py` both need the same calculation,
+# which is why it lives here once (standards-dry).
+# ---------------------------------------------------------------------------
+
+
+def test_design_suffix_is_the_paired_file_extension():
+    from lore.paths import DESIGN_SUFFIX
+
+    assert DESIGN_SUFFIX == ".design.md"
+
+
+def test_missions_dirname_is_missions():
+    from lore.paths import MISSIONS_DIRNAME
+
+    assert MISSIONS_DIRNAME == "missions"
+
+
+def test_doctrine_design_path_is_named_for_its_directory(tmp_path):
+    from lore.paths import doctrine_design_path
+
+    doctrine_dir = tmp_path / ".lore" / "doctrines" / "tdd-lite"
+    assert doctrine_design_path(doctrine_dir) == doctrine_dir / "tdd-lite.design.md"
+
+
+def test_doctrine_design_path_follows_a_grouped_directory(tmp_path):
+    # The group lives in the path handed in; the helper adds nothing to it.
+    from lore.paths import doctrine_design_path, doctrines_dir
+
+    doctrine_dir = doctrines_dir(tmp_path) / "default" / "feature-implementation" / "tdd"
+    assert doctrine_design_path(doctrine_dir) == doctrine_dir / "tdd.design.md"
+
+
+def test_doctrine_missions_dir_sits_inside_the_doctrine(tmp_path):
+    from lore.paths import doctrine_missions_dir
+
+    doctrine_dir = tmp_path / ".lore" / "doctrines" / "tdd-lite"
+    assert doctrine_missions_dir(doctrine_dir) == doctrine_dir / "missions"
+
+
+def test_doctrine_mission_path_is_a_markdown_file_under_missions(tmp_path):
+    from lore.paths import doctrine_mission_path
+
+    doctrine_dir = tmp_path / ".lore" / "doctrines" / "tdd-lite"
+    assert doctrine_mission_path(doctrine_dir, "recon") == (
+        doctrine_dir / "missions" / "recon.md"
+    )
+
+
+def test_doctrine_mission_path_agrees_with_the_missions_dir_helper(tmp_path):
+    from lore.paths import doctrine_mission_path, doctrine_missions_dir
+
+    doctrine_dir = tmp_path / ".lore" / "doctrines" / "tdd-lite"
+    assert doctrine_mission_path(doctrine_dir, "recon").parent == doctrine_missions_dir(
+        doctrine_dir
+    )
+
+
+def test_the_three_doctrine_helpers_create_nothing(tmp_path):
+    # A path calculation never touches the filesystem: every one of these is
+    # called on a directory that does not exist, and none of it appears.
+    from lore.paths import (
+        doctrine_design_path,
+        doctrine_mission_path,
+        doctrine_missions_dir,
+    )
+
+    doctrine_dir = tmp_path / ".lore" / "doctrines" / "tdd-lite"
+    doctrine_design_path(doctrine_dir)
+    doctrine_missions_dir(doctrine_dir)
+    doctrine_mission_path(doctrine_dir, "recon")
+
+    assert list(tmp_path.iterdir()) == []

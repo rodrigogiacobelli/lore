@@ -25,7 +25,7 @@ items:
       - task
     definition: A body of work tracked in lore.
   - keyword: mission
-    definition: A single executable task assigned to a knight.
+    definition: A single executable task assigned to an agent.
 """
 
 

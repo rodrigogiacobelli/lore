@@ -102,10 +102,11 @@ _INVALID_NAME = (
 
 
 def validate_name(name: str) -> str | None:
-    """Return an error string if *name* is not a valid knight/doctrine name, else None.
+    """Return an error string if *name* is not a valid entity name, else None.
 
     A valid name must start with an alphanumeric character and contain only
-    letters, digits, hyphens, and underscores.
+    letters, digits, hyphens, and underscores. Doctrine names and doctrine
+    mission ids are both held to it.
     """
     if not name or not _NAME_RE.match(name):
         return _INVALID_NAME

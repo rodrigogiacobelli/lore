@@ -54,10 +54,16 @@ Today, that consuming tool is an AI agent following instructions in `AGENTS.md`.
 
 **Lore enforces type semantics (e.g., only orchestrators can claim `constable` missions).** Rejected because Lore has no concept of "who is calling." It cannot distinguish an orchestrator agent from a worker agent from a human operator. Enforcing caller-based rules would require authentication and role concepts that are entirely out of scope.
 
-**Type-based filtering flags on `lore ready` and `lore missions` (e.g., `--type knight`).** Rejected because the consumer already reads the type from output and can filter client-side. Adding filter flags to Lore multiplies the CLI surface without proportional benefit. "Lore is a dumb notepad" — the consumer processes the data, not Lore.
+**Type-based filtering flags on `lore ready` and `lore missions` (e.g., `--type agent`).** Rejected because the consumer already reads the type from output and can filter client-side. Adding filter flags to Lore multiplies the CLI surface without proportional benefit. "Lore is a dumb notepad" — the consumer processes the data, not Lore.
 
-**Separate queues or priority lanes per type.** Rejected because the existing priority queue (`lore ready`) is sufficient. Type is orthogonal to priority. A `human` checkpoint at priority 0 should surface before a `knight` task at priority 2 — the existing priority ordering handles this correctly without type-aware queue logic.
+**Separate queues or priority lanes per type.** Rejected because the existing priority queue (`lore ready`) is sufficient. Type is orthogonal to priority. A `human` checkpoint at priority 0 should surface before an `agent` task at priority 2 — the existing priority ordering handles this correctly without type-aware queue logic.
 
 **Lore auto-claims `constable` missions.** Rejected because auto-claiming is an orchestration decision. Lore does not know when the orchestrator is ready to handle a constable task. The orchestrator reads `lore ready`, sees the type, and decides.
 
 **Dispatch logic lives in a Lore plugin or extension point.** Rejected as premature. Today's use case is fully served by AGENTS.md instructions. No plugin architecture is needed at this stage.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The illustrative type tokens read `agent` where they read `knight`; the Context and Rationale keep the historical token, which is what the removed constraints defended. |

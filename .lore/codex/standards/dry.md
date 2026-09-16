@@ -17,7 +17,6 @@ Every piece of logic has one authoritative home. If the same rule, check, or tra
 | `.lore/` path construction | `paths.py` | `lore.paths` |
 | YAML frontmatter parsing | `frontmatter.py` | `lore.frontmatter` |
 | Topological sort of missions | `graph.py` | `lore.graph` |
-| Knight filesystem operations | `knight.py` | `lore.knight` |
 | Doctrine loading and validation | `doctrine.py` | `lore.doctrine` |
 | Watcher filesystem operations | `watcher.py` | `lore.watcher` |
 | Entity JSON Schemas + schema validation | `schemas.py` + `schemas/*.yaml` | `lore.schemas` |

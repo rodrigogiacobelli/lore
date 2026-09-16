@@ -106,7 +106,7 @@ conceptual-entities-doctrine), but they sit at different layers:
 |---|---|---|
 | What it is | A template that **spawns** quests and missions | Procedural knowledge for executing/diagnosing a task |
 | When it acts | Upstream **planning** — an orchestrator reads it to create work | At **execution** time — any agent reads it to do the task |
-| Audience | Orchestrators (planning) | Any agent (knight or not) doing the work |
+| Audience | Orchestrators (planning) | Any agent doing the work |
 | Authoring | Authored workflow template | Procedural how-to, often distilled and rewritten |
 
 A Doctrine says "to build feature X, create these missions in this order". A Rite

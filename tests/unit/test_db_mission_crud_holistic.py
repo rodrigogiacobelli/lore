@@ -344,3 +344,129 @@ class TestDeleteMissionEnvelopeHolistic:
         assert second["deleted"] is True
         assert second["deleted_at"] == first["deleted_at"]
         assert "already_deleted" not in second
+
+
+# ---------------------------------------------------------------------------
+# The doctrine-mission reference is stored verbatim and never interpreted
+# ---------------------------------------------------------------------------
+
+
+class TestCreateMissionStoresTheReferenceVerbatim:
+    def test_a_reference_with_a_slash_is_stored_as_written(self, project_dir):
+        from lore.db import create_mission, read_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        result = create_mission(
+            project_dir, "T", quest_id="q-aaaa", doctrine_mission="tdd-lite/recon"
+        )
+
+        assert read_mission(project_dir, result["id"])["doctrine_mission"] == (
+            "tdd-lite/recon"
+        )
+
+    def test_an_unresolvable_reference_is_stored_without_complaint(self, project_dir):
+        from lore.db import create_mission, read_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        result = create_mission(
+            project_dir, "T", quest_id="q-aaaa", doctrine_mission="nothing/here"
+        )
+
+        assert read_mission(project_dir, result["id"])["doctrine_mission"] == (
+            "nothing/here"
+        )
+
+    def test_no_reference_stores_null(self, project_dir):
+        from lore.db import create_mission, read_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        result = create_mission(project_dir, "T", quest_id="q-aaaa")
+
+        assert read_mission(project_dir, result["id"])["doctrine_mission"] is None
+
+    def test_the_envelope_is_unchanged(self, project_dir):
+        from lore.db import create_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        result = create_mission(
+            project_dir, "T", quest_id="q-aaaa", doctrine_mission="tdd-lite/recon"
+        )
+
+        assert set(result) == {"id", "filename", "group"}
+
+    def test_the_write_path_touches_no_doctrine_file(self, project_dir, monkeypatch):
+        """A reference is resolved at read time, never at write time."""
+        import lore.doctrine as doctrine_module
+        from lore.db import create_mission, update_mission
+
+        def _fail(*args, **kwargs):  # pragma: no cover - the assert is the failure
+            raise AssertionError("a write must not resolve the reference")
+
+        monkeypatch.setattr(doctrine_module, "_resolve_doctrine_mission", _fail)
+        monkeypatch.setattr(doctrine_module, "_find_doctrine_dir", _fail)
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        result = create_mission(
+            project_dir, "T", quest_id="q-aaaa", doctrine_mission="tdd-lite/recon"
+        )
+        update_mission(project_dir, result["id"], doctrine_mission="tdd-lite/scribe")
+
+
+class TestUpdateMissionReferencePrecedence:
+    def test_setting_the_reference(self, project_dir):
+        from lore.db import read_mission, update_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(project_dir, "q-aaaa/m-1111", "q-aaaa", "M")
+
+        update_mission(project_dir, "q-aaaa/m-1111", doctrine_mission="tdd-lite/recon")
+
+        assert read_mission(project_dir, "q-aaaa/m-1111")["doctrine_mission"] == (
+            "tdd-lite/recon"
+        )
+
+    def test_removing_the_reference(self, project_dir):
+        from lore.db import read_mission, update_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        update_mission(project_dir, "q-aaaa/m-1111", remove_doctrine_mission=True)
+
+        assert read_mission(project_dir, "q-aaaa/m-1111")["doctrine_mission"] is None
+
+    def test_remove_wins_over_set(self, project_dir):
+        from lore.db import read_mission, update_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        update_mission(
+            project_dir,
+            "q-aaaa/m-1111",
+            doctrine_mission="tdd-lite/scribe",
+            remove_doctrine_mission=True,
+        )
+
+        assert read_mission(project_dir, "q-aaaa/m-1111")["doctrine_mission"] is None
+
+    def test_neither_leaves_the_column_untouched(self, project_dir):
+        from lore.db import read_mission, update_mission
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        update_mission(project_dir, "q-aaaa/m-1111", title="Renamed")
+
+        assert read_mission(project_dir, "q-aaaa/m-1111")["doctrine_mission"] == (
+            "tdd-lite/recon"
+        )

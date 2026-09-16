@@ -63,15 +63,11 @@ class TestFreshInit:
         runner.invoke(main, ["init"])
         assert (fresh_dir / ".lore" / "doctrines").is_dir()
 
-    def test_knights_dir_created(self, runner, fresh_dir):
-        runner.invoke(main, ["init"])
-        assert (fresh_dir / ".lore" / "knights").is_dir()
-
     def test_artifacts_dir_created(self, runner, fresh_dir):
         runner.invoke(main, ["init"])
         assert (fresh_dir / ".lore" / "artifacts").is_dir()
 
-    def test_schema_version_is_6(self, runner, fresh_dir):
+    def test_schema_version_is_7(self, runner, fresh_dir):
         runner.invoke(main, ["init"])
         db_path = fresh_dir / ".lore" / "lore.db"
         conn = sqlite3.connect(str(db_path))
@@ -82,13 +78,7 @@ class TestFreshInit:
         finally:
             conn.close()
         assert row is not None
-        assert row[0] == "6"
-
-    def test_default_knight_present(self, runner, fresh_dir):
-        runner.invoke(main, ["init"])
-        knights_default = fresh_dir / ".lore" / "knights" / "default"
-        md_files = list(knights_default.glob("**/*.md"))
-        assert len(md_files) > 0, "No default knight .md files found"
+        assert row[0] == "7"
 
     def test_output_confirms_creation(self, runner, fresh_dir):
         result = runner.invoke(main, ["init"])
@@ -208,7 +198,7 @@ class TestReinitUpdatesGitignore:
 
 
 # ---------------------------------------------------------------------------
-# Default doctrines and knights
+# Default doctrines
 # ---------------------------------------------------------------------------
 
 
@@ -289,13 +279,6 @@ class TestReInit:
         result = runner.invoke(main, ["init"])
         assert_exit_ok(result)
 
-    def test_user_knight_preserved(self, runner, initialized_dir):
-        custom_knight = initialized_dir / ".lore" / "knights" / "custom-knight.md"
-        custom_knight.write_text("# My custom knight\n")
-        runner.invoke(main, ["init"])
-        assert custom_knight.exists()
-        assert custom_knight.read_text() == "# My custom knight\n"
-
     def test_user_doctrine_preserved(self, runner, initialized_dir):
         custom_doctrine = initialized_dir / ".lore" / "doctrines" / "my-workflow.yaml"
         custom_doctrine.write_text("name: my-workflow\nsteps: []\n")
@@ -323,14 +306,10 @@ class TestReInit:
         result = runner.invoke(main, ["init"])
         assert "Updated doctrines/" in result.output
 
-    def test_reinit_shows_updated_for_knight(self, runner, initialized_dir):
-        result = runner.invoke(main, ["init"])
-        assert "Updated knights/" in result.output
-
     def test_reinit_does_not_show_skipped_for_defaults(self, runner, initialized_dir):
         result = runner.invoke(main, ["init"])
         assert "Skipped doctrines/" not in result.output
-        assert "Skipped knights/" not in result.output
+        assert "Skipped artifacts/" not in result.output
 
 
 
@@ -413,7 +392,7 @@ class TestInitEdgeCases:
         ).fetchone()
         conn.close()
         assert row is not None
-        assert row[0] == "6"
+        assert row[0] == "7"
 
     def test_reinit_output_mentions_skipped_or_already(self, runner, project_dir):
         result = runner.invoke(main, ["init"])
@@ -488,14 +467,15 @@ class TestInitSeedsDefaultWatcher:
 
 
 class TestInitSeedsCompanionDoctrine:
-    """Scenario 2: lore init seeds .lore/doctrines/default/update-changelog.yaml."""
+    """Scenario 2: lore init seeds .lore/doctrines/default/update-changelog/."""
 
     def test_companion_doctrine_file_exists_after_init(self, runner, project_dir):
-        """After lore init, the companion doctrine YAML is present on disk."""
-        doctrine_path = (
-            project_dir / ".lore" / "doctrines" / "default" / "update-changelog.yaml"
+        """After lore init, the companion doctrine directory is present on disk."""
+        doctrine_dir = (
+            project_dir / ".lore" / "doctrines" / "default" / "update-changelog"
         )
-        assert doctrine_path.is_file()
+        assert (doctrine_dir / "update-changelog.design.md").is_file()
+        assert (doctrine_dir / "missions").is_dir()
 
     def test_doctrine_list_shows_seeded_doctrine(self, runner, project_dir):
         """lore doctrine list shows at least one doctrine after init."""

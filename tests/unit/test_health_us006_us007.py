@@ -26,7 +26,7 @@ import yaml
 def _make_lore_project(tmp_path: Path) -> Path:
     """Minimal .lore/ skeleton — mirrors tests/unit/test_health.py helper."""
     lore = tmp_path / ".lore"
-    for d in ("codex", "knights", "doctrines", "artifacts", "watchers"):
+    for d in ("codex", "doctrines", "artifacts", "watchers"):
         (lore / d).mkdir(parents=True, exist_ok=True)
     (lore / "codex" / "transient").mkdir(parents=True, exist_ok=True)
     return tmp_path

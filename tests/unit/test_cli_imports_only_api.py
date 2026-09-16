@@ -13,7 +13,7 @@ This Red test enforces the rule via AST inspection of ``src/lore/cli.py``:
     * ``import lore.api``
     * Any non-``lore`` import (stdlib, third-party).
 - Forbidden forms (Red today — to be flipped Green in m-778e):
-    * ``from lore.<other_module> import …`` (knight, artifact, root, db, etc.)
+    * ``from lore.<other_module> import …`` (doctrine, artifact, root, db, etc.)
     * ``from lore import <other_module>`` (paths, validators, graph, etc.)
     * ``import lore.<other_module>``
 
@@ -143,7 +143,6 @@ class TestCliImportsOnlyFromApi:
 @pytest.mark.parametrize(
     "forbidden_module",
     [
-        "lore.knight",
         "lore.artifact",
         "lore.doctrine",
         "lore.watcher",

@@ -19,12 +19,12 @@ on every failure path; CLI translator catches and renders. Old
     "missions",
   }
 where each mission entry has EXACTLY:
-  {"id", "title", "status", "priority", "mission_type", "knight"}.
+  {"id", "title", "status", "priority", "mission_type", "doctrine_mission"}.
 
 `update_mission_full` success (per cli.py:1712-1740). EXPLICIT keys:
   {
     "id", "quest_id", "title", "description", "status", "priority",
-    "knight", "mission_type", "block_reason",
+    "doctrine_mission", "mission_type", "block_reason",
     "created_at", "updated_at", "closed_at",
     "dependencies",
   }
@@ -59,7 +59,7 @@ QUEST_FULL_SUCCESS_KEYS: frozenset[str] = frozenset(
 )
 
 QUEST_FULL_MISSION_ENTRY_KEYS: frozenset[str] = frozenset(
-    {"id", "title", "status", "priority", "mission_type", "knight"}
+    {"id", "title", "status", "priority", "mission_type", "doctrine_mission"}
 )
 
 MISSION_FULL_SUCCESS_KEYS: frozenset[str] = frozenset(
@@ -70,7 +70,7 @@ MISSION_FULL_SUCCESS_KEYS: frozenset[str] = frozenset(
         "description",
         "status",
         "priority",
-        "knight",
+        "doctrine_mission",
         "mission_type",
         "block_reason",
         "created_at",
@@ -143,7 +143,7 @@ class TestUpdateQuestFullSuccessEnvelope:
         insert_quest(project_dir, "q-aaaa", "Q")
         insert_mission(
             project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
-            mission_type="knight", knight="someone.md",
+            mission_type="agent", doctrine_mission="tdd-lite/recon",
         )
 
         data = update_quest_full(project_dir, "q-aaaa", title="x")
@@ -259,19 +259,59 @@ class TestUpdateMissionFullSuccessEnvelope:
         data = update_mission_full(project_dir, "q-aaaa/m-1111", title="x")
         assert data["dependencies"]["blocks"] == ["q-aaaa/m-2222"]
 
-    def test_remove_knight_clears_knight(self, project_dir):
+    def test_remove_doctrine_mission_clears_the_reference(self, project_dir):
         from lore.db import update_mission_full
 
         insert_quest(project_dir, "q-aaaa", "Q")
         insert_mission(
             project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
-            knight="someone.md",
+            doctrine_mission="tdd-lite/recon",
         )
 
         data = update_mission_full(
-            project_dir, "q-aaaa/m-1111", remove_knight=True,
+            project_dir, "q-aaaa/m-1111", remove_doctrine_mission=True,
         )
-        assert data["knight"] is None
+        assert data["doctrine_mission"] is None
+
+    def test_doctrine_mission_sets_the_reference_verbatim(self, project_dir):
+        from lore.db import update_mission_full
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(project_dir, "q-aaaa/m-1111", "q-aaaa", "M")
+
+        data = update_mission_full(
+            project_dir, "q-aaaa/m-1111", doctrine_mission="tdd-lite/scribe",
+        )
+        assert data["doctrine_mission"] == "tdd-lite/scribe"
+
+    def test_remove_wins_when_both_are_passed(self, project_dir):
+        from lore.db import update_mission_full
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        data = update_mission_full(
+            project_dir,
+            "q-aaaa/m-1111",
+            doctrine_mission="tdd-lite/scribe",
+            remove_doctrine_mission=True,
+        )
+        assert data["doctrine_mission"] is None
+
+    def test_neither_flag_leaves_the_reference_untouched(self, project_dir):
+        from lore.db import update_mission_full
+
+        insert_quest(project_dir, "q-aaaa", "Q")
+        insert_mission(
+            project_dir, "q-aaaa/m-1111", "q-aaaa", "M",
+            doctrine_mission="tdd-lite/recon",
+        )
+
+        data = update_mission_full(project_dir, "q-aaaa/m-1111", title="x")
+        assert data["doctrine_mission"] == "tdd-lite/recon"
 
     def test_mission_type_applied(self, project_dir):
         from lore.db import update_mission_full

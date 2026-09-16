@@ -9,7 +9,6 @@ binds:
 - tests/unit/test_watcher.py
 related:
   - conceptual-entities-watcher
-  - conceptual-workflows-knight-list
   - conceptual-workflows-filter-list
   - ref-lore_cli-commands
   - conceptual-workflows-health
@@ -112,7 +111,7 @@ The `--json` flag is accepted both as a local subcommand flag (`lore watcher lis
 
 ### 2. Plain mode — raw YAML output
 
-The file content is read and printed byte-for-byte, including comments. This preserves the human-authored YAML exactly as written. This behaviour diverges from `lore knight show` (which outputs the markdown body) because watcher files are pure YAML, not markdown-with-frontmatter.
+The file content is read and printed byte-for-byte, including comments. This preserves the human-authored YAML exactly as written. This behaviour diverges from `lore doctrine show --mission` (which outputs the markdown body) because watcher files are pure YAML, not markdown-with-frontmatter.
 
 ```yaml
 id: change-log-updates
@@ -154,6 +153,6 @@ JSON mode error (stderr): `{"error": "Watcher \"nonexistent\" not found in .lore
 ## Related
 
 - conceptual-entities-watcher (lore codex show conceptual-entities-watcher) — what a Watcher is
-- conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list) — mirrors this behaviour for knights
+- conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — mirrors this behaviour for doctrines
 - conceptual-workflows-filter-list (lore codex show conceptual-workflows-filter-list) — full --filter flag behaviour specification
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

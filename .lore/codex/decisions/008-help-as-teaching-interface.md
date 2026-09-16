@@ -48,11 +48,11 @@ call it.
 
 - **Top-level `lore --help`**: A short conceptual orientation paragraph
   before the command list. Explains the core entities (quests, missions,
-  knights, doctrines) and the basic workflow (orchestrator creates and
+  doctrines, artifacts) and the basic workflow (orchestrator creates and
   dispatches, workers claim and close). An agent with no prior knowledge of
   Lore should understand the mental model after reading this.
 
-- **Command-group `--help`** (e.g. `lore missions --help`, `lore knight
+- **Command-group `--help`** (e.g. `lore missions --help`, `lore doctrine
   --help`): One paragraph explaining the concept the group operates on —
   what the entity is, why it exists, and when to use these commands.
 
@@ -132,3 +132,9 @@ Lore codex. `--help` must be self-contained.
 (minimise tool calls). Flag-level verbosity increases the cost of every
 `--help` call without meaningful benefit over top-level + group-level
 coverage.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The entity enumeration and the command-group example drop Knight; `lore knight --help` is not a command. |

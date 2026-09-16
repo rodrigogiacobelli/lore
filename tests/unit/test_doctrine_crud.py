@@ -1,85 +1,288 @@
-"""Unit tests for `lore.doctrine.update_doctrine` + `delete_doctrine` — G8 Red.
+"""Unit tests for ``lore.doctrine`` writes — create, update and delete.
 
-Plan: transient-public-api-facade-plan §G8.
-Anchor: decisions-010-public-api-stability + decisions-011-api-parity-with-cli
-+ Review-Ledger CHANGED #5 — canonical envelopes are EXACT key sets:
-  - update_doctrine → `{name, filename}`
-  - delete_doctrine → `{name, deleted: True}`
-No `path`, no `ok`, no extras.
+Workflow: conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new)
+Workflow: conceptual-workflows-doctrine-edit
 
-Field-preservation merge (id/title/summary) currently in cli.py:1482-1494
-MOVES INTO `update_doctrine`. Missing-doctrine and schema-fail surface
-through `DoctrineError` (doctrine still uses `DoctrineError`; ValueError
-flip is G15.5, not G8 — see mission description).
-
-Red phase — every test below MUST fail until G8 Green lands.
+Every validation the CLI surfaces is enforced here (``decisions-011``), in the
+order the spec's validation table states, and every failure leaves the tree
+exactly as it was — ``create_doctrine`` stages the whole directory and renames
+it into place, so a failure leaves neither the target nor the staging directory
+behind.
 """
 
-from __future__ import annotations
+from pathlib import Path
 
 import pytest
 
+from lore.doctrine import create_doctrine, delete_doctrine, read_doctrine, update_doctrine
+from lore.projects import ForeignEntityError
+
+
+DESIGN = "---\nid: {stem}\ntitle: {title}\nsummary: A doctrine.\n---\n\n# {title}\n"
+MISSION = "---\nid: {mid}\ntitle: {title}\nsummary: A mission.\n---\n\nBody of {mid}.\n"
+
+
+def _design(stem: str, *, title: str = "TDD Lite") -> str:
+    return DESIGN.format(stem=stem, title=title)
+
+
+def _mission(mid: str, *, title: str | None = None) -> str:
+    return MISSION.format(mid=mid, title=title if title is not None else mid)
+
+
+@pytest.fixture()
+def project(tmp_path):
+    (tmp_path / ".lore" / "doctrines").mkdir(parents=True)
+    return tmp_path
+
+
+def _doctrines_dir(project: Path) -> Path:
+    return project / ".lore" / "doctrines"
+
+
+def _snapshot(directory: Path) -> dict[str, str]:
+    return {
+        str(p.relative_to(directory)): p.read_text()
+        for p in sorted(directory.rglob("*"))
+        if p.is_file()
+    }
+
 
 # ---------------------------------------------------------------------------
-# Fixtures — valid + invalid YAML content blocks
+# create_doctrine — the envelope and what lands on disk
 # ---------------------------------------------------------------------------
 
 
-VALID_DOCTRINE_YAML = (
-    "id: tdd\n"
-    "title: TDD\n"
-    "summary: Test-driven development workflow.\n"
-    "description: A doctrine for TDD.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
-)
+def test_create_returns_the_documented_envelope(project):
+    result = create_doctrine(
+        project,
+        "tdd-lite",
+        _design("tdd-lite"),
+        {"recon": _mission("recon"), "scribe": _mission("scribe")},
+        group="default",
+    )
 
-# New content omitting id/title/summary — to exercise field-preservation merge.
-PARTIAL_DOCTRINE_YAML = (
-    "description: Updated description for TDD.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
-    "  - id: refactor\n"
-    "    title: Refactor\n"
-)
+    assert result == {
+        "created": "tdd-lite",
+        "group": "default",
+        "missions": ["recon", "scribe"],
+        "path": ".lore/doctrines/default/tdd-lite/",
+    }
 
-# Updated YAML that also supplies its own id/title/summary explicitly.
-FULL_UPDATED_DOCTRINE_YAML = (
-    "id: tdd\n"
-    "title: TDD v2\n"
-    "summary: Updated TDD doctrine.\n"
-    "description: Updated description.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
-    "  - id: green\n"
-    "    title: Green\n"
-)
 
-# Schema-invalid: missing required `steps` field.
-SCHEMA_INVALID_YAML = (
-    "id: tdd\n"
-    "title: TDD\n"
-    "summary: Missing steps field.\n"
-    "description: A doctrine missing the steps field.\n"
-)
+def test_create_sorts_the_mission_list(project):
+    result = create_doctrine(
+        project,
+        "tdd-lite",
+        _design("tdd-lite"),
+        {"scribe": _mission("scribe"), "feature-spec": _mission("feature-spec")},
+    )
 
-# Name-mismatch: id field disagrees with the doctrine name passed to update.
-NAME_MISMATCH_YAML = (
-    "id: not-tdd\n"
-    "title: Wrong ID\n"
-    "summary: id mismatches caller arg.\n"
-    "description: Should be rejected.\n"
-    "steps:\n"
-    "  - id: red\n"
-    "    title: Red\n"
+    assert result["missions"] == ["feature-spec", "scribe"]
+
+
+def test_create_without_a_group_writes_at_the_doctrines_root(project):
+    result = create_doctrine(
+        project, "solo", _design("solo"), {"only": _mission("only")}
+    )
+
+    assert result["group"] is None
+    assert result["path"] == ".lore/doctrines/solo/"
+    assert (_doctrines_dir(project) / "solo" / "solo.design.md").exists()
+
+
+def test_create_writes_every_file_at_its_documented_path(project):
+    create_doctrine(
+        project,
+        "tdd-lite",
+        _design("tdd-lite"),
+        {"recon": _mission("recon"), "scribe": _mission("scribe")},
+        group="default",
+    )
+
+    directory = _doctrines_dir(project) / "default" / "tdd-lite"
+    assert (directory / "tdd-lite.design.md").read_text() == _design("tdd-lite")
+    assert (directory / "missions" / "recon.md").read_text() == _mission("recon")
+    assert (directory / "missions" / "scribe.md").read_text() == _mission("scribe")
+
+
+def test_create_leaves_no_staging_directory_behind(project):
+    create_doctrine(project, "solo", _design("solo"), {"only": _mission("only")})
+
+    assert [p.name for p in _doctrines_dir(project).iterdir()] == ["solo"]
+
+
+def test_a_created_doctrine_reads_back(project):
+    create_doctrine(
+        project, "tdd-lite", _design("tdd-lite"), {"recon": _mission("recon")}
+    )
+
+    record = read_doctrine(project, "tdd-lite")
+
+    assert record["title"] == "TDD Lite"
+    assert [m["id"] for m in record["missions"]] == ["recon"]
+
+
+def test_a_crashed_runs_staging_directory_is_replaced_not_merged(project):
+    stale = _doctrines_dir(project) / ".tdd-lite.lore-tmp"
+    (stale / "tdd-lite" / "missions").mkdir(parents=True)
+    (stale / "tdd-lite" / "missions" / "ghost.md").write_text("stale")
+
+    create_doctrine(
+        project, "tdd-lite", _design("tdd-lite"), {"recon": _mission("recon")}
+    )
+
+    directory = _doctrines_dir(project) / "tdd-lite"
+    assert not (directory / "missions" / "ghost.md").exists()
+    assert not stale.exists()
+
+
+# ---------------------------------------------------------------------------
+# create_doctrine — the validation table, in order
+# ---------------------------------------------------------------------------
+
+
+def test_a_qualified_name_is_refused_before_name_validation(project):
+    with pytest.raises(ForeignEntityError) as excinfo:
+        create_doctrine(project, "camelot:bad name", _design("x"), {})
+
+    assert str(excinfo.value) == (
+        'Cannot write "camelot:bad name": an entity from another project is read-only.'
+    )
+
+
+def test_an_invalid_name_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(project, "bad name", _design("bad name"), {})
+
+    assert str(excinfo.value) == (
+        "Invalid name: must start with alphanumeric and contain only "
+        "letters, digits, hyphens, underscores."
+    )
+
+
+def test_an_invalid_group_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project,
+            "tdd-lite",
+            _design("tdd-lite"),
+            {"recon": _mission("recon")},
+            group="/bad",
+        )
+
+    assert "group" in str(excinfo.value).lower()
+
+
+def test_a_duplicate_anywhere_in_the_subtree_raises(project):
+    create_doctrine(
+        project,
+        "tdd-lite",
+        _design("tdd-lite"),
+        {"recon": _mission("recon")},
+        group="default",
+    )
+    existing = _doctrines_dir(project) / "default" / "tdd-lite"
+
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project, "tdd-lite", _design("tdd-lite"), {"recon": _mission("recon")}
+        )
+
+    assert str(excinfo.value) == f"Error: doctrine 'tdd-lite' already exists at {existing}"
+
+
+def test_a_design_id_that_disagrees_with_the_argument_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project, "tdd-lite", _design("other"), {"recon": _mission("recon")}
+        )
+
+    assert str(excinfo.value) == (
+        'Design file id "other" does not match command argument "tdd-lite"'
+    )
+
+
+def test_a_design_failing_its_schema_raises_the_schema_messages(project):
+    design = "---\nid: tdd-lite\ntitle: TDD Lite\n---\n\nBody.\n"
+
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(project, "tdd-lite", design, {"recon": _mission("recon")})
+
+    assert str(excinfo.value) == "Missing required property 'summary'."
+
+
+def test_no_missions_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(project, "tdd-lite", _design("tdd-lite"), {})
+
+    assert str(excinfo.value) == "At least one mission file is required (-m)"
+
+
+def test_an_invalid_mission_id_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project, "tdd-lite", _design("tdd-lite"), {"bad id": _mission("bad id")}
+        )
+
+    assert str(excinfo.value) == (
+        'Invalid mission id "bad id": must start with alphanumeric and contain only '
+        "letters, digits, hyphens, underscores."
+    )
+
+
+def test_a_mission_id_that_disagrees_with_its_stem_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project, "tdd-lite", _design("tdd-lite"), {"recon": _mission("other")}
+        )
+
+    assert str(excinfo.value) == (
+        'Mission file id "other" does not match filename stem "recon"'
+    )
+
+
+def test_a_mission_failing_its_schema_raises_a_prefixed_message(project):
+    bad = "---\nid: bad\ntitle: Bad\n---\n\nBody.\n"
+
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project,
+            "tdd-lite",
+            _design("tdd-lite"),
+            {"good": _mission("good"), "bad": bad},
+        )
+
+    assert str(excinfo.value) == "Mission \"bad\": Missing required property 'summary'."
+
+
+def test_a_mission_with_no_frontmatter_at_all_raises_its_schema_messages(project):
+    with pytest.raises(ValueError) as excinfo:
+        create_doctrine(
+            project, "tdd-lite", _design("tdd-lite"), {"recon": "Just a body.\n"}
+        )
+
+    assert str(excinfo.value).startswith('Mission "recon": ')
+
+
+@pytest.mark.parametrize(
+    "design,missions",
+    [
+        ("---\nid: other\ntitle: T\nsummary: S\n---\n", {"recon": None}),
+        ("---\nid: tdd-lite\ntitle: T\nsummary: S\n---\n", {"bad id": None}),
+        ("---\nid: tdd-lite\ntitle: T\nsummary: S\n---\n", {}),
+    ],
 )
+def test_a_failed_create_leaves_nothing_on_disk(project, design, missions):
+    sources = {
+        mission_id: (content if content is not None else _mission(mission_id))
+        for mission_id, content in missions.items()
+    }
+
+    with pytest.raises(ValueError):
+        create_doctrine(project, "tdd-lite", design, sources)
+
+    assert list(_doctrines_dir(project).iterdir()) == []
 
 
 # ---------------------------------------------------------------------------
@@ -87,223 +290,222 @@ NAME_MISMATCH_YAML = (
 # ---------------------------------------------------------------------------
 
 
-class TestUpdateDoctrineEnvelope:
-    """update_doctrine(tmp_path, name, content) — return shape locked."""
-
-    def test_update_doctrine_returns_exact_name_filename_shape(self, tmp_path):
-        """update_doctrine returns {id, filename, updated_at: None} per field-edit parity."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        assert result == {"id": "tdd", "filename": "tdd.yaml", "updated_at": None}
-
-    def test_update_doctrine_return_keys_are_exactly_name_and_filename(self, tmp_path):
-        """update_doctrine return dict key set is {id, filename, updated_at}."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        assert set(result.keys()) == {"id", "filename", "updated_at"}
-
-    def test_update_doctrine_return_has_no_path_key(self, tmp_path):
-        """update_doctrine return dict MUST NOT contain a 'path' key (FLAG #3)."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        assert "path" not in result
-
-    def test_update_doctrine_return_has_no_ok_key(self, tmp_path):
-        """update_doctrine return dict MUST NOT contain an 'ok' key (CHANGED #5)."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        assert "ok" not in result
-
-    def test_update_doctrine_return_has_no_name_key(self, tmp_path):
-        """update_doctrine envelope uses 'id' post-G16 (was 'name')."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        # G16 standardization wave: rename of `name`→`id`.
-        assert "name" not in result
+@pytest.fixture()
+def seeded(project):
+    """A three-mission doctrine under ``default/`` — the shape every seed has."""
+    create_doctrine(
+        project,
+        "tdd-lite",
+        _design("tdd-lite"),
+        {
+            "recon": _mission("recon"),
+            "lint": _mission("lint"),
+            "refactor": _mission("refactor"),
+        },
+        group="default",
+    )
+    return _doctrines_dir(project) / "default" / "tdd-lite"
 
 
-class TestUpdateDoctrineDiskBehaviour:
-    """update_doctrine writes to disk + preserves filename + group location."""
+def test_update_resolves_a_doctrine_below_the_doctrines_root(project, seeded):
+    result = update_doctrine(project, "tdd-lite", missions={"recon": _mission("recon")})
 
-    def test_update_doctrine_overwrites_file_with_new_content(self, tmp_path):
-        """update_doctrine writes merged content to the existing .yaml file."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        new_text = path.read_text()
-        # New content present
-        assert "Updated description." in new_text
-        assert "TDD v2" in new_text
-
-    def test_update_doctrine_does_not_create_extra_files(self, tmp_path):
-        """update_doctrine leaves only the single existing .yaml — no copies."""
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        yaml_files = sorted(p.name for p in doctrines_dir.glob("*.yaml"))
-        assert yaml_files == ["tdd.yaml"]
+    assert result["updated"] == "tdd-lite"
 
 
-class TestUpdateDoctrineFieldPreservationMerge:
-    """update_doctrine preserves id/title/summary when caller omits them.
+def test_update_returns_the_documented_envelope(project, seeded):
+    result = update_doctrine(
+        project,
+        "tdd-lite",
+        design_content=_design("tdd-lite", title="V2"),
+        missions={"recon": _mission("recon")},
+        remove_missions=["lint"],
+    )
 
-    Mirrors the cli.py:1482-1494 merge that moves INTO the op fn per G8 plan.
-    """
-
-    def test_update_doctrine_preserves_existing_id_when_omitted(self, tmp_path):
-        """Omitted id in new content → existing id stays on disk."""
-        import yaml
-
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", PARTIAL_DOCTRINE_YAML)
-        merged = yaml.safe_load(path.read_text())
-        assert merged.get("id") == "tdd"
-
-    def test_update_doctrine_preserves_existing_title_when_omitted(self, tmp_path):
-        """Omitted title in new content → existing title stays on disk."""
-        import yaml
-
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", PARTIAL_DOCTRINE_YAML)
-        merged = yaml.safe_load(path.read_text())
-        assert merged.get("title") == "TDD"
-
-    def test_update_doctrine_preserves_existing_summary_when_omitted(self, tmp_path):
-        """Omitted summary in new content → existing summary stays on disk."""
-        import yaml
-
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", PARTIAL_DOCTRINE_YAML)
-        merged = yaml.safe_load(path.read_text())
-        assert merged.get("summary") == "Test-driven development workflow."
-
-    def test_update_doctrine_uses_new_value_when_field_provided(self, tmp_path):
-        """Provided title/summary in new content OVERRIDES existing values."""
-        import yaml
-
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
-        merged = yaml.safe_load(path.read_text())
-        assert merged.get("title") == "TDD v2"
-        assert merged.get("summary") == "Updated TDD doctrine."
-
-    def test_update_doctrine_applies_new_description_and_steps(self, tmp_path):
-        """New description + steps from caller content land on disk."""
-        import yaml
-
-        from lore.doctrine import update_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        update_doctrine(tmp_path, "tdd", PARTIAL_DOCTRINE_YAML)
-        merged = yaml.safe_load(path.read_text())
-        assert merged.get("description") == "Updated description for TDD."
-        step_ids = [s.get("id") for s in merged.get("steps", [])]
-        assert step_ids == ["red", "green", "refactor"]
+    assert result == {
+        "updated": "tdd-lite",
+        "design_replaced": True,
+        "missions_replaced": ["recon"],
+        "missions_removed": ["lint"],
+    }
 
 
-class TestUpdateDoctrineErrorPaths:
-    """update_doctrine raises DoctrineError on missing + schema failures."""
+def test_update_sorts_both_lists(project, seeded):
+    result = update_doctrine(
+        project,
+        "tdd-lite",
+        missions={"recon": _mission("recon"), "feature-spec": _mission("feature-spec")},
+        remove_missions=["refactor", "lint"],
+    )
 
-    def test_update_doctrine_missing_raises_doctrine_error(self, tmp_path):
-        """update_doctrine raises DoctrineError when target doctrine absent."""
-        from lore.doctrine import update_doctrine
+    assert result["missions_replaced"] == ["feature-spec", "recon"]
+    assert result["missions_removed"] == ["lint", "refactor"]
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "nonexistent", FULL_UPDATED_DOCTRINE_YAML)
 
-    def test_update_doctrine_missing_dir_raises_doctrine_error(self, tmp_path):
-        """update_doctrine raises DoctrineError when doctrines_dir absent."""
-        from lore.doctrine import update_doctrine
+def test_replacing_one_mission_leaves_every_other_file_byte_identical(project, seeded):
+    before = _snapshot(seeded)
 
-        _doctrines_dir = tmp_path / ".lore" / "doctrines"
-        # do NOT mkdir
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "tdd", FULL_UPDATED_DOCTRINE_YAML)
+    update_doctrine(
+        project, "tdd-lite", missions={"recon": _mission("recon", title="Rewritten")}
+    )
 
-    def test_update_doctrine_schema_failure_propagates_doctrine_error(self, tmp_path):
-        """Schema-invalid content propagates DoctrineError from validation."""
-        from lore.doctrine import update_doctrine
+    after = _snapshot(seeded)
+    assert after["tdd-lite.design.md"] == before["tdd-lite.design.md"]
+    assert after["missions/lint.md"] == before["missions/lint.md"]
+    assert after["missions/refactor.md"] == before["missions/refactor.md"]
+    assert after["missions/recon.md"] == _mission("recon", title="Rewritten")
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "tdd", SCHEMA_INVALID_YAML)
 
-    def test_update_doctrine_schema_failure_does_not_modify_file(self, tmp_path):
-        """Schema-invalid content leaves the existing file untouched."""
-        from lore.doctrine import update_doctrine
+def test_replacing_the_design_leaves_every_mission_byte_identical(project, seeded):
+    before = _snapshot(seeded)
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "tdd", SCHEMA_INVALID_YAML)
-        # original content untouched on disk
-        assert path.read_text() == VALID_DOCTRINE_YAML
+    update_doctrine(project, "tdd-lite", design_content=_design("tdd-lite", title="V2"))
 
-    def test_update_doctrine_name_mismatch_raises_doctrine_error(self, tmp_path):
-        """update_doctrine rejects content whose id disagrees with caller name."""
-        from lore.doctrine import update_doctrine
+    after = _snapshot(seeded)
+    assert after["missions/recon.md"] == before["missions/recon.md"]
+    assert after["tdd-lite.design.md"] == _design("tdd-lite", title="V2")
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        with pytest.raises(ValueError):
-            update_doctrine(tmp_path, "tdd", NAME_MISMATCH_YAML)
+
+def test_an_unknown_stem_adds_a_mission(project, seeded):
+    result = update_doctrine(
+        project, "tdd-lite", missions={"scribe": _mission("scribe")}
+    )
+
+    assert result["missions_replaced"] == ["scribe"]
+    assert (seeded / "missions" / "scribe.md").read_text() == _mission("scribe")
+    assert (seeded / "missions" / "recon.md").exists()
+
+
+def test_removing_a_mission_soft_deletes_it(project, seeded):
+    update_doctrine(project, "tdd-lite", remove_missions=["lint", "refactor"])
+
+    assert (seeded / "missions" / "lint.md.deleted").exists()
+    assert (seeded / "missions" / "refactor.md.deleted").exists()
+    assert not (seeded / "missions" / "lint.md").exists()
+    assert not (seeded / "missions" / "refactor.md").exists()
+
+
+def test_update_with_nothing_to_do_is_a_no_op(project, seeded):
+    before = _snapshot(seeded)
+
+    result = update_doctrine(project, "tdd-lite")
+
+    assert result == {
+        "updated": "tdd-lite",
+        "design_replaced": False,
+        "missions_replaced": [],
+        "missions_removed": [],
+    }
+    assert _snapshot(seeded) == before
+
+
+def test_update_refuses_a_qualified_name(project):
+    with pytest.raises(ForeignEntityError):
+        update_doctrine(project, "camelot:tdd-lite", design_content=_design("tdd-lite"))
+
+
+def test_update_on_a_missing_doctrine_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "nope", missions={"recon": _mission("recon")})
+
+    assert str(excinfo.value) == 'Doctrine "nope" not found.'
+
+
+def test_removing_a_mission_that_is_not_there_raises(project, seeded):
+    before = _snapshot(seeded)
+
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "tdd-lite", remove_missions=["nope"])
+
+    assert str(excinfo.value) == 'Mission "nope" not found in doctrine "tdd-lite"'
+    assert _snapshot(seeded) == before
+
+
+def test_removing_an_already_soft_deleted_mission_raises_the_not_found_message(
+    project, seeded
+):
+    update_doctrine(project, "tdd-lite", remove_missions=["lint"])
+
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "tdd-lite", remove_missions=["lint"])
+
+    assert str(excinfo.value) == 'Mission "lint" not found in doctrine "tdd-lite"'
+
+
+def test_removing_every_mission_raises(project):
+    create_doctrine(project, "solo", _design("solo"), {"only": _mission("only")})
+    directory = _doctrines_dir(project) / "solo"
+
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "solo", remove_missions=["only"])
+
+    assert str(excinfo.value) == (
+        "Cannot remove every mission: a doctrine keeps at least one mission."
+    )
+    assert (directory / "missions" / "only.md").exists()
+
+
+def test_removing_every_mission_is_allowed_when_one_is_added_back(project):
+    create_doctrine(project, "solo", _design("solo"), {"only": _mission("only")})
+
+    result = update_doctrine(
+        project,
+        "solo",
+        missions={"replacement": _mission("replacement")},
+        remove_missions=["only"],
+    )
+
+    assert result["missions_removed"] == ["only"]
+    assert result["missions_replaced"] == ["replacement"]
+
+
+def test_a_bad_design_leaves_the_tree_byte_identical(project, seeded):
+    before = _snapshot(seeded)
+
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "tdd-lite", design_content=_design("other"))
+
+    assert str(excinfo.value) == (
+        'Design file id "other" does not match command argument "tdd-lite"'
+    )
+    assert _snapshot(seeded) == before
+
+
+def test_a_bad_mission_leaves_the_tree_byte_identical(project, seeded):
+    before = _snapshot(seeded)
+
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "tdd-lite", missions={"recon": _mission("other")})
+
+    assert str(excinfo.value) == (
+        'Mission file id "other" does not match filename stem "recon"'
+    )
+    assert _snapshot(seeded) == before
+
+
+def test_an_invalid_mission_id_on_update_raises(project, seeded):
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(project, "tdd-lite", missions={"bad id": _mission("bad id")})
+
+    assert str(excinfo.value) == (
+        'Invalid mission id "bad id": must start with alphanumeric and contain only '
+        "letters, digits, hyphens, underscores."
+    )
+
+
+def test_a_mission_failing_its_schema_on_update_raises_a_prefixed_message(
+    project, seeded
+):
+    with pytest.raises(ValueError) as excinfo:
+        update_doctrine(
+            project,
+            "tdd-lite",
+            missions={"recon": "---\nid: recon\ntitle: T\n---\n\nBody.\n"},
+        )
+
+    assert str(excinfo.value) == (
+        "Mission \"recon\": Missing required property 'summary'."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -311,131 +513,31 @@ class TestUpdateDoctrineErrorPaths:
 # ---------------------------------------------------------------------------
 
 
-class TestDeleteDoctrineEnvelope:
-    """delete_doctrine(tmp_path, name) — return shape locked."""
+def test_delete_renames_the_directory(project, seeded):
+    result = delete_doctrine(project, "tdd-lite")
 
-    def test_delete_doctrine_returns_exact_name_deleted_shape(self, tmp_path):
-        """delete_doctrine returns EXACTLY {name, deleted: True} — no extras."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = delete_doctrine(tmp_path, "tdd")
-        assert result == {"id": "tdd", "deleted": True, "deleted_at": None}
-
-    def test_delete_doctrine_return_keys_are_exactly_name_and_deleted(self, tmp_path):
-        """delete_doctrine return dict key set is EXACTLY {'name', 'deleted'}."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = delete_doctrine(tmp_path, "tdd")
-        assert set(result.keys()) == {"id", "deleted", "deleted_at"}
-
-    def test_delete_doctrine_return_has_no_path_key(self, tmp_path):
-        """delete_doctrine return dict MUST NOT contain a 'path' key (FLAG #3)."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = delete_doctrine(tmp_path, "tdd")
-        assert "path" not in result
-
-    def test_delete_doctrine_return_has_no_ok_key(self, tmp_path):
-        """delete_doctrine return dict MUST NOT contain an 'ok' key (CHANGED #5)."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = delete_doctrine(tmp_path, "tdd")
-        assert "ok" not in result
-
-    def test_delete_doctrine_return_has_no_name_key(self, tmp_path):
-        """delete_doctrine uses 'id' post-G16 (was 'name')."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = delete_doctrine(tmp_path, "tdd")
-        # G16 standardization: name → id.
-        assert "name" not in result
-
-    def test_delete_doctrine_deleted_value_is_true_literal(self, tmp_path):
-        """delete_doctrine result['deleted'] is literally True, not truthy-equivalent."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        result = delete_doctrine(tmp_path, "tdd")
-        assert result["deleted"] is True
+    assert result == {"id": "tdd-lite", "deleted": True, "deleted_at": None}
+    assert not seeded.exists()
+    assert seeded.with_name("tdd-lite.deleted").is_dir()
+    assert (seeded.with_name("tdd-lite.deleted") / "missions" / "recon.md").exists()
 
 
-class TestDeleteDoctrineDiskBehaviour:
-    """delete_doctrine soft-deletes via .yaml → .yaml.deleted rename."""
+def test_a_deleted_doctrine_is_invisible_to_list_and_read(project, seeded):
+    delete_doctrine(project, "tdd-lite")
 
-    def test_delete_doctrine_renames_yaml_to_yaml_deleted(self, tmp_path):
-        """delete_doctrine renames .yaml -> .yaml.deleted on disk."""
-        from lore.doctrine import delete_doctrine
+    from lore.doctrine import list_doctrines
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        delete_doctrine(tmp_path, "tdd")
-        assert not path.exists()
-        assert (doctrines_dir / "tdd.yaml.deleted").exists()
-
-    def test_delete_doctrine_soft_delete_preserves_content(self, tmp_path):
-        """delete_doctrine .yaml.deleted file contains original YAML content."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        path = doctrines_dir / "tdd.yaml"
-        path.write_text(VALID_DOCTRINE_YAML)
-        delete_doctrine(tmp_path, "tdd")
-        assert (doctrines_dir / "tdd.yaml.deleted").read_text() == VALID_DOCTRINE_YAML
+    assert list_doctrines(project) == []
+    assert read_doctrine(project, "tdd-lite") is None
 
 
-class TestDeleteDoctrineErrorPaths:
-    """delete_doctrine raises DoctrineError on missing target."""
+def test_delete_on_a_missing_doctrine_raises(project):
+    with pytest.raises(ValueError) as excinfo:
+        delete_doctrine(project, "nope")
 
-    def test_delete_doctrine_missing_raises_doctrine_error(self, tmp_path):
-        """delete_doctrine on missing doctrine raises DoctrineError (not idempotent).
+    assert str(excinfo.value) == 'Doctrine "nope" not found'
 
-        Per G8 chunk spec line 166: 'Raises `DoctrineError` on miss.'
-        Mission note: 'per chunk spec delete missing raises'.
-        """
-        from lore.doctrine import delete_doctrine
 
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        with pytest.raises(ValueError):
-            delete_doctrine(tmp_path, "ghost")
-
-    def test_delete_doctrine_missing_dir_raises_doctrine_error(self, tmp_path):
-        """delete_doctrine raises DoctrineError when doctrines_dir absent."""
-        from lore.doctrine import delete_doctrine
-
-        _doctrines_dir = tmp_path / ".lore" / "doctrines"
-        # do NOT mkdir
-        with pytest.raises(ValueError):
-            delete_doctrine(tmp_path, "tdd")
-
-    def test_delete_doctrine_second_delete_raises_doctrine_error(self, tmp_path):
-        """delete_doctrine is NOT idempotent — second delete of already-deleted raises."""
-        from lore.doctrine import delete_doctrine
-
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "tdd.yaml").write_text(VALID_DOCTRINE_YAML)
-        first = delete_doctrine(tmp_path, "tdd")
-        assert first == {"id": "tdd", "deleted": True, "deleted_at": None}
-        with pytest.raises(ValueError):
-            delete_doctrine(tmp_path, "tdd")
+def test_delete_refuses_a_qualified_name(project):
+    with pytest.raises(ForeignEntityError):
+        delete_doctrine(project, "camelot:tdd-lite")

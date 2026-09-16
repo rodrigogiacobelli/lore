@@ -59,10 +59,10 @@ This means:
 For each mission in the result set:
 
 ```
-  <id>  P<priority>  [<status>]  [<mission_type>]  <title>  [<knight>]
+  <id>  P<priority>  [<status>]  [<mission_type>]  <title>  [<doctrine_mission>]
 ```
 
-`mission_type` and `knight` brackets are omitted when null.
+`mission_type` and `doctrine_mission` brackets are omitted when null.
 
 If the result set is empty, the output is `No missions are ready.`
 
@@ -78,7 +78,7 @@ If the result set is empty, the output is `No missions are ready.`
       "status": "open",
       "priority": 1,
       "mission_type": "coding",
-      "knight": "dev.md",
+      "doctrine_mission": "tdd-implementation/red",
       "created_at": "2026-03-24T12:00:00Z"
     }
   ]

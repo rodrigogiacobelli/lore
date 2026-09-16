@@ -48,14 +48,11 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    └───────────────────────────┘   (cli also imports validators for UX error translation)
    │
    ├──→  paths.py          (path helpers — centralises ".lore" string, derive_group)
-   ├──→  knight.py    ──→  frontmatter.py, projects.py, scoped.py
-   │        └───────────→  paths.py
    ├──→  watcher.py  ──→  paths.py, projects.py, scoped.py
    │        └───────────→  (no frontmatter.py — uses yaml.safe_load directly)
    ├──→  graph.py          (topological sort)
    ├──→  oracle.py
-   ├──→  doctrine.py  ──→  paths.py, schemas.py, projects.py, scoped.py
-   ├──→  knight.py    ──→  schemas.py
+   ├──→  doctrine.py  ──→  paths.py, schemas.py, projects.py, scoped.py, safewrite.py
    ├──→  watcher.py   ──→  schemas.py
    ├──→  artifact.py  ──→  frontmatter.py, schemas.py, projects.py, scoped.py
    ├──→  codex.py     ──→  frontmatter.py, projects.py, scoped.py
@@ -65,7 +62,7 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    ├──→  projects.py  ──→  paths.py, config.py, validators.py  (project topology, export resolution, id qualification — imports no entity module)
    ├──→  scoped.py    ──→  projects.py  (which row a scoped id addresses, and where it lives — shared by every entity module's scoped reads)
    ├──→  schemas.py   ──→  frontmatter.py   (loads packaged YAML schemas; no lore.* entity imports)
-   ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, knight.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py
+   ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py
    ├──→  prompts.py   ──→  initplan.py      (questionary imported lazily inside each function; no click, no other lore.*)
    ├──→  agents.py                          (packaged agent registry; yaml + stdlib only)
    └──→  init.py      ──→  db.py, paths.py, config.py, skills.py, reconcile.py, manifest.py, agents.py
@@ -83,11 +80,11 @@ Dependency rules:
 - `prompts.py` is CLI-layer code: it imports `questionary` lazily inside each function and no `lore.*` module except `initplan.py`. It imports no `click`, so it stays testable without a terminal.
 - `db.py` imports `validators` and `ids`; it does not import `cli.py` or `priority.py`
   (the `get_ready_missions` pass-through wrapper was removed in REFACTOR-9).
-- `cli.py` imports `db`, `validators`, `paths`, `knight`, `watcher`, `graph`, `oracle`, `doctrine`,
+- `cli.py` imports `db`, `validators`, `paths`, `watcher`, `graph`, `oracle`, `doctrine`,
   `codex`, `artifact`, and `root`. It does not contain business logic.
-- `frontmatter.py` is imported by `codex.py`, `artifact.py`, `knight.py`, and `schemas.py`; it has no `lore.*` dependencies.
-- `schemas.py` is the single authoritative home for entity JSON Schemas (shared by create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, `artifact.py` and the audit-time `lore health` schema check). It imports only `frontmatter.py` and has no other `lore.*` dependencies.
-- `paths.py` is imported by `cli.py`, `oracle.py`, `db.py`, `knight.py`, `doctrine.py`,
+- `frontmatter.py` is imported by `codex.py`, `artifact.py`, `doctrine.py`, and `schemas.py`; it has no `lore.*` dependencies.
+- `schemas.py` is the single authoritative home for entity JSON Schemas (shared by create-time validators in `doctrine.py`, `watcher.py`, `artifact.py` and the audit-time `lore health` schema check). It imports only `frontmatter.py` and has no other `lore.*` dependencies.
+- `paths.py` is imported by `cli.py`, `oracle.py`, `db.py`, `doctrine.py`,
   and `artifact.py`.
 - `projects.py` owns project topology, export resolution and origin-qualified addressing (nested projects); it imports `paths.py`, `config.py` and `validators.py` and no entity module, so every entity module imports `projects.py` and never the reverse. `scoped.py` sits between `projects.py` and the entity modules — the two questions a scoped `read_*` asks of a merged listing — and imports `projects.py` only. See `tech-arch-projects-module`.
 
@@ -123,10 +120,10 @@ The following are explicitly out of scope for Lore's current implementation:
 - **Agent spawning or orchestration** — The tool tracks work. Claude manages agents.
 - **Fanout gates or conditional dependencies** — Only `blocks` dependency type
 - **External integrations** — No sync with third-party tools
-- **Inline Knights** — Knights are always files, never inline text in Missions or Doctrines
+- **Inline reusable instructions** — A reusable instruction is always a doctrine mission file, never inline text in a Mission
 - **Undo/restore soft-deleted entities** — Soft-deleted entities are retained but restore commands are not provided. Manual SQL or file rename can recover them if needed.
 - **Bulk edit** — Entity editing is one entity at a time, consistent with creation.
 - **Interactive editing** — No `$EDITOR` support; content comes from flags, files, or stdin.
 - **Moving missions between quests** — Requires ID rewriting which breaks external references. Workaround: create a new mission in the target quest and soft-delete the old one.
-- **Renaming knight/doctrine files** — Use delete + create instead.
+- **Renaming a doctrine or a doctrine mission** — Use delete + create instead. A Mission's stored `doctrine_mission` reference does not follow a rename.
 - **Messaging** — Agent-to-agent communication is not supported in the current version.

@@ -26,13 +26,15 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _bad_knight(project_dir: Path) -> Path:
+def _bad_mission(project_dir: Path) -> Path:
     path = (
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "feature-implementation"
+        / "feature-implementation"
+        / "missions"
         / "pm.md"
     )
     _write(
@@ -55,6 +57,7 @@ def _design_without_summary(project_dir: Path) -> Path:
         / "doctrines"
         / "default"
         / "feature-implementation"
+        / "feature-implementation"
         / "feature-implementation.design.md"
     )
     text = path.read_text(encoding="utf-8")
@@ -74,15 +77,15 @@ def _design_without_summary(project_dir: Path) -> Path:
 
 
 def test_e2e_workflow_2_verbatim_text_block(runner, project_dir):
-    """conceptual-workflows-knight-list — PRD W2 full golden block contiguous."""
-    _bad_knight(project_dir)
+    """conceptual-workflows-doctrine-show — PRD W2 full golden block contiguous."""
+    _bad_mission(project_dir)
 
     result = runner.invoke(main, ["health"])
 
     expected = (
-        "ERROR .lore/knights/default/feature-implementation/pm.md\n"
-        "  kind: knight\n"
-        "  schema: lore://schemas/knight-frontmatter\n"
+        "ERROR .lore/doctrines/default/feature-implementation/feature-implementation/missions/pm.md\n"
+        "  kind: doctrine-mission-frontmatter\n"
+        "  schema: lore://schemas/doctrine-mission-frontmatter\n"
         "  rule: additionalProperties\n"
         "  path: /stability\n"
         "  message: Unknown property 'stability' — allowed keys are id, title, summary.\n"
@@ -106,7 +109,7 @@ def test_e2e_workflow_3_verbatim_text_block(runner, project_dir):
     result = runner.invoke(main, ["health"])
 
     expected = (
-        "ERROR .lore/doctrines/default/feature-implementation/feature-implementation.design.md\n"
+        "ERROR .lore/doctrines/default/feature-implementation/feature-implementation/feature-implementation.design.md\n"
         "  kind: doctrine-design-frontmatter\n"
         "  schema: lore://schemas/doctrine-design-frontmatter\n"
         "  rule: required\n"
@@ -126,7 +129,7 @@ def test_e2e_workflow_3_verbatim_text_block(runner, project_dir):
 
 def test_e2e_json_schema_issue_exact_shape(runner, project_dir):
     """conceptual-workflows-json-output — PRD W5 JSON issue is exactly the documented dict."""
-    _bad_knight(project_dir)
+    _bad_mission(project_dir)
 
     result = runner.invoke(main, ["health", "--json"])
     assert result.exit_code == 1, result.output
@@ -139,11 +142,11 @@ def test_e2e_json_schema_issue_exact_shape(runner, project_dir):
 
     assert schema_issues[0] == {
         "severity": "error",
-        "entity_type": "knight",
-        "id": ".lore/knights/default/feature-implementation/pm.md",
+        "entity_type": "doctrine-mission-frontmatter",
+        "id": ".lore/doctrines/default/feature-implementation/feature-implementation/missions/pm.md",
         "check": "schema",
         "detail": "Unknown property 'stability' — allowed keys are id, title, summary.",
-        "schema_id": "lore://schemas/knight-frontmatter",
+        "schema_id": "lore://schemas/doctrine-mission-frontmatter",
         "rule": "additionalProperties",
         "pointer": "/stability",
     }
@@ -162,7 +165,7 @@ def test_e2e_json_schema_issue_required_exact_shape(runner, project_dir):
     assert schema_issues[0] == {
         "severity": "error",
         "entity_type": "doctrine-design-frontmatter",
-        "id": ".lore/doctrines/default/feature-implementation/feature-implementation.design.md",
+        "id": ".lore/doctrines/default/feature-implementation/feature-implementation/feature-implementation.design.md",
         "check": "schema",
         "detail": "Missing required property 'summary'.",
         "schema_id": "lore://schemas/doctrine-design-frontmatter",
@@ -179,17 +182,15 @@ def test_e2e_json_schema_issue_required_exact_shape(runner, project_dir):
 def test_e2e_json_non_schema_issue_has_null_schema_fields(runner, project_dir):
     """conceptual-workflows-json-output — non-schema issues always carry
     schema_id/rule/pointer keys set to null (not absent)."""
-    # Create a doctrine whose step names a missing knight → broken_knight_ref
+    # A design document whose declared id is not its directory name → id_mismatch
     doctrines = project_dir / ".lore" / "doctrines" / "default" / "feat-auth"
     _write(
-        doctrines / "feat-auth.yaml",
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n    knight: ghost-knight\n",
+        doctrines / "feat-auth.design.md",
+        "---\nid: something-else\ntitle: Auth\nsummary: s\n---\nBody.\n",
     )
     _write(
-        doctrines / "feat-auth.design.md",
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+        doctrines / "missions" / "recon.md",
+        "---\nid: recon\ntitle: Recon\nsummary: s\n---\nBody.\n",
     )
 
     result = runner.invoke(
@@ -200,8 +201,8 @@ def test_e2e_json_non_schema_issue_has_null_schema_fields(runner, project_dir):
     data = json.loads(result.output)
     assert data["has_errors"] is True
     non_schema = [i for i in data["issues"] if i["check"] != "schema"]
-    assert non_schema, f"Expected a broken_knight_ref issue.\n{data}"
-    broken = next(i for i in non_schema if i["check"] == "broken_knight_ref")
+    assert non_schema, f"Expected an id_mismatch issue.\n{data}"
+    broken = next(i for i in non_schema if i["check"] == "id_mismatch")
 
     # Keys must be PRESENT, values must be None.
     assert "schema_id" in broken
@@ -225,7 +226,7 @@ def test_e2e_exit_code_zero_on_clean_project(runner, project_dir):
 
 def test_e2e_exit_code_nonzero_on_any_schema_error(runner, project_dir):
     """conceptual-workflows-health — FR-16 non-zero exit with ≥1 schema error."""
-    _bad_knight(project_dir)
+    _bad_mission(project_dir)
     result = runner.invoke(main, ["health"])
     assert result.exit_code != 0
 
@@ -238,18 +239,17 @@ def test_e2e_exit_code_nonzero_on_any_schema_error(runner, project_dir):
 def test_e2e_json_every_issue_carries_new_keys(runner, project_dir):
     """conceptual-workflows-json-output — every issue object has the three
     new keys regardless of check type (mixed-issue report)."""
-    _bad_knight(project_dir)
+    _bad_mission(project_dir)
 
     # Also inject a non-schema issue in the same run.
     doctrines = project_dir / ".lore" / "doctrines" / "default" / "feat-x"
     _write(
-        doctrines / "feat-x.yaml",
-        "id: feat-x\ntitle: X\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    knight: ghost\n",
+        doctrines / "feat-x.design.md",
+        "---\nid: something-else\ntitle: X\nsummary: s\n---\nBody.\n",
     )
     _write(
-        doctrines / "feat-x.design.md",
-        "---\nid: feat-x\ntitle: X\nsummary: s\n---\nBody.\n",
+        doctrines / "missions" / "recon.md",
+        "---\nid: recon\ntitle: Recon\nsummary: s\n---\nBody.\n",
     )
 
     result = runner.invoke(main, ["health", "--json"])
@@ -276,14 +276,15 @@ def test_e2e_json_every_issue_carries_new_keys(runner, project_dir):
 
 def test_e2e_summary_line_plural_wording(runner, project_dir):
     """conceptual-workflows-health — plural 'errors' with N != 1."""
-    _bad_knight(project_dir)
-    # Second bad knight in another dir to get 2 schema errors total.
+    _bad_mission(project_dir)
+    # A second bad mission file, so the count is 2.
     _write(
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "feature-implementation"
+        / "missions"
         / "eng.md",
         "---\nid: eng\ntitle: E\nsummary: s\nbogus: x\n---\n",
     )

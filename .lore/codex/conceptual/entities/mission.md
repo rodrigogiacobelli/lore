@@ -30,7 +30,7 @@ Missions can also exist standalone (not belonging to any Quest).
 from lore.models import Mission, MissionStatus
 ```
 
-All Mission fields are accessible by name: `id`, `quest_id`, `title`, `description`, `status`, `mission_type`, `priority`, `knight`, `block_reason`, `created_at`, `updated_at`, `closed_at`, `deleted_at`. The `status` field holds a `MissionStatus` value (`MissionStatus.OPEN`, `MissionStatus.IN_PROGRESS`, `MissionStatus.BLOCKED`, or `MissionStatus.CLOSED`), not a plain string. Optional fields (`quest_id`, `mission_type`, `knight`, `block_reason`, `closed_at`, `deleted_at`) hold `None` when unset.
+All Mission fields are accessible by name: `id`, `quest_id`, `title`, `description`, `status`, `mission_type`, `priority`, `doctrine_mission`, `block_reason`, `created_at`, `updated_at`, `closed_at`, `deleted_at`. The `status` field holds a `MissionStatus` value (`MissionStatus.OPEN`, `MissionStatus.IN_PROGRESS`, `MissionStatus.BLOCKED`, or `MissionStatus.CLOSED`), not a plain string. Optional fields (`quest_id`, `mission_type`, `doctrine_mission`, `block_reason`, `closed_at`, `deleted_at`) hold `None` when unset.
 
 Mission objects are immutable — attempting to assign to any field raises `FrozenInstanceError`.
 
@@ -38,7 +38,7 @@ Mission objects are immutable — attempting to assign to any field raises `Froz
 
 A Mission may carry a `mission_type` — a short label that classifies the work according to the team's own vocabulary. Lore stores and exposes this value but does not interpret it or change behaviour based on it. What the label means, and how an orchestrator or consuming tool should act on it, is entirely up to the team.
 
-There is no fixed set of permitted values. Teams use whatever labels fit their process: `knight`, `constable`, `human`, `review`, `approval`, `spike`, `qa`, or anything else. The field is optional — a Mission with no type set is equally valid, and is displayed without a type bracket.
+There is no fixed set of permitted values. Lore ships three tokens an orchestrator dispatches on — `agent`, `constable`, `human` — and teams use whatever other labels fit their process: `review`, `approval`, `spike`, `qa`, or anything else. The field is optional — a Mission with no type set is equally valid, and is displayed without a type bracket.
 
 When a type is set, it appears in brackets in listings and the ready queue (for example `[review]`), and as a `Type:` line in the mission detail view. When no type is set, these display elements are omitted entirely.
 
@@ -116,12 +116,12 @@ In `--json` output, the `"dependencies"` field is always present with `"needs"` 
 
 - **Orphaned Missions:** If a Mission's Quest has been soft-deleted (without cascade), the Mission remains active but its parent is no longer visible. It is shown with a "(quest deleted)" annotation.
 - **Mission soft-delete:** Soft-deleting a Mission marks it deleted, removes it from all listings, dashboards, ready queue, and stats, and re-derives the parent Quest's status. Dependency rows referencing the Mission are also marked deleted. Soft-deleted Missions cannot be restored via CLI.
-- **Knight file missing:** If a Mission references a Knight (lore codex show conceptual-entities-knight) that no longer exists on disk, `lore show` displays the Mission normally and appends a warning. The Mission remains fully functional.
+- **Doctrine mission missing:** If a Mission's `doctrine_mission` reference resolves to no file, `lore show` displays the Mission normally, prints the stored reference, omits the mission-instructions section and exits 0 with no warning. The Mission remains fully functional. `lore health --scope doctrines` reports the dangling reference as an error (lore codex show decisions-033-unresolvable-reference-is-silent-on-read).
 
 ## Related
 
 - Quest (lore codex show conceptual-entities-quest) — the grouping that Missions belong to
-- Knight (lore codex show conceptual-entities-knight) — the persona file that guides how a worker executes a Mission
+- Doctrine mission (lore codex show conceptual-relationships-doctrine--mission) — the reusable instructions a Mission points at by `<doctrine-id>/<mission-id>`
 - Doctrine (lore codex show conceptual-entities-doctrine) — templates that describe patterns of Missions
 - ref-lore_db-core (lore codex show ref-lore_db-core) — mission schema, cascade behaviour, dependency system
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore new mission` command reference

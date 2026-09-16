@@ -4,7 +4,6 @@ title: Watcher
 summary: What a Watcher is — a YAML-configured trigger definition stored in .lore/watchers/ that declares a condition and maps it to an action. Watchers are passive declarations; Lore stores and surfaces them but does not execute them.
 related:
   - conceptual-entities-doctrine
-  - conceptual-entities-knight
   - conceptual-entities-glossary
   - conceptual-workflows-watcher-list
   - conceptual-workflows-watcher-crud
@@ -91,7 +90,7 @@ Watchers are soft-deleted by renaming the YAML file with a `.deleted` suffix. Th
 ## Related
 
 - Doctrine (lore codex show conceptual-entities-doctrine) — the `action` field in a watcher typically names a doctrine to run
-- Knight (lore codex show conceptual-entities-knight) — doctrines triggered by watchers reference knight files
+- Doctrine (lore codex show conceptual-entities-doctrine) — a watcher's `action:` names the doctrine that runs when the condition fires
 - conceptual-workflows-watcher-list (lore codex show conceptual-workflows-watcher-list) — `lore watcher list` and `lore watcher show` behaviour
 - conceptual-workflows-watcher-crud (lore codex show conceptual-workflows-watcher-crud) — `lore watcher new/edit/delete` behaviour
 - conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) — how the default watcher is seeded

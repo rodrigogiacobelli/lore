@@ -1,18 +1,22 @@
 ---
 id: conceptual-workflows-doctrine-new
 title: lore doctrine new Behaviour
-summary: What the system does internally when `lore doctrine new <name> -f <yaml> -d <design>` runs — name validation, duplicate detection, validation of both source files, and atomic write of both files to disk. Both -f and -d flags are required; no scaffold path exists.
+summary: What the system does internally when `lore doctrine new <name> -d <design> -m <mission>...` runs — the ten-rule validation order, then a staged directory build moved into place with one os.replace so no partial doctrine is ever left on disk. `-d` is required and at least one `-m` is required.
 binds:
 - src/lore/doctrine.py
 - src/lore/cli.py
 - tests/e2e/test_doctrine_new.py
 - tests/unit/test_doctrine.py
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "conceptual-workflows-doctrine-show", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "conceptual-workflows-doctrine-show", "conceptual-workflows-doctrine-edit", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health", "decisions-031-staged-multi-file-entity-write"]
 ---
 
 # `lore doctrine new` Behaviour
 
-`lore doctrine new <name> -f <yaml-file> -d <design-file> [--group <path>]` creates a new doctrine by writing both a `.yaml` steps file and a `.design.md` documentation file under `.lore/doctrines/`. The optional `--group <path>` places the pair in a nested subdirectory (auto-created); without it the pair lands at the doctrines root. The command is **not idempotent** — if a doctrine with the same name already exists anywhere in the subtree, it aborts with an error. Both `-f` and `-d` flags are required. There is no scaffold path.
+`lore doctrine new <name> -d <design-file> -m <mission-file>... [--group <path>]` creates a complete doctrine directory in one call: `<name>/<name>.design.md` plus one `<name>/missions/<stem>.md` per `-m` file. The optional `--group <path>` places the directory in a nested subdirectory (auto-created); without it the directory lands at the doctrines root.
+
+The command is **not idempotent** — a doctrine of the same name anywhere in the subtree aborts it. `-d` is required and at least one `-m` is required. There is no scaffold path.
+
+The whole directory is created or nothing is.
 
 ## Preconditions
 
@@ -20,182 +24,90 @@ related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", 
 - The name argument is a valid identifier: starts with an alphanumeric character and contains only letters, digits, hyphens, and underscores.
 - The `--group <path>` value (when provided) is a slash-delimited relative path where each segment independently satisfies the same character rule as a name. It must not contain `..`, backslashes, an absolute path prefix, a leading or trailing `/`, or any empty segment.
 - No existing doctrine with the given name exists anywhere under `.lore/doctrines/` — duplicate detection is subtree-wide regardless of `--group`.
-- Both source files (`-f` and `-d`) exist on disk.
-- The YAML source file has `id` and `steps` fields; `id` must match `<name>`. It must not contain `name` or `description` fields.
-- The design file has YAML frontmatter with an `id` field that matches `<name>`.
+- Every source file exists on disk.
+- The design file has YAML frontmatter carrying exactly `id`, `title` and `summary`, and its `id` matches `<name>`.
+- Each mission file has YAML frontmatter carrying exactly `id`, `title` and `summary`, and its `id` matches its filename stem.
 
-## Steps
+## Validation Order
 
-### 1. Validate the name
+Every rule below runs before anything reaches disk, in this order. The first failure aborts with its message on stderr and exit code 1, and nothing is written.
 
-The name is checked against the pattern `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. If the name is empty or contains invalid characters, the command aborts with:
+| # | Rule | Message |
+|---|------|---------|
+| 0 | The name is not origin-qualified | `ForeignEntityError` — a foreign doctrine is never writable |
+| 1 | Name format | `Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.` |
+| 2 | Group format | `Error: invalid group '<value>': <reason>` |
+| 3 | No duplicate anywhere in the subtree | `Error: doctrine '<name>' already exists at <path>` |
+| 4 | Design frontmatter present, and its `id` matches the command argument | `Design file id "<id>" does not match command argument "<name>"` |
+| 5 | Design frontmatter validates against its schema | the schema's own message |
+| 6 | At least one mission file supplied | `At least one mission file is required (-m)` |
+| 7 | Each mission id is a valid name | `Invalid mission id "<id>": <reason>` |
+| 8 | Each mission's frontmatter `id` equals its filename stem | `Mission file id "<declared>" does not match filename stem "<stem>"` |
+| 9 | Each mission's frontmatter validates against its schema | `Mission "<id>": <message>` |
 
-```
-Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.
-```
+Rules 7, 8 and 9 each run across every mission before the next one starts, so the first failure a caller sees is the earliest *rule* rather than the earliest file.
 
-No file is written. Exit code 1.
+Two `-m` files sharing a filename stem are rejected before any of this, when the path list is turned into the `{id: content}` mapping: `Duplicate mission id "<stem>": two -m files share a filename stem`.
 
-### 2. Validate the group (when `--group` is provided)
+A missing `-d` fails with `Error: -d/--design is required`. A missing source file fails with `File not found: <path>`.
 
-`validate_group` in `lore.validators` checks `--group`:
+## The Staged Write
 
-- `None` (flag omitted) → accepted; the doctrine lands at the doctrines root.
-- Empty string, `..`, backslash, absolute path (`/x`), leading/trailing `/`, empty segment (`a//b`), or any segment failing `validate_name` → aborts with `Error: invalid group '<value>': <reason>` on stderr, exit code 1.
+Once every rule passes, `create_doctrine`:
 
-Validation runs before any filesystem access. No file is written.
+1. Builds the complete tree inside `.lore/doctrines/.<name>.lore-tmp/<name>/`, writing each file through `safewrite.atomic_write_text`.
+2. Creates the target's parent directory.
+3. Moves the whole tree into place with one `os.replace`.
+4. Removes the staging root, whether or not the move succeeded.
 
-### 3. Check for duplicates
+The staging directory's name begins with `.`, and discovery skips any path segment beginning with `.` or ending `.deleted`, so it is invisible to every listing, every read and `lore health` while it exists. No partial doctrine is ever left on disk, a crash mid-write included (lore codex show decisions-031-staged-multi-file-entity-write).
 
-A recursive search (`rglob`) checks for `<name>.yaml` or `<name>.design.md` anywhere under `.lore/doctrines/`. If either is found, the command aborts with:
-
-```
-Error: doctrine '<name>' already exists.
-```
-
-Exit code 1. Duplicate detection is subtree-wide — a doctrine named `ranker` under any group will block a new `ranker` in a different group.
-
-### 4. Read both source files
-
-- `-f <yaml-file>`: the YAML source file is read from disk. If the file does not exist, the command aborts with `File not found: <path>`. Exit code 1.
-- `-d <design-file>`: the design source file is read from disk. If the file does not exist, the command aborts with `File not found: <path>`. Exit code 1.
-
-If either flag is omitted entirely:
-- Missing `-f`: `Error: -f/--from is required`. Exit code 1.
-- Missing `-d`: `Error: -d/--design is required`. Exit code 1.
-
-### 5. Validate both files
-
-All validation happens before any write. If either file fails validation, no files are written.
-
-**YAML validation (`_validate_yaml_schema`):**
-1. Must be valid YAML and a mapping.
-2. `id` must be present.
-3. `steps` must be present and a non-empty list.
-4. `id` must match the `<name>` argument.
-5. `name` must NOT be present (`Unexpected field in YAML: name`).
-6. `description` must NOT be present (`Unexpected field in YAML: description`).
-7. Each step must have `id` and `title`; step IDs must be unique; dependency references valid; no cycles.
-
-**Design file validation (`_validate_design_frontmatter`):**
-1. Must have YAML frontmatter.
-2. `id` must be present in frontmatter.
-3. `id` must match the `<name>` argument.
-
-### 6. Create the target directory and write both files atomically
-
-Target directory is `.lore/doctrines/` when `--group` is omitted, or `.lore/doctrines/<group>` (using `Path(group)` for filesystem joins) when supplied. The directory is created with `mkdir(parents=True, exist_ok=True)` — idempotent; re-using an existing group never fails on the directory itself.
-
-Both files are then written to that directory:
-- `<name>.yaml` — copy of the YAML source content
-- `<name>.design.md` — copy of the design source content
-
-Both files are written before the command considers itself done. Either both files are written, or neither is.
-
-### 7. Print confirmation
-
-On success:
+## Output
 
 ```
-Created doctrine <name>
+$ lore doctrine new tdd-feature-lite --group default -d design.md -m recon.md feature-spec.md scribe.md
+Created doctrine tdd-feature-lite with 3 missions in group default
 ```
 
-Or, when `--group` was supplied:
+Without `--group` the `in group <name>` suffix is absent. With one mission the noun is singular:
 
 ```
-Created doctrine <name> (group: <group>)
+$ lore doctrine new tdd-feature-lite -d design.md -m recon.md
+Created doctrine tdd-feature-lite with 1 mission
 ```
 
-Exit code 0.
-
-## Failure Modes
-
-| Failure point | Message | Exit code |
-|---|---|---|
-| Invalid name | `Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores.` | 1 |
-| Invalid group | `Error: invalid group '<value>': <reason>` | 1 |
-| Duplicate doctrine (anywhere in subtree) | `Error: doctrine '<name>' already exists at <existing path>` | 1 |
-| Missing `-f` flag | `Error: -f/--from is required` | 1 |
-| Missing `-d` flag | `Error: -d/--design is required` | 1 |
-| `-f` file not found | `File not found: <path>` | 1 |
-| `-d` file not found | `File not found: <path>` | 1 |
-| YAML parse error | `YAML parsing error: <details>` | 1 |
-| YAML is not a mapping | `Doctrine must be a YAML mapping` | 1 |
-| Missing `id` in YAML | `Missing required field: id` | 1 |
-| Missing `steps` in YAML | `Missing required field: steps` | 1 |
-| YAML `id` mismatch | `Doctrine id "<value>" does not match command argument "<name>"` | 1 |
-| `name` in YAML | `Unexpected field in YAML: name` | 1 |
-| `description` in YAML | `Unexpected field in YAML: description` | 1 |
-| Design frontmatter `id` mismatch | `Design file id "<value>" does not match command argument "<name>"` | 1 |
-| Missing `id` in design frontmatter | `Design file missing required frontmatter field: id` | 1 |
-| Invalid step structure | Step-specific error message | 1 |
-| Dependency cycle | `Dependency cycle detected involving step "<step_id>"` | 1 |
-
-## JSON Mode
-
-When the global `--json` flag is set, success output is:
+**JSON mode (`--json`):**
 
 ```json
-{"name": "<name>", "group": "<group>|null", "yaml_filename": "<name>.yaml", "design_filename": "<name>.design.md", "path": ".lore/doctrines/[<group>/]<name>.yaml"}
+{"created": "tdd-feature-lite", "group": "default", "missions": ["feature-spec", "recon", "scribe"], "path": ".lore/doctrines/default/tdd-feature-lite/"}
 ```
 
-The `group` key is a slash-joined string (e.g. `"seo-analysis/keyword-analysers"`) when `--group` was supplied, and `null` when the doctrine lands at the doctrines root.
+`group` is `null` and `path` is `.lore/doctrines/tdd-feature-lite/` when `--group` is absent. `missions` is sorted by id. Exit code 0.
 
-Errors are returned as `{"error": "<message>"}` to stderr with exit code 1.
+## Python API
 
-## Orchestrator Guidance
+```python
+from pathlib import Path
+from lore.api import create_doctrine
 
-### Edit vs Create?
-
-Before creating a new doctrine, check whether an existing one covers the same workflow:
-
-```
-$ lore doctrine list
-```
-
-If an existing doctrine covers 80% of the workflow you need, use `lore doctrine edit` rather than creating a parallel doctrine. Only create a new doctrine when no existing one covers the workflow you are documenting.
-
-### Authoring a New Doctrine
-
-Both files must be prepared before running `lore doctrine new`. Write them to a temporary location, then register them:
-
-```
-$ lore doctrine new my-workflow -f /tmp/my-workflow.yaml -d /tmp/my-workflow.design.md
+create_doctrine(
+    Path("."),
+    "tdd-feature-lite",
+    design_content,                       # str
+    {"recon": recon_body, "scribe": scribe_body},   # {mission id: content}
+    group="default",
+)
 ```
 
-To create a nested doctrine (for example grouping all SEO analysers together):
+The Python caller passes a mapping, which physically cannot express two files sharing a stem — the duplicate-stem rule exists only on the path-list side, and `load_mission_sources` is where it lives.
 
-```
-$ lore doctrine new keyword-ranker \
-    --group seo-analysis/keyword-analysers \
-    -f /tmp/ranker.yaml \
-    -d /tmp/ranker.design.md
-```
+## Schema Validation
 
-The target directory `.lore/doctrines/seo-analysis/keyword-analysers/` is auto-created. The resulting doctrine is listed with `group: seo-analysis/keyword-analysers` and filters with `--filter seo-analysis/keyword-analysers`.
+The design frontmatter is validated against `lore://schemas/doctrine-design-frontmatter` and each mission's against `lore://schemas/doctrine-mission-frontmatter`, both through `lore.schemas.validate_entity`. These are the same authoritative schemas `lore health --scope schemas` enforces at audit time, so drift between create-time and audit-time is impossible by construction. Cross-field rules — id against the command argument, id against the filename stem — remain inline; everything else lives in the schema.
 
-The YAML must have `id` and `steps` only at the top level. The design file must have YAML frontmatter with at least `id`. Both `id` values must match the `<name>` argument and the target filename stem.
+## Minimal Example
 
-### Minimal YAML example
-
-```yaml
-id: my-workflow
-steps:
-  - id: step-one
-    title: Do the first thing
-    priority: 2
-    type: knight
-    knight: default/developer.md
-  - id: step-two
-    title: Do the second thing
-    priority: 2
-    type: knight
-    needs: [step-one]
-    knight: default/qa.md
-```
-
-### Minimal design file example
-
+**`design.md`:**
 ```markdown
 ---
 id: my-workflow
@@ -205,36 +117,51 @@ summary: One-line description for lore doctrine list.
 
 # My Workflow
 
-Brief description of this workflow and when to use it.
+## Doctrine
+
+| Phase | Mission | Type | Depends On | Input | Output |
+|-------|---------|------|------------|-------|--------|
+| 0 | step-one | agent | — | Feature request | First output |
+| 0 | step-two | agent | step-one | First output | Second output |
+
+## Missions
+
+- **step-one** — does the first thing.
+- **step-two** — does the second thing.
 ```
+
+**`step-one.md`:**
+```markdown
+---
+id: step-one
+title: Do the first thing
+summary: What this mission produces.
+---
+
+# Developer
+
+You are the Developer. …
+```
+
+Retrieve the two templates before authoring: `lore artifact show doctrine-design` and `lore artifact show mission-design`.
 
 ### Post-Creation Verification
 
-After creating a doctrine, verify it with:
-
 ```
 $ lore doctrine show my-workflow
-```
-
-Then confirm it appears in the list:
-
-```
 $ lore doctrine list
 ```
 
-## Schema Validation
-
-Both `_validate_yaml_schema` and `_validate_design_frontmatter` delegate to `lore.schemas.validate_entity` — the YAML file is validated against `lore://schemas/doctrine-yaml` and the design frontmatter against `lore://schemas/doctrine-design-frontmatter`. These are the same authoritative schemas enforced by `lore health --scope schemas` at audit time, so drift between create-time and audit-time is impossible by construction. Cross-field rules (doctrine id must equal the command argument) remain inline; everything else lives in the schema.
-
 ## Out of Scope
 
-- Scaffold generation — the scaffold path has been removed. Both `-f` and `-d` are required.
+- Scaffold generation — `-d` and at least one `-m` are required.
 - Interactive editing — there is no `$EDITOR` invocation.
-- Overwriting an existing doctrine — use `lore doctrine edit` for that.
-- Creating a doctrine from existing YAML only — a `.design.md` file must be authored first.
+- Overwriting an existing doctrine — use `lore doctrine edit`.
+- Creating a doctrine with no missions — a doctrine always has at least one.
 
 ## Related
 
+- conceptual-workflows-doctrine-edit (lore codex show conceptual-workflows-doctrine-edit) — how doctrine editing works
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — how doctrine listing works
 - conceptual-workflows-doctrine-show (lore codex show conceptual-workflows-doctrine-show) — how doctrine show works
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

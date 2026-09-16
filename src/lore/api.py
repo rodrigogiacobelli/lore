@@ -12,7 +12,7 @@ See ADR-010 (public-api-stability) and ADR-011 (api-parity-with-cli).
 from lore.models import (
     QuestStatus, MissionStatus, DependencyType,
     Quest, Mission, Dependency, BoardMessage,
-    Artifact, CodexDocument, DoctrineStep, Doctrine, Knight,
+    Artifact, CodexDocument,
     DoctrineListEntry, GlossaryItem, Watcher,
     Rite, RiteNode, RiteBranch, RiteConclusion, SharedStep, RiteError,
 )
@@ -82,12 +82,6 @@ from lore.db import (
 
 # --- Priority ---
 from lore.priority import get_ready_missions
-
-# --- Knight ---
-from lore.knight import (
-    list_knights, read_knight,
-    create_knight, update_knight, delete_knight,
-)
 
 # --- Doctrine ---
 from lore.doctrine import (
@@ -163,7 +157,7 @@ from lore.config import load_config, Config, SharedExports, DescendantExport
 # "no public name outside __all__" rule, while still letting the CLI (a
 # facade consumer like Realm or Citadel would be) avoid direct
 # ``from lore.<module>`` imports. Internal submodules are re-exported as
-# namespace aliases so the CLI keeps the ``paths.knights_dir(...)`` style
+# namespace aliases so the CLI keeps the ``paths.doctrines_dir(...)`` style
 # without leaking the bare submodule name publicly.
 #
 # The aliases also serve as monkeypatch anchors: unit tests patch
@@ -179,7 +173,6 @@ from lore import paths as _paths  # noqa: F401
 from lore import projects as _projects  # noqa: F401
 from lore import frontmatter_edit as _frontmatter_edit  # noqa: F401
 from lore import graph as _graph  # noqa: F401
-from lore import knight as _knight  # noqa: F401
 from lore import validators as _validators  # noqa: F401
 from lore import watcher as _watcher  # noqa: F401
 from lore import glossary as _glossary  # noqa: F401
@@ -187,7 +180,6 @@ from lore import impacts as _impacts  # noqa: F401
 from lore import doctrine as _doctrine  # noqa: F401
 from lore import health as _health  # noqa: F401
 from lore import rite as _rite  # noqa: F401
-from lore.knight import _validate_frontmatter as _validate_frontmatter  # noqa: F401
 from lore import init as _init  # noqa: F401
 from lore import reconcile as _reconcile  # noqa: F401
 from lore import agents as _agents  # noqa: F401
@@ -206,9 +198,6 @@ __all__ = [
     "BoardMessage",
     "Artifact",
     "CodexDocument",
-    "DoctrineStep",
-    "Doctrine",
-    "Knight",
     "DoctrineListEntry",
     "GlossaryItem",
     "Watcher",
@@ -307,13 +296,7 @@ __all__ = [
     "init_database",
     # priority
     "get_ready_missions",
-    # knight
-    "list_knights",
-    "read_knight",
-    "create_knight",
-    "update_knight",
-    "delete_knight",
-    # doctrine
+    # doctrine — a doctrine is a directory: a design document plus mission files
     "list_doctrines",
     "read_doctrine",
     "create_doctrine",

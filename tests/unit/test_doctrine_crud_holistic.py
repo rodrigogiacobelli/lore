@@ -1,357 +1,226 @@
-"""Holistic CRUD sweep for ``lore.doctrine`` — G16 Red.
+"""Holistic sweep for ``lore.doctrine`` — signatures, envelopes and shapes.
 
-Plan: ``transient-public-api-facade-plan`` §G16.
-Amendment: ``transient-public-api-facade-create-stdz`` Sections A1, A2,
-A5, A6 + Section B (Doctrine row) + Section F G16 step-list.
+Workflow: conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new)
 
-Pins the BREAKING contracts:
+Pins the contract ``lore.api`` re-exports:
 
-* First-arg flip on every callable: ``create_doctrine`` /
-  ``read_doctrine`` / ``update_doctrine`` / ``delete_doctrine`` /
-  ``list_doctrines`` take ``project_root: Path`` first.
-* ``create_doctrine`` positional reorder:
-  ``(project_root, name, yaml_source_path, design_source_path, *, group=None)``.
-* ``create_doctrine`` envelope ``{id, filename, group, design_filename}``
-  — renames ``name``→``id``; drops ``path`` and ``yaml_filename``
-  (``filename`` covers the primary slot).
-* ``show_doctrine`` renamed to ``read_doctrine`` — returns
-  ``dict | None`` (``None`` on miss, was raising ``DoctrineError`` per
-  amendment Review Ledger CHANGED row + F-READ-DOCTRINE-RAISE-TO-NONE).
-* ``delete_doctrine`` atomically renames BOTH ``.yaml`` and
-  ``.design.md`` partners to ``.deleted`` (amendment Review Ledger
-  CHANGED row "B Doctrine row — both-file behaviour"). Envelope gains
-  ``deleted_at: None`` per A2.
-* ``DoctrineError`` removed per G15.5 — module raises ``ValueError``.
-* ``show_doctrine`` no longer in ``lore.api.__all__``.
-
-Red phase — every test below MUST fail until G16 Green lands.
+* every callable takes ``project_root: Path`` first;
+* ``create_doctrine(project_root, name, design_content, missions, *, group=None)``;
+* ``update_doctrine(project_root, name, design_content=None, missions=None,
+  remove_missions=None)``;
+* ``read_doctrine(project_root, doctrine_id, *, scope=None, mission=None)``;
+* the four envelopes are exact key sets;
+* ``read_doctrine`` returns ``None`` on a miss rather than raising.
 """
 
 from __future__ import annotations
 
 import inspect
-import textwrap
+from pathlib import Path
 
 import pytest
 
-import lore.doctrine as _d_mod
-from lore import api
+from lore import doctrine as doctrine_module
+from lore.doctrine import (
+    create_doctrine,
+    delete_doctrine,
+    list_doctrines,
+    read_doctrine,
+    update_doctrine,
+)
 
 
-# ---------------------------------------------------------------------------
-# Fixtures.
-# ---------------------------------------------------------------------------
+DESIGN = "---\nid: tdd-lite\ntitle: TDD Lite\nsummary: A doctrine.\n---\n\n# TDD Lite\n"
+RECON = "---\nid: recon\ntitle: Recon\nsummary: A mission.\n---\n\nBody.\n"
 
 
 @pytest.fixture()
-def project_root(tmp_path):
+def project(tmp_path):
     (tmp_path / ".lore" / "doctrines").mkdir(parents=True)
     return tmp_path
 
 
 @pytest.fixture()
-def doctrine_sources(tmp_path):
-    """Return (yaml_path, design_path) for a valid doctrine named ``feat``."""
-    yaml_path = tmp_path / "src.yaml"
-    yaml_path.write_text(
-        textwrap.dedent(
-            """\
-            id: feat
-            title: Feat
-            summary: A feature doctrine.
-            steps:
-              - id: red
-                title: Red
-                type: human
-              - id: green
-                title: Green
-                type: human
-            """
-        )
-    )
-    design_path = tmp_path / "src.design.md"
-    design_path.write_text(
-        textwrap.dedent(
-            """\
-            ---
-            id: feat
-            title: Feat
-            summary: A feature doctrine.
-            ---
-            # body
-            """
-        )
-    )
-    return yaml_path, design_path
+def created(project):
+    create_doctrine(project, "tdd-lite", DESIGN, {"recon": RECON})
+    return project
 
 
 # ---------------------------------------------------------------------------
-# Facade — show_doctrine dropped; read_doctrine present.
+# Signatures
 # ---------------------------------------------------------------------------
 
 
-class TestFacadeAllShape:
-    def test_show_doctrine_not_in_api_all(self):
-        assert "show_doctrine" not in api.__all__, (
-            "G16: show_doctrine renamed to read_doctrine; drop from facade."
-        )
-
-    def test_show_doctrine_import_raises(self):
-        with pytest.raises(ImportError):
-            from lore.api import show_doctrine  # noqa: F401
-
-    def test_read_doctrine_in_api_all(self):
-        assert "read_doctrine" in api.__all__
-
-    def test_read_doctrine_identity_reexport(self):
-        assert api.read_doctrine is _d_mod.read_doctrine
+@pytest.mark.parametrize(
+    "fn",
+    [create_doctrine, read_doctrine, update_doctrine, delete_doctrine, list_doctrines],
+)
+def test_the_first_positional_parameter_is_project_root(fn):
+    assert list(inspect.signature(fn).parameters)[0] == "project_root"
 
 
-# ---------------------------------------------------------------------------
-# Signatures — project_root first; create_doctrine positional reorder.
-# ---------------------------------------------------------------------------
+def test_create_doctrines_positional_order(project):
+    parameters = inspect.signature(create_doctrine).parameters
+    positional = [
+        name
+        for name, p in parameters.items()
+        if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ]
+
+    assert positional == ["project_root", "name", "design_content", "missions"]
+    assert parameters["group"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
-class TestDoctrineSignaturesUseProjectRoot:
-    @pytest.mark.parametrize(
-        "fn_name",
-        (
-            "create_doctrine",
-            "read_doctrine",
-            "update_doctrine",
-            "delete_doctrine",
-            "list_doctrines",
-        ),
-    )
-    def test_first_positional_named_project_root(self, fn_name):
-        fn = getattr(_d_mod, fn_name)
-        sig = inspect.signature(fn)
-        params = list(sig.parameters.values())
-        assert params and params[0].name == "project_root", (
-            f"{fn_name} first positional must be 'project_root' "
-            f"(got {params[0].name if params else 'none'!r})."
-        )
+def test_update_doctrines_positional_order():
+    parameters = inspect.signature(update_doctrine).parameters
+    positional = [
+        name
+        for name, p in parameters.items()
+        if p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD
+    ]
 
-    @pytest.mark.parametrize(
-        "fn_name",
-        (
-            "create_doctrine",
-            "read_doctrine",
-            "update_doctrine",
-            "delete_doctrine",
-            "list_doctrines",
-        ),
-    )
-    def test_no_doctrines_dir_parameter(self, fn_name):
-        fn = getattr(_d_mod, fn_name)
+    assert positional == [
+        "project_root",
+        "name",
+        "design_content",
+        "missions",
+        "remove_missions",
+    ]
+    assert all(parameters[name].default is None for name in positional[2:])
+
+
+def test_read_doctrine_takes_scope_and_mission_as_keywords():
+    parameters = inspect.signature(read_doctrine).parameters
+
+    assert parameters["scope"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["mission"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["mission"].default is None
+
+
+def test_no_callable_takes_a_doctrines_dir_parameter():
+    for fn in (create_doctrine, read_doctrine, update_doctrine, delete_doctrine):
         assert "doctrines_dir" not in inspect.signature(fn).parameters
 
-    def test_create_doctrine_positional_order(self):
-        """``create_doctrine(project_root, name, yaml_source_path, design_source_path, *, group=None)``."""
-        sig = inspect.signature(_d_mod.create_doctrine)
-        positional = [
-            p.name
-            for p in sig.parameters.values()
-            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
-        ]
-        assert positional == [
-            "project_root",
-            "name",
-            "yaml_source_path",
-            "design_source_path",
-        ], f"Positional order: {positional}"
 
-    def test_create_doctrine_group_is_keyword_only(self):
-        sig = inspect.signature(_d_mod.create_doctrine)
-        group_param = sig.parameters.get("group")
-        assert group_param is not None
-        assert group_param.kind == group_param.KEYWORD_ONLY
+def test_every_write_callable_takes_the_project_root_as_a_path(created):
+    assert isinstance(created, Path)
+    assert read_doctrine(created, "tdd-lite") is not None
 
 
 # ---------------------------------------------------------------------------
-# create_doctrine envelope — {id, filename, group, design_filename}.
+# Envelopes are exact key sets
 # ---------------------------------------------------------------------------
 
 
-class TestCreateDoctrineReturnEnvelope:
-    def test_envelope_keys_are_id_filename_group_design_filename(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert set(result.keys()) == {
-            "id",
-            "filename",
-            "group",
-            "design_filename",
-        }
+def test_create_envelope_key_set(project):
+    result = create_doctrine(project, "tdd-lite", DESIGN, {"recon": RECON})
 
-    def test_envelope_id_key(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert result["id"] == "feat"
-
-    def test_envelope_filename_is_yaml(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert result["filename"] == "feat.yaml"
-
-    def test_envelope_design_filename(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert result["design_filename"] == "feat.design.md"
-
-    def test_envelope_drops_name_key(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert "name" not in result, "amendment B: name→id rename"
-
-    def test_envelope_drops_path_key(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert "path" not in result
-
-    def test_envelope_drops_yaml_filename_key(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        result = _d_mod.create_doctrine(
-            project_root, "feat", yaml_path, design_path
-        )
-        assert "yaml_filename" not in result, (
-            "amendment B: filename covers the primary slot; drop yaml_filename."
-        )
-
-    def test_files_written_at_doctrines_subdir(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        d = project_root / ".lore" / "doctrines"
-        assert (d / "feat.yaml").is_file()
-        assert (d / "feat.design.md").is_file()
+    assert set(result) == {"created", "group", "missions", "path"}
 
 
-# ---------------------------------------------------------------------------
-# read_doctrine — None on miss; was raising DoctrineError.
-# ---------------------------------------------------------------------------
+def test_update_envelope_key_set(created):
+    result = update_doctrine(created, "tdd-lite", missions={"recon": RECON})
+
+    assert set(result) == {
+        "updated",
+        "design_replaced",
+        "missions_replaced",
+        "missions_removed",
+    }
 
 
-class TestReadDoctrineNoneOnMiss:
-    """``read_doctrine`` returns ``None`` on miss (was raising)."""
+def test_delete_envelope_key_set(created):
+    assert set(delete_doctrine(created, "tdd-lite")) == {"id", "deleted", "deleted_at"}
 
-    def test_missing_returns_none_not_raise(self, project_root):
-        result = _d_mod.read_doctrine(project_root, "nonexistent")
-        assert result is None, (
-            "amendment Review Ledger F-READ-DOCTRINE-RAISE-TO-NONE: "
-            "read_doctrine returns None on miss (was DoctrineError raise)."
-        )
 
-    def test_missing_does_not_raise_value_error(self, project_root):
-        # Sanity — even a generic exception must not surface for a miss.
-        try:
-            result = _d_mod.read_doctrine(project_root, "nonexistent")
-        except Exception as exc:  # pragma: no cover — fail path
-            pytest.fail(f"read_doctrine raised on miss: {exc!r}")
-        assert result is None
+def test_read_envelope_key_set(created):
+    assert set(read_doctrine(created, "tdd-lite")) == {
+        "id",
+        "title",
+        "summary",
+        "design",
+        "missions",
+        "origin",
+    }
 
-    def test_existing_returns_dict(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        result = _d_mod.read_doctrine(project_root, "feat")
-        assert isinstance(result, dict)
-        assert result["id"] == "feat"
+
+def test_read_envelope_key_set_with_a_mission(created):
+    assert set(read_doctrine(created, "tdd-lite", mission="recon")) == {
+        "id",
+        "title",
+        "summary",
+        "design",
+        "missions",
+        "origin",
+        "mission",
+    }
+
+
+def test_list_envelope_key_set(created):
+    assert set(list_doctrines(created)[0]) == {
+        "id",
+        "group",
+        "title",
+        "summary",
+        "valid",
+        "filename",
+        "origin",
+    }
+
+
+def test_the_create_envelope_drops_every_legacy_key(project):
+    result = create_doctrine(project, "tdd-lite", DESIGN, {"recon": RECON})
+
+    for legacy in ("id", "filename", "design_filename", "yaml_filename"):
+        assert legacy not in result
+
+
+def test_the_update_envelope_drops_every_legacy_key(created):
+    result = update_doctrine(created, "tdd-lite", missions={"recon": RECON})
+
+    for legacy in ("id", "filename", "updated_at"):
+        assert legacy not in result
 
 
 # ---------------------------------------------------------------------------
-# delete_doctrine — renames BOTH .yaml AND .design.md atomically.
+# read_doctrine returns None on a miss rather than raising
 # ---------------------------------------------------------------------------
 
 
-class TestDeleteDoctrineAtomicPair:
-    """``delete_doctrine`` renames BOTH partner files (.yaml + .design.md)."""
+def test_a_miss_returns_none(project):
+    assert read_doctrine(project, "nope") is None
 
-    def test_delete_renames_yaml_partner(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        _d_mod.delete_doctrine(project_root, "feat")
-        d = project_root / ".lore" / "doctrines"
-        assert not (d / "feat.yaml").exists()
-        assert (d / "feat.yaml.deleted").is_file()
 
-    def test_delete_renames_design_partner(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        _d_mod.delete_doctrine(project_root, "feat")
-        d = project_root / ".lore" / "doctrines"
-        assert not (d / "feat.design.md").exists()
-        assert (d / "feat.design.md.deleted").is_file()
+def test_a_miss_does_not_raise(project):
+    try:
+        read_doctrine(project, "nope")
+    except Exception as exc:  # pragma: no cover - the assert names the failure
+        pytest.fail(f"read_doctrine raised {exc!r} on a miss")
 
-    def test_delete_envelope_gains_deleted_at(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        result = _d_mod.delete_doctrine(project_root, "feat")
-        assert "deleted_at" in result
-        assert result["deleted_at"] is None
 
-    def test_delete_envelope_id_and_deleted_flag(
-        self, project_root, doctrine_sources
-    ):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        result = _d_mod.delete_doctrine(project_root, "feat")
-        assert result["id"] == "feat"
-        assert result["deleted"] is True
+def test_a_malformed_design_frontmatter_is_a_miss_not_a_raise(project):
+    directory = project / ".lore" / "doctrines" / "broken"
+    directory.mkdir(parents=True)
+    (directory / "broken.design.md").write_text("---\nid: [unclosed\n---\n\nBody.\n")
+
+    assert read_doctrine(project, "broken") is None
+
+
+def test_list_is_empty_when_the_doctrines_dir_is_absent(tmp_path):
+    assert list_doctrines(tmp_path) == []
 
 
 # ---------------------------------------------------------------------------
-# DoctrineError gone — G15.5 already removed it; module raises ValueError.
+# The module owns the doctrine directory and nothing else
 # ---------------------------------------------------------------------------
 
 
-class TestDoctrineErrorRemoved:
-    def test_module_has_no_doctrine_error_symbol(self):
-        assert not hasattr(_d_mod, "DoctrineError"), (
-            "G15.5: DoctrineError class removed; doctrine raises ValueError."
-        )
-
-    def test_facade_has_no_doctrine_error(self):
-        assert "DoctrineError" not in api.__all__, (
-            "G15.5: DoctrineError dropped from facade."
-        )
+def test_the_module_defines_no_doctrine_error():
+    assert not hasattr(doctrine_module, "DoctrineError")
 
 
-# ---------------------------------------------------------------------------
-# list_doctrines — first-arg flip; returns list[dict].
-# ---------------------------------------------------------------------------
+def test_the_module_imports_no_database_module():
+    source = Path(doctrine_module.__file__).read_text()
 
-
-class TestListDoctrines:
-    def test_list_takes_project_root(self, project_root, doctrine_sources):
-        yaml_path, design_path = doctrine_sources
-        _d_mod.create_doctrine(project_root, "feat", yaml_path, design_path)
-        records = _d_mod.list_doctrines(project_root)
-        assert isinstance(records, list)
-        assert any(r["id"] == "feat" for r in records)
-
-    def test_list_empty_when_dir_absent(self, tmp_path):
-        records = _d_mod.list_doctrines(tmp_path)
-        assert records == []
+    assert "from lore.db" not in source
+    assert "from lore import db" not in source

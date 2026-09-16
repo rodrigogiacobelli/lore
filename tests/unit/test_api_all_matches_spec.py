@@ -46,9 +46,6 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "BoardMessage",
     "Artifact",
     "CodexDocument",
-    "DoctrineStep",
-    "Doctrine",
-    "Knight",
     "DoctrineListEntry",
     "GlossaryItem",
     "Watcher",
@@ -147,12 +144,6 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "init_database",
     # priority
     "get_ready_missions",
-    # knight (G16 — find_knight reclassified internal)
-    "list_knights",
-    "read_knight",
-    "create_knight",
-    "update_knight",
-    "delete_knight",
     # doctrine (G16 — show_doctrine renamed to read_doctrine)
     "list_doctrines",
     "read_doctrine",

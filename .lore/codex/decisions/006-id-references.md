@@ -2,7 +2,7 @@
 id: decisions-006-id-references
 title: Agents reference entities by ID, never by file path
 summary: 'ADR recording the decision that agents must use Lore CLI commands to access
-  artifacts, doctrines, and knights by ID rather than reading file paths directly.
+  artifacts, doctrines, and watchers by ID rather than reading file paths directly.
   This enforces the CLI as the only stable interface and prevents agents from bypassing
   the abstraction layer.
 
@@ -15,15 +15,15 @@ related:
 
 ## Context
 
-Lore manages several categories of reusable entity: Doctrines (YAML workflow
-templates), Knights (agent persona files), Codex documents (project
-documentation), and Artifacts (reusable content templates). All of these live
+Lore manages several categories of reusable entity: Doctrines (workflow
+templates), Codex documents (project documentation), Watchers (reactive-agent
+definitions), and Artifacts (reusable content templates). All of these live
 on disk as files in predictable directory trees inside `.lore/`.
 
 An agent that knows the file system layout can bypass the CLI entirely and
 read any of these files directly — e.g. `Read .lore/artifacts/transient/business-spec.md`
-or `cat .lore/knights/developer.md`. This works today. The question is whether
-it should be the intended usage.
+or `cat .lore/doctrines/default/tdd-implementation/missions/red.md`. That works.
+The question is whether it should be the intended usage.
 
 ## Decision
 
@@ -32,15 +32,14 @@ constructing and reading file paths directly.
 
 - **Artifacts:** `lore artifact show <id>` — never read `.lore/artifacts/…` directly
 - **Codex documents:** `lore codex show <id>` — never read `.lore/codex/…` directly
-- **Knights:** `lore knight show <name>` — never read `.lore/knights/…` directly
-- **Doctrines:** `lore doctrine show <name>` — never read `.lore/doctrines/…` directly
+- **Doctrines:** `lore doctrine show <name>` — never read `.lore/doctrines/…` directly, and `lore doctrine show <name> --mission <id>` for one mission body
 
 The same principle applies to default entities shipped inside the package
 (`src/lore/defaults/`): agents should never construct paths into the package
 source tree.
 
-Doctrine step notes and Knight instructions must reference other entities by
-their Lore ID, not by path. For example: "retrieve artifact
+A doctrine's design document and every mission body must reference other
+entities by their Lore ID, not by path. For example: "retrieve artifact
 `transient-business-spec` with `lore artifact show transient-business-spec`"
 — not "open `.lore/artifacts/transient/business-spec.md`".
 
@@ -61,10 +60,10 @@ rite graph, `--scope glossary` for the glossary file.
 
 The rule holds unchanged for everything else, in **both** modes:
 
-- **Artifacts, knights, doctrines, watchers** — by ID through the CLI. Every one
-  of the four hides a `default/` versus flat-directory split, slash-derived
-  groups and `.deleted` soft-delete naming, and `lore doctrine show` additionally
-  runs normalisation, step validation and cycle detection. This is the
+- **Artifacts, doctrines, watchers** — by ID through the CLI. Every one of the
+  three hides a `default/` versus flat-directory split, slash-derived groups and
+  `.deleted` soft-delete naming, and `lore doctrine show` additionally assembles
+  a mission index across a directory. This is the
   layout-is-an-implementation-detail argument at its strongest.
 - **Quests, missions, board messages, dependencies** — SQLite-backed; there is no
   file to read.
@@ -98,8 +97,8 @@ discover the path.
 
 **Enforcing tool use keeps orientation predictable.** If agents use the CLI,
 the only way to retrieve an artifact is to know its ID. That means every
-Doctrine and Knight instruction that references an artifact must state the ID
-explicitly. This is self-documenting: an agent reading a Doctrine step can
+doctrine design document and mission body that references an artifact must state
+the ID explicitly. This is self-documenting: an agent reading a mission body can
 immediately execute `lore artifact show <id>` without any prior knowledge of
 directory structure.
 
@@ -111,15 +110,15 @@ not to consumers (agents).
 
 ## Consequences
 
-- All Doctrine `notes:` fields that reference entities must use IDs with the
-  relevant `lore` command, not file paths.
-- All Knight instruction files that direct agents to use templates or other
-  entitys must name the entity ID and the retrieval command.
+- Every doctrine design document and mission body that references an entity must
+  use its ID with the relevant `lore` command, not a file path.
+- Every mission body that directs an agent to use a template or another entity
+  must name the entity ID and the retrieval command.
 - The agent instruction file Lore renders (`.lore/LORE-AGENT.md` and each
   selected agent's marked block) must instruct agents to use CLI commands for
   entity access, in the command layer the recorded access mode selects.
-- Writers of new Doctrines and Knights must follow this convention or their
-  work is non-conforming.
+- Writers of new Doctrines must follow this convention or their work is
+  non-conforming.
 - The `lore artifact list` command becomes critical for discovery: agents
   that don't know an ID upfront must list first, then show.
 
@@ -141,3 +140,4 @@ needed.
 |------|--------|------|
 | 2026-03-31 | accepted | Initial decision. Recorded with the first public release. |
 | 2026-08-25 | accepted (scope narrowed) | Carve-out added for the `native` access mode: codex documents, rites and the glossary may be read and written with an agent's own file tools, validated afterwards by `lore health`. Artifacts, knights, doctrines, watchers, the graph commands and the SQLite-backed entities keep the by-ID rule in both modes. |
+| 2026-09-16 | accepted | Decision unchanged. The enumeration of entity categories loses Knights, which no longer exist; `lore doctrine show` is the by-ID reach for both a doctrine's design and one mission body. The carve-out's stated reason for keeping doctrines CLI-only is rewritten to the surviving one — a doctrine still hides a `default/` split, slash-derived groups and `.deleted` naming, and `lore doctrine show` assembles a mission index across a directory. |

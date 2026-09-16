@@ -87,9 +87,8 @@ class TestFreshInitHealthJsonClean:
 
 # Map a .lore/ subdirectory + file pattern to the schema kind it must satisfy.
 ENTITY_WALKS: list[tuple[str, str, str]] = [
-    ("doctrines", "*.yaml", "doctrine-yaml"),
     ("doctrines", "*.design.md", "doctrine-design-frontmatter"),
-    ("knights", "*.md", "knight-frontmatter"),
+    ("doctrines", "missions/*.md", "doctrine-mission-frontmatter"),
     ("watchers", "*.yaml", "watcher-yaml"),
     ("artifacts", "*.md", "artifact-frontmatter"),
 ]
@@ -104,10 +103,6 @@ def _walk_entity_files(project_root: Path) -> list[tuple[Path, str]]:
         if not root.is_dir():
             continue
         for path in sorted(root.rglob(pattern)):
-            # `*.yaml` glob must not pick up doctrine design markdown, and
-            # `*.md` must not pick up doctrine .design.md which has its own kind.
-            if kind == "doctrine-yaml" and path.name.endswith(".design.md"):
-                continue
             pairs.append((path, kind))
     return pairs
 

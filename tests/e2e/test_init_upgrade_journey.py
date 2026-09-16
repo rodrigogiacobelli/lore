@@ -811,7 +811,7 @@ class TestThePlanNamesEveryFileTheRunWrites:
 
     def test_the_plan_names_the_seeded_default_trees(self, runner, legacy):
         output = init(runner, "--dry-run").output
-        for tree in ("knights/default", "artifacts/default", "doctrines/default"):
+        for tree in ("artifacts/default", "doctrines/default"):
             assert tree in output, output
 
     def test_the_plan_writes_nothing(self, runner, legacy):
@@ -858,21 +858,70 @@ class TestAFileTheReleaseNoLongerShips:
         assert not orphan.exists()
 
     def test_the_removal_is_reported(self, runner, legacy):
-        orphan = legacy / ".lore" / "knights" / "default" / "gone.md"
+        orphan = legacy / ".lore" / "artifacts" / "default" / "codex" / "gone.md"
+        orphan.parent.mkdir(parents=True, exist_ok=True)
         orphan.write_text("stale\n", encoding="utf-8")
 
         output = init(runner).output
 
-        assert "knights/default/gone.md" in removals(output)
+        assert "artifacts/default/codex/gone.md" in removals(output)
 
     def test_a_tree_of_the_users_own_is_untouched(self, runner, legacy):
-        mine = legacy / ".lore" / "knights" / "team" / "reviewer.md"
+        mine = legacy / ".lore" / "artifacts" / "team" / "reviewer.md"
         mine.parent.mkdir(parents=True, exist_ok=True)
         mine.write_text("ours\n", encoding="utf-8")
 
         init(runner)
 
         assert mine.read_text(encoding="utf-8") == "ours\n"
+
+
+class TestATreeTheReleaseStoppedShipping:
+    """A whole seeded tree can be retired, not just a file inside one.
+
+    Dropping it from the seeded list alone would orphan every file it ever
+    installed, so the retired tree is walked one last time and removed.
+    """
+
+    def test_every_seeded_file_in_it_is_removed(self, runner, legacy):
+        seeded = legacy / ".lore" / "knights" / "default" / "pm.md"
+        seeded.parent.mkdir(parents=True, exist_ok=True)
+        seeded.write_text("seeded\n", encoding="utf-8")
+
+        init(runner)
+
+        assert not seeded.exists()
+        assert not (legacy / ".lore" / "knights" / "default").exists()
+
+    def test_each_removal_is_reported(self, runner, legacy):
+        seeded = legacy / ".lore" / "knights" / "default" / "pm.md"
+        seeded.parent.mkdir(parents=True, exist_ok=True)
+        seeded.write_text("seeded\n", encoding="utf-8")
+
+        output = init(runner).output
+
+        assert "knights/default/pm.md" in removals(output)
+
+    def test_a_file_the_project_authored_is_left_alone_and_named(
+        self, runner, legacy
+    ):
+        mine = legacy / ".lore" / "knights" / "mine.md"
+        mine.parent.mkdir(parents=True, exist_ok=True)
+        mine.write_text("ours\n", encoding="utf-8")
+
+        output = init(runner).output
+
+        assert mine.read_text(encoding="utf-8") == "ours\n"
+        assert ".lore/knights/mine.md" in output
+
+    def test_a_project_that_never_had_the_tree_says_nothing(self, runner, legacy):
+        import shutil
+
+        shutil.rmtree(legacy / ".lore" / "knights", ignore_errors=True)
+
+        output = init(runner).output
+
+        assert "knights" not in output
 
     def test_health_is_clean_after_the_prune(self, runner, legacy):
         from lore.cli import main

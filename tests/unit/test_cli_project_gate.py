@@ -28,7 +28,7 @@ from lore.cli import main
 REJECTION = '--project is a read selector; it is not accepted on "{label}".'
 
 
-# Part 2, "Commands that accept --project (19)" — FR-13's list plus FR-13a's
+# Part 2, "Commands that accept --project" — FR-13's list plus FR-13a's
 # `watcher list|show` and `rite search`. Held here as well as in `cli.py` on
 # purpose: this is the spec's list, and the point of the comparison below is
 # that the shipped one still equals it.
@@ -40,8 +40,6 @@ SPEC_READ_COMMANDS: frozenset[str] = frozenset(
         "codex map",
         "doctrine list",
         "doctrine show",
-        "knight list",
-        "knight show",
         "artifact list",
         "artifact show",
         "watcher list",
@@ -87,14 +85,15 @@ REJECTED_LABELS = sorted(
 # ---------------------------------------------------------------------------
 
 
-def test_the_allow_list_has_nineteen_members():
+def test_the_allow_list_has_seventeen_members():
     # nested-projects-spec — FR-13 + FR-13a: seventeen commands plus
-    # `watcher list|show` and `rite search`, which G-1 and G-2 added
-    assert len(cli._PROJECT_READ_COMMANDS) == 19
+    # `watcher list|show` and `rite search`, which G-1 and G-2 added, less the
+    # two commands of the entity this release removed
+    assert len(cli._PROJECT_READ_COMMANDS) == 17
 
 
 def test_the_allow_list_matches_the_spec_exactly():
-    # nested-projects-spec — Part 2 "Commands that accept --project (19)"
+    # nested-projects-spec — Part 2 "Commands that accept --project"
     assert cli._PROJECT_READ_COMMANDS == SPEC_READ_COMMANDS
 
 
@@ -182,7 +181,6 @@ def test_lore_health_gains_no_scope_token():
         "codex",
         "artifacts",
         "doctrines",
-        "knights",
         "watchers",
         "schemas",
         "glossary",

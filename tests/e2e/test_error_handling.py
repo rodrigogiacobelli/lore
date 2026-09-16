@@ -202,10 +202,6 @@ class TestExitCodeOneOnAppError:
         result = runner.invoke(main, ["missions", "q-dead"])
         assert result.exit_code == 1
 
-    def test_knight_show_nonexistent(self, runner, project_dir):
-        result = runner.invoke(main, ["knight", "show", "nonexistent"])
-        assert result.exit_code == 1
-
     def test_doctrine_show_nonexistent(self, runner, project_dir):
         result = runner.invoke(main, ["doctrine", "show", "nonexistent"])
         assert result.exit_code == 1
@@ -242,6 +238,12 @@ class TestExitCodeTwoOnUsageError:
     def test_unknown_subcommand(self, runner, project_dir):
         result = runner.invoke(main, ["nonexistent-command"])
         assert result.exit_code == 2
+
+    def test_retired_entity_group_is_an_unknown_command(self, runner, project_dir):
+        """The Knight entity is removed outright — no shim, no deprecation."""
+        result = runner.invoke(main, ["knight", "list"])
+        assert result.exit_code == 2
+        assert "No such command 'knight'." in result.stderr
 
     def test_show_missing_id(self, runner, project_dir):
         result = runner.invoke(main, ["show"])
@@ -338,12 +340,6 @@ class TestJsonErrorFormat:
         result = runner.invoke(main, ["--json", "claim", "m-dead"])
         assert result.exit_code == 1
         assert result.stdout == "" or "error" in result.stdout
-
-    def test_knight_show_nonexistent_json_error(self, runner, project_dir):
-        result = runner.invoke(main, ["--json", "knight", "show", "nonexistent"])
-        assert result.exit_code == 1
-        error_data = json.loads(result.stderr)
-        assert "error" in error_data
 
     def test_doctrine_show_nonexistent_json_error(self, runner, project_dir):
         result = runner.invoke(main, ["--json", "doctrine", "show", "nonexistent"])
@@ -570,8 +566,8 @@ class TestEditQuestMutuallyExclusiveFlags:
         assert "mutually exclusive" in result.output.lower()
 
 
-class TestEditMissionMutuallyExclusiveKnightFlags:
-    """--knight and --no-knight are mutually exclusive."""
+class TestEditMissionMutuallyExclusiveDoctrineMissionFlags:
+    """--doctrine-mission and --no-doctrine-mission are mutually exclusive."""
 
     def test_exit_code_two(self, runner, project_dir):
         rq = runner.invoke(main, ["--json", "new", "quest", "Q"])
@@ -579,7 +575,7 @@ class TestEditMissionMutuallyExclusiveKnightFlags:
         rm = runner.invoke(main, ["--json", "new", "mission", "M", "-q", quest_id])
         m_id = json.loads(rm.output)["id"]
         result = runner.invoke(
-            main, ["edit", m_id, "--knight", "dev.md", "--no-knight"]
+            main, ["edit", m_id, "-D", "tdd-lite/recon", "--no-doctrine-mission"]
         )
         assert_exit_err(result, 2)
 
@@ -589,7 +585,7 @@ class TestEditMissionMutuallyExclusiveKnightFlags:
         rm = runner.invoke(main, ["--json", "new", "mission", "M", "-q", quest_id])
         m_id = json.loads(rm.output)["id"]
         result = runner.invoke(
-            main, ["edit", m_id, "--knight", "dev.md", "--no-knight"]
+            main, ["edit", m_id, "-D", "tdd-lite/recon", "--no-doctrine-mission"]
         )
         assert "mutually exclusive" in result.output.lower()
 

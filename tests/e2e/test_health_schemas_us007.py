@@ -27,13 +27,14 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _inject_bad_knight(project_dir: Path) -> Path:
+def _inject_bad_mission(project_dir: Path) -> Path:
     p = (
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "feature-implementation"
+        / "missions"
         / "pm.md"
     )
     _write(
@@ -49,26 +50,24 @@ def _inject_bad_knight(project_dir: Path) -> Path:
     return p
 
 
-def _inject_broken_knight_ref_doctrine(project_dir: Path) -> None:
-    """Create a doctrine whose step references a knight that does not exist."""
+def _inject_id_mismatch_doctrine(project_dir: Path) -> None:
+    """Create a doctrine whose design id disagrees with its directory name."""
     d = project_dir / ".lore" / "doctrines" / "default" / "feat-auth"
     _write(
-        d / "feat-auth.yaml",
-        "id: feat-auth\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    type: knight\n"
-        "    knight: ghost-knight\n",
+        d / "feat-auth.design.md",
+        "---\nid: ghost-doctrine\ntitle: Auth\nsummary: s\n---\nBody.\n",
     )
     _write(
-        d / "feat-auth.design.md",
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n",
+        d / "missions" / "recon.md",
+        "---\nid: recon\ntitle: Recon\nsummary: s\n---\nBody.\n",
     )
 
 
 @pytest.fixture()
 def project_with_schema_and_ref_errors(project_dir):
-    """Project that has exactly ONE schema error and ONE broken knight ref."""
-    _inject_bad_knight(project_dir)
-    _inject_broken_knight_ref_doctrine(project_dir)
+    """Project with exactly ONE schema error and ONE cross-field doctrine error."""
+    _inject_bad_mission(project_dir)
+    _inject_id_mismatch_doctrine(project_dir)
     return project_dir
 
 
@@ -84,15 +83,15 @@ def test_scope_schemas_only_emits_schema_block(
     result = runner.invoke(main, ["health", "--scope", "schemas"])
 
     assert result.exit_code != 0, result.output
-    # Schema block for the bad knight is present.
+    # The schema block for the bad mission file is present.
     assert (
-        "ERROR .lore/knights/default/feature-implementation/pm.md"
+        "ERROR .lore/doctrines/default/feature-implementation/missions/pm.md"
         in result.output
     )
     assert "  rule: additionalProperties" in result.output
-    # No broken-knight-ref block emitted.
-    assert "broken_knight_ref" not in result.output
-    assert "ghost-knight" not in result.output
+    # No cross-field doctrine block emitted.
+    assert "id_mismatch" not in result.output
+    assert "ghost-doctrine" not in result.output
 
 
 def test_scope_schemas_only_summary_exact_one_error(
@@ -132,13 +131,13 @@ def test_scope_doctrines_excludes_schema_error_blocks(
     """No schema ERROR blocks are printed when schemas scope is excluded."""
     result = runner.invoke(main, ["health", "--scope", "doctrines"])
     # Non-schema issue IS present.
-    assert "broken_knight_ref" in result.output
-    # No schema ERROR block for the bad knight.
+    assert "id_mismatch" in result.output
+    # No schema ERROR block for the bad mission file.
     assert (
-        "ERROR .lore/knights/default/feature-implementation/pm.md"
+        "ERROR .lore/doctrines/default/feature-implementation/missions/pm.md"
         not in result.output
     )
-    assert "kind: knight" not in result.output
+    assert "kind: doctrine-mission-frontmatter" not in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +154,9 @@ def test_scope_doctrines_schemas_composed_runs_both(
     )
     assert result.exit_code != 0, result.output
     # Both error kinds present.
-    assert "broken_knight_ref" in result.output
+    assert "id_mismatch" in result.output
     assert (
-        "ERROR .lore/knights/default/feature-implementation/pm.md"
+        "ERROR .lore/doctrines/default/feature-implementation/missions/pm.md"
         in result.output
     )
     # Summary line reports exactly one schema violation.
@@ -177,8 +176,8 @@ def test_scope_composition_order_independent(
     # Same summary line present in both outputs.
     assert "Schema validation: 1 error\n" in a.output
     assert "Schema validation: 1 error\n" in b.output
-    assert "broken_knight_ref" in a.output
-    assert "broken_knight_ref" in b.output
+    assert "id_mismatch" in a.output
+    assert "id_mismatch" in b.output
 
 
 # ---------------------------------------------------------------------------
@@ -194,10 +193,10 @@ def test_default_run_includes_schema_validation(
     assert result.exit_code != 0, result.output
     assert "Schema validation: 1 error\n" in result.output
     assert (
-        "ERROR .lore/knights/default/feature-implementation/pm.md"
+        "ERROR .lore/doctrines/default/feature-implementation/missions/pm.md"
         in result.output
     )
-    assert "broken_knight_ref" in result.output
+    assert "id_mismatch" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +258,7 @@ def test_summary_line_printed_on_composition_zero_case(runner, project_dir):
 
 def test_exit_code_one_when_only_schema_errors_exist(runner, project_dir):
     """FR-16: non-zero exit when schema errors are the sole failure mode."""
-    _inject_bad_knight(project_dir)
+    _inject_bad_mission(project_dir)
     result = runner.invoke(main, ["health"])
     assert result.exit_code == 1, result.output
 

@@ -30,7 +30,7 @@ from lore.health import _check_schemas
 
 def _make_skeleton(root: Path) -> Path:
     lore = root / ".lore"
-    for d in ("knights", "doctrines", "codex", "artifacts", "watchers"):
+    for d in ("doctrines", "codex", "artifacts", "watchers"):
         (lore / d).mkdir(parents=True, exist_ok=True)
     return root
 
@@ -149,8 +149,8 @@ def test_check_schemas_routes_codex_kinds_project_aware(tmp_path, monkeypatch):
     assert "codex-frontmatter" in project_calls
     assert "codex-source-frontmatter" in project_calls
     # non-codex kinds never go through the project-aware seam
-    assert "knight-frontmatter" not in project_calls
-    assert "knight-frontmatter" in plain_calls
+    assert "doctrine-mission-frontmatter" not in project_calls
+    assert "doctrine-mission-frontmatter" in plain_calls
     # codex kinds never go through the plain seam
     assert "codex-frontmatter" not in plain_calls
     assert "codex-source-frontmatter" not in plain_calls
@@ -205,8 +205,8 @@ def test_check_schemas_overlay_error_scan_failed(tmp_path):
 
 
 def test_check_schemas_overlay_error_other_kinds_still_scanned(tmp_path):
-    """FR-10: the collision aborts only the codex kind; a bad knight is still
-    caught."""
+    """FR-10: the collision aborts only the codex kind; a bad mission file is
+    still caught."""
     _make_skeleton(tmp_path)
     _write_overlay(
         tmp_path,
@@ -216,19 +216,22 @@ def test_check_schemas_overlay_error_other_kinds_still_scanned(tmp_path):
     _write(
         tmp_path
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
-        / "feature-implementation"
-        / "pm.md",
-        "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n# Body\n",
+        / "tdd-lite"
+        / "missions"
+        / "recon.md",
+        "---\nid: recon\ntitle: Recon\nsummary: s\nstability: x\n---\n# Body\n",
     )
 
     issues = _check_schemas(tmp_path)
 
-    knight_schema_issues = [
-        i for i in issues if i.entity_type == "knight" and i.check == "schema"
+    mission_schema_issues = [
+        i
+        for i in issues
+        if i.entity_type == "doctrine-mission-frontmatter" and i.check == "schema"
     ]
-    assert knight_schema_issues, issues
+    assert mission_schema_issues, issues
 
 
 # ---------------------------------------------------------------------------

@@ -139,21 +139,21 @@ class TestShowMissionJsonParity:
             "q-a1b2/m-aaaa",
             "q-a1b2",
             "M1",
-            mission_type="knight",
-            knight="reviewer.md",
+            mission_type="agent",
+            doctrine_mission="tdd-lite/review",
         )
         insert_mission(project_dir, "q-a1b2/m-bbbb", "q-a1b2", "M2")
         insert_dependency(project_dir, "q-a1b2/m-aaaa", "q-a1b2/m-bbbb")
         insert_board_message(project_dir, "q-a1b2/m-aaaa", "note")
 
         result = runner.invoke(
-            main, ["--json", "show", "--no-knight", "q-a1b2/m-aaaa"]
+            main, ["--json", "show", "--no-doctrine-mission", "q-a1b2/m-aaaa"]
         )
         assert result.exit_code == 0
         cli_envelope = json.loads(result.output)
 
         op_envelope = get_mission_detail(
-            project_dir, "q-a1b2/m-aaaa", include_knight=False
+            project_dir, "q-a1b2/m-aaaa", include_doctrine_mission=False
         )
         assert op_envelope is not None
         assert cli_envelope == op_envelope, (

@@ -153,13 +153,13 @@ def _write_quest_index(path: Path, quest, missions) -> None:
         "",
         "## Missions",
         "",
-        "| ID | Title | Status | Priority | Type | Knight |",
+        "| ID | Title | Status | Priority | Type | Doctrine Mission |",
         "|----|-------|--------|----------|------|--------|",
     ]
 
     for m in missions:
-        knight = m["knight"] or "-"
-        lines.append(f"| {m['id']} | {m['title']} | {m['status']} | {m['priority']} | {m['mission_type']} | {knight} |")
+        reference = m["doctrine_mission"] or "-"
+        lines.append(f"| {m['id']} | {m['title']} | {m['status']} | {m['priority']} | {m['mission_type']} | {reference} |")
 
     lines.append("")
     path.write_text("\n".join(lines))
@@ -167,7 +167,7 @@ def _write_quest_index(path: Path, quest, missions) -> None:
 
 def _write_mission_file(path: Path, mission, depends_on: list, blocks: list) -> None:
     """Write an individual mission markdown file."""
-    knight = mission["knight"] or "None"
+    reference = mission["doctrine_mission"] or "None"
     description = mission["description"] or "No description."
     needs_str = ", ".join(depends_on) if depends_on else "None"
     blocks_str = ", ".join(blocks) if blocks else "None"
@@ -179,7 +179,7 @@ def _write_mission_file(path: Path, mission, depends_on: list, blocks: list) -> 
         f"**Status:** {mission['status']}",
         f"**Priority:** {mission['priority']}",
         f"**Type:** {mission['mission_type']}",
-        f"**Knight:** {knight}",
+        f"**Doctrine Mission:** {reference}",
         "",
         "## Description",
         "",

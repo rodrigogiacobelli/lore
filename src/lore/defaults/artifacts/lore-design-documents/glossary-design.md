@@ -21,7 +21,7 @@ A candidate term `<X>` belongs in the glossary only when ALL three answers are Y
 
 1. **Is it project-specific?** Would an outsider reading the codebase guess the wrong meaning if no glossary entry existed? Generic IT vocabulary (ADR, soft-delete, E2E, mock, fixture, retry-with-backoff, idempotent, RBAC, JWT, …) does NOT qualify — assume your reader knows IT. Only terms that this project gives a project-specific meaning, or invents outright, pass this gate.
 
-2. **Is it NOT an entity?** Entities are the big nouns the system is built around (Quest, Mission, Knight, Doctrine, Codex, Artifact, Watcher, Glossary itself). Each entity already has a `conceptual-entities-<name>` document. **Entities never go in the glossary.** If you find yourself wanting to summarise an entity in the glossary, you are duplicating the entity doc — link to it instead.
+2. **Is it NOT an entity?** Entities are the big nouns the system is built around (Quest, Mission, Doctrine, Codex, Artifact, Watcher, Glossary itself). Each entity already has a `conceptual-entities-<name>` document. **Entities never go in the glossary.** If you find yourself wanting to summarise an entity in the glossary, you are duplicating the entity doc — link to it instead.
 
 3. **Is it NOT a named workflow, command, or feature?** Anything with a `conceptual-workflows-<name>` doc, a CLI command, a config key, or a feature surface (auto-surface, ready queue, board, oracle, health, codex show, …) already has a definition surface. Glossary entries that describe these are duplication. Link to the workflow doc instead.
 
@@ -39,7 +39,7 @@ If any answer is NO, the term does NOT go in the glossary. The "Where to put it 
 
 | Candidate | Why it fails | Goes here instead |
 |---|---|---|
-| Quest, Mission, Knight, Doctrine, Codex, Artifact, Watcher, Glossary | Entities — fail Q2 | Their `conceptual-entities-<name>` doc already exists. Link to it. |
+| Quest, Mission, Doctrine, Codex, Artifact, Watcher, Glossary | Entities — fail Q2 | Their `conceptual-entities-<name>` doc already exists. Link to it. |
 | Camelot, Lore, Realm, Citadel | System-level entities — fail Q2 | Vision docs (`vision-camelot-system`). Link to them. |
 | Health, Oracle, Board, Auto-surface, Ready queue, Codex show | Named workflows or feature surfaces — fail Q3 | Their `conceptual-workflows-<name>` doc. Link to it. |
 | ADR | Generic IT term — fails Q1 | Nowhere. Outside readers know what an ADR is. The codex `decisions/` folder is named after the format. |

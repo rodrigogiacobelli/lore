@@ -38,7 +38,7 @@ Three forces drove this ADR:
 
 - **Format consistency vs. ergonomics.** Lore already uses YAML for every codex frontmatter block, every doctrine `.yaml`, every watcher `.yaml`, and every JSON Schema in `src/lore/schemas/`. A naive answer is "use YAML for both." But `.lore/config.toml` is a tiny, flat, human-edited key-value file — exactly the surface TOML was designed for. YAML's whitespace sensitivity and quoting rules add cost where TOML adds none.
 - **`lore init` and `.lore/codex/`.** Both `tech-arch-initialized-project-structure` and `conceptual-workflows-lore-init` previously stated as a hard property that `lore init` does NOT seed `.lore/codex/`. PRD FR-27 requires init to seed `.lore/codex/glossary.yaml`. The contract has to be amended explicitly — silent change is not acceptable.
-- **No `default/` clobber.** Every other entity directory (`doctrines/`, `knights/`, `artifacts/`, `watchers/`) has a `default/` subtree that is gitignored and overwritten on every re-init. The Glossary cannot live under `default/` because its content is user-owned project vocabulary; an overwrite would clobber maintainer edits on every re-init.
+- **No `default/` clobber.** Every other entity directory (`doctrines/`, `artifacts/`, `watchers/`) has a `default/` subtree that is gitignored and overwritten on every re-init. The Glossary cannot live under `default/` because its content is user-owned project vocabulary; an overwrite would clobber maintainer edits on every re-init.
 
 Key forces:
 
@@ -104,3 +104,4 @@ Three coupled rulings, all in scope of one ADR because they only make sense toge
 | 2026-04-29 | accepted | Initial decision. Captured in the same release that adds `lore glossary`, `.lore/config.toml`, and the `--skip-glossary` flag on `lore codex show`. |
 | 2026-05-11 | accepted (scope widened) | CODEX.md added as a second user-tracked carve-out under .lore/codex/. See init-seed-codex-md-tech-spec. |
 | 2026-08-25 | accepted (exception recorded) | Constraint 2 gains one exception: `lore init` regenerates the leading comment header of an existing `.lore/config.toml` from `config.py`'s key tables. Setting lines are never rewritten, and the exception reaches neither `glossary.yaml` nor `CODEX.md`. |
+| 2026-09-16 | accepted | Decision unchanged. The seeded-directory enumeration drops `knights/`; three entity directories carry a `default/` subtree, not four. |

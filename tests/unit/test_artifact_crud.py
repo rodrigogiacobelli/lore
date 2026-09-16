@@ -83,7 +83,7 @@ def test_validate_frontmatter_no_raise_on_valid_input():
 
 
 # ---------------------------------------------------------------------------
-# G10 — update_artifact, delete_artifact (CRUD parity with watcher / knight).
+# G10 — update_artifact, delete_artifact (CRUD parity with watcher / doctrine).
 # Plan: transient-public-api-facade-plan §G10.
 # Anchor: decisions-007-artifact-communication-protocol (Amendment —
 # artifact mutation via `lore.api` is in scope) + decisions-010-public-api-stability.

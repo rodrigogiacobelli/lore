@@ -28,13 +28,14 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _knight_path(project_dir: Path) -> Path:
+def _mission_path(project_dir: Path) -> Path:
     return (
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "feature-implementation"
+        / "missions"
         / "pm.md"
     )
 
@@ -45,6 +46,7 @@ def _doctrine_design_path(project_dir: Path) -> Path:
         / ".lore"
         / "doctrines"
         / "default"
+        / "feature-implementation"
         / "feature-implementation"
         / "feature-implementation.design.md"
     )
@@ -63,14 +65,14 @@ def test_e2e_workflow_1_green_on_fresh_init(runner, project_dir):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Hallucinated knight field caught (PRD Workflow 2)
+# Scenario 2: Hallucinated field on a doctrine mission (PRD Workflow 2)
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_workflow_2_hallucinated_knight_field(runner, project_dir):
-    """conceptual-workflows-knight-list — W2 stability field on a knight."""
+def test_e2e_workflow_2_hallucinated_mission_field(runner, project_dir):
+    """conceptual-workflows-doctrine-show — W2 stability field on a mission."""
     _write(
-        _knight_path(project_dir),
+        _mission_path(project_dir),
         "---\n"
         "id: pm\n"
         "title: Product Manager\n"
@@ -84,11 +86,13 @@ def test_e2e_workflow_2_hallucinated_knight_field(runner, project_dir):
 
     assert result.exit_code != 0, result.output
     assert (
-        "ERROR .lore/knights/default/feature-implementation/pm.md"
+        "ERROR .lore/doctrines/default/feature-implementation/missions/pm.md"
         in result.output
     )
-    assert "  kind: knight" in result.output
-    assert "  schema: lore://schemas/knight-frontmatter" in result.output
+    assert "  kind: doctrine-mission-frontmatter" in result.output
+    assert (
+        "  schema: lore://schemas/doctrine-mission-frontmatter" in result.output
+    )
     assert "  rule: additionalProperties" in result.output
     assert "  path: /stability" in result.output
     assert "Schema validation: 1 error" in result.output
@@ -125,16 +129,6 @@ def test_e2e_workflow_3_missing_required_doctrine_design(runner, project_dir):
 
 def test_e2e_every_kind_covered(runner, project_dir):
     """conceptual-workflows-health — FR-1..FR-6 end-to-end, one bad per kind."""
-    # Bad doctrine .yaml
-    _write(
-        project_dir
-        / ".lore"
-        / "doctrines"
-        / "default"
-        / "broken"
-        / "broken.yaml",
-        "id: broken\ntitle: Broken\nsummary: s\nbogus_top_level: nope\nsteps: []\n",
-    )
     # Bad doctrine .design.md
     _write(
         project_dir
@@ -145,9 +139,9 @@ def test_e2e_every_kind_covered(runner, project_dir):
         / "broken.design.md",
         "---\nid: broken\ntitle: Broken\nbogus: yes\n---\nBody.\n",
     )
-    # Bad knight
+    # Bad doctrine mission
     _write(
-        _knight_path(project_dir),
+        _mission_path(project_dir),
         "---\nid: pm\ntitle: Product Manager\nsummary: s\nstability: x\n---\n",
     )
     # Bad watcher
@@ -169,11 +163,10 @@ def test_e2e_every_kind_covered(runner, project_dir):
     result = runner.invoke(main, ["health"])
 
     assert result.exit_code != 0, result.output
-    assert "Schema validation: 6 errors" in result.output
+    assert "Schema validation: 5 errors" in result.output
     for label in (
-        "kind: doctrine-yaml",
         "kind: doctrine-design-frontmatter",
-        "kind: knight",
+        "kind: doctrine-mission-frontmatter",
         "kind: watcher",
         "kind: codex",
         "kind: artifact",
@@ -189,7 +182,7 @@ def test_e2e_every_kind_covered(runner, project_dir):
 def test_e2e_multiple_violations_one_file(runner, project_dir):
     """conceptual-workflows-health — FR-9 no short-circuit; three distinct blocks."""
     _write(
-        _knight_path(project_dir),
+        _mission_path(project_dir),
         "---\nid: pm\nstability: x\n---\n",
     )
 
@@ -294,7 +287,7 @@ def test_us006_e2e_missing_frontmatter_exact_message(runner, project_dir):
     assert "Schema validation: 1 error" in result.output
 
 
-def test_us006_e2e_read_failed_permission_denied_on_locked_knight(
+def test_us006_e2e_read_failed_permission_denied_on_a_locked_file(
     runner, project_dir, monkeypatch
 ):
     """Scenario 3: permission-denied file becomes one read-failed ERROR block
@@ -302,9 +295,10 @@ def test_us006_e2e_read_failed_permission_denied_on_locked_knight(
     p = (
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "locked"
+        / "missions"
         / "pm.md"
     )
     _write(p, "---\nid: pm\ntitle: PM\nsummary: s\n---\n")
@@ -335,17 +329,12 @@ def test_us006_e2e_read_failed_permission_denied_on_locked_knight(
 
 
 def test_us006_e2e_yaml_parse_single_error_block_no_cascade(runner, project_dir):
-    """Scenario 4: an unparseable doctrine yaml that would also fail schema
-    validation if it parsed produces exactly one ERROR block (FR-10)."""
+    """Scenario 4: an unparseable watcher that would also fail schema validation
+    if it parsed produces exactly one ERROR block (FR-10)."""
     _write(
-        project_dir
-        / ".lore"
-        / "doctrines"
-        / "default"
-        / "broken"
-        / "broken.yaml",
+        project_dir / ".lore" / "watchers" / "default" / "broken.yaml",
         # Both bad YAML and missing all required fields.
-        "id: : :\nsteps: : : nope",
+        "id: : :\nwatch_target: : : nope",
     )
 
     result = runner.invoke(main, ["health"])

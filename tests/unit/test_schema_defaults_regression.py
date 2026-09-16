@@ -50,10 +50,6 @@ def _default_artifact_files() -> list[Path]:
     return sorted((DEFAULTS_ROOT / "artifacts").rglob("*.md"))
 
 
-def _default_knight_files() -> list[Path]:
-    return sorted((DEFAULTS_ROOT / "knights").rglob("*.md"))
-
-
 def _default_doctrine_design_files() -> list[Path]:
     return sorted((DEFAULTS_ROOT / "doctrines").rglob("*.design.md"))
 
@@ -70,15 +66,6 @@ def test_default_artifact_has_no_forbidden_keys(path: Path) -> None:
     fm = _load_frontmatter(path)
     leaked = FORBIDDEN_KEYS & set(fm)
     assert not leaked, f"{path} leaks forbidden keys: {sorted(leaked)}"
-
-
-@pytest.mark.parametrize("path", _default_knight_files(), ids=lambda p: p.name)
-def test_default_knight_only_has_allowed_keys(path: Path) -> None:
-    # US-011 regression guard — default knight seeds must only carry
-    # id/title/summary frontmatter keys.
-    fm = _load_frontmatter(path)
-    extra = set(fm) - ALLOWED_SIMPLE_KEYS
-    assert not extra, f"{path} has extra keys beyond id/title/summary: {sorted(extra)}"
 
 
 @pytest.mark.parametrize(
@@ -106,15 +93,6 @@ def test_default_artifact_validates_clean(path: Path) -> None:
     assert issues == [], f"{path} schema issues: {issues}"
 
 
-@pytest.mark.parametrize("path", _default_knight_files(), ids=lambda p: p.name)
-def test_default_knight_validates_clean(path: Path) -> None:
-    # US-011 regression guard — every default knight frontmatter must
-    # validate clean against the knight-frontmatter schema.
-    fm = _load_frontmatter(path)
-    issues = validate_entity("knight-frontmatter", fm)
-    assert issues == [], f"{path} schema issues: {issues}"
-
-
 @pytest.mark.parametrize(
     "path", _default_doctrine_design_files(), ids=lambda p: p.name
 )
@@ -135,7 +113,6 @@ def test_default_scans_discover_files() -> None:
     # US-011 regression guard — fail loud if the defaults tree layout
     # changes and the parametrised scans silently collect zero files.
     assert _default_artifact_files(), "no default artifacts discovered"
-    assert _default_knight_files(), "no default knights discovered"
     assert _default_doctrine_design_files(), "no default doctrine designs discovered"
 
 
@@ -351,7 +328,6 @@ CONCEPTUAL_ARTIFACT_MD = (
 
 REQUIRED_ARTIFACT_OUTBOUND_IDS = {
     "conceptual-entities-doctrine",
-    "conceptual-entities-knight",
     "conceptual-workflows-lore-init",
     "ref-lore_cli-commands",
 }
@@ -376,3 +352,23 @@ def test_conceptual_entities_artifact_has_required_outbound_related() -> None:
         f"conceptual-entities-artifact.related is missing required outbound "
         f"IDs: {sorted(missing)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# The Knight entity no longer ships
+# ---------------------------------------------------------------------------
+
+
+def test_no_knight_seed_tree_ships() -> None:
+    assert not (DEFAULTS_ROOT / "knights").exists()
+
+
+def test_every_default_doctrine_mission_validates_clean() -> None:
+    # Existence and structure only — decisions-006-no-seed-content-tests
+    # forbids asserting on any value under src/lore/defaults/.
+    for path in sorted((DEFAULTS_ROOT / "doctrines").rglob("missions/*.md")):
+        fm = _load_frontmatter(path)
+        assert set(fm) <= ALLOWED_SIMPLE_KEYS, (
+            f"{path} has extra keys beyond id/title/summary"
+        )
+        assert validate_entity("doctrine-mission-frontmatter", fm) == [], path

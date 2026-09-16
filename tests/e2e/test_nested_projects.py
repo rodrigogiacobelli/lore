@@ -69,18 +69,6 @@ W6_MAP_TABLE_WITHOUT_CITADEL = [
 ]
 
 
-_KNIGHT_MD = """\
----
-id: nested-knight
-title: Nested Knight
-summary: A knight authored so a scoped knight read has a row.
----
-
-# Nested Knight
-
-Does nothing.
-"""
-
 _ARTIFACT_MD = """\
 ---
 id: nested-artifact
@@ -105,15 +93,14 @@ summary: A doctrine authored so a scoped doctrine read has a row.
 One step.
 """
 
-_DOCTRINE_YAML = """\
-id: nested-doctrine
-title: Nested Doctrine
-summary: A doctrine authored so a scoped doctrine read has a row.
-steps:
-  - id: only-step
-    title: Do the thing
-    type: knight
-    knight: nested-knight
+_DOCTRINE_MISSION = """\
+---
+id: only-mission
+title: Do the thing
+summary: A mission authored so a scoped doctrine read has one.
+---
+
+Do the thing.
 """
 
 _WATCHER_YAML = """\
@@ -152,15 +139,16 @@ items:
 def author_entities(project) -> None:
     """Write one entity of every non-codex readable kind into ``project``."""
     lore = project / ".lore"
-    (lore / "knights" / "nested-knight.md").write_text(_KNIGHT_MD, encoding="utf-8")
     (lore / "artifacts" / "nested-artifact.md").write_text(
         _ARTIFACT_MD, encoding="utf-8"
     )
-    (lore / "doctrines" / "nested-doctrine.design.md").write_text(
+    doctrine = lore / "doctrines" / "nested-doctrine"
+    (doctrine / "missions").mkdir(parents=True, exist_ok=True)
+    (doctrine / "nested-doctrine.design.md").write_text(
         _DOCTRINE_DESIGN, encoding="utf-8"
     )
-    (lore / "doctrines" / "nested-doctrine.yaml").write_text(
-        _DOCTRINE_YAML, encoding="utf-8"
+    (doctrine / "missions" / "only-mission.md").write_text(
+        _DOCTRINE_MISSION, encoding="utf-8"
     )
     (lore / "watchers" / "nested-watcher.yaml").write_text(
         _WATCHER_YAML, encoding="utf-8"
@@ -356,7 +344,9 @@ def test_seeded_defaults_never_cross_a_boundary(nested_tree, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "ORIGIN" not in result.stdout
     assert "camelot:" not in result.stdout
-    assert "default/" in result.stdout
+    # The descendant's own seeded rows are still there, unqualified.
+    groups = [line.split()[1] for line in lines(result.stdout)[1:]]
+    assert any(group == "default" or group.startswith("default/") for group in groups)
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +398,6 @@ def test_a_foreign_edit_is_refused_as_the_error_envelope(
     "argv",
     [
         ("codex", "delete", "camelot:camelot-dispatch-contract"),
-        ("knight", "delete", "camelot:nested-knight"),
         ("artifact", "delete", "camelot:nested-artifact"),
         ("doctrine", "delete", "camelot:nested-doctrine"),
     ],
@@ -491,8 +480,8 @@ def test_the_part_four_field_edit_scenario_is_refused(nested_tree, monkeypatch):
 @pytest.mark.parametrize(
     "kind,entity_id",
     [
-        ("knight", "camelot:nested-knight"),
         ("artifact", "camelot:nested-artifact"),
+        ("doctrine", "camelot:nested-doctrine"),
         ("watcher", "camelot:nested-watcher"),
     ],
 )
@@ -725,7 +714,6 @@ def test_cross_project_map_json_carries_origin(nested_tree):
     "argv,envelope_key,entity_id",
     [
         (("doctrine", "list"), "doctrines", "realm:nested-doctrine"),
-        (("knight", "list"), "knights", "realm:nested-knight"),
         (("artifact", "list"), "artifacts", "realm:nested-artifact"),
         (("watcher", "list"), "watchers", "realm:nested-watcher"),
         (("rite", "list"), "rites", "realm:nested-rite"),
@@ -751,7 +739,6 @@ def test_a_scoped_list_keeps_its_envelope_key_and_gains_origin(
     "argv",
     [
         ("doctrine", "list"),
-        ("knight", "list"),
         ("artifact", "list"),
         ("watcher", "list"),
         ("rite", "list"),
@@ -767,25 +754,28 @@ def test_a_scoped_list_leads_with_the_origin_column(realm_tree, argv):
     assert "  realm  " in lines(result.stdout)[1]
 
 
-def test_a_scoped_doctrine_show_reads_the_foreign_pair(realm_tree):
-    # nested-projects-spec — S5: `doctrine show` is a bare object and the
-    # foreign design + yaml are read from the project that owns them
+def test_a_scoped_doctrine_show_reads_the_foreign_directory(realm_tree):
+    # nested-projects-spec — S5: `doctrine show` returns the design document
+    # and the mission index of the project that owns them
     result = run("--project", "realm", "doctrine", "show", "realm:nested-doctrine")
 
     assert result.exit_code == 0, result.output
     assert "# Nested Doctrine" in result.stdout
-    assert "only-step" in result.stdout
+    assert "--- Missions ---" in result.stdout
+    assert "only-mission" in result.stdout
 
 
-def test_a_scoped_knight_show_reads_the_foreign_body(realm_tree):
-    # nested-projects-spec — S5 / ADR-011: the JSON form is the record dict
-    result = run("--json", "--project", "realm", "knight", "show", "realm:nested-knight")
+def test_a_scoped_doctrine_show_reads_one_foreign_mission_body(realm_tree):
+    # nested-projects-spec — S5 / ADR-011: --mission answers with the body alone
+    result = run(
+        "--json", "--project", "realm", "doctrine", "show",
+        "realm:nested-doctrine", "--mission", "only-mission",
+    )
 
     assert result.exit_code == 0, result.output
-    payload = json.loads(result.stdout)
-    assert payload["id"] == "realm:nested-knight"
-    assert payload["origin"] == "realm"
-    assert "# Nested Knight" in payload["body"]
+    payload = json.loads(result.stdout)["mission"]
+    assert payload["id"] == "only-mission"
+    assert "Do the thing." in payload["body"]
 
 
 def test_a_scoped_artifact_show_is_a_bare_record_with_origin(realm_tree):
@@ -984,12 +974,13 @@ def test_adopting_a_tree_lists_every_project(nested_tree):
     assert {row["origin"] for row in rows} == {"self", "lore", "realm", "citadel"}
 
 
-def test_the_schema_version_is_unchanged(nested_tree):
+def test_nested_projects_added_no_migration_of_their_own(nested_tree):
     # nested-projects-spec — SC-9 / N-10: no state crosses a boundary, so
-    # there is no migration
+    # nested projects needed no schema change. The version has moved on since,
+    # for the doctrine-mission column rename, which is unrelated to this rule.
     from lore.db import SCHEMA_VERSION
 
-    assert SCHEMA_VERSION == 6
+    assert SCHEMA_VERSION == 7
 
 
 # ---------------------------------------------------------------------------
@@ -1012,7 +1003,7 @@ def test_top_level_help_teaches_the_tree(project_dir):
 
 @pytest.mark.parametrize(
     "group",
-    ["codex", "doctrine", "knight", "artifact", "watcher", "rite", "glossary"],
+    ["codex", "doctrine", "artifact", "watcher", "rite", "glossary"],
 )
 def test_each_affected_group_help_names_the_selector(project_dir, group):
     # nested-projects-spec — decisions-008: one sentence per affected group,

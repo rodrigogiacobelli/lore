@@ -25,7 +25,7 @@ related:
 
 Lore has two consumers today: human operators via the CLI, and Realm via Python import. A future third consumer — Lore Server — will expose the same surface over HTTP/MCP. All three must call the same underlying functions: no consumer may re-implement logic, and no consumer may be given a surface the others don't trust.
 
-Without a defined boundary, any module under `lore` could be imported externally, making every refactor a potential breaking change. The first attempt at this boundary placed the public contract at `lore.models.__all__` — limited to frozen dataclasses and enums. That choice does not match reality: the operational surface (`create_quest`, `claim_mission`, `read_document`, `scan_glossary`, …) lives across `lore.db`, `lore.codex`, `lore.validators`, `lore.knight`, `lore.doctrine`, `lore.artifact`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, and `lore.health`. Consumers reach into those modules directly today. The result: a "models-only" contract that nobody actually honours, and an implicit promise that every internal module's name and layout is stable.
+Without a defined boundary, any module under `lore` could be imported externally, making every refactor a potential breaking change. The first attempt at this boundary placed the public contract at `lore.models.__all__` — limited to frozen dataclasses and enums. That choice does not match reality: the operational surface (`create_quest`, `claim_mission`, `read_document`, `scan_glossary`, …) lives across `lore.db`, `lore.codex`, `lore.validators`, `lore.doctrine`, `lore.artifact`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, and `lore.health`. Consumers reach into those modules directly today. The result: a "models-only" contract that nobody actually honours, and an implicit promise that every internal module's name and layout is stable.
 
 A separate audit (ADR-011) established that callable behaviour must be identical between CLI and direct Python calls. Reconciling that with ADR-010's original scope requires a single, explicit facade for the callable surface — not a spread of internal modules.
 
@@ -36,7 +36,7 @@ A separate audit (ADR-011) established that callable behaviour must be identical
 `lore.api` is a facade module. It contains no business logic — only re-exports of names selected from internal modules:
 
 - Dataclasses and enums sourced from `lore.models`.
-- Callables sourced from `lore.db`, `lore.validators`, `lore.codex`, `lore.knight`, `lore.doctrine`, `lore.artifact`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, and `lore.health`.
+- Callables sourced from `lore.db`, `lore.validators`, `lore.codex`, `lore.doctrine`, `lore.artifact`, `lore.watcher`, `lore.glossary`, `lore.impacts`, `lore.priority`, and `lore.health`.
 
 Rules:
 
@@ -71,3 +71,9 @@ Rules:
 
 - Originally accepted with `lore.models.__all__` (frozen dataclasses + enums) as the public surface.
 - Amended to use `lore.api.__all__` as the public facade after audit revealed that the operational surface spans multiple internal modules and that consumers were already reaching into them. The facade decouples the public contract from internal module layout and gives the project a single, enforceable boundary for CLI, Realm, and Lore Server.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The module enumerations in Context and Decision drop `lore.knight`, and the five knight callables and the `Knight` type leave `lore.api.__all__`. |

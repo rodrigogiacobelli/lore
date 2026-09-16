@@ -745,8 +745,8 @@ class TestExportedIds:
 
     def test_a_path_outside_the_codex_tree_carries_no_layer(self, tmp_path):
         # nested-projects-spec — A-2: the layer question is a codex question;
-        # a knight or doctrine path is not asked it
-        from lore.paths import knights_dir
+        # a doctrine path is not asked it
+        from lore.paths import doctrines_dir
         from lore.projects import ExportCandidate, exported_ids
 
         ancestor = _make_project(tmp_path / "camelot", '[shared]\nexports = ["*"]\n')
@@ -759,7 +759,7 @@ class TestExportedIds:
                 ExportCandidate(
                     "scout",
                     group="research",
-                    path=knights_dir(ancestor) / "research" / "scout.md",
+                    path=doctrines_dir(ancestor) / "research" / "scout",
                 )
             ],
         ) == frozenset({"scout"})

@@ -33,7 +33,7 @@ The following design principles are adopted and implemented:
 - **Smart defaults.** `lore list` shows open quests. `lore ready` shows the top unblocked mission. The common case requires zero configuration.
 - **JSON output.** Every command whose output is data supports `--json` for programmatic consumption by agents. Human-readable by default. A command whose output is a side-effecting human report — `lore init` and `lore oracle` — is the recorded permanent exception (`ref-lore_cli-commands`), and its machine surface is `lore.api`.
 - **Cross-platform.** Targets Linux and Windows. Python and SQLite are cross-platform; no OS-specific code is used.
-- **Metadata is automatic.** Timestamps and status transitions are managed by code, never by the AI. Agents only set business fields (title, description, priority, knight).
+- **Metadata is automatic.** Timestamps and status transitions are managed by code, never by the AI. Agents only set business fields (title, description, priority, doctrine mission).
 - **Minimise tool calls.** Every CLI invocation costs context window. Commands return all relevant information in one call. Bulk operations (`lore claim`, `lore done`, `lore needs`) accept multiple arguments. Creation commands remain one-at-a-time for accuracy.
 - **Auto-cascade.** Closing a mission automatically unblocks dependents. Quests with `auto_close` enabled are automatically closed when all missions are done.
 
@@ -91,3 +91,4 @@ See: `documentation/user-stories/user-story-30.md`, `documentation/specs/context
 |------|--------|------|
 | 2026-03-31 | accepted | Initial decision. Recorded with the first public release. |
 | 2026-08-25 | accepted (scope widened) | Admits the human-first setup command class, bounded by the TTY gate, a flag for every prompt, and prompting confined to the CLI layer. The JSON-output principle is narrowed to match the permanent `lore init` / `lore oracle` exception `ref-lore_cli-commands` already records. |
+| 2026-09-16 | accepted | Decision unchanged. The business-fields enumeration names `doctrine_mission` where it named `knight`; the Knight entity no longer exists. |

@@ -36,13 +36,14 @@ def _latest_health_report(project_dir: Path) -> Path:
     return reports[-1]
 
 
-def _inject_bad_knight(project_dir: Path) -> None:
+def _inject_bad_mission(project_dir: Path) -> None:
     _write(
         project_dir
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
         / "feature-implementation"
+        / "missions"
         / "pm.md",
         "---\n"
         "id: pm\n"
@@ -55,7 +56,7 @@ def _inject_bad_knight(project_dir: Path) -> None:
 
 
 def _inject_doctrine_design_missing_summary(project_dir: Path) -> None:
-    """Write a complete doctrine pair where the design frontmatter omits `summary`."""
+    """Write a doctrine whose design frontmatter omits `summary`."""
     base = (
         project_dir
         / ".lore"
@@ -63,11 +64,8 @@ def _inject_doctrine_design_missing_summary(project_dir: Path) -> None:
         / "feature-implementation"
     )
     _write(
-        base / "feature-implementation.yaml",
-        "id: feature-implementation\n"
-        "title: Feature Implementation\n"
-        "summary: s\n"
-        "steps: []\n",
+        base / "missions" / "recon.md",
+        "---\nid: recon\ntitle: Recon\nsummary: s\n---\nBody.\n",
     )
     _write(
         base / "feature-implementation.design.md",
@@ -102,16 +100,16 @@ def project_clean(project_dir):
 
 @pytest.fixture()
 def project_with_two_schema_errors(project_dir):
-    """Project with exactly two schema errors: one knight + one doctrine-design."""
-    _inject_bad_knight(project_dir)
+    """Project with exactly two schema errors: a mission and a design."""
+    _inject_bad_mission(project_dir)
     _inject_doctrine_design_missing_summary(project_dir)
     return project_dir
 
 
 @pytest.fixture()
-def project_with_bad_knight(project_dir):
-    """Project with a single schema error on a knight file."""
-    _inject_bad_knight(project_dir)
+def project_with_bad_mission(project_dir):
+    """Project with a single schema error on a doctrine mission file."""
+    _inject_bad_mission(project_dir)
     return project_dir
 
 
@@ -144,7 +142,7 @@ def test_e2e_report_section_multi_kind_contains_both_headings(
     text = _latest_health_report(project_with_two_schema_errors).read_text()
     assert "## Schema validation" in text
     assert "### doctrine-design-frontmatter" in text
-    assert "### knight" in text
+    assert "### doctrine-mission-frontmatter" in text
 
 
 def test_e2e_report_section_multi_kind_alphabetical_order(
@@ -153,7 +151,9 @@ def test_e2e_report_section_multi_kind_alphabetical_order(
     """conceptual-workflows-oracle — kinds sorted alphabetically in report."""
     runner.invoke(main, ["health"])
     text = _latest_health_report(project_with_two_schema_errors).read_text()
-    assert text.index("### doctrine-design-frontmatter") < text.index("### knight")
+    assert text.index("### doctrine-design-frontmatter") < text.index(
+        "### doctrine-mission-frontmatter"
+    )
 
 
 def test_e2e_report_section_multi_kind_exact_block(
@@ -168,8 +168,8 @@ def test_e2e_report_section_multi_kind_exact_block(
         "### doctrine-design-frontmatter\n"
         "- `.lore/doctrines/feature-implementation/feature-implementation.design.md` — "
         "`required` at `/` — Missing required property 'summary'.\n\n"
-        "### knight\n"
-        "- `.lore/knights/default/feature-implementation/pm.md` — "
+        "### doctrine-mission-frontmatter\n"
+        "- `.lore/doctrines/default/feature-implementation/missions/pm.md` — "
         "`additionalProperties` at `/stability` — "
         "Unknown property 'stability' — allowed keys are id, title, summary.\n"
     )
@@ -186,7 +186,7 @@ def test_e2e_report_section_omitted_when_scope_excludes_schemas(
 ):
     """conceptual-workflows-oracle — scope gating, differential: default has the
     section, non-schema scope does not."""
-    _inject_bad_knight(project_dir)
+    _inject_bad_mission(project_dir)
 
     # Default run — schemas scope active, section MUST be present.
     runner.invoke(main, ["health"])

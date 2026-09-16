@@ -366,7 +366,7 @@ def test_no_longer_exists_in_a_main_clause_fires(tmp_path):
 def test_no_longer_exists_in_a_subordinate_clause_does_not_fire(tmp_path):
     """A subordinator before the phrase makes it a present condition."""
     root = make_project(tmp_path)
-    write_codex(root, "tech-show", "If the Knight file no longer exists, the CLI warns.")
+    write_codex(root, "tech-show", "If the design file no longer exists, the CLI warns.")
     assert _check_voice(root) == []
 
 

@@ -13,7 +13,7 @@ related:
 
 ## Context
 
-Lore ships a set of seed default files (watchers, doctrines, knights) under `src/lore/defaults/`. These files are copied into a project's `.lore/` directory on `lore init`. They are living templates — their content evolves as the project matures, with titles, action values, and comments updated as features are refined.
+Lore ships a set of seed default files (watchers, doctrines, artifacts) under `src/lore/defaults/`. These files are copied into a project's `.lore/` directory on `lore init`. They are living templates — their content evolves as the project matures, with titles, action values, and comments updated as features are refined.
 
 Early E2E tests in `tests/e2e/test_lore_init.py` asserted specific field values from these seed files (e.g., `title == "Update Changelog"`, `action == "update-changelog"`, presence of a specific inline comment). Every time a seed file was updated, one or more tests broke — not because behaviour was wrong, but because hardcoded expected values no longer matched.
 
@@ -43,3 +43,9 @@ Seed default files are design artifacts, not stable contracts. Their content is 
 **Parametrize tests against seed files at runtime.** Rejected because it would couple the test to the implementation of the seed file discovery mechanism, not to the CLI behaviour being tested.
 
 **Keep content tests but update them on every seed change.** Rejected because this is exactly the pattern that produced the failures. Content tests for seed defaults are structurally incorrect — they test the wrong layer.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The seed-file enumeration drops knights; Lore ships no knight files. |

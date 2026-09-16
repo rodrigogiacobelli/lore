@@ -47,11 +47,11 @@ Seven prompts, in this order. Five fire on every interactive run; two are condit
 | 6 | *n* file(s) Lore did not install sit where Lore would write. What should Lore do? | Reconciliation found a path Lore wants holding a file it never installed | `Leave mine alone` or `Overwrite`. |
 | 7 | Apply this plan? | Always, unless `--yes` | Yes or no. |
 
-Prompt 1 shows each agent's label beside the file it writes, so the choice is legible without knowing the registry. Prompt 2 states its own scope: the access mode governs codex documents, rites and the glossary, while quests, missions, artifacts, knights, doctrines and watchers always go through the CLI. Prompt 3 preselects memory and workflow, and leaves machinery unselected.
+Prompt 1 shows each agent's label beside the file it writes, so the choice is legible without knowing the registry. Prompt 2 states its own scope: the access mode governs codex documents, rites and the glossary, while quests, missions, artifacts, doctrines and watchers always go through the CLI. Prompt 3 preselects memory and workflow, and leaves machinery unselected — a project that never edits a doctrine does not need the four skills that do.
 
 A conditional prompt fires only in the case named. An instruction file that does not exist is created with markers, and one that already carries markers has its block replaced — neither asks.
 
-Prompt 6 is narrower than its flag name suggests. Lore owns the files it installs (`conceptual-workflows-init-reconcile`), so an edited skill, knight or doctrine of Lore's is replaced — or removed, if the release retired it — without a question. The prompt fires only for a path Lore wants that holds a file **the project** put there, which is the one conflict where both answers do something. A conflict Lore cannot act on either way — a symlink, a path resolving out of the project — is reported and opens no prompt.
+Prompt 6 is narrower than its flag name suggests. Lore owns the files it installs (`conceptual-workflows-init-reconcile`), so an edited skill, doctrine or artifact of Lore's is replaced — or removed, if the release retired it — without a question. The prompt fires only for a path Lore wants that holds a file **the project** put there, which is the one conflict where both answers do something. A conflict Lore cannot act on either way — a symlink, a path resolving out of the project — is reported and opens no prompt.
 
 Ctrl-C at any prompt aborts: Lore prints `Aborted!` to stderr, writes nothing, and exits 1.
 

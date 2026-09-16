@@ -57,10 +57,9 @@ your-project/
     |- LORE-AGENT.md          # The rendered agent instruction text (always written)
     |- GETTING-STARTED.md     # Orientation guide, copied verbatim
     |- skills/                # Rendered skills, when no selected agent has a native skills directory
-    |- doctrines/             # Doctrine templates; user-created files live here
+    |- doctrines/             # Doctrine directories; user-created ones live here
     |  +-- default/           # Lore-seeded defaults (gitignored)
-    |- knights/               # Knight persona files; user-created files live here
-    |  +-- default/           # Lore-seeded defaults (gitignored)
+    |     +-- <doctrine>/     # <doctrine>.design.md plus missions/<id>.md
     |- artifacts/             # Artifacts — the shipped development process
     |  +-- default/           # Lore-seeded defaults (gitignored)
     |     |- codex/                   # One well-formed example document per codex layer
@@ -99,9 +98,9 @@ A project initialised before that change still carries the block, inside markers
 
 **`.lore/skills/`** holds the rendered skills when no selected agent has a native skills directory — including the case where no agent is selected at all. The `skills/` line in `.lore/.gitignore` ignores the whole tree.
 
-**`.lore/doctrines/`**, **`.lore/knights/`**, **`.lore/artifacts/`** and **`.lore/watchers/`** each contain a `default/` subdirectory where Lore-seeded files land. User-created files use the flat parent directory (e.g. `.lore/knights/my-knight.md`) and are tracked by git independently of the seeded defaults. On re-init, files inside `default/` are overwritten with the versions the installed release ships. Files in the flat parent directory are never touched.
+**`.lore/doctrines/`**, **`.lore/artifacts/`** and **`.lore/watchers/`** each contain a `default/` subdirectory where Lore-seeded files land. User-created files use the flat parent directory (e.g. `.lore/doctrines/my-doctrine/`) and are tracked by git independently of the seeded defaults. On re-init, files inside `default/` are overwritten with the versions the installed release ships. Files in the flat parent directory are never touched.
 
-**`.lore/artifacts/`** is the shipped development process. `artifacts/default/feature-implementation/` holds the spec and story templates the feature pipeline produces and consumes; `artifacts/default/codex/` holds one well-formed example document per codex layer, referenced by doctrines and knights through `example-*` IDs. Agents reach artifacts with `lore artifact show <id>`, not by path (`decisions-006-id-references`).
+**`.lore/artifacts/`** is the shipped development process. `artifacts/default/feature-implementation/` holds the spec and story templates the feature pipeline produces and consumes; `artifacts/default/codex/` holds one well-formed example document per codex layer, referenced from doctrine design and mission bodies through `example-*` IDs. Agents reach artifacts with `lore artifact show <id>`, not by path (`decisions-006-id-references`).
 
 **`.lore/rites/`** holds procedural memory. `lore init` creates `main/` and `shared/` empty; every rite in them is user-authored.
 
@@ -151,9 +150,6 @@ The file is user-tracked — `.lore/.gitignore` carries `!config.toml`. `lore in
 !artifacts
 !artifacts/**
 artifacts/default/
-!knights
-!knights/**
-knights/default/
 !doctrines
 !doctrines/**
 doctrines/default/
@@ -162,9 +158,10 @@ doctrines/default/
 watchers/default/
 !rites
 !rites/**
+!skills
+!skills/**
 GETTING-STARTED.md
 LORE-AGENT.md
-skills/
 ```
 
 The leading `*` ignores every file and subdirectory inside `.lore/`, which is what keeps `lore.db`, `reports/` and `.install-manifest.json` out of version control without naming them. Each `!` line un-ignores a tree the project owns, and each bare path after it re-ignores the Lore-owned part of that tree.
@@ -172,6 +169,7 @@ The leading `*` ignores every file and subdirectory inside `.lore/`, which is wh
 - `!.gitignore` keeps the ignore file itself tracked.
 - `!config.toml` and `!custom-schemas` / `!custom-schemas/**` keep project config and schema overlays tracked. Neither has a `default/` subtree, because both are entirely user-owned.
 - `!codex` / `!codex/**` track the whole documentation tree, which is also what tracks `.lore/codex/glossary.yaml`.
-- `!artifacts/**` then `artifacts/default/` tracks user-created artifacts and ignores the shipped defaults. `knights/`, `doctrines/` and `watchers/` follow the same pair.
+- `!artifacts/**` then `artifacts/default/` tracks user-created artifacts and ignores the shipped defaults. `doctrines/` and `watchers/` follow the same pair.
 - `!rites` / `!rites/**` tracks procedural memory, which has no `default/` subtree because Lore seeds no rites.
-- `GETTING-STARTED.md`, `LORE-AGENT.md` and `skills/` are re-stated explicitly for readability; the leading `*` already covers them.
+- `!skills` / `!skills/**` tracks rendered skills, which have no `default/` subtree — the skill id is the ownership boundary.
+- `GETTING-STARTED.md` and `LORE-AGENT.md` are re-stated explicitly for readability; the leading `*` already covers them.

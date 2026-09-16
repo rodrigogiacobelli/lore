@@ -24,15 +24,6 @@ from lore.cli import main
 # ---------------------------------------------------------------------------
 
 
-KNIGHT_MD = (
-    "---\n"
-    "id: tester\n"
-    "title: Tester\n"
-    "summary: A test knight.\n"
-    "---\n"
-    "# body\n"
-)
-
 ARTIFACT_MD = (
     "---\n"
     "id: tmpl\n"
@@ -42,14 +33,22 @@ ARTIFACT_MD = (
     "body\n"
 )
 
-DOCTRINE_YAML = (
+DOCTRINE_DESIGN = (
+    "---\n"
     "id: workflow\n"
     "title: Workflow\n"
     "summary: A doctrine.\n"
-    "steps:\n"
-    "  - id: s1\n"
-    "    title: Step 1\n"
-    "    type: human\n"
+    "---\n"
+    "# How this work is done\n"
+)
+
+DOCTRINE_MISSION = (
+    "---\n"
+    "id: recon\n"
+    "title: Recon\n"
+    "summary: A mission.\n"
+    "---\n"
+    "Read first.\n"
 )
 
 WATCHER_YAML = (
@@ -74,15 +73,22 @@ CODEX_MD = (
 )
 
 
+def _doctrine_design(project_dir: Path) -> Path:
+    return project_dir / ".lore" / "doctrines" / "workflow" / "workflow.design.md"
+
+
 def _seed_all(project_dir: Path) -> None:
-    (project_dir / ".lore" / "knights").mkdir(parents=True, exist_ok=True)
     (project_dir / ".lore" / "artifacts").mkdir(parents=True, exist_ok=True)
-    (project_dir / ".lore" / "doctrines").mkdir(parents=True, exist_ok=True)
+    (project_dir / ".lore" / "doctrines" / "workflow" / "missions").mkdir(
+        parents=True, exist_ok=True
+    )
     (project_dir / ".lore" / "watchers").mkdir(parents=True, exist_ok=True)
     (project_dir / ".lore" / "codex").mkdir(parents=True, exist_ok=True)
-    (project_dir / ".lore" / "knights" / "tester.md").write_text(KNIGHT_MD)
     (project_dir / ".lore" / "artifacts" / "tmpl.md").write_text(ARTIFACT_MD)
-    (project_dir / ".lore" / "doctrines" / "workflow.yaml").write_text(DOCTRINE_YAML)
+    _doctrine_design(project_dir).write_text(DOCTRINE_DESIGN)
+    (
+        project_dir / ".lore" / "doctrines" / "workflow" / "missions" / "recon.md"
+    ).write_text(DOCTRINE_MISSION)
     (project_dir / ".lore" / "watchers" / "watch.yaml").write_text(WATCHER_YAML)
     (project_dir / ".lore" / "codex" / "my-codex.md").write_text(CODEX_MD)
 
@@ -96,9 +102,7 @@ class TestMutualExclusion:
     @pytest.mark.parametrize(
         "kind,name,filename",
         [
-            ("knight", "tester", "tester.md"),
             ("artifact", "tmpl", "tmpl.md"),
-            ("doctrine", "workflow", "workflow.yaml"),
             ("watcher", "watch", "watch.yaml"),
             ("codex", "my-codex", "my-codex.md"),
         ],
@@ -132,17 +136,6 @@ class TestMutualExclusion:
 
 
 class TestSetSummaryHappyPath:
-    def test_knight_set_summary(self, runner, project_dir):
-        _seed_all(project_dir)
-        result = runner.invoke(
-            main, ["knight", "edit", "tester", "--set", "summary=New summary."]
-        )
-        assert result.exit_code == 0, result.output
-        text = (project_dir / ".lore" / "knights" / "tester.md").read_text()
-        parts = text.split("---", 2)
-        meta = yaml.safe_load(parts[1])
-        assert meta["summary"] == "New summary."
-
     def test_artifact_set_title(self, runner, project_dir):
         _seed_all(project_dir)
         result = runner.invoke(
@@ -155,15 +148,39 @@ class TestSetSummaryHappyPath:
         assert meta["title"] == "Brand New"
 
     def test_doctrine_set_summary(self, runner, project_dir):
+        """Field-edit mode targets the design document, and only its frontmatter."""
         _seed_all(project_dir)
         result = runner.invoke(
             main, ["doctrine", "edit", "workflow", "--set", "summary=Refreshed"]
         )
         assert result.exit_code == 0, result.output
-        data = yaml.safe_load(
-            (project_dir / ".lore" / "doctrines" / "workflow.yaml").read_text()
+        assert result.stdout == "Updated doctrine workflow\n"
+        text = _doctrine_design(project_dir).read_text()
+        meta = yaml.safe_load(text.split("---", 2)[1])
+        assert meta["summary"] == "Refreshed"
+
+    def test_doctrine_set_title_leaves_the_body_byte_identical(
+        self, runner, project_dir
+    ):
+        _seed_all(project_dir)
+        result = runner.invoke(
+            main, ["doctrine", "edit", "workflow", "--set", "title=X"]
         )
-        assert data["summary"] == "Refreshed"
+        assert result.exit_code == 0, result.output
+        text = _doctrine_design(project_dir).read_text()
+        meta = yaml.safe_load(text.split("---", 2)[1])
+        assert meta["title"] == "X"
+        assert text.split("---", 2)[2] == DOCTRINE_DESIGN.split("---", 2)[2]
+
+    def test_doctrine_field_edit_leaves_every_mission_alone(
+        self, runner, project_dir
+    ):
+        _seed_all(project_dir)
+        runner.invoke(main, ["doctrine", "edit", "workflow", "--set", "title=X"])
+        mission = (
+            project_dir / ".lore" / "doctrines" / "workflow" / "missions" / "recon.md"
+        )
+        assert mission.read_text() == DOCTRINE_MISSION
 
     def test_watcher_set_interval(self, runner, project_dir):
         _seed_all(project_dir)
@@ -242,9 +259,8 @@ class TestJsonEnvelopeParity:
     @pytest.mark.parametrize(
         "kind,name,filename",
         [
-            ("knight", "tester", "tester.md"),
             ("artifact", "tmpl", "tmpl.md"),
-            ("doctrine", "workflow", "workflow.yaml"),
+            ("doctrine", "workflow", "workflow.design.md"),
             ("watcher", "watch", "watch.yaml"),
             ("codex", "my-codex", "my-codex.md"),
         ],
@@ -302,14 +318,14 @@ class TestStructuredFieldRejected:
 
 
 class TestFullEditEnvelopeUpdatedAt:
-    def test_knight_full_edit_envelope_has_updated_at(self, runner, project_dir):
+    def test_artifact_full_edit_envelope_has_updated_at(self, runner, project_dir):
         _seed_all(project_dir)
         # Full update via --from
         src = project_dir / "new.md"
-        src.write_text(KNIGHT_MD)
+        src.write_text(ARTIFACT_MD)
         result = runner.invoke(
             main,
-            ["--json", "knight", "edit", "tester", "--from", str(src)],
+            ["--json", "artifact", "edit", "tmpl", "--from", str(src)],
         )
         assert result.exit_code == 0, result.output
         env = json.loads(result.stdout)

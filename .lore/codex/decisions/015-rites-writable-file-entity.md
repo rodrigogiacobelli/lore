@@ -5,7 +5,7 @@ summary: >
   ADR recording that Rite — Lore's procedural-memory entity — ships with a full
   CLI write path (new/edit/delete) over its own .lore/rites/ store, diverging
   from the codex's deliberate read-only-via-CLI posture and instead adopting the
-  watcher/doctrine/knight/artifact file-entity write model.
+  watcher/doctrine/artifact file-entity write model.
 binds:
   - src/lore/rite.py
   - src/lore/cli.py
@@ -40,7 +40,7 @@ Key forces:
 - **Rites are rewritten often, by any agent.** The design doc frames rites as
   procedural knowledge that gets distilled and redistilled. A CLI write path is
   the natural authoring surface for high-churn content.
-- **Other file entities already have full CRUD.** Watchers, knights, doctrines,
+- **Other file entities already have full CRUD.** Watchers, doctrines
   and artifacts are file-based and all expose `new`/`edit`/`delete` (or close to
   it). A writable file entity is the established Lore pattern; the codex is the
   outlier, not the rule.
@@ -54,14 +54,14 @@ Rites are a **writable** file entity. The `lore rite` surface ships with a full
 write path — `lore rite new`, `lore rite edit`, `lore rite delete` — alongside
 the read commands (`list`, `show`, `search`). This diverges from the codex's
 read-only-via-CLI posture and instead follows the
-watcher/doctrine/knight/artifact file-entity write model: validate-then-write,
+watcher/doctrine/artifact file-entity write model: validate-then-write,
 subtree-wide duplicate detection, and soft-delete by `.yaml.deleted` rename.
 
 > Codex stays disk-only for writes. Rites do not.
 
 ## Rationale
 
-- **Matches the dominant file-entity pattern.** Watcher/knight/doctrine/artifact
+- **Matches the dominant file-entity pattern.** Watcher/doctrine/artifact
   are all CLI-writable file entities; rites join them. The codex is the
   documented exception, and its exception does not generalise.
 - **Authoring churn wants a first-class write path.** Rites are expected to be
@@ -113,3 +113,4 @@ subtree-wide duplicate detection, and soft-delete by `.yaml.deleted` rename.
 | Date | Status | Note |
 |------|--------|------|
 | 2026-06-02 | accepted | Initial decision — recorded during Rites codex-apply; flagged by the ADR & Standards Audit as an unrecorded entity-posture choice |
+| 2026-09-16 | accepted | Decision unchanged. The file-entity enumerations drop Knight; the dominant pattern rites follow is watcher/doctrine/artifact. |

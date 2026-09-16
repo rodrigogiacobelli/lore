@@ -180,8 +180,7 @@ Reference docs capture **intent around** concrete technical artifacts — DB tab
 |------------------------|--------------------------------------------------------------------------|
 | `retrieve-memory`      | research a question or map a domain, across the codex and the rites      |
 | `store-memory`         | record a fact, a procedure, or an upstream source into project memory    |
-| `update-knight`        | create or edit a knight persona                                          |
-| `update-doctrine`      | create or edit a doctrine                                                |
+| `update-doctrine`      | create or edit a doctrine and its mission files                          |
 | `update-watcher`       | create or edit a watcher                                                 |
 | `update-artifact`      | create or edit a template artifact                                       |
 | `update-custom-schema` | create or edit a custom-frontmatter overlay                              |

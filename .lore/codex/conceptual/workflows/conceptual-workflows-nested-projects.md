@@ -92,7 +92,7 @@ An export entry is a literal entity id or a glob pattern, matched with `fnmatch.
 
 ## The `--project` read selector
 
-`--project <name>` (or `all`, or `self`) is a global option accepted on 19 read commands: `codex list|show|search|map`, `doctrine list|show`, `knight list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, and `impacts`. It is rejected — a usage error, exit 2 — on every write command and on every quest or mission command:
+`--project <name>` (or `all`, or `self`) is a global option accepted on 17 read commands: `codex list|show|search|map`, `doctrine list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, and `impacts`. It is rejected — a usage error, exit 2 — on every write command and on every quest or mission command:
 
 ```
 Error: --project is a read selector; it is not accepted on "codex new".

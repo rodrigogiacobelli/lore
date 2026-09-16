@@ -3,7 +3,7 @@ id: conceptual-workflows-health
 title: lore health Behaviour
 summary: What the system does internally when lore health runs — a full-scan or scoped
   audit across two kinds of scope. Eight scopes name a file-based entity type (codex,
-  artifacts, doctrines, knights, watchers, glossary, rites, skills); three cut across
+  artifacts, doctrines, watchers, glossary, rites, skills); three cut across
   them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention
   policy that decides whether a markdown report reaches codex/transient (none by default,
   latest, or all), --scope filtering, --json output, the exit-code contract, and the
@@ -31,7 +31,6 @@ binds:
 related:
 - conceptual-entities-artifact
 - conceptual-entities-doctrine
-- conceptual-entities-knight
 - conceptual-entities-watcher
 - conceptual-entities-glossary
 - conceptual-entities-rite
@@ -65,7 +64,7 @@ related:
 
 `lore health` audits a Lore project's knowledge base and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove that knowledge base internally consistent.
 
-Its scopes divide into two kinds. **Eight name a file-based entity type**: codex, artifacts, doctrines, knights, watchers, the Glossary (lore codex show conceptual-entities-glossary), Rites (lore codex show conceptual-entities-rite), and Skills (lore codex show conceptual-entities-skill). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
+Its scopes divide into two kinds. **Seven name a file-based entity type**: codex, artifacts, doctrines, watchers, the Glossary (lore codex show conceptual-entities-glossary), Rites (lore codex show conceptual-entities-rite), and Skills (lore codex show conceptual-entities-skill). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
 
 ## Preconditions
 
@@ -76,7 +75,7 @@ Its scopes divide into two kinds. **Eight name a file-based entity type**: codex
 
 ```
 lore health
-lore health --scope doctrines knights
+lore health --scope doctrines artifacts
 lore health --scope watchers
 lore health --scope glossary
 lore health --scope codex glossary
@@ -91,7 +90,7 @@ lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
+`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. Whether a report file is written is decided by the `health-report-retention` config key, not by `--json` — the two are independent.
 
@@ -104,7 +103,7 @@ lore health --scope codex --json
 The system determines which scopes to run:
 - No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
 - `--scope SCOPE [SCOPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`.
 
 ### 2. Run per-scope checkers
 
@@ -122,13 +121,18 @@ Each in-scope checker runs independently. A failure in one checker (e.g., the wa
 
 #### Doctrine checks
 
-- **Orphaned file** (error): any `.yaml` with no matching `.design.md`, or any `.design.md` with no matching `.yaml`.
-- **Broken knight ref in step** (error): any doctrine step whose `knight` field names a knight not present on disk (and not soft-deleted as `<name>.md.deleted`).
-- **Broken artifact ref in step notes** (error): any doctrine step whose `notes` field contains a token matching the artifact ID pattern (`fi-[a-z0-9-]+`) that does not exist in the artifact index.
+Frontmatter *shape* is validated by `--scope schemas`, which carries a row for both doctrine kinds. What the `doctrines` scope adds is everything that depends on more than one file:
 
-#### Knight checks
+- **Missing missions directory** (warning): any design file that is not inside a directory of its own name, or whose directory holds no `missions/`. The doctrine is not readable in the current shape.
+- **Stray YAML** (warning): a `<stem>.yaml` beside a `<stem>.design.md`. The file is no longer read.
+- **Missing design** (warning): a directory holding a `missions/` subdirectory but no design document of its own name.
+- **ID mismatch** (error): a design file whose frontmatter `id` does not equal its directory name.
+- **Mission ID mismatch** (error): a mission file whose frontmatter `id` does not equal its filename stem.
+- **Duplicate ID** (error): two doctrines declaring the same `id` anywhere in the tree.
+- **Broken artifact ref** (error): a design or mission body containing a token matching the artifact ID pattern (`fi-[a-z0-9-]+`) that does not exist in the artifact index.
+- **Dangling doctrine mission** (error): a `doctrine_mission` reference stored on an active (non-closed, non-deleted) mission that resolves to no file on disk. One row per reference, however many missions carry it, because the repair is one edit to one doctrine. This is the single reporter of that condition — a read is silent (lore codex show decisions-033-unresolvable-reference-is-silent-on-read).
 
-- **Missing file** (error): any active (non-closed, non-deleted) mission that names a knight whose `.md` file is absent from disk. A `.md.deleted` file means intentional soft-delete — not an error. A completely absent file is an error.
+Any path segment beginning with `.` or ending `.deleted` hides everything at and below it, so a soft-deleted doctrine raises nothing.
 
 #### Glossary checks (scope: `glossary`)
 
@@ -155,15 +159,14 @@ There is no cross-codex deprecated-term scan. The `do_not_use` schema field on g
 
 #### Schema checks (scope: `schemas`)
 
-Schema checks validate the *shape* of every on-disk entity file against its JSON Schema. They are complementary to the reference-integrity checks above — schema checks answer "is this file a valid `X`?", reference checks answer "does this link resolve?". Schema definitions live in `src/lore/schemas/*.yaml` and are the single authoritative contract shared with create-time validators in `doctrine.py`, `knight.py`, `watcher.py`, and `artifact.py` (see tech-arch-schemas).
+Schema checks validate the *shape* of every on-disk entity file against its JSON Schema. They are complementary to the reference-integrity checks above — schema checks answer "is this file a valid `X`?", reference checks answer "does this link resolve?". Schema definitions live in `src/lore/schemas/*.yaml` and are the single authoritative contract shared with create-time validators in `doctrine.py`, `watcher.py`, and `artifact.py` (see tech-arch-schemas).
 
 Every schema violation is an **error** (never a warning) and each emits a `HealthIssue` with `check="schema"` and three extra fields: `schema_id`, `rule`, `pointer`. Multiple violations per file are collected via `jsonschema.Draft202012Validator.iter_errors` — no short-circuit.
 
 Per-kind coverage:
 
-- **`doctrine-yaml`** — every `.lore/doctrines/**/*.yaml` validated against `lore://schemas/doctrine-yaml`.
 - **`doctrine-design-frontmatter`** — frontmatter of every `.lore/doctrines/**/*.design.md` validated against `lore://schemas/doctrine-design-frontmatter`.
-- **`knight`** — frontmatter of every `.lore/knights/**/*.md` validated against `lore://schemas/knight-frontmatter`.
+- **`doctrine-mission-frontmatter`** — frontmatter of every `.lore/doctrines/**/missions/*.md` validated against `lore://schemas/doctrine-mission-frontmatter`.
 - **`watcher`** — every `.lore/watchers/**/*.yaml` validated against `lore://schemas/watcher-yaml`.
 - **`codex`** — frontmatter of every `.lore/codex/**/*.md` validated against `lore://schemas/codex-frontmatter` (optional `related`, `binds`, and `rites` arrays accepted; mapping form rejected). A malformed `rites:` (non-array, duplicates, empty string) is a schema error with `entity_type="codex"`. Source docs under `.lore/codex/sources/` are validated against `lore://schemas/codex-source-frontmatter` via the in-loop per-file override. Docs under `.lore/codex/transient/` are validated against the **packaged** `lore://schemas/codex-frontmatter` via a second in-loop per-file override — never the merged one (`decisions-019-overlay-scope-stops-at-transient`). Both codex kinds are **overlay-aware** outside `transient/`: when the project ships a `.lore/custom-schemas/<kind>.yaml` overlay, the validator is the merged schema (packaged default + overlay), so declared custom keys pass while undeclared keys (e.g. a typo) still error — see "Project-local schema overlays" below.
 - **`artifact`** — frontmatter of every `.lore/artifacts/**/*.md` validated against `lore://schemas/artifact-frontmatter`.
@@ -177,11 +180,11 @@ Special error rules (beyond JSON Schema keywords):
 - **`rule="missing-frontmatter"`** — frontmatter-validated file has no `---` block. Single error, `pointer="/"`, message `"File has no YAML frontmatter block"`.
 - **`rule="read-failed"`** — I/O or Unicode failure on read. Single error, `pointer="/"`, `message=str(exc)`. Validation continues to the next file.
 
-Files that the existing entity loaders today silently skip (unpaired doctrine designs, frontmatter-less knights, malformed artifacts) are surfaced here as schema errors instead of being silently dropped.
+Files the entity loaders silently skip — a design file with no `id`, a malformed artifact — are surfaced here as schema errors instead of being silently dropped.
 
 ##### Project-local schema overlays
 
-A project may add custom frontmatter keys to its codex docs by declaring them once in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`). For the two codex kinds the schema audit resolves its validator through the project-aware health seam `project_get_validator(kind, project_root)` (re-exporting `schemas.project_validator_for`); the other seven kinds use the kind-only `get_validator(kind)` seam. Both are internal module-level monkeypatch seams (neither is public API); the kind split — project-aware for the two codex kinds, kind-only for the rest — is the routing rule. The merged validator adds the overlay's declared properties (and any overlay `required` entries) onto the packaged schema while keeping `additionalProperties: false`. Effect on the audit:
+A project may add custom frontmatter keys to its codex docs by declaring them once in an add-only overlay at `.lore/custom-schemas/<kind>.yaml` (v1 kinds: `codex-frontmatter`, `codex-source-frontmatter`). For the two codex kinds the schema audit resolves its validator through the project-aware health seam `project_get_validator(kind, project_root)` (re-exporting `schemas.project_validator_for`); the other six kinds use the kind-only `get_validator(kind)` seam. Both are internal module-level monkeypatch seams (neither is public API); the kind split — project-aware for the two codex kinds, kind-only for the rest — is the routing rule. The merged validator adds the overlay's declared properties (and any overlay `required` entries) onto the packaged schema while keeping `additionalProperties: false`. Effect on the audit:
 
 - A **canonical or source** doc carrying a **declared** custom key (e.g. `owner:` named in the overlay) passes.
 - An **undeclared** key — including a typo of a declared key (`onwer:`) — still errors as `additionalProperties`, now listing the custom key among the allowed keys.
@@ -335,7 +338,7 @@ Report body on clean run: `No issues found.`
 Issues present:
 ```
 SEVERITY  ENTITY_TYPE  ID                CHECK
-ERROR     doctrines    feat-auth         broken_knight_ref: 'senior-engineer' not found (step 2)
+ERROR     doctrines    feat-auth         broken_artifact_ref: 'fi-nonexistent' not found (mission recon)
 ERROR     watchers     on-quest-close    broken_doctrine_ref: 'feat-payments' not found
 ERROR     rites        issue-refund      dangling_use: node "get-contact" uses missing shared step "read-contact-info"
 ERROR     rites        ops-refunds       dangling_codex_rite: codex "ops-refunds" references missing rite "issue-refund"
@@ -346,9 +349,9 @@ WARNING   rites        read-contact-info orphan_shared_step: no main rite uses t
 Schema violations use a dedicated multi-line ERROR block followed by a summary line:
 
 ```
-ERROR .lore/knights/default/feature-implementation/pm.md
-  kind: knight
-  schema: lore://schemas/knight-frontmatter
+ERROR .lore/doctrines/default/feature-implementation/feature-implementation/missions/prd-draft.md
+  kind: doctrine-mission-frontmatter
+  schema: lore://schemas/doctrine-mission-frontmatter
   rule: additionalProperties
   path: /stability
   message: Unknown property 'stability' — allowed keys are id, title, summary.
@@ -372,19 +375,19 @@ Issues present:
       "severity": "error",
       "entity_type": "doctrines",
       "id": "feat-auth",
-      "check": "broken_knight_ref",
-      "detail": "'senior-engineer' not found (step 2)",
+      "check": "broken_artifact_ref",
+      "detail": "'fi-nonexistent' not found (mission recon)",
       "schema_id": null,
       "rule": null,
       "pointer": null
     },
     {
       "severity": "error",
-      "entity_type": "knight",
-      "id": ".lore/knights/default/feature-implementation/pm.md",
+      "entity_type": "doctrine-mission-frontmatter",
+      "id": ".lore/doctrines/default/feature-implementation/feature-implementation/missions/prd-draft.md",
       "check": "schema",
       "detail": "Unknown property 'stability' — allowed keys are id, title, summary.",
-      "schema_id": "lore://schemas/knight-frontmatter",
+      "schema_id": "lore://schemas/doctrine-mission-frontmatter",
       "rule": "additionalProperties",
       "pointer": "/stability"
     },
@@ -451,8 +454,8 @@ report.report_path      # Path | None — the written report, or None
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Value passed to `--scope` outside the token set | The flag is `click.Choice`-guarded, so Click raises `BadParameter` (a `UsageError` subclass) before the handler body runs. Exit **2**, stderr: `Error: Invalid value for '--scope': 'xyz' is not one of 'codex', 'artifacts', 'doctrines', 'knights', 'watchers', 'schemas', 'glossary', 'bindings', 'rites', 'voice'.` Adding a token to the set is non-breaking; rewording the message or changing the exit code is a breaking contract change (`decisions-017-constrained-flags-use-click-choice`, conceptual-workflows-error-handling). |
-| Unknown token in the positional `extra_scopes` argument | The positional argument carries no `click.Choice`, so the token reaches `health_check(scope=...)`, which raises `ValueError`. The handler rewrites the prefix and exits **1**, stderr: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, knights, watchers, glossary, schemas, bindings, rites, voice.` This is the only path that produces the exit-1 `Invalid scope:` text. |
+| Value passed to `--scope` outside the token set | The flag is `click.Choice`-guarded, so Click raises `BadParameter` (a `UsageError` subclass) before the handler body runs. Exit **2**, stderr: `Error: Invalid value for '--scope': 'xyz' is not one of 'codex', 'artifacts', 'doctrines', 'watchers', 'schemas', 'glossary', 'bindings', 'rites', 'voice', 'skills'.` Adding a token to the set is non-breaking; rewording the message or changing the exit code is a breaking contract change (`decisions-017-constrained-flags-use-click-choice`, conceptual-workflows-error-handling). |
+| Unknown token in the positional `extra_scopes` argument | The positional argument carries no `click.Choice`, so the token reaches `health_check(scope=...)`, which raises `ValueError`. The handler rewrites the prefix and exits **1**, stderr: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, watchers, glossary, schemas, bindings, rites, voice, skills.` This is the only path that produces the exit-1 `Invalid scope:` text. |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | `retention=` argument outside `none`, `latest`, `all` | `health_check` raises `ValueError: Unknown retention: 'xyz'. Valid values: none, latest, all.` The raise is unconditional — it fires even when `write_report=False` — and mirrors the unknown-scope raise. No CLI path reaches it: `lore health` never passes `retention` |
@@ -465,7 +468,7 @@ report.report_path      # Path | None — the written report, or None
 
 ## Scope Isolation
 
-When `--scope` is provided, only the named scopes run. Nothing outside them is scanned. Example: `lore health --scope watchers` never reads codex, artifact, doctrine, or knight files.
+When `--scope` is provided, only the named scopes run. Nothing outside them is scanned. Example: `lore health --scope watchers` never reads codex, artifact, or doctrine files.
 
 ## Nested projects
 

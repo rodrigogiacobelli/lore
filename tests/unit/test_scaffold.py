@@ -42,8 +42,7 @@ class TestPackageStructure:
         assert (defaults / "docs" / "LORE-AGENT.md").is_file()
         assert (defaults / "gitignore").is_file()
         assert (defaults / "schema.sql").is_file()
-        assert any((defaults / "doctrines").rglob("*.yaml"))
-        assert any((defaults / "knights").rglob("*.md"))
+        assert any((defaults / "doctrines").rglob("*.design.md"))
 
 
 class TestPyprojectToml:
@@ -98,73 +97,3 @@ class TestModuleInvocation:
         )
         assert result.returncode == 0
         assert "lore" in result.stdout.lower()
-
-
-# ---------------------------------------------------------------------------
-# Doctrine scaffold unit tests (US-1)
-# ---------------------------------------------------------------------------
-
-
-class TestScaffoldDoctrine:
-    # Ref: conceptual-workflows-doctrine-new step 3 (scaffold_doctrine() function)
-
-    def test_scaffold_doctrine_returns_valid_yaml(self):
-        # Ref: list-enrichment-gaps-tech-spec — scaffold must pass yaml.safe_load
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        assert isinstance(data, dict)
-
-    def test_scaffold_doctrine_id_equals_name(self):
-        # Ref: conceptual-workflows-doctrine-new step 3 (id field = name argument — hard constraint)
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        assert data["id"] == "hotfix"
-
-    def test_scaffold_doctrine_title_is_capitalized(self):
-        # Ref: list-enrichment-gaps-tech-spec — title = name.capitalize()
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        assert data["title"] == "hotfix".capitalize()
-
-    def test_scaffold_doctrine_summary_present_and_nonempty(self):
-        # Ref: list-enrichment-gaps-tech-spec — summary placeholder is non-empty
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        assert "summary" in data
-        assert data["summary"]
-
-    def test_scaffold_doctrine_description_present_and_nonempty(self):
-        # Ref: list-enrichment-gaps-tech-spec — description placeholder is non-empty
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        assert "description" in data
-        assert data["description"]
-
-    def test_scaffold_doctrine_steps_is_nonempty_list(self):
-        # Ref: list-enrichment-gaps-tech-spec — steps has one example step
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        assert isinstance(data["steps"], list)
-        assert len(data["steps"]) > 0
-
-    def test_scaffold_doctrine_step_has_name_and_description(self):
-        # Ref: list-enrichment-gaps-tech-spec — each step has name and description keys
-        import yaml
-        from lore.doctrine import scaffold_doctrine
-        result = scaffold_doctrine("hotfix")
-        data = yaml.safe_load(result)
-        for step in data["steps"]:
-            assert "name" in step
-            assert "description" in step

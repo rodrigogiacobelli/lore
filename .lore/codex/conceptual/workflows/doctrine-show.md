@@ -1,155 +1,144 @@
 ---
 id: conceptual-workflows-doctrine-show
 title: lore doctrine show Behaviour
-summary: What the system does internally when `lore doctrine show <name>` runs — recursive search for a matched design file and YAML pair, verbatim rendering of both files with a separator (text mode), or structured JSON output (JSON mode). Raises an error if either file is missing.
+summary: What the system does internally when `lore doctrine show <name>` runs — subtree-wide resolution by directory name, the design document printed verbatim followed by a `--- Missions ---` index, and `--mission <id>` printing one mission body with its frontmatter stripped. Covers both JSON envelopes and the two distinct not-found messages.
 binds:
 - src/lore/doctrine.py
 - src/lore/cli.py
 - tests/e2e/test_doctrine_show.py
 - tests/unit/test_doctrine.py
-related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "ref-lore_cli-commands", "ref-lore_doctrine-module"]
+related: ["conceptual-entities-doctrine", "conceptual-workflows-doctrine-list", "conceptual-workflows-doctrine-edit", "ref-lore_cli-commands", "ref-lore_doctrine-module", "decisions-033-unresolvable-reference-is-silent-on-read"]
 ---
 
 # `lore doctrine show` Behaviour
 
-`lore doctrine show <name>` displays the full content of a doctrine — both the `.design.md` documentation and the `.yaml` steps file. The command searches recursively across the full `.lore/doctrines/` tree by doctrine ID. If either file is missing, the command exits with an error; there is no fallback to displaying only one file.
+`lore doctrine show <name>` prints a doctrine's design document and an index of its missions in one call. `lore doctrine show <name> --mission <id>` prints that mission's body instead. One call gives an orchestrator everything it needs to plan a quest; a second call gives a worker the body of one mission.
 
 ## Preconditions
 
 - The Lore project has been initialised (`.lore/` directory exists).
-- A doctrine with the given ID exists as a complete pair (`<name>.design.md` and `<name>.yaml` both present under `.lore/doctrines/`).
+- A doctrine directory named `<name>` exists somewhere under `.lore/doctrines/`, holding `<name>.design.md`.
 
 ## Steps
 
-### 1. Locate both files
+### 1. Resolve the doctrine
 
-`show_doctrine(name, doctrines_dir)` searches recursively under `.lore/doctrines/` for:
-- `<name>.design.md`
-- `<name>.yaml`
+`read_doctrine(project_root, name, scope=..., mission=...)` selects the doctrine from the scoped listing by id, then locates its directory on disk by the stem the listing carries. Resolution is subtree-wide and the shallowest match wins, so a doctrine under `default/` resolves the same way as one at the root.
 
-Both searches are independent. The function detects which combination of files is present before raising any error.
+Any path segment beginning with `.` or ending `.deleted` hides everything at and below it, so a soft-deleted doctrine and a half-written staging directory are both invisible here.
 
-### 2. Handle missing files
+A `--mission` value carrying a path separator raises `ValueError` before anything is read: `Invalid mission id: path separators not allowed`.
 
-If either file is absent, a `DoctrineError` is raised and the CLI prints to stderr and exits with code 1.
+### 2. Distinguish the two misses
 
-| Situation | Error message | Exit code |
+`read_doctrine` returns a bare `None` when **the doctrine** missed, and only then. When the doctrine resolves and the named mission does not, it returns the record with `"mission": None`. A caller tells the two apart from the return value alone.
+
+| Situation | Message (stderr) | Exit code |
 |---|---|---|
-| Design file missing | `Doctrine '<name>' not found: design file missing` | 1 |
-| YAML file missing | `Doctrine '<name>' not found: YAML file missing` | 1 |
-| Both files missing | `Doctrine '<name>' not found` | 1 |
+| Doctrine not found | `Doctrine '<name>' not found` | 1 |
+| Doctrine found, mission not found | `Mission "<mission-id>" not found in doctrine "<name>"` | 1 |
 
-### 3. Read and validate both files
+The two messages quote differently — the doctrine miss uses single quotes and the mission miss uses double. Each follows its own nearest precedent, and both are strings a consumer may match on.
 
-- The design file is read verbatim (raw string, including frontmatter block).
-- The YAML file is parsed and validated against the doctrine schema (`_validate_yaml_schema`).
-- If the YAML is invalid (parse error, missing fields, rejected fields), a `DoctrineError` is raised and the CLI exits with code 1.
-- The `steps` list is normalised via `_normalize()` — defaults are applied for any missing optional fields.
-- `id`, `title`, and `summary` are extracted from the design file frontmatter (`title` falls back to `id`; `summary` falls back to `""`).
+### 3. Build the record
+
+- `design` is the whole design file read verbatim, frontmatter block included.
+- `id`, `title` and `summary` come from the design frontmatter; `title` falls back to the stem and `summary` to `""`.
+- `missions` is one record per live `.md` file under `missions/`, sorted by id. Each record is `{id, title, summary}`, where `id` is the filename stem and `title`/`summary` come from that file's frontmatter, falling back to the stem and `""`.
+- A mission file whose name begins with `.` is skipped.
+- With `--mission <id>`, `mission` is `{id, title, summary, body}` or `None`. The `body` is frontmatter-stripped.
+
+Lore parses nothing else out of either file (lore codex show decisions-029-doctrine-is-prose-not-a-graph).
 
 ### 4. Render output
 
-**Text mode (default):**
+**Text mode, no `--mission`:**
 
-The full raw content of the `.design.md` file is printed verbatim (including the frontmatter block), followed by a separator line (`---`), followed by the full raw content of the `.yaml` file verbatim. No transformation of either file.
+The design document verbatim, then one blank line, then `--- Missions ---`, then one row per mission sorted by id, with the id left-padded to the widest id and two spaces before the title.
 
-Example:
 ```
 ---
-id: feature-implementation
-title: Feature Implementation
-summary: E2E spec-driven pipeline...
+id: tdd-feature-lite
+title: TDD Feature Lite
+summary: A three-mission TDD cycle.
 ---
 
-# Feature Implementation
+# TDD Feature Lite
 
-## Doctrine
-...
-<full body of feature-implementation.design.md>
+## Missions
 
----
+- **recon** — map the codex and the code surface
+- **feature-spec** — write the one planning document
+- **scribe** — reconcile the codex
 
-id: feature-implementation
-steps:
-  - id: business-scout
-    ...
-<full content of feature-implementation.yaml>
+--- Missions ---
+feature-spec  Write the feature spec
+recon         Map the codex and the binding decisions
+scribe        Reconcile the codex against what shipped
 ```
 
-**JSON mode (`--json`):**
+A doctrine with no `missions/` directory still resolves, and the index reads `(none)`.
 
-Returns a structured object. The `design` field contains the full raw string content of the `.design.md` file (including the frontmatter block). The `steps` field contains the normalized step list. The `raw_yaml` field (present in the Python return value) is excluded from JSON output.
+**Text mode, with `--mission`:**
+
+The mission body alone, frontmatter stripped, with no trailing newline added.
+
+**JSON mode (`--json`), no `--mission`:**
 
 ```json
-{
-  "id": "feature-implementation",
-  "title": "Feature Implementation",
-  "summary": "E2E spec-driven pipeline...",
-  "design": "---\nid: feature-implementation\ntitle: Feature Implementation\n...\n",
-  "steps": [
-    {
-      "id": "business-scout",
-      "title": "Map codex from the business perspective",
-      "priority": 2,
-      "type": "knight",
-      "knight": "scout",
-      "notes": null,
-      "needs": []
-    }
-  ]
-}
+{"doctrine": {"id": "tdd-feature-lite", "title": "TDD Feature Lite", "summary": "A three-mission TDD cycle.", "design": "---\nid: tdd-feature-lite\n...", "missions": [{"id": "feature-spec", "title": "Write the feature spec", "summary": "..."}], "origin": "self"}}
 ```
 
-Exit code 0 on success. Exit code 1 with `{"error": "<message>"}` on failure.
+**JSON mode, with `--mission`:**
+
+```json
+{"mission": {"id": "recon", "title": "Map the codex and the binding decisions", "summary": "...", "body": "# Recon\n\nYou are Recon...\n"}}
+```
+
+Exit code 0 on success. On failure the error envelope `{"error": "<message>"}` goes to stderr with exit code 1.
 
 ## Python API
 
-The `show_doctrine(doctrine_id, doctrines_dir)` function can be called directly from Python:
-
 ```python
 from pathlib import Path
-from lore.doctrine import show_doctrine, DoctrineError
+from lore.api import read_doctrine
 
-doctrines_dir = Path(".lore/doctrines")
-try:
-    result = show_doctrine("feature-implementation", doctrines_dir)
-except DoctrineError as e:
-    print(f"Error: {e}")
+record = read_doctrine(Path("."), "tdd-feature-lite")
+if record is None:
+    ...  # the doctrine does not exist
+
+one = read_doctrine(Path("."), "tdd-feature-lite", mission="recon")
+if one["mission"] is None:
+    ...  # the doctrine exists; the mission does not
 ```
 
 Return shape:
+
 ```python
 {
     "id": str,
     "title": str,
     "summary": str,
-    "design": str,      # raw .design.md content (including frontmatter)
-    "raw_yaml": str,    # raw .yaml content (for CLI verbatim dump; excluded from --json output)
-    "steps": list[dict] # normalized step dicts with defaults applied
+    "design": str,            # whole design file, frontmatter included
+    "missions": list[dict],   # [{"id", "title", "summary"}], sorted by id
+    "origin": str,
+    # present only when `mission` was passed:
+    "mission": dict | None,   # {"id", "title", "summary", "body"}
 }
-```
-
-To construct a typed `Doctrine` model from this result:
-
-```python
-from lore.models import Doctrine
-
-doctrine_obj = Doctrine.from_dict(result)
 ```
 
 ## Failure Modes
 
 | Failure point | Message (stderr) | Exit code |
 |---|---|---|
-| Design file not found | `Doctrine '<name>' not found: design file missing` | 1 |
-| YAML file not found | `Doctrine '<name>' not found: YAML file missing` | 1 |
-| Both files missing | `Doctrine '<name>' not found` | 1 |
-| YAML parse error | `YAML parsing error: <details>` | 1 |
-| YAML schema error | Specific validation error | 1 |
+| Doctrine directory not found | `Doctrine '<name>' not found` | 1 |
+| Mission file not found in a resolved doctrine | `Mission "<id>" not found in doctrine "<name>"` | 1 |
+| `--mission` value carries a path separator | `Invalid mission id: path separators not allowed` | 1 |
+| `<name>` carries a path separator | `Invalid doctrine name: path separators not allowed` | 1 |
 
 ## Out of Scope
 
-- Displaying only the design file if the YAML is missing — both files are required.
+- Listing a doctrine's missions as a separate command — the index comes back with the design in one call.
 - Editing doctrine content — use `lore doctrine edit`.
 - Listing all doctrines — use `lore doctrine list`.
 
@@ -157,5 +146,6 @@ doctrine_obj = Doctrine.from_dict(result)
 
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list) — how doctrine listing works
 - conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new) — how doctrine creation works
+- conceptual-workflows-doctrine-edit (lore codex show conceptual-workflows-doctrine-edit) — how doctrine editing works
 - ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module) — module-level implementation details
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

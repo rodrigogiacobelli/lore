@@ -8,11 +8,11 @@ import pytest
 def bare_lore_dir(tmp_path):
     """Minimal .lore/ directory without running lore init.
 
-    Use this for testing file-system modules (frontmatter, codex, knight,
-    doctrine, artifact) in isolation from the full init sequence.
+    Use this for testing file-system modules (frontmatter, codex, doctrine,
+    artifact) in isolation from the full init sequence.
     """
     lore = tmp_path / ".lore"
-    for d in ["knights", "doctrines", "codex", "artifacts"]:
+    for d in ["doctrines", "codex", "artifacts"]:
         (lore / d).mkdir(parents=True)
     return tmp_path
 
@@ -31,7 +31,6 @@ _ENTITY_DIRS = (
     "codex/transient",
     "codex/sources",
     "doctrines",
-    "knights",
     "artifacts",
     "watchers",
     "rites/main",
@@ -100,8 +99,8 @@ class NestedTree:
         group: str = "",
         summary: str = "An entity.",
     ) -> Path:
-        """Write one frontmatter-backed entity (knight or artifact)."""
-        directory = {"knight": "knights", "artifact": "artifacts"}[kind]
+        """Write one frontmatter-backed entity."""
+        directory = {"artifact": "artifacts"}[kind]
         prefix = f"{directory}/{group}/" if group else f"{directory}/"
         return self.write(
             project,
@@ -110,21 +109,28 @@ class NestedTree:
         )
 
     def doctrine(
-        self, project: Path, doctrine_id: str, *, group: str = ""
+        self,
+        project: Path,
+        doctrine_id: str,
+        *,
+        group: str = "",
+        missions: tuple[str, ...] = ("only",),
     ) -> None:
-        """Write one doctrine pair (design + yaml)."""
+        """Write one doctrine directory — its design document plus its missions."""
         prefix = f"doctrines/{group}/" if group else "doctrines/"
+        directory = f"{prefix}{doctrine_id}"
         self.write(
             project,
-            f"{prefix}{doctrine_id}.design.md",
+            f"{directory}/{doctrine_id}.design.md",
             f"---\nid: {doctrine_id}\ntitle: {doctrine_id}\nsummary: A doctrine.\n---\n\nDesign.\n",
         )
-        self.write(
-            project,
-            f"{prefix}{doctrine_id}.yaml",
-            f"id: {doctrine_id}\ntitle: {doctrine_id}\nsummary: A doctrine.\n"
-            "steps:\n  - id: only\n    title: Do it\n",
-        )
+        for mission_id in missions:
+            self.write(
+                project,
+                f"{directory}/missions/{mission_id}.md",
+                f"---\nid: {mission_id}\ntitle: {mission_id}\nsummary: A mission.\n"
+                f"---\n\nDo {mission_id}.\n",
+            )
 
     def watcher(self, project: Path, watcher_id: str, *, group: str = "") -> None:
         """Write one watcher YAML."""

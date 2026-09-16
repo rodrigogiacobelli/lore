@@ -2,7 +2,7 @@
 id: conceptual-workflows-filter-list
 title: lore * list --filter Behaviour
 summary: What the system does when --filter GROUP... is passed to the list subcommand
-  of codex, artifact, knight, doctrine, watcher, or rite commands — slash-delimited
+  of codex, artifact, doctrine, watcher, or rite commands — slash-delimited
   token-to-group segment-prefix matching, root-level file inclusion, Python API parity,
   and unchanged unfiltered behaviour.
 binds:
@@ -12,7 +12,6 @@ binds:
 - tests/unit/test_filter_subtree.py
 related:
 - conceptual-workflows-artifact-list
-- conceptual-workflows-knight-list
 - conceptual-workflows-doctrine-list
 - conceptual-workflows-watcher-list
 - conceptual-workflows-rite-list
@@ -24,7 +23,7 @@ related:
 
 # `lore * list --filter` Behaviour
 
-The `--filter GROUP...` flag is available on the `list` subcommand of all six entity list commands: `lore codex list`, `lore artifact list`, `lore knight list`, `lore doctrine list`, `lore watcher list`, and `lore rite list` (which filters main rites by default, or shared steps with `--shared`). It limits output to entities in the specified namespace group(s) while always including root-level files.
+The `--filter GROUP...` flag is available on the `list` subcommand of all five entity list commands: `lore codex list`, `lore artifact list`, `lore doctrine list`, `lore watcher list`, and `lore rite list` (which filters main rites by default, or shared steps with `--shared`). It limits output to entities in the specified namespace group(s) while always including root-level files.
 
 ## Preconditions
 
@@ -36,7 +35,7 @@ The `--filter GROUP...` flag is available on the `list` subcommand of all six en
 
 ### 1. Discover all entities (unchanged)
 
-The command performs its normal recursive discovery (e.g., `rglob("*.md")` for knights, `rglob("*.yaml")` for doctrines and watchers). No change to discovery or validation logic — the full entity list is assembled exactly as without `--filter`.
+The command performs its normal recursive discovery (e.g., `rglob("*.md")` for codex documents and artifacts, `rglob("*.design.md")` for doctrines, `rglob("*.yaml")` for watchers). No change to discovery or validation logic — the full entity list is assembled exactly as without `--filter`.
 
 ### 2. Derive groups
 
@@ -70,7 +69,7 @@ A group token is a slash-delimited path that mirrors the on-disk subdirectory la
 | `conceptual` | `conceptual`, `conceptual/workflows`, `conceptual/reference`, … | `.lore/codex/conceptual/` and all subdirectories |
 | `technical/api` | `technical/api`, `technical/api/v2`, … | `.lore/codex/technical/api/` and all subdirectories |
 | `default/codex` | `default/codex`, `default/codex/templates`, … | `.lore/artifacts/default/codex/` and all subdirectories |
-| `feature-implementation` | `feature-implementation`, `feature-implementation/reviewers`, … | `.lore/knights/feature-implementation/` and all subdirectories |
+| `feature-implementation` | `feature-implementation`, `feature-implementation/reviewers`, … | `.lore/doctrines/feature-implementation/` and all subdirectories |
 
 Matching is case-sensitive: `Conceptual` does not match `conceptual`. The full-segment-boundary rule prevents accidental partial matches: `tech` does NOT match a group named `technical/api`, and `default/code` does NOT match `default/codex`.
 
@@ -90,7 +89,7 @@ When `--filter` is **not** provided, all entities are returned — identical to 
 lore codex list --filter conceptual
 lore codex list --filter conceptual --json
 lore artifact list --filter default/codex
-lore knight list --filter feature-implementation
+lore doctrine list --filter feature-implementation
 lore doctrine list --filter seo-analysis/keyword-analysers
 lore watcher list --filter default
 lore rite list --filter diagnostics/network
@@ -110,7 +109,7 @@ Per ADR-011, the filtering logic for the five frontmatter/YAML entities lives in
 ```python
 list_codex(project_root, filter_groups=None, *, scope=None)
 list_artifacts(project_root, filter_groups=None, *, scope=None)
-list_knights(project_root, filter_groups=None, *, scope=None)
+list_doctrines(project_root, filter_groups=None, *, scope=None)
 list_doctrines(project_root, filter_groups=None, *, scope=None)
 list_watchers(project_root, filter_groups=None, *, scope=None)
 ```
@@ -169,7 +168,6 @@ No new failure modes are introduced by this feature:
 ## Related
 
 - conceptual-workflows-artifact-list (lore codex show conceptual-workflows-artifact-list)
-- conceptual-workflows-knight-list (lore codex show conceptual-workflows-knight-list)
 - conceptual-workflows-doctrine-list (lore codex show conceptual-workflows-doctrine-list)
 - conceptual-workflows-watcher-list (lore codex show conceptual-workflows-watcher-list)
 - conceptual-workflows-codex (lore codex show conceptual-workflows-codex)

@@ -13,7 +13,6 @@ from lore.artifact import list_artifacts
 from lore.cli import main, _format_table
 from lore.frontmatter import parse_frontmatter_doc
 from lore.doctrine import list_doctrines
-from lore.knight import list_knights
 
 import lore as _lore_pkg
 
@@ -1259,10 +1258,10 @@ class TestFormatTableColumnPadding:
         assert row1.endswith("Short summary")
         assert not row1.endswith("Short summary ")
 
-    def test_all_three_list_commands_use_consistent_two_space_indent(
+    def test_both_list_commands_use_consistent_two_space_indent(
         self, runner, project_dir
     ):
-        for cmd in [["knight", "list"], ["doctrine", "list"], ["artifact", "list"]]:
+        for cmd in [["doctrine", "list"], ["artifact", "list"]]:
             result = runner.invoke(main, cmd)
             assert result.exit_code == 0
             non_empty_lines = [ln for ln in result.output.split("\n") if ln.strip()]
@@ -1276,91 +1275,11 @@ class TestFormatTableColumnPadding:
 # ---------------------------------------------------------------------------
 
 
-class TestMissingMetadataFallbackKnight:
-    """Knight files missing metadata fields fall back gracefully."""
-
-    def test_knight_missing_id_field_uses_filename_stem_as_id(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "my-knight.md").write_text(
-            "---\ntitle: My Knight\nsummary: Does knight things\n---\n\n# My Knight\n"
-        )
-        records = list_knights(tmp_path)
-        assert len(records) == 1
-        assert records[0]["id"] == "my-knight"
-
-    def test_knight_with_no_frontmatter_uses_filename_stem_as_id(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "bare-knight.md").write_text("# Bare Knight\n")
-        records = list_knights(tmp_path)
-        assert len(records) == 1
-        assert records[0]["id"] == "bare-knight"
-
-    def test_knight_missing_title_uses_id_as_title(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "silent-knight.md").write_text(
-            "---\nid: silent-knight\nsummary: Stays quiet\n---\n\n# Content\n"
-        )
-        records = list_knights(tmp_path)
-        assert len(records) == 1
-        assert records[0]["title"] == "silent-knight"
-
-    def test_knight_missing_summary_has_empty_string_summary(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "brief-knight.md").write_text(
-            "---\nid: brief-knight\ntitle: Brief Knight\n---\n\n# Brief Knight\n"
-        )
-        records = list_knights(tmp_path)
-        assert len(records) == 1
-        assert records[0]["summary"] == ""
-
-    def test_list_knights_does_not_crash_with_malformed_yaml_frontmatter(
-        self, tmp_path
-    ):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "malformed.md").write_text("---\n: invalid yaml\n---\n\n# Content\n")
-        records = list_knights(tmp_path)
-        assert len(records) == 1
-        record = records[0]
-        assert "id" in record
-        assert "group" in record
-        assert "title" in record
-        assert "summary" in record
-
-    def test_list_knights_malformed_yaml_returns_stem_based_fallback(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "malformed-knight.md").write_text("---\n: invalid yaml\n---\n\n# Content\n")
-        records = list_knights(tmp_path)
-        assert len(records) == 1
-        record = records[0]
-        assert record["id"] == "malformed-knight"
-        assert record["title"] == "malformed-knight"
-        assert record["summary"] == ""
-
-    def test_cli_knight_list_does_not_crash_with_malformed_knight_files(
-        self, runner, project_dir
-    ):
-        knights_dir = project_dir / ".lore" / "knights"
-        knights_dir.mkdir(exist_ok=True)
-        (knights_dir / "broken.md").write_text("---\n: invalid yaml\n---\n")
-        result = runner.invoke(main, ["knight", "list"])
-        assert result.exit_code == 0
-        assert "broken.md" not in result.output
-
-    def test_cli_knight_list_shows_malformed_knight_in_output(
-        self, runner, project_dir
-    ):
-        knights_dir = project_dir / ".lore" / "knights"
-        knights_dir.mkdir(exist_ok=True)
-        (knights_dir / "broken-visible.md").write_text("---\n: invalid yaml\n---\n")
-        result = runner.invoke(main, ["knight", "list"])
-        assert "broken-visible" in result.output
-        assert "broken-visible.md" not in result.output
+def _doctrine_dir(parent, stem):
+    """Create and return the directory a doctrine of *stem* lives in."""
+    directory = parent / stem
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 
 class TestMissingMetadataFallbackDoctrine:
@@ -1369,11 +1288,8 @@ class TestMissingMetadataFallbackDoctrine:
     def test_doctrine_id_comes_from_design_frontmatter(self, tmp_path):
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "my-workflow.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "my-workflow") / "my-workflow.design.md").write_text(
             "---\nid: my-workflow\ntitle: My Workflow\nsummary: A workflow.\n---\n"
-        )
-        (doctrines_dir / "my-workflow.yaml").write_text(
-            "id: my-workflow\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert len(records) == 1
@@ -1382,11 +1298,8 @@ class TestMissingMetadataFallbackDoctrine:
     def test_doctrine_missing_title_uses_id_as_title(self, tmp_path):
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "no-title-doc.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "no-title-doc") / "no-title-doc.design.md").write_text(
             "---\nid: no-title-doc\n---\n"
-        )
-        (doctrines_dir / "no-title-doc.yaml").write_text(
-            "id: no-title-doc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert len(records) == 1
@@ -1395,11 +1308,8 @@ class TestMissingMetadataFallbackDoctrine:
     def test_doctrine_missing_summary_has_empty_string_summary(self, tmp_path):
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "no-summary.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "no-summary") / "no-summary.design.md").write_text(
             "---\nid: no-summary\ntitle: No Summary Doctrine\n---\n"
-        )
-        (doctrines_dir / "no-summary.yaml").write_text(
-            "id: no-summary\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert len(records) == 1
@@ -1414,11 +1324,8 @@ class TestMissingMetadataFallbackDoctrine:
             "This is a very long summary that goes well beyond eighty characters "
             "and should appear in full without truncation"
         )
-        (doctrines_dir / "long-desc.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "long-desc") / "long-desc.design.md").write_text(
             f"---\nid: long-desc\ntitle: Long Description Doctrine\nsummary: {long_summary}\n---\n"
-        )
-        (doctrines_dir / "long-desc.yaml").write_text(
-            "id: long-desc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert len(records) == 1
@@ -1429,11 +1336,8 @@ class TestMissingMetadataFallbackDoctrine:
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
         short_summary = "Short description."
-        (doctrines_dir / "short-desc.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "short-desc") / "short-desc.design.md").write_text(
             f"---\nid: short-desc\ntitle: Short Desc\nsummary: {short_summary}\n---\n"
-        )
-        (doctrines_dir / "short-desc.yaml").write_text(
-            "id: short-desc\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert len(records) == 1
@@ -1443,18 +1347,15 @@ class TestMissingMetadataFallbackDoctrine:
         """summary comes exclusively from design frontmatter."""
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "has-both.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "has-both") / "has-both.design.md").write_text(
             "---\nid: has-both\ntitle: Has Both\nsummary: This is the explicit summary.\n---\n"
-        )
-        (doctrines_dir / "has-both.yaml").write_text(
-            "id: has-both\nsteps:\n  - id: step-1\n    title: Step One\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert len(records) == 1
         assert records[0]["summary"] == "This is the explicit summary."
 
-    def test_list_doctrines_skips_yaml_only_file_gracefully(self, tmp_path):
-        """A YAML-only file (no .design.md) returns empty list without crashing."""
+    def test_list_doctrines_skips_a_stray_yaml_file_gracefully(self, tmp_path):
+        """A leftover YAML file is not a doctrine and crashes nothing."""
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
         (doctrines_dir / "empty.yaml").write_text("")
@@ -1464,11 +1365,8 @@ class TestMissingMetadataFallbackDoctrine:
     def test_list_doctrines_record_has_valid_key_and_new_fields_together(self, tmp_path):
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "my-doctrine.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "my-doctrine") / "my-doctrine.design.md").write_text(
             "---\nid: my-doctrine\ntitle: My Doctrine\nsummary: X.\n---\n"
-        )
-        (doctrines_dir / "my-doctrine.yaml").write_text(
-            "id: my-doctrine\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert "valid" in records[0]
@@ -1479,69 +1377,13 @@ class TestMissingMetadataFallbackDoctrine:
 
 
 class TestMissingMetadataFallbackReturnShape:
-    """list_knights() and list_doctrines() emit required field shapes."""
-
-    def test_list_knights_record_has_id_key(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(tmp_path)
-        assert "id" in records[0]
-
-    def test_list_knights_record_has_group_key(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(tmp_path)
-        assert "group" in records[0]
-
-    def test_list_knights_record_has_title_key(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(tmp_path)
-        assert "title" in records[0]
-
-    def test_list_knights_record_has_summary_key(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "tester.md").write_text("# Tester\n")
-        records = list_knights(tmp_path)
-        assert "summary" in records[0]
-
-    def test_list_knights_sorted_by_id(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "zebra.md").write_text("# Zebra\n")
-        (knights_dir / "alpha.md").write_text("# Alpha\n")
-        (knights_dir / "mango.md").write_text("# Mango\n")
-        records = list_knights(tmp_path)
-        ids = [r["id"] for r in records]
-        assert ids == sorted(ids)
-
-    def test_list_knights_group_is_empty_string_for_root_level_file(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        knights_dir.mkdir(parents=True)
-        (knights_dir / "root-knight.md").write_text("# Root\n")
-        records = list_knights(tmp_path)
-        assert records[0]["group"] == ""
-
-    def test_list_knights_group_is_subdirectory_name_for_nested_file(self, tmp_path):
-        knights_dir = tmp_path / ".lore" / "knights"
-        subdir = knights_dir / "special"
-        subdir.mkdir(parents=True)
-        (subdir / "special-knight.md").write_text("# Special\n")
-        records = list_knights(tmp_path)
-        assert records[0]["group"] == "special"
+    """list_doctrines() emits the required field shapes."""
 
     def test_list_doctrines_group_is_empty_string_for_root_level_file(self, tmp_path):
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "root-doc.design.md").write_text(
+        (_doctrine_dir(doctrines_dir, "root-doc") / "root-doc.design.md").write_text(
             "---\nid: root-doc\ntitle: Root Doc\nsummary: X.\n---\n"
-        )
-        (doctrines_dir / "root-doc.yaml").write_text(
-            "id: root-doc\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert records[0]["group"] == ""
@@ -1550,11 +1392,8 @@ class TestMissingMetadataFallbackReturnShape:
         doctrines_dir = tmp_path / ".lore" / "doctrines"
         subdir = doctrines_dir / "workflow"
         subdir.mkdir(parents=True)
-        (subdir / "nested-doc.design.md").write_text(
+        (_doctrine_dir(subdir, "nested-doc") / "nested-doc.design.md").write_text(
             "---\nid: nested-doc\ntitle: Nested Doc\nsummary: X.\n---\n"
-        )
-        (subdir / "nested-doc.yaml").write_text(
-            "id: nested-doc\nsteps:\n  - id: s\n    title: S\n    type: knight\n    knight: k\n"
         )
         records = list_doctrines(tmp_path)
         assert records[0]["group"] == "workflow"
@@ -1579,14 +1418,14 @@ class TestParseFrontmatterDocRequiredFieldsParameter:
     def test_parse_frontmatter_doc_with_three_field_required_fields_returns_id_title_summary(
         self, tmp_path
     ):
-        md_file = tmp_path / "knight.md"
+        md_file = tmp_path / "persona.md"
         md_file.write_text(
-            "---\nid: my-knight\ntitle: My Knight\nsummary: Does things\n---\n\n# Knight\n"
+            "---\nid: my-mission\ntitle: My Mission\nsummary: Does things\n---\n\n# Mission\n"
         )
         result = parse_frontmatter_doc(md_file, required_fields=("id", "title", "summary"))
         assert result is not None
-        assert result["id"] == "my-knight"
-        assert result["title"] == "My Knight"
+        assert result["id"] == "my-mission"
+        assert result["title"] == "My Mission"
         assert result["summary"] == "Does things"
 
     def test_parse_frontmatter_doc_returns_none_when_required_fields_missing(
@@ -1594,12 +1433,12 @@ class TestParseFrontmatterDocRequiredFieldsParameter:
     ):
         md_file = tmp_path / "missing.md"
         md_file.write_text(
-            "---\ntitle: Missing ID Knight\nsummary: Has no id\n---\n\n# Content\n"
+            "---\ntitle: Missing ID Doc\nsummary: Has no id\n---\n\n# Content\n"
         )
         result = parse_frontmatter_doc(md_file, required_fields=("id", "title", "summary"))
         assert result is None
 
-    def test_parse_frontmatter_doc_with_knight_fields_ignores_type_absence(
+    def test_parse_frontmatter_doc_ignores_type_absence(
         self, tmp_path
     ):
         md_file = tmp_path / "no-type-ok.md"
@@ -1617,7 +1456,7 @@ class TestParseFrontmatterDocRequiredFieldsParameter:
     ):
         md_file = tmp_path / "shaped.md"
         md_file.write_text(
-            "---\nid: shaped\ntitle: Shaped\nsummary: Has shape\ntype: knight\n---\n\n# Body\n"
+            "---\nid: shaped\ntitle: Shaped\nsummary: Has shape\ntype: agent\n---\n\n# Body\n"
         )
         result = parse_frontmatter_doc(
             md_file, required_fields=("id", "title", "summary")

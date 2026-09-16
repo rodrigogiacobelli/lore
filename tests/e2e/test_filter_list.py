@@ -333,7 +333,7 @@ def test_filter_codex_hyphen_token_space_sep_exact_match_not_prefix(project_dir,
 
 
 # ---------------------------------------------------------------------------
-# US-3 fixtures — shared across artifact/knight/doctrine/watcher scenarios
+# US-3 fixtures — shared across artifact/doctrine/watcher scenarios
 # ---------------------------------------------------------------------------
 
 
@@ -345,27 +345,21 @@ def _write_artifact(project_dir, rel_path, content):
     return path
 
 
-def _write_knight(project_dir, rel_path, content):
-    """Write a markdown file into .lore/knights/."""
-    path = project_dir / ".lore" / "knights" / rel_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-    return path
+def _write_doctrine(project_dir, rel_path):
+    """Write a doctrine directory into .lore/doctrines/.
 
-
-def _write_doctrine(project_dir, rel_path, content):
-    """Write a paired .yaml + .design.md into .lore/doctrines/.
-
-    rel_path must be a .yaml path; a matching .design.md is created automatically.
-    The id is derived from the YAML filename stem.
+    rel_path is the group chain plus the doctrine name, e.g. ``default/feature-add``.
     """
-    path = project_dir / ".lore" / "doctrines" / rel_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-    stem = path.stem
-    design_path = path.with_suffix("").with_suffix(".design.md")
-    design_path.write_text(f"---\nid: {stem}\ntitle: {stem.replace('-', ' ').title()}\nsummary: \n---\n")
-    return path
+    directory = project_dir / ".lore" / "doctrines" / rel_path
+    (directory / "missions").mkdir(parents=True, exist_ok=True)
+    stem = directory.name
+    (directory / f"{stem}.design.md").write_text(
+        f"---\nid: {stem}\ntitle: {stem.replace('-', ' ').title()}\nsummary: \n---\n"
+    )
+    (directory / "missions" / "only.md").write_text(
+        "---\nid: only\ntitle: Only\nsummary: s\n---\n\nBody.\n"
+    )
+    return directory
 
 
 def _write_watcher(project_dir, rel_path, content):
@@ -416,48 +410,6 @@ summary: A transient artifact.
 Transient body.
 """
 
-FEATURE_IMPL_KNIGHT = """\
----
-id: feature-implementation/ba
-title: BA Knight
-summary: Business analyst persona.
----
-
-BA body.
-"""
-
-OPS_KNIGHT = """\
----
-id: ops/deploy
-title: Deploy Knight
-summary: Ops deployment persona.
----
-
-Deploy body.
-"""
-
-DEFAULT_DOCTRINE_YAML = """\
-id: feature-add
-title: Feature Add
-description: Doctrine for adding features.
-steps:
-  - id: step-1
-    title: Scout
-    agent: ba
-    missions: []
-"""
-
-OPS_DOCTRINE_YAML = """\
-id: deploy-flow
-title: Deploy Flow
-description: Doctrine for deploying.
-steps:
-  - id: step-1
-    title: Deploy
-    agent: ops
-    missions: []
-"""
-
 DEFAULT_WATCHER_YAML = """\
 id: mission-watcher
 title: Mission Watcher
@@ -475,7 +427,6 @@ watch_target: deploys/*
 interval: daily
 action: trigger-deploy
 """
-
 
 # ---------------------------------------------------------------------------
 # Scenario 1 (US-3): Filter artifact list by a single group
@@ -543,26 +494,6 @@ def test_filter_artifact_mistyped_token_returns_root_only(project_dir, runner):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 3 (US-3): Filter knight list by a single group
-# Exercises: conceptual-workflows-filter-list step 3 (post-discovery filter on knight list)
-# ---------------------------------------------------------------------------
-
-
-def test_filter_knight_list_single_group(project_dir, runner):
-    """lore knight list --filter feature-implementation returns only feature-implementation knights."""
-    _write_knight(project_dir, "feature-implementation/ba.md", FEATURE_IMPL_KNIGHT)
-    _write_knight(project_dir, "ops/deploy.md", OPS_KNIGHT)
-
-    result = runner.invoke(main, ["knight", "list", "--filter", "feature-implementation"])
-
-    assert result.exit_code == 0
-    assert "feature-implementation/ba" in result.output or "ba" in result.output
-    assert "feature-implementation" in result.output
-    assert "ops/deploy" not in result.output
-    assert "deploy" not in result.output
-
-
-# ---------------------------------------------------------------------------
 # Scenario 4 (US-3): Filter doctrine list by a single group
 # Exercises: conceptual-workflows-filter-list step 3 (post-discovery filter on doctrine list)
 # ---------------------------------------------------------------------------
@@ -570,8 +501,8 @@ def test_filter_knight_list_single_group(project_dir, runner):
 
 def test_filter_doctrine_list_single_group(project_dir, runner):
     """lore doctrine list --filter default returns only default group doctrines."""
-    _write_doctrine(project_dir, "default/feature-add.yaml", DEFAULT_DOCTRINE_YAML)
-    _write_doctrine(project_dir, "ops/deploy-flow.yaml", OPS_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "default/feature-add")
+    _write_doctrine(project_dir, "ops/deploy-flow")
 
     result = runner.invoke(main, ["doctrine", "list", "--filter", "default"])
 
@@ -599,29 +530,15 @@ def test_filter_watcher_list_single_group(project_dir, runner):
 
 # ---------------------------------------------------------------------------
 # ADR-012 — space-separated multi-token --filter on every list command.
-# Pins the convention across knight / doctrine / artifact / watcher.
+# Pins the convention across doctrine / artifact / watcher.
 # (codex already covered above.)
 # ---------------------------------------------------------------------------
 
 
-def test_filter_knight_list_two_groups_space_separated(project_dir, runner):
-    """`lore knight list --filter a b` accepts two space-separated tokens."""
-    _write_knight(project_dir, "feature-implementation/ba.md", FEATURE_IMPL_KNIGHT)
-    _write_knight(project_dir, "ops/deploy.md", OPS_KNIGHT)
-
-    result = runner.invoke(
-        main, ["knight", "list", "--filter", "feature-implementation", "ops"]
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "ba" in result.output
-    assert "deploy" in result.output
-
-
 def test_filter_doctrine_list_two_groups_space_separated(project_dir, runner):
     """`lore doctrine list --filter a b` accepts two space-separated tokens."""
-    _write_doctrine(project_dir, "default/feature-add.yaml", DEFAULT_DOCTRINE_YAML)
-    _write_doctrine(project_dir, "ops/deploy-flow.yaml", OPS_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "default/feature-add")
+    _write_doctrine(project_dir, "ops/deploy-flow")
 
     result = runner.invoke(
         main, ["doctrine", "list", "--filter", "default", "ops"]
@@ -670,20 +587,6 @@ def test_filter_watcher_list_two_groups_space_separated(project_dir, runner):
 # ---------------------------------------------------------------------------
 
 
-# E2E — lore knight list without --filter returns all knights across all groups
-# Exercises: conceptual-workflows-filter-list step 3 (filter_groups absent → no filter)
-def test_unfiltered_knight_list_returns_all(project_dir, runner):
-    """lore knight list without --filter returns all knights across all groups."""
-    _write_knight(project_dir, "feature-implementation/ba.md", FEATURE_IMPL_KNIGHT)
-    _write_knight(project_dir, "ops/deploy.md", OPS_KNIGHT)
-
-    result = runner.invoke(main, ["knight", "list"])
-
-    assert result.exit_code == 0
-    assert "ba" in result.output or "feature-implementation" in result.output
-    assert "deploy" in result.output or "ops" in result.output
-
-
 # E2E — lore codex list --json without --filter returns full JSON schema unchanged
 # Exercises: conceptual-workflows-filter-list step 4 (unfiltered JSON output unchanged)
 def test_unfiltered_codex_list_json_unchanged(project_dir, runner):
@@ -711,25 +614,22 @@ def test_unfiltered_codex_list_json_unchanged(project_dir, runner):
         assert "summary" in entry
 
 
-# E2E — All five list commands without --filter return full unfiltered output
+# E2E — All four list commands without --filter return full unfiltered output
 # Exercises: conceptual-workflows-filter-list step 3 (absence of --filter is a no-op)
-def test_all_five_list_commands_unfiltered(project_dir, runner):
-    """All five list commands without --filter return all entities across all groups, exit code 0."""
+def test_all_four_list_commands_unfiltered(project_dir, runner):
+    """All four list commands without --filter return everything, exit code 0."""
     _write_codex_doc(project_dir, "conceptual/conceptual-entities-task.md", CONCEPTUAL_DOC)
     _write_codex_doc(project_dir, "technical/tech-cli-commands.md", TECHNICAL_DOC)
     _write_artifact(project_dir, "default/some-artifact.md", DEFAULT_ARTIFACT)
     _write_artifact(project_dir, "default/codex/fi-user-story.md", CODEX_ARTIFACT)
-    _write_knight(project_dir, "feature-implementation/ba.md", FEATURE_IMPL_KNIGHT)
-    _write_knight(project_dir, "ops/deploy.md", OPS_KNIGHT)
-    _write_doctrine(project_dir, "default/feature-add.yaml", DEFAULT_DOCTRINE_YAML)
-    _write_doctrine(project_dir, "ops/deploy-flow.yaml", OPS_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "default/feature-add")
+    _write_doctrine(project_dir, "ops/deploy-flow")
     _write_watcher(project_dir, "default/mission-watcher.yaml", DEFAULT_WATCHER_YAML)
     _write_watcher(project_dir, "ops/deploy-watcher.yaml", OPS_WATCHER_YAML)
 
     commands = [
         ["codex", "list"],
         ["artifact", "list"],
-        ["knight", "list"],
         ["doctrine", "list"],
         ["watcher", "list"],
     ]
@@ -885,34 +785,21 @@ def test_filter_codex_subtree_json_contains_child_group_docs(project_dir, runner
     )
 
 
-# E2E — knight list subtree filter matching
-# Exercises: conceptual-workflows-filter-list — subtree semantics for knight list
-def test_filter_knight_list_token_matches_subtree_group(project_dir, runner):
-    """lore knight list --filter feature-implementation returns knights in 'feature-implementation-tdd' too.
+# E2E — artifact list subtree filter matching
+# Exercises: conceptual-workflows-filter-list — subtree semantics for artifact list
+def test_filter_artifact_list_token_matches_subtree_group(project_dir, runner):
+    """`--filter default` returns artifacts in `default/codex` too."""
+    _write_artifact(project_dir, "default/some-artifact.md", DEFAULT_ARTIFACT)
+    _write_artifact(project_dir, "default/codex/fi-user-story.md", CODEX_ARTIFACT)
+    _write_artifact(project_dir, "root-artifact.md", ROOT_ARTIFACT)
 
-    Currently FAILS because the implementation only exact-matches the group name.
-    """
-    FEATURE_IMPL_TDD_KNIGHT = """\
----
-id: feature-implementation-tdd/red
-title: TDD Red Knight
-summary: Red phase test writer persona.
----
-
-TDD Red body.
-"""
-    _write_knight(project_dir, "feature-implementation/ba.md", FEATURE_IMPL_KNIGHT)
-    _write_knight(project_dir, "feature-implementation/tdd/red.md", FEATURE_IMPL_TDD_KNIGHT)
-    _write_knight(project_dir, "ops/deploy.md", OPS_KNIGHT)
-
-    result = runner.invoke(main, ["knight", "list", "--filter", "feature-implementation"])
+    result = runner.invoke(main, ["artifact", "list", "--filter", "default"])
 
     assert result.exit_code == 0
-    assert "ops/deploy" not in result.output
-    # The tdd/red knight has group 'feature-implementation-tdd' — must be matched
-    assert "red" in result.output or "tdd" in result.output, (
-        "Knight with group 'feature-implementation-tdd' must be returned by "
-        "--filter feature-implementation under subtree semantics. RED."
+    assert "some-artifact" in result.output
+    assert "fi-user-story" in result.output, (
+        "an artifact under default/codex must be returned by --filter default "
+        "under subtree semantics"
     )
 
 
@@ -926,55 +813,11 @@ TDD Red body.
 import pytest  # noqa: E402
 
 
-RANKER_DOCTRINE_YAML = """\
-id: ranker
-title: Ranker
-description: Ranker doctrine.
-steps:
-  - id: step-1
-    title: Rank
-    agent: ba
-    missions: []
-"""
-
-FOO_DOCTRINE_YAML = """\
-id: foo
-title: Foo
-description: Foo doctrine.
-steps:
-  - id: step-1
-    title: Foo
-    agent: ba
-    missions: []
-"""
-
-X_DOCTRINE_YAML = """\
-id: x
-title: X
-description: X doctrine.
-steps:
-  - id: step-1
-    title: X
-    agent: ba
-    missions: []
-"""
-
-FLAT_DOCTRINE_YAML = """\
-id: flat
-title: Flat
-description: Flat doctrine at root.
-steps:
-  - id: step-1
-    title: Flat
-    agent: ba
-    missions: []
-"""
-
 
 def test_us008_doctrine_filter_slash_delimited_exact(project_dir, runner):
     """Scenario 1 — slash token matches only the nested doctrine."""
-    _write_doctrine(project_dir, "seo-analysis/keyword-analysers/ranker.yaml", RANKER_DOCTRINE_YAML)
-    _write_doctrine(project_dir, "other/foo.yaml", FOO_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "seo-analysis/keyword-analysers/ranker")
+    _write_doctrine(project_dir, "other/foo")
 
     result = runner.invoke(
         main, ["doctrine", "list", "--filter", "seo-analysis/keyword-analysers"]
@@ -987,8 +830,8 @@ def test_us008_doctrine_filter_slash_delimited_exact(project_dir, runner):
 
 def test_us008_doctrine_filter_segment_prefix(project_dir, runner):
     """Scenario 2 — partial-path segment prefix matches nested doctrine."""
-    _write_doctrine(project_dir, "seo-analysis/keyword-analysers/ranker.yaml", RANKER_DOCTRINE_YAML)
-    _write_doctrine(project_dir, "other/foo.yaml", FOO_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "seo-analysis/keyword-analysers/ranker")
+    _write_doctrine(project_dir, "other/foo")
 
     result = runner.invoke(main, ["doctrine", "list", "--filter", "seo-analysis"])
 
@@ -999,7 +842,7 @@ def test_us008_doctrine_filter_segment_prefix(project_dir, runner):
 
 def test_us008_doctrine_filter_bare_substring_no_match(project_dir, runner):
     """Scenario 3 — bare substring 'tech' must NOT match segment 'technical'."""
-    _write_doctrine(project_dir, "technical/api/x.yaml", X_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "technical/api/x")
 
     result = runner.invoke(main, ["doctrine", "list", "--filter", "tech"])
 
@@ -1009,8 +852,8 @@ def test_us008_doctrine_filter_bare_substring_no_match(project_dir, runner):
 
 def test_us008_doctrine_filter_root_always_included(project_dir, runner):
     """Scenario 4 — root-level doctrine always appears regardless of filter."""
-    _write_doctrine(project_dir, "seo-analysis/ranker.yaml", RANKER_DOCTRINE_YAML)
-    _write_doctrine(project_dir, "flat.yaml", FLAT_DOCTRINE_YAML)
+    _write_doctrine(project_dir, "seo-analysis/ranker")
+    _write_doctrine(project_dir, "flat")
 
     result = runner.invoke(main, ["doctrine", "list", "--filter", "seo-analysis"])
 
@@ -1071,48 +914,6 @@ summary: Unrelated codex doc at z.
 Unrelated body.
 """
 
-NESTED_KNIGHT = """\
----
-id: a/b/nested-knight
-title: Nested Knight
-summary: Nested knight at a/b.
----
-
-Nested knight body.
-"""
-
-UNRELATED_KNIGHT = """\
----
-id: z/unrelated-knight
-title: Unrelated Knight
-summary: Unrelated knight at z.
----
-
-Unrelated body.
-"""
-
-NESTED_DOCTRINE_YAML = """\
-id: nested-doctrine
-title: Nested Doctrine
-description: Nested doctrine at a/b.
-steps:
-  - id: step-1
-    title: Do
-    agent: ba
-    missions: []
-"""
-
-UNRELATED_DOCTRINE_YAML = """\
-id: unrelated-doctrine
-title: Unrelated Doctrine
-description: Unrelated doctrine at z.
-steps:
-  - id: step-1
-    title: Do
-    agent: ba
-    missions: []
-"""
-
 NESTED_WATCHER_YAML = """\
 id: nested-watcher
 title: Nested Watcher
@@ -1162,13 +963,9 @@ def _seed_nested_and_root(project_dir, cmd):
         _write_artifact(project_dir, "a/b/nested-artifact.md", NESTED_ARTIFACT)
         _write_artifact(project_dir, "z/unrelated-artifact.md", UNRELATED_ARTIFACT)
         return "nested-artifact", "unrelated-artifact"
-    if cmd == "knight":
-        _write_knight(project_dir, "a/b/nested-knight.md", NESTED_KNIGHT)
-        _write_knight(project_dir, "z/unrelated-knight.md", UNRELATED_KNIGHT)
-        return "nested-knight", "unrelated-knight"
     if cmd == "doctrine":
-        _write_doctrine(project_dir, "a/b/nested-doctrine.yaml", NESTED_DOCTRINE_YAML)
-        _write_doctrine(project_dir, "z/unrelated-doctrine.yaml", UNRELATED_DOCTRINE_YAML)
+        _write_doctrine(project_dir, "a/b/nested-doctrine")
+        _write_doctrine(project_dir, "z/unrelated-doctrine")
         return "nested-doctrine", "unrelated-doctrine"
     if cmd == "watcher":
         _write_watcher(project_dir, "a/b/nested-watcher.yaml", NESTED_WATCHER_YAML)
@@ -1177,8 +974,8 @@ def _seed_nested_and_root(project_dir, cmd):
     raise ValueError(f"Unknown cmd: {cmd}")
 
 
-@pytest.mark.parametrize("cmd", ["doctrine", "knight", "watcher", "artifact", "codex"])
-def test_us008_all_five_list_commands_accept_slash_filter(project_dir, runner, cmd):
+@pytest.mark.parametrize("cmd", ["doctrine", "watcher", "artifact", "codex"])
+def test_us008_every_list_command_accepts_a_slash_filter(project_dir, runner, cmd):
     """Scenario 8 — slash-delimited filter grammar is accepted by every list command."""
     nested_id, unrelated_id = _seed_nested_and_root(project_dir, cmd)
 

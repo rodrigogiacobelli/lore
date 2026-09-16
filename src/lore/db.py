@@ -8,9 +8,10 @@ from pathlib import Path
 
 from lore import paths
 from lore import validators
+from lore.frontmatter import parse_frontmatter_doc_full
 from lore.ids import generate_id
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class DatabaseNotFoundError(Exception):
@@ -1104,10 +1105,14 @@ def create_mission(
     quest_id: str | None = None,
     description: str = "",
     priority: int = 2,
-    knight: str | None = None,
+    doctrine_mission: str | None = None,
     mission_type: str | None = None,
 ) -> dict:
     """Create a new mission.
+
+    ``doctrine_mission`` is a ``<doctrine-id>/<mission-id>`` reference. It is
+    stored verbatim and resolved only at read time (``decisions-004``), so a
+    write never touches the filesystem to check it.
 
     Returns ``{"id": mission_id, "filename": None, "group": None}``
     (amendment Section B Mission row). ``filename`` and ``group`` are None
@@ -1173,9 +1178,9 @@ def create_mission(
 
         now = _now_utc()
         conn.execute(
-            "INSERT INTO missions (id, quest_id, title, description, status, priority, knight, created_at, updated_at, mission_type) "
+            "INSERT INTO missions (id, quest_id, title, description, status, priority, doctrine_mission, created_at, updated_at, mission_type) "
             "VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)",
-            (mission_id, quest_id, title, description, priority, knight, now, now, mission_type),
+            (mission_id, quest_id, title, description, priority, doctrine_mission, now, now, mission_type),
         )
         conn.commit()
         return {"id": mission_id, "filename": None, "group": None}
@@ -1397,8 +1402,8 @@ def update_mission(
     title: str | None = None,
     description: str | None = None,
     priority: int | None = None,
-    knight: str | None = None,
-    remove_knight: bool = False,
+    doctrine_mission: str | None = None,
+    remove_doctrine_mission: bool = False,
     mission_type: str | None = None,
 ) -> dict:
     """Edit a mission's fields. Only provided (non-None) fields are updated.
@@ -1442,11 +1447,11 @@ def update_mission(
         if priority is not None:
             set_clauses.append("priority = ?")
             params.append(priority)
-        if remove_knight:
-            set_clauses.append("knight = NULL")
-        elif knight is not None:
-            set_clauses.append("knight = ?")
-            params.append(knight)
+        if remove_doctrine_mission:
+            set_clauses.append("doctrine_mission = NULL")
+        elif doctrine_mission is not None:
+            set_clauses.append("doctrine_mission = ?")
+            params.append(doctrine_mission)
         if mission_type is not None:
             set_clauses.append("mission_type = ?")
             params.append(mission_type)
@@ -1684,29 +1689,33 @@ def get_mission_detail(
     project_root: Path,
     mission_id: str,
     *,
-    include_knight: bool = True,
+    include_doctrine_mission: bool = True,
 ) -> dict | None:
     """Return the full mission-detail envelope, or None if missing.
 
-    Envelope keys match cli.py:2030-2057 EXACTLY (byte-for-byte). No
-    `quest_deleted` key (text-mode-only at cli.py:2061).
+    The stored ``doctrine_mission`` reference is resolved here and nowhere
+    else, so the CLI and every ``lore.api`` consumer see the same answer
+    (``decisions-011``). An unresolvable reference yields
+    ``doctrine_mission_contents: None`` and nothing else — it is not an error
+    on a read, and ``lore health --scope doctrines`` is its single reporter.
 
-    Knight resolution delegates to ``lore.knight.read_knight`` (G7 swap).
+    The function-local import is the documented dependency-inversion exception
+    for envelope hydration.
     """
     mission = read_mission(project_root, mission_id)
     if mission is None:
         return None
 
-    knight_contents: str | None = None
-    if include_knight and mission["knight"]:
-        from lore.knight import read_knight
+    doctrine_mission_contents: str | None = None
+    if include_doctrine_mission and mission["doctrine_mission"]:
+        from lore.doctrine import _resolve_doctrine_mission
 
-        knight_name = Path(mission["knight"]).stem
-        try:
-            knight_record = read_knight(project_root, knight_name)
-        except ValueError:
-            knight_record = None
-        knight_contents = knight_record["body"] if knight_record else None
+        path = _resolve_doctrine_mission(project_root, mission["doctrine_mission"])
+        if path is not None:
+            parsed = parse_frontmatter_doc_full(path, required_fields=())
+            doctrine_mission_contents = (
+                parsed["body"] if parsed is not None else path.read_text()
+            )
 
     depends_on_details = list_mission_depends_on(project_root, mission_id)
     blocks_details = list_mission_blocks(project_root, mission_id)
@@ -1720,8 +1729,8 @@ def get_mission_detail(
         "status": mission["status"],
         "priority": mission["priority"],
         "mission_type": mission["mission_type"],
-        "knight": mission["knight"],
-        "knight_contents": knight_contents,
+        "doctrine_mission": mission["doctrine_mission"],
+        "doctrine_mission_contents": doctrine_mission_contents,
         "block_reason": mission["block_reason"],
         "created_at": mission["created_at"],
         "updated_at": mission["updated_at"],
@@ -1784,7 +1793,7 @@ def get_quest_detail(project_root: Path, quest_id: str) -> dict | None:
                 "status": m["status"],
                 "priority": m["priority"],
                 "mission_type": m["mission_type"],
-                "knight": m["knight"],
+                "doctrine_mission": m["doctrine_mission"],
                 "dependencies": {
                     "needs": needs_refs,
                     "blocks": blocks_refs,
@@ -1826,7 +1835,7 @@ def list_missions_grouped(
     Returns ``{"groups": [{quest_id, quest_title, quest_deleted_at, missions: [...]}]}``.
     Each per-mission entry mirrors cli.py:946-960 (the JSON flat builder)
     with EXACT keys: id, quest_id, title, status, priority, mission_type,
-    knight, created_at.
+    doctrine_mission, created_at.
     """
     grouped = list_missions(
         project_root, quest_id=quest_id, include_closed=include_closed
@@ -1859,7 +1868,7 @@ def list_missions_grouped(
                         "status": m["status"],
                         "priority": m["priority"],
                         "mission_type": m["mission_type"],
-                        "knight": m["knight"],
+                        "doctrine_mission": m["doctrine_mission"],
                         "created_at": m["created_at"],
                     }
                     for m in rows
@@ -1913,7 +1922,7 @@ def update_quest_full(
                 "status": m["status"],
                 "priority": m["priority"],
                 "mission_type": m["mission_type"],
-                "knight": m["knight"],
+                "doctrine_mission": m["doctrine_mission"],
             }
             for m in missions
         ],
@@ -1927,8 +1936,8 @@ def update_mission_full(
     title: str | None = None,
     description: str | None = None,
     priority: int | None = None,
-    knight: str | None = None,
-    remove_knight: bool = False,
+    doctrine_mission: str | None = None,
+    remove_doctrine_mission: bool = False,
     mission_type: str | None = None,
 ) -> dict:
     """Edit a mission and return the full post-edit envelope.
@@ -1944,8 +1953,8 @@ def update_mission_full(
         title=title,
         description=description,
         priority=priority,
-        knight=knight,
-        remove_knight=remove_knight,
+        doctrine_mission=doctrine_mission,
+        remove_doctrine_mission=remove_doctrine_mission,
         mission_type=mission_type,
     )
 
@@ -1959,7 +1968,7 @@ def update_mission_full(
         "description": mission["description"],
         "status": mission["status"],
         "priority": mission["priority"],
-        "knight": mission["knight"],
+        "doctrine_mission": mission["doctrine_mission"],
         "mission_type": mission["mission_type"],
         "block_reason": mission["block_reason"],
         "created_at": mission["created_at"],

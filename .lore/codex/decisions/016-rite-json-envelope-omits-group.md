@@ -26,8 +26,8 @@ related:
 The JSON output contract (conceptual-workflows-json-output) establishes that
 every `list` and `new` envelope carries a `group` key — slash-joined when the
 entity lives in a nested subdirectory, `null` at the entity root. This holds
-across all five other `list` commands (codex/artifact/knight/doctrine/watcher)
-and all four other `new` commands (doctrine/knight/watcher/artifact). Each of
+across all four other `list` commands (codex/artifact/doctrine/watcher)
+and all three other `new` commands (doctrine/watcher/artifact). Each of
 those entities is discovered recursively (rglob) and derives its `group` from
 its path relative to its base directory.
 
@@ -122,3 +122,4 @@ follow the group-key-always rule like every other entity.
 |------|--------|------|
 | 2026-06-02 | accepted | Initial decision — rite list/new/delete JSON envelopes OMIT the group key; rites are a flat namespace with no recursion, --group, or --filter. Recorded during Rites codex-apply; flagged by the ADR & Standards Audit as a divergence from the json-output contract |
 | 2026-06-02 | revised | Reversed the flat/no-group decision. Rites are now discovered recursively and carry a group derived from their subfolder path, like every other entity; ids are globally unique across the whole tree (codex model); the list/new/delete --json envelopes CARRY group (root → null). The json-output carve-out is removed and health gains a duplicate_rite_id check |
+| 2026-09-16 | accepted | Decision unchanged. The command counts drop by one in each direction: four other `list` commands, three other `new` commands. |

@@ -14,16 +14,16 @@ summary: Policy decision not to write tests that assert content of default templ
 Accepted
 
 ## Context
-Lore ships default artifacts, knights, and doctrines as seed templates. These templates
+Lore ships default artifacts and doctrines as seed templates. These templates
 evolve continuously as the project matures — sections are renamed, restructured, and
 refined over time. Writing tests that assert specific content (section names, line counts,
-exact wording, knight assignments) creates maintenance friction without adding safety value.
+exact wording, mission assignments) creates maintenance friction without adding safety value.
 
 The content is exercised through actual usage by agents and through doctrine-driven
 workflows, not through assertions in test suites.
 
 ## Decision
-Do not write tests that validate the *content* of default templates (artifacts, knights,
+Do not write tests that validate the *content* of default templates (artifacts,
 doctrines). Tests may assert structural/behavioral properties:
 - The init command seeds the expected directories and files (file existence)
 - AGENTS.md is created with the required lore markers

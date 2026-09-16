@@ -7,7 +7,7 @@ binds:
 - src/lore/cli.py
 - tests/e2e/test_artifact_new.py
 - tests/unit/test_artifact.py
-related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-knight-crud", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
+related: ["conceptual-entities-artifact", "conceptual-workflows-artifact-list", "conceptual-workflows-doctrine-new", "conceptual-workflows-validators", "conceptual-workflows-filter-list", "ref-lore_cli-commands", "tech-arch-schemas", "conceptual-workflows-health"]
 ---
 
 # `lore artifact new` Behaviour
@@ -110,6 +110,6 @@ The strict frontmatter re-check at step 5 delegates to `lore.schemas.validate_en
 - conceptual-entities-artifact (lore codex show conceptual-entities-artifact) — what an Artifact is
 - conceptual-workflows-artifact-list (lore codex show conceptual-workflows-artifact-list) — how artifact listing and filtering work
 - conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new) — sibling two-file create flow
-- conceptual-workflows-knight-crud (lore codex show conceptual-workflows-knight-crud) — sibling single-file create flow
+- conceptual-workflows-watcher-crud (lore codex show conceptual-workflows-watcher-crud) — sibling single-file create flow
 - conceptual-workflows-validators (lore codex show conceptual-workflows-validators) — `validate_group` rules
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — full CLI reference

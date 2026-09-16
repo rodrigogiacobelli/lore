@@ -22,10 +22,18 @@ If either of the first two is missing, ask before proceeding.
 lore doctrine show <doctrine-id>
 ```
 
-Read the full doctrine. Note:
+One call returns the design document and a `--- Missions ---` index of every mission in the doctrine. Read the design in full. Note:
 - The phases and their order
-- The step IDs, titles, types (`knight`, `constable`, `human`), knights, and `needs` dependencies
-- If the user asked for a trimmed run, identify which steps to include and which to skip
+- The mission ids, titles, types (`agent`, `constable`, `human`), and depends-on edges from the design table
+- If the user asked for a trimmed run, identify which missions to include and which to skip
+
+Read a mission body only when you need to know what the worker will be told:
+
+```
+lore doctrine show <doctrine-id> --mission <mission-id>
+```
+
+You do not need to read every mission body to plan the quest. The design table carries the workflow; the mission body is the worker's brief, and the worker receives it automatically through `-D`.
 
 ### 2. Check existing quests (for naming context)
 
@@ -50,7 +58,7 @@ Read `.lore/codex/glossary.yaml` for the vocabulary, then grep `.lore/codex/**/*
 
 `lore codex map <id>` and `lore impacts <path-or-id>` stay on the CLI in every mode — no file read reproduces a precomputed traversal or the bidirectional `binds:` index. Run `lore impacts` over the paths the feature touches and name the governing documents in the mission descriptions, so a worker inherits its obligations instead of discovering them.
 
-Doctrines, knights, quests and missions are reached through the Lore CLI in every mode: `lore doctrine show` runs normalisation, step validation and cycle detection, `lore show <mission-id>` splices in the knight persona, and quests and missions are SQLite-backed.
+Doctrines, quests and missions are reached through the Lore CLI in every mode: `lore doctrine show` assembles the mission index across the doctrine directory and hides a `default/` versus flat split and slash-derived groups, `lore show <mission-id>` splices in the doctrine mission body, and quests and missions are SQLite-backed.
 
 ### 3. Create the quest
 
@@ -62,31 +70,32 @@ Use the feature description as the title, not the doctrine name.
 
 ### 4. Create all missions
 
-For each step in the doctrine (or the trimmed subset), create one mission:
+For each mission in the doctrine (or the trimmed subset), create one Lore mission:
 
 ```
-lore new mission -q <quest-id> "<step title>" \
+lore new mission -q <quest-id> "<mission title>" \
   -d "<description>" \
-  -k <knight-file> \
+  -D <doctrine-id>/<mission-id> \
   -T <type> \
   -p <phase-number>
 ```
 
-The mission description must be **self-contained**. A worker agent will execute this mission using only its description. Include:
-- What the agent must do (from the doctrine step notes)
+`-D` stores the reference `<doctrine-id>/<mission-id>`. Lore resolves it at read time, so `lore show <mission-id>` hands the worker the doctrine mission body under `--- Mission Instructions ---` alongside the description. That is what makes the description feature-specific rather than a copy of the doctrine.
+
+The mission description carries **what is specific to this run** — the worker already receives the doctrine mission body through `-D`, so do not restate it. Include:
 - The feature context (what is being built and why)
-- Acceptance criteria
+- Acceptance criteria for this run
 - Relevant file paths or constraints from the user's input
+- The board wiring: which mission ids this worker posts to
 
-Use the knight from the doctrine step if one is specified (`-k`).
-Set `-T` to the step type: `knight`, `constable`, or `human`.
-Set `-p` to the phase number from the doctrine.
+Set `-T` to the mission type from the design table: `agent`, `constable`, or `human`.
+Set `-p` to the phase number from the design table.
 
-Keep a local mapping of `doctrine-step-id → mission-id` as you create each mission. Mission IDs returned by `lore new mission` are fully qualified (`q-xxxx/m-yyyy`). Store the full ID in the mapping.
+Keep a local mapping of `doctrine-mission-id → mission-id` as you create each mission. Mission IDs returned by `lore new mission` are fully qualified (`q-xxxx/m-yyyy`). Store the full ID in the mapping.
 
 ### 5. Declare dependencies
 
-For each mission that has a `needs:` list in the doctrine, declare the dependency using the real fully-qualified mission IDs:
+For each mission with a depends-on entry in the design table, declare the dependency using the real fully-qualified mission IDs:
 
 ```
 lore needs q-xxxx/m-yyyy:q-xxxx/m-zzzz q-xxxx/m-aaaa:q-xxxx/m-yyyy
@@ -116,4 +125,4 @@ Only dispatch after explicit confirmation.
 - `constable` missions are orchestrator chores — claim and handle them inline, do not dispatch a subagent
 - `human` missions must not be claimed — leave them for the user
 - If the user asked to trim phases, only create missions for the requested phases and adjust dependencies accordingly
-- Board messages defined in doctrine steps (agents posting to downstream missions) are wiring instructions — preserve them in the relevant mission descriptions so workers know to send them
+- Board wiring the doctrine mission bodies describe (workers posting to downstream missions) needs the real mission ids — put them in the relevant mission descriptions so workers know where to send them

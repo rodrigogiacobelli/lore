@@ -1,7 +1,10 @@
-"""E2E tests for lore doctrine new — two-file create workflow.
+"""E2E tests for ``lore doctrine new`` — one design document and N mission files.
 
-Spec: doctrine-design-file-us-007 (lore codex show doctrine-design-file-us-007)
-Workflow: conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new)
+Spec: conceptual-workflows-doctrine-new (lore codex show conceptual-workflows-doctrine-new)
+
+``lore doctrine new NAME -d DESIGN -m FILE [FILE ...]`` builds the whole
+doctrine directory or none of it: everything is validated first, the tree is
+staged under a dot-prefixed directory, and one rename puts it in place.
 """
 
 import json
@@ -10,639 +13,314 @@ from lore.cli import main
 
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Both files created on valid input
-# conceptual-workflows-doctrine-new step 7-8: write both files, print success
+# Helpers
 # ---------------------------------------------------------------------------
 
 
-def test_doctrine_new_creates_both_files(runner, project_dir, tmp_path):
-    """lore doctrine new creates both .yaml and .design.md in doctrines_dir on valid input."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nsteps:\n"
-        "  - id: step-one\n    title: First step\n    type: knight\n    knight: some-knight\n"
+def _design(tmp_path, doctrine_id="tdd-lite", *, summary="A small loop."):
+    path = tmp_path / "design.md"
+    path.write_text(
+        f"---\nid: {doctrine_id}\ntitle: TDD Lite\nsummary: {summary}\n---\n\n# TDD Lite\n"
     )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text(
-        "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things.\n---\n\n# My Workflow\n"
-    )
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 0
-    assert "Created doctrine my-workflow" in result.output
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert (doctrines_dir / "my-workflow.yaml").exists()
-    assert (doctrines_dir / "my-workflow.design.md").exists()
+    return str(path)
 
 
-def test_doctrine_new_success_shows_in_doctrine_show(runner, project_dir, tmp_path):
-    """After lore doctrine new, lore doctrine show succeeds."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nsteps:\n"
-        "  - id: step-one\n    title: First step\n    type: knight\n    knight: some-knight\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text(
-        "---\nid: my-workflow\ntitle: My Workflow\nsummary: Does things.\n---\n\n# My Workflow\n"
-    )
-    runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    result = runner.invoke(main, ["doctrine", "show", "my-workflow"])
-    assert result.exit_code == 0
+def _mission_file(tmp_path, stem, *, mission_id=None, summary="s", subdir=None):
+    directory = tmp_path if subdir is None else tmp_path / subdir
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{stem}.md"
+    frontmatter = f"---\nid: {mission_id or stem}\ntitle: {stem.title()}\n"
+    if summary is not None:
+        frontmatter += f"summary: {summary}\n"
+    path.write_text(f"{frontmatter}---\n\nThe {stem} instructions.\n")
+    return str(path)
+
+
+def _doctrines_dir(project_dir):
+    return project_dir / ".lore" / "doctrines"
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2: Missing -f flag fails with error
-# conceptual-workflows-doctrine-new step 2: -f required
+# E9-E11: the happy paths
 # ---------------------------------------------------------------------------
 
 
-def test_doctrine_new_missing_f_flag_fails(runner, project_dir, tmp_path):
-    """lore doctrine new without -f prints an error to stderr and exits 1."""
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "-f/--from is required" in (result.output + (result.stderr or ""))
-
-
-def test_doctrine_new_missing_f_flag_writes_no_files(runner, project_dir, tmp_path):
-    """lore doctrine new without -f writes no files to doctrines_dir."""
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-d", str(design_file)],
-    )
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "my-workflow.yaml").exists()
-    assert not (doctrines_dir / "my-workflow.design.md").exists()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 3: Missing -d flag fails with error
-# conceptual-workflows-doctrine-new step 2: -d required
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_missing_d_flag_fails(runner, project_dir, tmp_path):
-    """lore doctrine new without -d prints an error to stderr and exits 1."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text("id: my-workflow\nsteps: []\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file)],
-    )
-    assert result.exit_code == 1
-    assert "-d/--design is required" in (result.output + (result.stderr or ""))
-
-
-def test_doctrine_new_missing_d_flag_writes_no_files(runner, project_dir, tmp_path):
-    """lore doctrine new without -d writes no files to doctrines_dir."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text("id: my-workflow\nsteps: []\n")
-    runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file)],
-    )
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "my-workflow.yaml").exists()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 4: Scaffold path removed — no flags fails with error
-# conceptual-workflows-doctrine-new: old scaffold path no longer exists
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_no_flags_no_scaffold(runner, project_dir):
-    """lore doctrine new without -f or -d exits 1 and does NOT generate a scaffold YAML."""
-    result = runner.invoke(main, ["doctrine", "new", "my-workflow"])
-    assert result.exit_code == 1
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "my-workflow.yaml").exists()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 5: Invalid name fails with error
-# conceptual-workflows-doctrine-new step 2: validate_name() from validators.py
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_invalid_name_fails(runner, project_dir, tmp_path):
-    """lore doctrine new with an invalid name (_bad) prints 'Invalid name' and exits 1."""
-    yaml_file = tmp_path / "bad.yaml"
-    yaml_file.write_text("id: _bad\nsteps: []\n")
-    design_file = tmp_path / "bad.design.md"
-    design_file.write_text("---\nid: _bad\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "_bad", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "Invalid name" in (result.output + (result.stderr or ""))
-
-
-def test_doctrine_new_invalid_name_writes_no_files(runner, project_dir, tmp_path):
-    """lore doctrine new with invalid name writes no files to doctrines_dir."""
-    yaml_file = tmp_path / "bad.yaml"
-    yaml_file.write_text("id: _bad\nsteps: []\n")
-    design_file = tmp_path / "bad.design.md"
-    design_file.write_text("---\nid: _bad\n---\n")
-    runner.invoke(
-        main,
-        ["doctrine", "new", "_bad", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "_bad.yaml").exists()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 6: Duplicate doctrine fails with error
-# conceptual-workflows-doctrine-new step 3: duplicate check
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_duplicate_fails(runner, project_dir, tmp_path):
-    """lore doctrine new fails with 'already exists' error when the doctrine already exists."""
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    (doctrines_dir / "my-workflow.yaml").write_text("id: my-workflow\nsteps: []\n")
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "already exists" in (result.output + (result.stderr or ""))
-
-
-def test_doctrine_new_duplicate_does_not_overwrite(runner, project_dir, tmp_path):
-    """lore doctrine new does not overwrite an existing doctrine."""
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    original_content = "id: my-workflow\nsteps: []\n"
-    (doctrines_dir / "my-workflow.yaml").write_text(original_content)
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert (doctrines_dir / "my-workflow.yaml").read_text() == original_content
-
-
-# ---------------------------------------------------------------------------
-# Scenario 7: YAML id mismatch fails with error
-# conceptual-workflows-doctrine-new step 4-5: _validate_yaml_schema id check
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_yaml_id_mismatch_fails(runner, project_dir, tmp_path):
-    """lore doctrine new fails when YAML id does not match command argument."""
-    yaml_file = tmp_path / "other-name.yaml"
-    yaml_file.write_text(
-        "id: other-name\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "does not match" in (result.output + (result.stderr or ""))
-
-
-def test_doctrine_new_yaml_id_mismatch_writes_no_files(runner, project_dir, tmp_path):
-    """lore doctrine new writes no files when YAML id doesn't match name argument."""
-    yaml_file = tmp_path / "other-name.yaml"
-    yaml_file.write_text(
-        "id: other-name\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "my-workflow.yaml").exists()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 8: Design file id mismatch fails with error
-# conceptual-workflows-doctrine-new step 6: _validate_design_frontmatter id check
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_design_id_mismatch_fails(runner, project_dir, tmp_path):
-    """lore doctrine new fails when design file id does not match command argument."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "other.design.md"
-    design_file.write_text("---\nid: other-name\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "Design file id" in (result.output + (result.stderr or ""))
-
-
-# ---------------------------------------------------------------------------
-# Scenario 9: YAML with legacy 'name' field fails
-# conceptual-workflows-doctrine-new: FR-8 rejected fields
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_yaml_with_legacy_name_fails(runner, project_dir, tmp_path):
-    """lore doctrine new fails with 'Unexpected field in YAML: name' when YAML has name key."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nname: my-workflow\n"
-        "steps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "Unknown property 'name'" in (result.output + (result.stderr or ""))
-
-
-# ---------------------------------------------------------------------------
-# Scenario 10: YAML with legacy 'description' field fails
-# conceptual-workflows-doctrine-new: FR-8 rejected fields
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_yaml_with_legacy_description_fails(runner, project_dir, tmp_path):
-    """lore doctrine new fails with 'Unexpected field in YAML: description' when YAML has description key."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\ndescription: some desc\n"
-        "steps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    assert "Unknown property 'description'" in (result.output + (result.stderr or ""))
-
-
-# ---------------------------------------------------------------------------
-# Scenario 11: Atomicity — no partial write on YAML validation failure
-# conceptual-workflows-doctrine-new step 6: both files written or neither
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_atomic_no_partial_write(runner, project_dir, tmp_path):
-    """lore doctrine new writes neither file when YAML validation fails (empty steps)."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text("id: my-workflow\nsteps: []\n")  # empty steps → validation error
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text(
-        "---\nid: my-workflow\ntitle: My Workflow\n---\n"
-    )
-    result = runner.invoke(
-        main,
-        ["doctrine", "new", "my-workflow", "-f", str(yaml_file), "-d", str(design_file)],
-    )
-    assert result.exit_code == 1
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "my-workflow.yaml").exists()
-    assert not (doctrines_dir / "my-workflow.design.md").exists()
-
-
-# ---------------------------------------------------------------------------
-# Scenario 12: JSON mode on success
-# conceptual-workflows-doctrine-new + conceptual-workflows-json-output
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_json_mode_success(runner, project_dir, tmp_path):
-    """lore doctrine new --json prints JSON with name, yaml_filename, design_filename on success."""
-    yaml_file = tmp_path / "my-workflow.yaml"
-    yaml_file.write_text(
-        "id: my-workflow\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\ntitle: My Workflow\nsummary: A workflow.\n---\n")
+def test_doctrine_new_writes_the_design_and_every_mission(runner, project_dir, tmp_path):
+    """E9 — the whole directory lands under the group."""
     result = runner.invoke(
         main,
         [
-            "doctrine",
-            "new",
-            "my-workflow",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
-            "--json",
+            "doctrine", "new", "tdd-lite", "--group", "default",
+            "-d", _design(tmp_path),
+            "-m",
+            _mission_file(tmp_path, "recon"),
+            _mission_file(tmp_path, "feature-spec"),
+            _mission_file(tmp_path, "scribe"),
         ],
     )
-    assert result.exit_code == 0
-    data = json.loads(result.output)
-    # Post-G16 envelope: {id, filename, group, design_filename}.
-    assert data["id"] == "my-workflow"
-    assert data["filename"] == "my-workflow.yaml"
-    assert data["design_filename"] == "my-workflow.design.md"
-    assert data["group"] is None
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Created doctrine tdd-lite with 3 missions in group default\n"
+    directory = _doctrines_dir(project_dir) / "default" / "tdd-lite"
+    assert (directory / "tdd-lite.design.md").is_file()
+    assert sorted(p.name for p in (directory / "missions").iterdir()) == [
+        "feature-spec.md",
+        "recon.md",
+        "scribe.md",
+    ]
 
 
-# ---------------------------------------------------------------------------
-# Scenario 13: Source file not found fails with error
-# conceptual-workflows-doctrine-new step 3: source file existence check
-# ---------------------------------------------------------------------------
-
-
-def test_doctrine_new_source_yaml_not_found(runner, project_dir, tmp_path):
-    """lore doctrine new fails with 'File not found' when the -f source path does not exist."""
-    design_file = tmp_path / "my-workflow.design.md"
-    design_file.write_text("---\nid: my-workflow\n---\n")
+def test_doctrine_new_with_one_mission_and_no_group(runner, project_dir, tmp_path):
+    """E10 — singular in the message, and the doctrine sits at the root."""
     result = runner.invoke(
         main,
         [
-            "doctrine",
-            "new",
-            "my-workflow",
-            "-f",
-            "/tmp/missing-nonexistent-lore-test.yaml",
-            "-d",
-            str(design_file),
+            "doctrine", "new", "solo",
+            "-d", _design(tmp_path, "solo"),
+            "-m", _mission_file(tmp_path, "only"),
         ],
     )
-    assert result.exit_code == 1
-    assert "File not found" in (result.output + (result.stderr or ""))
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Created doctrine solo with 1 mission\n"
+    assert (_doctrines_dir(project_dir) / "solo" / "solo.design.md").is_file()
 
 
-# ===========================================================================
-# US-001 E2E tests — lore doctrine new --group
-# Spec: group-param-us-001 (lore codex show group-param-us-001)
-# Workflow: conceptual-workflows-doctrine-new
-# ===========================================================================
-
-
-def _write_doctrine_sources(tmp_path, yaml_name, design_name, *, name):
-    yaml_file = tmp_path / yaml_name
-    yaml_file.write_text(
-        f"id: {name}\nsteps:\n"
-        "  - id: step-one\n    title: First step\n    type: knight\n    knight: some-knight\n"
-    )
-    design_file = tmp_path / design_name
-    design_file.write_text(
-        f"---\nid: {name}\ntitle: {name}\nsummary: Does things.\n---\n\n# {name}\n"
-    )
-    return yaml_file, design_file
-
-
-def test_doctrine_new_nested_happy_path(runner, project_dir, tmp_path):
-    """lore doctrine new --group a/b creates yaml+design under nested subdirs."""
-    yaml_file, design_file = _write_doctrine_sources(
-        tmp_path, "ranker.yaml", "ranker.design.md", name="keyword-ranker"
-    )
+def test_doctrine_new_json_envelope(runner, project_dir, tmp_path):
+    """E11 — four keys, missions sorted, and a path that ends in a slash."""
     result = runner.invoke(
         main,
         [
-            "doctrine",
-            "new",
-            "keyword-ranker",
-            "--group",
-            "seo-analysis/keyword-analysers",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
+            "--json", "doctrine", "new", "tdd-lite", "--group", "default",
+            "-d", _design(tmp_path),
+            "-m",
+            _mission_file(tmp_path, "recon"),
+            _mission_file(tmp_path, "feature-spec"),
         ],
     )
-    assert result.exit_code == 0
-    assert (
-        result.output.strip()
-        == "Created doctrine keyword-ranker (group: seo-analysis/keyword-analysers)"
-    )
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert (
-        doctrines_dir / "seo-analysis" / "keyword-analysers" / "keyword-ranker.yaml"
-    ).exists()
-    assert (
-        doctrines_dir
-        / "seo-analysis"
-        / "keyword-analysers"
-        / "keyword-ranker.design.md"
-    ).exists()
 
-
-def test_doctrine_new_nested_json_envelope(runner, project_dir, tmp_path):
-    """lore doctrine new --group ... --json emits full dict envelope with group and path."""
-    yaml_file, design_file = _write_doctrine_sources(
-        tmp_path, "ranker.yaml", "ranker.design.md", name="keyword-ranker"
-    )
-    result = runner.invoke(
-        main,
-        [
-            "doctrine",
-            "new",
-            "keyword-ranker",
-            "--group",
-            "seo-analysis/keyword-analysers",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
-            "--json",
-        ],
-    )
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    # Post-G16 envelope: {id, filename, group, design_filename}.
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
     assert payload == {
-        "id": "keyword-ranker",
-        "group": "seo-analysis/keyword-analysers",
-        "filename": "keyword-ranker.yaml",
-        "design_filename": "keyword-ranker.design.md",
+        "created": "tdd-lite",
+        "group": "default",
+        "missions": ["feature-spec", "recon"],
+        "path": ".lore/doctrines/default/tdd-lite/",
     }
 
 
-def test_doctrine_new_single_segment_group(runner, project_dir, tmp_path):
-    """Single-segment --group writes under exactly one nested level."""
-    yaml_file, design_file = _write_doctrine_sources(
-        tmp_path, "seo.yaml", "seo.design.md", name="seo-tool"
-    )
+def test_doctrine_new_json_group_is_null_without_the_flag(runner, project_dir, tmp_path):
+    """No --group is a null group, not an empty string."""
     result = runner.invoke(
         main,
         [
-            "doctrine",
-            "new",
-            "seo-tool",
-            "--group",
-            "seo-analysis",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
+            "--json", "doctrine", "new", "solo",
+            "-d", _design(tmp_path, "solo"),
+            "-m", _mission_file(tmp_path, "only"),
         ],
     )
-    assert result.exit_code == 0
-    assert result.output.strip() == "Created doctrine seo-tool (group: seo-analysis)"
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert (doctrines_dir / "seo-analysis" / "seo-tool.yaml").exists()
-    assert (doctrines_dir / "seo-analysis" / "seo-tool.design.md").exists()
 
-
-def test_doctrine_new_mkdir_idempotent(runner, project_dir, tmp_path):
-    """Pre-existing target group dir does not cause error; files land inside it."""
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    (doctrines_dir / "existing-group").mkdir(parents=True)
-    yaml_file, design_file = _write_doctrine_sources(
-        tmp_path, "d.yaml", "d.design.md", name="new-doc"
-    )
-    result = runner.invoke(
-        main,
-        [
-            "doctrine",
-            "new",
-            "new-doc",
-            "--group",
-            "existing-group",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
-        ],
-    )
-    assert result.exit_code == 0
-    assert (doctrines_dir / "existing-group" / "new-doc.yaml").exists()
-    assert (doctrines_dir / "existing-group" / "new-doc.design.md").exists()
-
-
-def test_doctrine_new_duplicate_in_subtree_rejected(runner, project_dir, tmp_path):
-    """Duplicate name anywhere under doctrines_dir is rejected regardless of --group."""
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    (doctrines_dir / "seo-analysis").mkdir(parents=True)
-    (doctrines_dir / "seo-analysis" / "ranker.yaml").write_text(
-        "id: ranker\nsteps:\n  - id: s\n    title: t\n    type: knight\n    knight: k\n"
-    )
-    (doctrines_dir / "seo-analysis" / "ranker.design.md").write_text(
-        "---\nid: ranker\ntitle: Ranker\nsummary: S.\n---\n"
-    )
-    yaml_file, design_file = _write_doctrine_sources(
-        tmp_path, "ranker.yaml", "ranker.design.md", name="ranker"
-    )
-    result = runner.invoke(
-        main,
-        [
-            "doctrine",
-            "new",
-            "ranker",
-            "--group",
-            "other-feature",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
-        ],
-    )
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr or "")
-    assert "already exists" in combined
-    assert not (doctrines_dir / "other-feature").exists()
-
-
-def test_doctrine_new_invalid_group_rejected(runner, project_dir, tmp_path):
-    """Invalid --group value (path traversal) is rejected via validate_group before any write."""
-    yaml_file, design_file = _write_doctrine_sources(
-        tmp_path, "d.yaml", "d.design.md", name="new-doc"
-    )
-    result = runner.invoke(
-        main,
-        [
-            "doctrine",
-            "new",
-            "new-doc",
-            "--group",
-            "../etc",
-            "-f",
-            str(yaml_file),
-            "-d",
-            str(design_file),
-        ],
-    )
-    assert result.exit_code == 1
-    combined = result.output + (result.stderr or "")
-    assert "invalid group" in combined
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "new-doc.yaml").exists()
+    assert json.loads(result.stdout)["group"] is None
 
 
 # ---------------------------------------------------------------------------
-# US-010 — Create-time validators delegate to lore.schemas
-# Spec: schema-validation-us-010
-# Workflow: conceptual-workflows-doctrine-new
+# E12-E16: every failure leaves the doctrines directory as it was
 # ---------------------------------------------------------------------------
 
 
-def test_us010_doctrine_new_rejects_hallucinated_stability_field(runner, project_dir, tmp_path):
-    """A design file with extra frontmatter key `stability` must be rejected via schema,
-    with stderr mentioning additionalProperties or /stability, and no files written."""
-    yaml_file = tmp_path / "fi.yaml"
-    yaml_file.write_text(
-        "id: fi\nsteps:\n"
-        "  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-    design_file = tmp_path / "fi.design.md"
-    design_file.write_text(
-        "---\nid: fi\ntitle: FI\nsummary: short.\nstability: stable\n---\n\n# body\n"
-    )
+def test_doctrine_new_without_missions_is_refused(runner, project_dir, tmp_path):
+    """E12 — a doctrine keeps at least one mission, from its first moment."""
     result = runner.invoke(
-        main,
-        ["doctrine", "new", "fi", "-f", str(yaml_file), "-d", str(design_file)],
+        main, ["doctrine", "new", "tdd-lite", "-d", _design(tmp_path)]
     )
-    assert result.exit_code != 0
-    combined = (result.output or "") + (result.stderr or "")
-    assert ("additionalProperties" in combined) or ("/stability" in combined) or ("stability" in combined)
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "fi.yaml").exists()
-    assert not (doctrines_dir / "fi.design.md").exists()
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == "At least one mission file is required (-m)"
+    assert not (_doctrines_dir(project_dir) / "tdd-lite").exists()
 
 
-def test_us010_doctrine_new_rejects_design_missing_summary(runner, project_dir, tmp_path):
-    """Design file frontmatter missing `summary:` must surface the golden schema error."""
-    yaml_file = tmp_path / "fi.yaml"
-    yaml_file.write_text(
-        "id: fi\nsteps:\n"
-        "  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
+def test_doctrine_new_without_a_design_is_refused(runner, project_dir, tmp_path):
+    """E13 — the design document is what makes the directory a doctrine."""
+    result = runner.invoke(
+        main, ["doctrine", "new", "tdd-lite", "-m", _mission_file(tmp_path, "recon")]
     )
-    design_file = tmp_path / "fi.design.md"
-    design_file.write_text("---\nid: fi\ntitle: FI\n---\n\n# body\n")
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == "Error: -d/--design is required"
+    assert not (_doctrines_dir(project_dir) / "tdd-lite").exists()
+
+
+def test_doctrine_new_rejects_two_mission_files_sharing_a_stem(
+    runner, project_dir, tmp_path
+):
+    """E14 — the stem is the mission id, so two of them collide."""
     result = runner.invoke(
         main,
-        ["doctrine", "new", "fi", "-f", str(yaml_file), "-d", str(design_file)],
+        [
+            "doctrine", "new", "tdd-lite",
+            "-d", _design(tmp_path),
+            "-m",
+            _mission_file(tmp_path, "recon", subdir="x"),
+            _mission_file(tmp_path, "recon", subdir="y"),
+        ],
     )
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == (
+        'Duplicate mission id "recon": two -m files share a filename stem'
+    )
+    assert not (_doctrines_dir(project_dir) / "tdd-lite").exists()
+
+
+def test_doctrine_new_missing_mission_file_is_reported_by_path(
+    runner, project_dir, tmp_path
+):
+    """A source file named on the command line that is not there."""
+    missing = str(tmp_path / "gone.md")
+    result = runner.invoke(
+        main, ["doctrine", "new", "tdd-lite", "-d", _design(tmp_path), "-m", missing]
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == f"File not found: {missing}"
+
+
+def test_doctrine_new_missing_design_file_is_reported_by_path(
+    runner, project_dir, tmp_path
+):
+    """The same answer for the design document."""
+    missing = str(tmp_path / "gone.md")
+    result = runner.invoke(
+        main,
+        [
+            "doctrine", "new", "tdd-lite",
+            "-d", missing,
+            "-m", _mission_file(tmp_path, "recon"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == f"File not found: {missing}"
+
+
+def test_doctrine_new_leaves_nothing_behind_when_one_mission_is_invalid(
+    runner, project_dir, tmp_path
+):
+    """E15 — not the directory, and not the staging directory either."""
+    result = runner.invoke(
+        main,
+        [
+            "doctrine", "new", "tdd-lite",
+            "-d", _design(tmp_path),
+            "-m",
+            _mission_file(tmp_path, "good"),
+            _mission_file(tmp_path, "bad", summary=None),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.startswith('Mission "bad": ')
+    assert sorted(p.name for p in _doctrines_dir(project_dir).iterdir()) == ["default"]
+
+
+def test_doctrine_new_refuses_a_name_already_taken_anywhere_in_the_subtree(
+    runner, project_dir, tmp_path
+):
+    """E16 — a doctrine id is unique across the whole doctrines tree."""
+    argv = [
+        "doctrine", "new", "tdd-lite",
+        "-d", _design(tmp_path),
+        "-m", _mission_file(tmp_path, "recon"),
+    ]
+    assert runner.invoke(main, argv).exit_code == 0
+
+    result = runner.invoke(main, argv + ["--group", "default"])
+
+    assert result.exit_code == 1
+    existing = _doctrines_dir(project_dir) / "tdd-lite"
+    assert result.stderr.strip() == f"Error: doctrine 'tdd-lite' already exists at {existing}"
+
+
+def test_doctrine_new_refuses_a_design_whose_id_is_not_the_command_argument(
+    runner, project_dir, tmp_path
+):
+    """The directory name and the declared id are one fact, stated twice."""
+    result = runner.invoke(
+        main,
+        [
+            "doctrine", "new", "tdd-lite",
+            "-d", _design(tmp_path, "something-else"),
+            "-m", _mission_file(tmp_path, "recon"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == (
+        'Design file id "something-else" does not match command argument "tdd-lite"'
+    )
+
+
+def test_doctrine_new_refuses_a_mission_whose_id_is_not_its_stem(
+    runner, project_dir, tmp_path
+):
+    """The filename is the mission id an orchestrator addresses."""
+    result = runner.invoke(
+        main,
+        [
+            "doctrine", "new", "tdd-lite",
+            "-d", _design(tmp_path),
+            "-m", _mission_file(tmp_path, "recon", mission_id="reconnaissance"),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stderr.strip() == (
+        'Mission file id "reconnaissance" does not match filename stem "recon"'
+    )
+
+
+def test_doctrine_new_refuses_an_invalid_name(runner, project_dir, tmp_path):
+    """Name validation runs before anything reaches disk."""
+    result = runner.invoke(
+        main,
+        [
+            "doctrine", "new", "-bad-name",
+            "-d", _design(tmp_path),
+            "-m", _mission_file(tmp_path, "recon"),
+            "--",
+        ],
+    )
+
     assert result.exit_code != 0
-    combined = (result.output or "") + (result.stderr or "")
-    assert "Missing required property 'summary'" in combined
-    doctrines_dir = project_dir / ".lore" / "doctrines"
-    assert not (doctrines_dir / "fi.yaml").exists()
+
+
+def test_doctrine_new_json_error_goes_to_stderr(runner, project_dir, tmp_path):
+    """An error envelope never lands on stdout."""
+    result = runner.invoke(
+        main, ["--json", "doctrine", "new", "tdd-lite", "-d", _design(tmp_path)]
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr) == {
+        "error": "At least one mission file is required (-m)"
+    }
+
+
+def test_doctrine_new_result_is_readable_by_doctrine_show(runner, project_dir, tmp_path):
+    """What new writes is what show reads."""
+    runner.invoke(
+        main,
+        [
+            "doctrine", "new", "tdd-lite",
+            "-d", _design(tmp_path),
+            "-m",
+            _mission_file(tmp_path, "recon"),
+            _mission_file(tmp_path, "scribe"),
+        ],
+    )
+
+    result = runner.invoke(main, ["doctrine", "show", "tdd-lite", "--mission", "recon"])
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "The recon instructions.\n"

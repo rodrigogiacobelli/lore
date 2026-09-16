@@ -2,8 +2,9 @@
 id: conceptual-workflows-mission-type
 title: Mission Type Field
 summary: 'What the system does when a mission type is set, displayed, and updated
-  — free-form string schema, null display guards across all four output sites, CLI
-  acceptance, and oracle rendering.
+  — free-form string schema, the three tokens the orchestrator dispatches on (agent,
+  constable, human), null display guards across all four output sites, CLI acceptance,
+  and oracle rendering.
 
   '
 related:
@@ -14,6 +15,18 @@ related:
 # Mission Type Field
 
 The `mission_type` field is a free-form string on the `missions` table. Lore does not interpret, validate, or constrain its value. It is an opaque label that orchestrators and agents can use to signal the kind of work a mission requires.
+
+## The Tokens an Orchestrator Dispatches On
+
+Lore ships three tokens, and every seeded doctrine and skill uses them:
+
+| Token | What the orchestrator does |
+|-------|---------------------------|
+| `agent` | Claims the mission and hands it to a worker agent |
+| `constable` | Claims the mission and handles it inline — a commit, housekeeping |
+| `human` | Leaves the mission for the human; never claims it |
+
+The set is a convention the orchestrator applies, not a rule Lore enforces. There is no enum, no `CHECK` constraint and no `click.Choice` on `-T` (lore codex show decisions-004-mission-type-dumb-storage), so a project is free to use its own labels.
 
 ## Schema
 
@@ -34,10 +47,10 @@ The `mission_type` field is a free-form string on the `missions` table. Lore doe
 ### 1. `lore missions` listing
 
 ```
-  q-xxxx/m-yyyy  P2  [open]  [coding]  My Task  [knight.md]
+  q-xxxx/m-yyyy  P2  [open]  [agent]  My Task  [tdd-implementation/red]
 ```
 
-`[<mission_type>]` is rendered between the status bracket and the title. When `mission_type` is NULL the bracket is omitted entirely.
+`[<mission_type>]` is rendered between the status bracket and the title, and `[<doctrine_mission>]` after it. When either is NULL its bracket is omitted entirely.
 
 ### 2. `lore ready` output
 
@@ -52,13 +65,13 @@ Mission: q-xxxx/m-yyyy
 Title: My Task
 Status: open
 Priority: 2
-Type: coding
+Type: agent
 ```
 
 ### 4. `lore show <quest-id>` (inline mission list)
 
 ```
-○ m-yyyy  My Task [coding]
+○ m-yyyy  My Task [agent]
 ```
 
 The `[<mission_type>]` bracket is appended to the title when non-null.
@@ -68,7 +81,7 @@ The `[<mission_type>]` bracket is appended to the title when non-null.
 In all JSON output sites, `mission_type` is always present as a key. Its value is either the string value or `null`:
 
 ```json
-{"id": "q-xxxx/m-yyyy", "mission_type": "coding", ...}
+{"id": "q-xxxx/m-yyyy", "mission_type": "agent", ...}
 {"id": "q-xxxx/m-zzzz", "mission_type": null, ...}
 ```
 

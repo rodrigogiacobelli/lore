@@ -62,7 +62,6 @@ The Python surface carries the same exception explicitly: `plan_init(project_roo
 | Function | Returns |
 |----------|---------|
 | `lore_dir(root)` | `root / ".lore"` |
-| `knights_dir(root)` | `root / ".lore" / "knights"` |
 | `doctrines_dir(root)` | `root / ".lore" / "doctrines"` |
 | `codex_dir(root)` | `root / ".lore" / "codex"` |
 | `artifacts_dir(root)` | `root / ".lore" / "artifacts"` |

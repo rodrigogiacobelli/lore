@@ -41,46 +41,41 @@ def _write(path: Path, text: str) -> None:
 
 def _skeleton(root: Path) -> Path:
     lore = root / ".lore"
-    for d in ("knights", "doctrines", "codex", "artifacts", "watchers"):
+    for d in ("doctrines", "codex", "artifacts", "watchers"):
         (lore / d).mkdir(parents=True, exist_ok=True)
     return root
 
 
-def _bad_knight(root: Path) -> Path:
+def _bad_doctrine_mission(root: Path) -> Path:
     p = (
         root
         / ".lore"
-        / "knights"
+        / "doctrines"
         / "default"
-        / "feature-implementation"
-        / "pm.md"
+        / "feat-x"
+        / "missions"
+        / "recon.md"
     )
     _write(
         p,
-        "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n# body\n",
+        "---\nid: recon\ntitle: Recon\nsummary: s\nstability: x\n---\n# body\n",
     )
     return p
 
 
-def _doctrine_with_broken_knight_ref(root: Path) -> None:
+def _doctrine_with_broken_artifact_ref(root: Path) -> None:
     d = root / ".lore" / "doctrines" / "default" / "feat-x"
     _write(
-        d / "feat-x.yaml",
-        "id: feat-x\nsteps:\n"
-        "  - id: step-1\n    title: S1\n    type: knight\n"
-        "    knight: ghost-knight\n",
-    )
-    _write(
         d / "feat-x.design.md",
-        "---\nid: feat-x\ntitle: X\nsummary: s\n---\nBody.\n",
+        "---\nid: feat-x\ntitle: X\nsummary: s\n---\nSee fi-ghost.\n",
     )
 
 
 @pytest.fixture()
-def tmp_project_with_bad_knight_and_bad_ref(tmp_path):
+def tmp_project_with_bad_mission_and_bad_ref(tmp_path):
     _skeleton(tmp_path)
-    _bad_knight(tmp_path)
-    _doctrine_with_broken_knight_ref(tmp_path)
+    _bad_doctrine_mission(tmp_path)
+    _doctrine_with_broken_artifact_ref(tmp_path)
     return tmp_path
 
 
@@ -95,9 +90,9 @@ def test_all_scopes_is_tuple_and_contains_schemas():
     assert "schemas" in _ALL_SCOPES
 
 
-def test_all_scopes_length_is_six_after_schemas_added():
-    """Adding schemas grows _ALL_SCOPES (US-005 added glossary → 7; US-001 added bindings → 8; US-006 added rites → 9; voice → 10; skills → 11)."""
-    assert len(_ALL_SCOPES) == 11
+def test_all_scopes_length_after_the_retired_entity_scope_left():
+    """glossary → 7; bindings → 8; rites → 9; voice → 10; skills → 11; one out → 10."""
+    assert len(_ALL_SCOPES) == 10
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +101,7 @@ def test_all_scopes_length_is_six_after_schemas_added():
 
 
 def test_scope_schemas_does_not_invoke_codex_checker(
-    tmp_project_with_bad_knight_and_bad_ref, monkeypatch
+    tmp_project_with_bad_mission_and_bad_ref, monkeypatch
 ):
     """conceptual-workflows-health — scoped runs must not call other checkers."""
     called = []
@@ -117,14 +112,14 @@ def test_scope_schemas_does_not_invoke_codex_checker(
 
     monkeypatch.setattr(health_mod, "_check_codex", spy)
     health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["schemas"],
     )
     assert called == []
 
 
 def test_scope_schemas_does_not_invoke_doctrines_checker(
-    tmp_project_with_bad_knight_and_bad_ref, monkeypatch
+    tmp_project_with_bad_mission_and_bad_ref, monkeypatch
 ):
     called = []
 
@@ -134,17 +129,17 @@ def test_scope_schemas_does_not_invoke_doctrines_checker(
 
     monkeypatch.setattr(health_mod, "_check_doctrines", spy)
     health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["schemas"],
     )
     assert called == []
 
 
-def test_scope_schemas_does_not_invoke_artifacts_watchers_knights_checkers(
-    tmp_project_with_bad_knight_and_bad_ref, monkeypatch
+def test_scope_schemas_does_not_invoke_artifacts_watchers_doctrines_checkers(
+    tmp_project_with_bad_mission_and_bad_ref, monkeypatch
 ):
     called: list[str] = []
-    for name in ("_check_artifacts", "_check_watchers", "_check_knights"):
+    for name in ("_check_artifacts", "_check_watchers", "_check_doctrines"):
         def make(n=name):
             def spy(*args, **kwargs):
                 called.append(n)
@@ -153,14 +148,14 @@ def test_scope_schemas_does_not_invoke_artifacts_watchers_knights_checkers(
         monkeypatch.setattr(health_mod, name, make())
 
     health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["schemas"],
     )
     assert called == []
 
 
 def test_scope_schemas_does_invoke_check_schemas(
-    tmp_project_with_bad_knight_and_bad_ref, monkeypatch
+    tmp_project_with_bad_mission_and_bad_ref, monkeypatch
 ):
     """scopes=['schemas'] wires _check_schemas exactly once."""
     calls = []
@@ -172,7 +167,7 @@ def test_scope_schemas_does_invoke_check_schemas(
 
     monkeypatch.setattr(health_mod, "_check_schemas", spy)
     health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["schemas"],
     )
     assert len(calls) == 1
@@ -184,7 +179,7 @@ def test_scope_schemas_does_invoke_check_schemas(
 
 
 def test_scope_without_schemas_does_not_call_check_schemas(
-    tmp_project_with_bad_knight_and_bad_ref, monkeypatch
+    tmp_project_with_bad_mission_and_bad_ref, monkeypatch
 ):
     called = []
 
@@ -194,23 +189,23 @@ def test_scope_without_schemas_does_not_call_check_schemas(
 
     monkeypatch.setattr(health_mod, "_check_schemas", spy)
     health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["doctrines"],
     )
     assert called == []
 
 
 def test_scope_doctrines_only_reports_non_schema_issues(
-    tmp_project_with_bad_knight_and_bad_ref,
+    tmp_project_with_bad_mission_and_bad_ref,
 ):
-    """scopes=['doctrines'] returns broken_knight_ref and no schema issues."""
+    """scopes=['doctrines'] returns broken_artifact_ref and no schema issues."""
     report = health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["doctrines"],
     )
     checks = {i.check for i in report.issues}
     assert "schema" not in checks
-    assert "broken_knight_ref" in checks
+    assert "broken_artifact_ref" in checks
 
 
 # ---------------------------------------------------------------------------
@@ -219,28 +214,28 @@ def test_scope_doctrines_only_reports_non_schema_issues(
 
 
 def test_scope_composition_runs_both_doctrines_and_schemas(
-    tmp_project_with_bad_knight_and_bad_ref,
+    tmp_project_with_bad_mission_and_bad_ref,
 ):
-    """scopes=['doctrines','schemas'] yields BOTH schema and broken_knight_ref."""
+    """scopes=['doctrines','schemas'] yields BOTH schema and broken_artifact_ref."""
     report = health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["doctrines", "schemas"],
     )
     checks = {i.check for i in report.issues}
     assert "schema" in checks
-    assert "broken_knight_ref" in checks
+    assert "broken_artifact_ref" in checks
 
 
 def test_scope_composition_order_independent(
-    tmp_project_with_bad_knight_and_bad_ref,
+    tmp_project_with_bad_mission_and_bad_ref,
 ):
     """ADR-012 compose: scope order does not change the set of checks that run."""
     a = health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["doctrines", "schemas"],
     )
     b = health_check(
-        project_root=tmp_project_with_bad_knight_and_bad_ref,
+        project_root=tmp_project_with_bad_mission_and_bad_ref,
         scopes=["schemas", "doctrines"],
     )
     assert {i.check for i in a.issues} == {i.check for i in b.issues}

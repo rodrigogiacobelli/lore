@@ -9,9 +9,6 @@
 !artifacts
 !artifacts/**
 artifacts/default/
-!knights
-!knights/**
-knights/default/
 !doctrines
 !doctrines/**
 doctrines/default/
@@ -20,6 +17,7 @@ doctrines/default/
 watchers/default/
 !rites
 !rites/**
+!skills
+!skills/**
 GETTING-STARTED.md
 LORE-AGENT.md
-skills/

@@ -12,41 +12,55 @@ A final **PRD already exists in the codex before this doctrine runs.** Product p
 
 ## Doctrine
 
-| Phase | Step | Type | Knight | Depends On | Input | Output |
-|-------|------|------|--------|------------|-------|--------|
-| 0 | Branch | constable | — | — | Quest title | Feature branch created off `work` |
-| 1 | Scout | knight | scout | branch | Feature request, existing PRD | Business map + technical map |
-| 2 | Tech Spec | knight | architect | scout | PRD, technical map | Final Tech Spec |
-| 3 | ADR Enforcer | knight | adr-standards-enforcer | tech-spec | Tech Spec, ADRs, standards | Tech Spec reconciled to ADRs + audit |
-| 4 | Spec Gate | human | — | adr-enforce | Reconciled Tech Spec | Annotated Tech Spec |
-| 5 | Tech Planning | knight | tech-planner | spec-gate | Tech Spec, PRD, technical map | Sized, testable user stories + index |
-| 5 | Codex Apply | knight | tech-writer | spec-gate | Tech Spec, PRD, context maps | Updated codex + new ADRs |
-| 6 | Group Stories | knight | story-grouper | tech-planning, codex-apply | Sized stories + index | Groups appended to index + spec committed |
-| 7+ | **Dev Cycle** (per group) | knights + constable | tdd-red → tdd-green → tdd-refactor → — | group-stories | Story group | Red → Green → Refactor → Dev Commit |
-| last | **Defaults Review** | knight | defaults-reviewer | last Dev Commit | Shipped diff, stories, Tech Spec | `src/lore/defaults/` reconciled + committed |
+| Phase | Mission | Type | Depends On | Input | Output |
+|-------|---------|------|------------|-------|--------|
+| 0 | branch | constable | — | Quest title | Feature branch created off `work` |
+| 1 | scout | agent | branch | Feature request, existing PRD | Business map + technical map |
+| 2 | tech-spec | agent | scout | PRD, technical map | Final Tech Spec |
+| 3 | adr-enforce | agent | tech-spec | Tech Spec, ADRs, standards | Tech Spec reconciled to ADRs + audit |
+| 4 | spec-gate | human | adr-enforce | Reconciled Tech Spec | Annotated Tech Spec |
+| 5 | tech-planning | agent | spec-gate | Tech Spec, PRD, technical map | Sized, testable user stories + index |
+| 5 | codex-apply | agent | spec-gate | Tech Spec, PRD, context maps | Updated codex + new ADRs |
+| 6 | group-stories | agent | tech-planning, codex-apply | Sized stories + index | Groups appended to index + spec committed |
+| 7+ | **Dev Cycle** (per group) | agent + constable | group-stories | Story group | Red → Green → Refactor → Dev Commit |
+| last | defaults-review | agent | last Dev Commit | Shipped diff, stories, Tech Spec | `src/lore/defaults/` reconciled + committed |
 
 > **Phases 7+ are created dynamically.** After `group-stories` completes, the orchestrator reads the "Dev Cycle Groups" section from the story index and creates one Red → Green → Refactor → Dev Commit chain per group. Groups run sequentially: each group's Red depends on the previous group's Dev Commit. After the **last** group's Dev Commit, the orchestrator creates one **Defaults Review** mission depending on it.
 
 ### The TDD Dev Cycle (per group)
 
-Each story group runs a strict four-step cycle. Hard boundaries between steps — the boundary is the point.
+Each story group runs a strict four-step cycle. Hard boundaries between steps — the boundary is the point. This doctrine ships no mission files for the cycle; the orchestrator creates each dev cycle mission against the `tdd-implementation` doctrine, which owns those four briefs.
 
-| Step | Type | Knight | Rule |
-|------|------|--------|------|
-| Red | knight | tdd-red | Writes failing tests from the story's acceptance criteria. **No production code, ever.** Tests must fail for the right reason. |
-| Green | knight | tdd-green | Writes the **minimum** production code to make every Red test pass. No refactoring, no new features, no test edits. |
-| Refactor | knight | tdd-refactor | Improves production and test code — clarity, naming, duplication — **without changing behavior.** Tests must stay green. |
-| Dev Commit | constable | — | Stages only `src/` and `tests/` and commits the group's work. Spec artifacts were already committed by group-stories. |
+| Step | Type | Mission reference | Rule |
+|------|------|-------------------|------|
+| Red | agent | `tdd-implementation/red` | Writes failing tests from the story's acceptance criteria. **No production code, ever.** Tests must fail for the right reason. |
+| Green | agent | `tdd-implementation/green` | Writes the **minimum** production code to make every Red test pass. No refactoring, no new features, no test edits. |
+| Refactor | agent | `tdd-implementation/refactor` | Improves production and test code — clarity, naming, duplication — **without changing behavior.** Tests must stay green. |
+| Dev Commit | constable | `tdd-implementation/commit` | Stages only `src/` and `tests/` and commits the group's work. Spec artifacts were already committed by group-stories. |
+
+## Missions
+
+- **branch** — Creates the feature branch off `work` and hands the slug to the scout.
+- **scout** — Maps the codex from both the business and the technical lens in one pass.
+- **tech-spec** — Makes concrete architectural decisions from the PRD and the technical map. Produces the final Tech Spec.
+- **adr-enforce** — Reconciles the Tech Spec against settled ADRs and standards: rewrites conflicting lines to comply, fills cross-cutting gaps, flags new decisions that need an ADR, escalates what it cannot resolve. Audits in place; never silently passes a spec that contradicts an ADR.
+- **spec-gate** — The human reads the reconciled Tech Spec and appends feedback before planning starts.
+- **tech-planning** — Translates the settled Tech Spec into the full set of deliverables: testable user stories with verified file paths, a test stub per acceptance-criterion scenario, and a complexity estimate each. Owns authoring **and** sizing — there is no separate BA.
+- **codex-apply** — Applies codex changes directly — no proposal step. Creates an ADR for each new decision the enforcer flagged.
+- **group-stories** — Groups sized stories into dev cycle batches, appends groups to the index, commits spec outputs.
+- **defaults-review** — After the dev cycles ship, reconciles `src/lore/defaults/` (docs, artifacts, doctrines, skills, watchers, schema) with what was actually built; creates/updates/deletes seeds so a fresh `lore init` reflects reality, then commits.
+
+The dev cycle missions the orchestrator creates per group are not defined here — they come from `tdd-implementation` (`red`, `green`, `refactor`, `commit`).
 
 ## Orchestrator Boot Sequence
 
 1. Confirm a settled PRD exists; capture its codex ID. Put it in each mission description that needs it.
-2. Create all fixed missions (branch through group-stories) using `start-tdd-quest`.
+2. Create all fixed missions (branch through group-stories) using the `start-quest` skill.
 3. Dispatch branch constable, then the spec pipeline agents (Scout → Tech Spec → ADR Enforcer → Spec Gate → Tech Planning ∥ Codex Apply).
 4. When `group-stories` is done: read the story index, parse the "Dev Cycle Groups" section.
-5. For each group, create four missions: Red, Green, Refactor, Dev Commit.
+5. For each group, create four missions: Red, Green, Refactor, Dev Commit — each referencing its `tdd-implementation` mission (`-D tdd-implementation/red`, `-D tdd-implementation/green`, `-D tdd-implementation/refactor`, `-D tdd-implementation/commit`).
 6. Wire dependencies: G1/Red has no needs (group-stories already done); G2/Red needs G1/Dev Commit; etc. Dispatch Group 1 Red immediately.
-7. After the **last** group's Dev Commit completes, create one **Defaults Review** mission (knight `tdd-feature/defaults-reviewer.md`) depending on it. Dispatch it.
+7. After the **last** group's Dev Commit completes, create one **Defaults Review** mission (`-D tdd-feature/defaults-review`) depending on it. Dispatch it.
 8. When Defaults Review is done, the branch is ready for human squash-merge into `work`.
 
 ## Artifacts
@@ -58,22 +72,9 @@ Each story group runs a strict four-step cycle. Hard boundaries between steps �
 
 > The PRD is a **precondition input**, not an output of this doctrine — it uses `fi-prd` but does not produce it.
 
-## Knights
-
-- **scout** — Maps the codex from both business and technical lenses in one pass.
-- **architect** — Makes concrete architectural decisions. Produces Tech Specs.
-- **adr-standards-enforcer** — Reconciles the Tech Spec against settled ADRs and standards: rewrites conflicting lines to comply, fills cross-cutting gaps, flags new decisions that need an ADR, escalates what it cannot resolve. Audits in place; never silently passes a spec that contradicts an ADR.
-- **tech-planner** (Tech Lead — Tech Planning) — Translates the settled Tech Spec into the full set of deliverables: testable user stories with verified file paths, a test stub per acceptance-criterion scenario, and a complexity estimate each. Owns authoring **and** sizing — there is no separate BA.
-- **tech-writer** — Applies codex changes directly — no proposal step. Creates an ADR for each new decision the enforcer flagged.
-- **story-grouper** — Groups sized stories into dev cycle batches, appends groups to the index, commits spec outputs.
-- **tdd-red** — Writes failing tests from acceptance criteria. No production code ever.
-- **tdd-green** — Writes minimum viable production code to make tests pass. No refactoring.
-- **tdd-refactor** — Improves code quality without changing behavior. Tests must stay green.
-- **defaults-reviewer** — After the dev cycles ship, reconciles `src/lore/defaults/` (docs, artifacts, doctrines, knights, skills, watchers, schema) with what was actually built; creates/updates/deletes seeds so a fresh `lore init` reflects reality, then commits.
-
 ## Grouping Rules
 
-`story-grouper` applies these rules to batch stories into dev cycles:
+`group-stories` applies these rules to batch stories into dev cycles:
 
 - **XL story** → one group alone
 - **L story** → one group alone, or paired with a closely related S
@@ -90,10 +91,10 @@ Output format (appended to story index):
 
 ```
 work
-└── feat/<feature-slug>   ← created by Branch constable (Phase 0)
+└── feat/<feature-slug>   ← created by the branch constable (Phase 0)
      ├── spec + grouping committed by group-stories (Phase 6)
      ├── Red → Green → Refactor → Dev Commit (per group, sequentially)
-     └── seed reconciliation committed by defaults-reviewer (final)
+     └── seed reconciliation committed by defaults-review (final)
 ```
 
 Human squash-merges `feat/<feature-slug>` → `work` when Defaults Review is done. AI never touches `work`.
@@ -115,9 +116,9 @@ Human squash-merges `feat/<feature-slug>` → `work` when Defaults Review is don
 - A settled PRD is a **precondition** — this doctrine consumes it, never produces it. Planning happens before the quest.
 - Branch is Phase 0 — the very first step. All work happens on `feat/<feature-slug>`, never on `work`.
 - The ADR Enforcer **rewrites** the spec to obey settled ADRs (it does not merely audit) and runs *before* the human gate, so the human reviews an already-reconciled spec.
-- Tech Planning replaces the old BA + Tech Notes split — one knight (`tech-planner`) authors the stories and sizes them in a single pass. It runs in parallel with Codex Apply.
+- Tech Planning replaces the old BA + Tech Notes split — one mission (`tech-planning`) authors the stories and sizes them in a single pass. It runs in parallel with Codex Apply.
 - `group-stories` commits all `.lore/` spec outputs (including new ADRs) — there is no separate spec-commit mission.
-- Dev cycle missions and the final Defaults Review are created by the orchestrator after `group-stories` completes, not pre-defined in this YAML.
-- `dev-commit` (per group) stages only `src/` and `tests/` — spec artifacts already committed.
+- Dev cycle missions and the final Defaults Review are created by the orchestrator after `group-stories` completes, not listed in the fixed table above.
+- Dev Commit (per group) stages only `src/` and `tests/` — spec artifacts already committed.
 - Defaults Review reconciles `src/lore/defaults/` against the shipped feature and is the last step before merge — it runs once, after the last dev cycle, not per group.
 - Human squash-merges the feature branch into `work` — AI agents never merge.

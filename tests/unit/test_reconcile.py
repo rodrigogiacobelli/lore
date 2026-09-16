@@ -412,7 +412,7 @@ class TestRecordedAndDesired:
         """Lore installed it and still ships it, so the file is Lore's.
 
         The edit is discarded rather than asked about — the same answer
-        `.lore/knights/default/**` and `.lore/doctrines/default/**` have always
+        `.lore/doctrines/default/**` and `.lore/artifacts/default/**` have always
         given, now given by the one tree that used to differ.
         """
         plant(tmp_path, "a/SKILL.md", b"edited")
@@ -443,7 +443,7 @@ class TestRecordedAndDesired:
         assert row.detail is None
 
     def test_an_edited_skill_is_told_where_its_own_copy_belongs(self, tmp_path):
-        """Knights and doctrines have `default/` to say it; skills have nowhere.
+        """Doctrines and artifacts have `default/` to say it; skills have nowhere.
 
         A user losing an edit is the ruling. A user losing an edit with no idea
         how to avoid the next one is not, so the row that takes the file back

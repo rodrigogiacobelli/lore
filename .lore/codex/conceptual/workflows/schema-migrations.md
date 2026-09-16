@@ -12,6 +12,7 @@ binds:
 - src/lore/migrations/v3_to_v4.py
 - src/lore/migrations/v4_to_v5.py
 - src/lore/migrations/v5_to_v6.py
+- src/lore/migrations/v6_to_v7.py
 - src/lore/db.py
 related:
 - ref-lore_db-core
@@ -24,7 +25,28 @@ Lore stores a `schema_version` key in the `lore_meta` table. Every time a connec
 
 ## Current Schema Version
 
-`SCHEMA_VERSION = 6` (defined in `lore.db`).
+`SCHEMA_VERSION = 7` (defined in `lore.db`).
+
+## Migration Contracts
+
+| Step | What it does |
+|---|---|
+| v1→v2 | Adds `deleted_at` columns (soft-delete). |
+| v2→v3 | Adds `auto_close` to `quests`. |
+| v3→v4 | Adds `mission_type` to `missions`. |
+| v4→v5 | Removes the `mission_type` enum: drops `NOT NULL`, the `CHECK` constraint, and the `DEFAULT 'knight'`. |
+| v5→v6 | Adds the `board_messages` table and the `idx_board_entity` index. |
+| v6→v7 | Drops `missions.knight`, adds `missions.doctrine_mission TEXT`, and rewrites `mission_type` `knight` to `agent`. |
+
+### The v6→v7 contract
+
+`ALTER TABLE ... DROP COLUMN` needs SQLite >= 3.35 and would leave the column order disagreeing with `schema.sql`, so v6→v7 uses the rename-create-copy-drop pattern v4→v5 established: `missions` is renamed to `missions_old`, the new table is created with `doctrine_mission` where `knight` was, every row is copied with `NULL` in that position, `missions_old` is dropped, and both indexes are recreated.
+
+**`doctrine_mission` starts empty on every migrated row.** A stored knight value is a bare file name such as `tech-writer` or `feature-implementation/scout.md`, which is not a valid `<doctrine-id>/<mission-id>` reference and can never resolve. Carrying those across would put every upgraded project into `lore health --scope doctrines` errors on missions its maintainer never touched. The audit trail of which persona a historical mission ran under lives on disk instead: `lore init` names retired and orphaned knight files in its report.
+
+One `UPDATE` rewrites the `mission_type` token `knight` to `agent`. That statement is the only code anywhere that reads the token — `mission_type` is stored and exposed, never interpreted (`decisions-004-mission-type-dumb-storage`).
+
+A migration module is a historical record of DDL that ran. `missions.knight` existed, so the migration chain keeps naming it; editing that out would falsify the schema history and break the upgrade path off an older database.
 
 ## Steps — Version Detection
 

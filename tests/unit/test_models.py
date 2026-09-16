@@ -1,8 +1,10 @@
 """Tests for lore.models — QuestStatus, MissionStatus, DependencyType alias,
-Quest, Mission, Dependency, BoardMessage, Artifact, CodexDocument, Doctrine,
-DoctrineStep, Knight, DoctrineListEntry model types.
+Quest, Mission, Dependency, BoardMessage, Artifact, CodexDocument,
+DoctrineListEntry model types.
 
-Spec: doctrine-design-file-us-009 (lore codex show doctrine-design-file-us-009)
+``Doctrine``, ``DoctrineStep`` and ``Knight`` are gone: a doctrine carries no
+step graph for the first two to describe, and the Knight entity no longer
+exists.
 """
 
 import dataclasses
@@ -254,13 +256,14 @@ def make_mission_row(**overrides):
     conn.row_factory = sqlite3.Row
     conn.execute("""CREATE TABLE missions (
         id TEXT, quest_id TEXT, title TEXT, description TEXT,
-        status TEXT, priority INTEGER, mission_type TEXT, knight TEXT,
+        status TEXT, priority INTEGER, mission_type TEXT, doctrine_mission TEXT,
         block_reason TEXT, created_at TEXT, updated_at TEXT,
         closed_at TEXT, deleted_at TEXT
     )""")
     defaults = dict(
         id="m-1", quest_id="q-1", title="T", description="D",
-        status="open", priority=2, mission_type="feature", knight="knight.md",
+        status="open", priority=2, mission_type="feature",
+        doctrine_mission="tdd-lite/recon",
         block_reason=None, created_at="2026-01-01", updated_at="2026-01-01",
         closed_at=None, deleted_at=None,
     )
@@ -406,9 +409,14 @@ class TestMissionFields:
         mission = self.Mission.from_row(self.row)
         assert hasattr(mission, "quest_id")
 
-    def test_mission_knight_field_exists(self):
+    def test_mission_doctrine_mission_field_exists(self):
         mission = self.Mission.from_row(self.row)
-        assert hasattr(mission, "knight")
+        assert hasattr(mission, "doctrine_mission")
+        assert mission.doctrine_mission == "tdd-lite/recon"
+
+    def test_mission_has_no_knight_field(self):
+        mission = self.Mission.from_row(self.row)
+        assert not hasattr(mission, "knight")
 
     def test_mission_block_reason_field_exists(self):
         mission = self.Mission.from_row(self.row)
@@ -456,11 +464,11 @@ class TestNullableFields:
         mission = Mission.from_row(row)
         assert mission.quest_id is None
 
-    def test_mission_knight_none(self):
+    def test_mission_doctrine_mission_none(self):
         from lore.models import Mission
-        row = make_mission_row(knight=None)
+        row = make_mission_row(doctrine_mission=None)
         mission = Mission.from_row(row)
-        assert mission.knight is None
+        assert mission.doctrine_mission is None
 
     def test_mission_block_reason_none(self):
         from lore.models import Mission
@@ -665,8 +673,8 @@ class TestBoardMessageFields:
         assert msg.sender is None
 
     def test_sender_set(self):
-        msg = self._make(sender="knight-1")
-        assert msg.sender == "knight-1"
+        msg = self._make(sender="orchestrator")
+        assert msg.sender == "orchestrator"
 
     def test_created_at_field(self):
         msg = self._make()
@@ -826,153 +834,6 @@ def test_codex_document_type_attr_raises_attribute_error():
         _ = doc.type
 
 
-# ── Doctrine + DoctrineStep ───────────────────────────────────────────────────
-
-class TestDoctrineImportable:
-    def test_doctrine_importable(self):
-        from lore.models import Doctrine, DoctrineStep  # noqa: F401
-
-class TestDoctrineStepFields:
-    def _make_step(self, **overrides):
-        from lore.models import DoctrineStep
-        data = {"id": "plan", "title": "Plan work", "priority": 1,
-                "type": "knight", "knight": "tdd-red.md",
-                "notes": "Some notes", "needs": ["intake"]}
-        data.update(overrides)
-        return DoctrineStep.from_dict(data)
-
-    def test_id_field(self):
-        assert self._make_step().id == "plan"
-
-    def test_title_field(self):
-        assert self._make_step().title == "Plan work"
-
-    def test_priority_field(self):
-        assert self._make_step().priority == 1
-
-    def test_type_field(self):
-        assert self._make_step().type == "knight"
-
-    def test_knight_field(self):
-        assert self._make_step().knight == "tdd-red.md"
-
-    def test_notes_field(self):
-        assert self._make_step().notes == "Some notes"
-
-    def test_needs_field(self):
-        assert self._make_step().needs == ["intake"]
-
-    def test_needs_defaults_to_empty_list(self):
-        step = self._make_step()
-        data = {"id": "plan", "title": "Plan work", "priority": 1}
-        from lore.models import DoctrineStep
-        step = DoctrineStep.from_dict(data)
-        assert step.needs == []
-        assert step.type is None
-        assert step.knight is None
-        assert step.notes is None
-
-class TestDoctrineFields:
-    def _make_doctrine(self):
-        from lore.models import Doctrine
-        data = {
-            "id": "bugfix",
-            "title": "Bug Fix Workflow",
-            "summary": "Bug fix workflow",
-            "steps": [
-                {"id": "intake", "title": "Intake", "priority": 0},
-                {"id": "fix", "title": "Fix bug", "priority": 1, "type": "knight"},
-            ]
-        }
-        return Doctrine.from_dict(data)
-
-    def test_id_field(self):
-        assert self._make_doctrine().id == "bugfix"
-
-    def test_summary_field(self):
-        assert self._make_doctrine().summary == "Bug fix workflow"
-
-    def test_steps_is_tuple(self):
-        import lore.models as m
-        doctrine = self._make_doctrine()
-        assert isinstance(doctrine.steps, tuple)
-        assert isinstance(doctrine.steps[0], m.DoctrineStep)
-
-    def test_steps_count(self):
-        assert len(self._make_doctrine().steps) == 2
-
-class TestDoctrineListDictRaisesKeyError:
-    def test_list_doctrines_dict_raises(self):
-        from lore.models import Doctrine
-        # list_doctrines() output — no 'steps' key
-        data = {"id": "bugfix", "filename": "bugfix.yaml",
-                "title": "Bug Fix", "valid": True}
-        with pytest.raises(KeyError):
-            Doctrine.from_dict(data)
-
-class TestDoctrineImmutability:
-    def test_doctrine_frozen(self):
-        import dataclasses
-        from lore.models import Doctrine
-        d = Doctrine.from_dict({"id": "x", "title": "X", "summary": "y", "steps": []})
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            d.id = "changed"  # type: ignore[misc]
-
-    def test_steps_tuple_no_append(self):
-        from lore.models import Doctrine
-        d = Doctrine.from_dict({"id": "x", "title": "X", "summary": "y", "steps": []})
-        with pytest.raises(AttributeError):
-            d.steps.append("anything")  # type: ignore[attr-defined]
-
-    def test_doctrine_step_frozen(self):
-        import dataclasses
-        from lore.models import DoctrineStep
-        step = DoctrineStep.from_dict({"id": "s", "title": "T", "priority": 0})
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            step.title = "changed"  # type: ignore[misc]
-
-class TestDoctrineAllExport:
-    def test_doctrine_in_all(self):
-        import lore.models as m
-        assert "Doctrine" in m.__all__
-        assert "DoctrineStep" in m.__all__
-
-
-# ── Knight ────────────────────────────────────────────────────────────────────
-
-class TestKnightImportable:
-    def test_knight_importable(self):
-        from lore.models import Knight  # noqa: F401
-
-class TestKnightFields:
-    def test_direct_construction(self):
-        from lore.models import Knight
-        k = Knight(name="developer", content="# Developer\nYou are a dev.")
-        assert k.name == "developer"
-        assert k.content == "# Developer\nYou are a dev."
-
-    def test_no_from_dict(self):
-        from lore.models import Knight
-        assert not hasattr(Knight, "from_dict")
-
-    def test_no_from_row(self):
-        from lore.models import Knight
-        assert not hasattr(Knight, "from_row")
-
-class TestKnightImmutability:
-    def test_frozen(self):
-        import dataclasses
-        from lore.models import Knight
-        k = Knight(name="developer", content="# Developer")
-        with pytest.raises(dataclasses.FrozenInstanceError):
-            k.content = "changed"  # type: ignore[misc]
-
-class TestKnightAllExport:
-    def test_knight_in_all(self):
-        import lore.models as m
-        assert "Knight" in m.__all__
-
-
 # ── DoctrineListEntry ─────────────────────────────────────────────────────────
 
 class TestDoctrineListEntryImportable:
@@ -1051,13 +912,13 @@ class TestDoctrineListEntryIntegration:
         """Integration: list_doctrines output can be wrapped in DoctrineListEntry."""
         from lore.models import DoctrineListEntry
         from lore.doctrine import list_doctrines
-        doctrines_dir = tmp_path / ".lore" / "doctrines"
-        doctrines_dir.mkdir(parents=True)
-        (doctrines_dir / "test.design.md").write_text(
+        directory = tmp_path / ".lore" / "doctrines" / "test"
+        (directory / "missions").mkdir(parents=True)
+        (directory / "test.design.md").write_text(
             "---\nid: test\ntitle: Test Doctrine\nsummary: A test.\n---\n"
         )
-        (doctrines_dir / "test.yaml").write_text(
-            "id: test\nsteps:\n  - id: s1\n    title: Step 1\n    type: knight\n    knight: k\n"
+        (directory / "missions" / "recon.md").write_text(
+            "---\nid: recon\ntitle: Recon\nsummary: A mission.\n---\n\nBody.\n"
         )
         entries = list_doctrines(tmp_path)
         assert len(entries) == 1
@@ -1305,120 +1166,6 @@ class TestWatcherFromDictOptionalNone:
         assert watcher.action is None
 
 
-# ---------------------------------------------------------------------------
-# US-009: Doctrine dataclass field shape
-# Spec: doctrine-design-file-us-009
-# ---------------------------------------------------------------------------
-
-
-class TestDoctrineDataclassFields:
-    """Doctrine dataclass has the new field shape: id, title, summary, steps."""
-
-    def test_doctrine_has_no_name_field(self):
-        # Spec: US-009 Unit — name field removed from Doctrine
-        import dataclasses
-        from lore.models import Doctrine
-
-        field_names = {f.name for f in dataclasses.fields(Doctrine)}
-        assert "name" not in field_names
-
-    def test_doctrine_has_no_description_field(self):
-        # Spec: US-009 Unit — description field removed from Doctrine
-        import dataclasses
-        from lore.models import Doctrine
-
-        field_names = {f.name for f in dataclasses.fields(Doctrine)}
-        assert "description" not in field_names
-
-    def test_doctrine_has_title_field(self):
-        # Spec: US-009 Unit — title field added to Doctrine
-        import dataclasses
-        from lore.models import Doctrine
-
-        field_names = {f.name for f in dataclasses.fields(Doctrine)}
-        assert "title" in field_names
-
-    def test_doctrine_has_summary_field(self):
-        # Spec: US-009 Unit — summary field added to Doctrine
-        import dataclasses
-        from lore.models import Doctrine
-
-        field_names = {f.name for f in dataclasses.fields(Doctrine)}
-        assert "summary" in field_names
-
-    def test_doctrine_has_id_field(self):
-        # Spec: US-009 Unit — id field present in Doctrine
-        import dataclasses
-        from lore.models import Doctrine
-
-        field_names = {f.name for f in dataclasses.fields(Doctrine)}
-        assert "id" in field_names
-
-    def test_doctrine_from_dict_steps_is_tuple_of_doctrine_step(self):
-        # Spec: US-009 Unit — steps is a tuple of DoctrineStep instances
-        from lore.models import Doctrine, DoctrineStep
-
-        d = {
-            "id": "my-doc",
-            "title": "My Doc",
-            "summary": "A summary.",
-            "steps": [
-                {
-                    "id": "step-one",
-                    "title": "Step One",
-                    "type": "knight",
-                    "knight": "scout",
-                    "priority": 2,
-                    "notes": None,
-                    "needs": [],
-                }
-            ],
-        }
-        doctrine = Doctrine.from_dict(d)
-        assert isinstance(doctrine.steps, tuple)
-        assert all(isinstance(s, DoctrineStep) for s in doctrine.steps)
-
-    def test_doctrine_from_dict_title_falls_back_to_id(self):
-        # Spec: US-009 Unit — title falls back to id value when title key absent
-        from lore.models import Doctrine
-
-        d = {
-            "id": "fallback-id",
-            "steps": [
-                {
-                    "id": "s1",
-                    "title": "S1",
-                    "type": "knight",
-                    "knight": "k",
-                    "priority": 2,
-                    "notes": None,
-                    "needs": [],
-                }
-            ],
-        }
-        doctrine = Doctrine.from_dict(d)
-        assert doctrine.title == "fallback-id"
-
-    def test_doctrine_from_dict_summary_falls_back_to_empty_string(self):
-        # Spec: US-009 Unit — summary falls back to "" when summary key absent
-        from lore.models import Doctrine
-
-        d = {
-            "id": "my-doc",
-            "steps": [
-                {
-                    "id": "s1",
-                    "title": "S1",
-                    "type": "knight",
-                    "knight": "k",
-                    "priority": 2,
-                    "notes": None,
-                    "needs": [],
-                }
-            ],
-        }
-        doctrine = Doctrine.from_dict(d)
-        assert doctrine.summary == ""
 
 
 # ---------------------------------------------------------------------------
@@ -1571,15 +1318,15 @@ class TestUS009SchemaValidationReexports:
         assert {"schema_id", "rule", "pointer"}.issubset(field_names)
 
     def test_validate_entity_file_callable_from_api(self, tmp_path):
-        # Directly via lore.api — returns list of SchemaIssue for a bad knight.
+        # Directly via lore.api — a mission file carrying an unknown key.
         from lore.api import validate_entity_file, SchemaIssue
-        p = tmp_path / "k.md"
+        p = tmp_path / "recon.md"
         p.write_text(
-            "---\nid: pm\ntitle: PM\nsummary: s\nstability: x\n---\n"
+            "---\nid: recon\ntitle: Recon\nsummary: s\nstability: x\n---\n"
         )
-        issues = validate_entity_file(str(p), "knight-frontmatter")
+        issues = validate_entity_file(str(p), "doctrine-mission-frontmatter")
         assert isinstance(issues, list)
-        assert issues, "expected at least one schema issue for bad knight"
+        assert issues, "expected at least one schema issue"
         assert all(isinstance(i, SchemaIssue) for i in issues)
         assert any(
             i.rule == "additionalProperties" and i.pointer == "/stability"
@@ -1588,7 +1335,7 @@ class TestUS009SchemaValidationReexports:
 
     def test_load_schema_callable_from_api(self):
         from lore.api import load_schema
-        schema = load_schema("knight-frontmatter")
+        schema = load_schema("doctrine-mission-frontmatter")
         assert isinstance(schema, dict)
         assert "$id" in schema or "properties" in schema
 
@@ -1962,3 +1709,21 @@ class TestRiteImmutability:
 
         step = SharedStep.from_dict({"id": "s"})
         assert step.summary is None
+
+
+# ---------------------------------------------------------------------------
+# The Knight entity and the doctrine step graph are gone from the model layer
+# ---------------------------------------------------------------------------
+
+
+class TestRemovedModelTypes:
+    @pytest.mark.parametrize("name", ["Knight", "Doctrine", "DoctrineStep"])
+    def test_the_name_is_not_in_all(self, name):
+        assert name not in m.__all__
+
+    @pytest.mark.parametrize("name", ["Knight", "Doctrine", "DoctrineStep"])
+    def test_the_name_is_not_in_the_module_namespace(self, name):
+        assert not hasattr(m, name)
+
+    def test_doctrine_list_entry_survives(self):
+        assert "DoctrineListEntry" in m.__all__

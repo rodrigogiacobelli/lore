@@ -507,3 +507,72 @@ class TestTheAbortSignal:
         """The abort surfaces at the CLI boundary; `prompts.py` stays click-free."""
         source = PROMPTS_SOURCE.read_text(encoding="utf-8")
         assert "click" not in source
+
+
+# ---------------------------------------------------------------------------
+# The prompt text names the entities that exist
+# ---------------------------------------------------------------------------
+
+
+class TestAccessScopeNote:
+    """`conceptual-workflows-init-interactive` — the note is user-visible text."""
+
+    def test_it_names_no_retired_entity(self):
+        from lore.prompts import ACCESS_SCOPE_NOTE
+
+        assert "knight" not in ACCESS_SCOPE_NOTE.lower()
+
+    def test_it_still_names_every_entity_that_exists(self):
+        from lore.prompts import ACCESS_SCOPE_NOTE
+
+        for entity in (
+            "codex",
+            "rites",
+            "glossary",
+            "quests",
+            "missions",
+            "artifacts",
+            "doctrines",
+            "watchers",
+        ):
+            assert entity in ACCESS_SCOPE_NOTE
+
+    def test_it_still_renders_as_two_indented_lines(self):
+        from lore.prompts import ACCESS_SCOPE_NOTE
+
+        lines = ACCESS_SCOPE_NOTE.splitlines()
+        assert len(lines) == 2
+        assert lines[0].startswith("  (")
+        assert lines[1].startswith("   ")
+        assert lines[1].endswith(")")
+
+
+class TestDefaultSkillFamilies:
+    """The machinery family is opt-in, and its docstring counts its skills."""
+
+    def test_the_value_is_unchanged(self):
+        from lore.prompts import DEFAULT_SKILL_FAMILIES
+
+        assert DEFAULT_SKILL_FAMILIES == ("memory", "workflow")
+
+    def test_the_docstring_names_no_retired_entity(self):
+        import lore.prompts as prompts
+
+        source = Path(prompts.__file__).read_text(encoding="utf-8")
+        docstring = source.split('DEFAULT_SKILL_FAMILIES: tuple[str, ...]', 1)[1]
+        docstring = docstring.split('"""')[1]
+        assert "knight" not in docstring.lower()
+
+    def test_the_docstring_counts_the_machinery_skills(self):
+        """Retiring the fifth machinery skill leaves four.
+
+        The catalogue this counts lives under ``src/lore/defaults/`` and the
+        count there is pinned by ``tests/unit/test_skills.py``; this pins only
+        that the prompt text agrees with it.
+        """
+        import lore.prompts as prompts
+
+        source = Path(prompts.__file__).read_text(encoding="utf-8")
+        docstring = source.split('DEFAULT_SKILL_FAMILIES: tuple[str, ...]', 1)[1]
+        docstring = docstring.split('"""')[1]
+        assert "four skills" in docstring

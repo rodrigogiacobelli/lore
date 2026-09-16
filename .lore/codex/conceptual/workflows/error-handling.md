@@ -10,6 +10,7 @@ related:
 - ref-lore_cli-commands
 - decisions-017-constrained-flags-use-click-choice
 - decisions-012-multi-value-cli-param-convention
+- decisions-034-missing-required-combination-is-a-usage-error
 - conceptual-workflows-init-interactive
 - conceptual-workflows-nested-projects
 ---
@@ -63,7 +64,7 @@ Exit code is `1` if `errors` is non-empty.
 ## `ClickException` vs Manual Exit
 
 - `raise click.ClickException(message)`: formats `Error: <message>` to stderr, exits with code 1. Used for programmer-error-level failures (bad priority value).
-- `click.UsageError(message)`: formats `Error: <message>` to stderr with usage hint, exits with code 2. Used for invalid option combinations.
+- `click.UsageError(message)`: formats `Error: <message>` to stderr with usage hint, exits with code 2. Used for invalid option combinations, and for a missing required combination — when a command requires at least one of a set of flags and receives none, it raises `click.UsageError` rather than emitting its own message at exit 1 (decisions-034-missing-required-combination-is-a-usage-error). Do not hand-roll it: ADR-017 forbids rewording or re-coding a usage error.
 - `click.Choice` on a constrained-value flag: an out-of-set value raises Click's `BadParameter` (a `UsageError` subclass), formatted `Error: Invalid value for '<flag>': '<value>' is not one of '...'` to stderr, exit code 2. This is the required mechanism for any flag whose value is a fixed token set (e.g. `lore health --scope`, `lore init --access`) — see decisions-017-constrained-flags-use-click-choice. A flag that also takes several space-separated tokens (`lore init --agent`, `lore init --skills`) keeps `click.Choice` as its validator; only the parser differs (decisions-012-multi-value-cli-param-convention). Adding a new valid token is non-breaking; rewording the message, hand-rolling a custom validator, or changing the exit code is a breaking contract change.
 - `click.echo(message, err=True); ctx.exit(1)`: used for entity-not-found and status-transition errors (allows multi-entity commands to continue processing).
 
@@ -101,6 +102,7 @@ JSON: `{"error": "...", "deleted_at": "2026-03-24T12:00:00Z"}`.
 |---|---|---|
 | Project not initialised | Error to stderr | 1 |
 | Invalid option combination | `UsageError` to stderr | 2 |
+| A command requiring at least one of a set of flags receives none | `UsageError` to stderr in Click's standard wording — never a hand-rolled message at exit 1 (decisions-034-missing-required-combination-is-a-usage-error). `lore edit` and `lore doctrine edit` both take this path. | 2 |
 | Out-of-set value on a constrained flag | `BadParameter` to stderr in Click's standard wording | 2 |
 | `lore init --agent none` combined with another id | `UsageError` to stderr, raised before any I/O | 2 |
 | `lore init` summary declined | `No changes applied.` to stdout; nothing written | 0 |

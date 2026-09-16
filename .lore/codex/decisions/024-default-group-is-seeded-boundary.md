@@ -30,13 +30,13 @@ draw that line explicitly.
 `.lore/.install-manifest.json` looked like the obvious mechanism, and is not:
 it records only files Lore wrote **outside** `.lore/` — an agent's skills
 directory, the root `.gitignore`, `.lore/LORE-AGENT.md` — and records no
-knight, doctrine, artifact, watcher, or codex document. Reading it for export
+doctrine, artifact, watcher, or codex document. Reading it for export
 eligibility would pass every entity through unfiltered.
 
-Meanwhile `lore init` already seeds doctrines, knights, artifacts and watchers
+Meanwhile `lore init` already seeds doctrines, artifacts and watchers
 into a `default/` subtree under each entity directory, and `.lore/.gitignore`
-already names exactly those four subtrees (`doctrines/default/`,
-`knights/default/`, `artifacts/default/`, `watchers/default/`). `lore init`
+already names exactly those three subtrees (`doctrines/default/`,
+`artifacts/default/`, `watchers/default/`). `lore init`
 also writes `.lore/codex/codex.md` and `.lore/codex/glossary.yaml` directly —
 not under a `default/` subtree — and ADR-013 already records both as
 user-owned files, written once and never overwritten on re-init. Rites ship no
@@ -80,7 +80,7 @@ for a rite to be.
 
 | Option | Why rejected |
 |--------|-------------|
-| **Read the install manifest** | It records no knight, doctrine, artifact, watcher, or codex document — every entity would pass through unfiltered, and FR-10's exclusion would silently not hold. |
+| **Read the install manifest** | It records no doctrine, artifact, watcher, or codex document — every entity would pass through unfiltered, and FR-10's exclusion would silently not hold. |
 | **Record entities in the manifest too** | A `lore init` change this feature does not authorise, and it would make export filtering depend on a generated file that a `lore init` a version behind would populate differently. |
 | **Compare content hashes against `src/lore/defaults/`** | An edited seeded default would read as authored the moment it diverged from the packaged copy — inverting the intended answer for the file most worth catching. |
 
@@ -114,3 +114,4 @@ for a rite to be.
 | Date | Status | Note |
 |------|--------|------|
 | 2026-09-02 | accepted | Recorded alongside `projects.is_seeded_default`, the export filter's seeded-default exclusion. |
+| 2026-09-16 | accepted | Decision unchanged. `lore init` seeds three `default/` subtrees, not four, and `.lore/.gitignore` names three; the `knights/` triad is removed. |

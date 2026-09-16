@@ -12,7 +12,7 @@ Envelope (per cli.py:2182-2202, byte-exact). EXPLICIT key set (NOT superset):
   }
 
 Per-mission entry shape (per cli.py:2167-2180):
-  {"id", "title", "status", "priority", "mission_type", "knight", "dependencies"}
+  {"id", "title", "status", "priority", "mission_type", "doctrine_mission", "dependencies"}
 where dependencies = {"needs": [{id,title,status}, ...], "blocks": [...]}.
 
 Review-Ledger CHANGED #2:
@@ -51,7 +51,7 @@ QUEST_DETAIL_KEYS: frozenset[str] = frozenset(
 )
 
 MISSION_ENTRY_KEYS: frozenset[str] = frozenset(
-    {"id", "title", "status", "priority", "mission_type", "knight", "dependencies"}
+    {"id", "title", "status", "priority", "mission_type", "doctrine_mission", "dependencies"}
 )
 
 DEP_REF_KEYS: frozenset[str] = frozenset({"id", "title", "status"})
@@ -213,7 +213,7 @@ class TestQuestDetailMissionEntryShape:
         insert_quest(project_dir, "q-eeee", "Q")
         insert_mission(
             project_dir, "q-eeee/m-aaa1", "q-eeee", "M",
-            mission_type="knight", knight="some-knight.md",
+            mission_type="agent", doctrine_mission="tdd-lite/recon",
         )
 
         data = get_quest_detail(project_dir, "q-eeee")
@@ -225,8 +225,8 @@ class TestQuestDetailMissionEntryShape:
             f"(extra: {set(m.keys()) - MISSION_ENTRY_KEYS}, "
             f"missing: {MISSION_ENTRY_KEYS - set(m.keys())})"
         )
-        assert m["mission_type"] == "knight"
-        assert m["knight"] == "some-knight.md"
+        assert m["mission_type"] == "agent"
+        assert m["doctrine_mission"] == "tdd-lite/recon"
 
     def test_mission_entry_dependencies_subkeys(self, project_dir):
         from lore.db import get_quest_detail

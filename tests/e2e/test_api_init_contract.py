@@ -582,8 +582,8 @@ class TestThePlanNamesEveryWrite:
         plan = plan_init(tmp_path, agents=["claude"])
         seeded = set(plan.seeded)
 
-        assert any(path.startswith(".lore/knights/default/") for path in seeded)
         assert any(path.startswith(".lore/doctrines/default/") for path in seeded)
+        assert any(path.startswith(".lore/artifacts/default/") for path in seeded)
         assert ".lore/.install-manifest.json" in seeded
         assert ".lore/config.toml" in seeded
 

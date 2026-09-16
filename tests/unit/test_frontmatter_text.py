@@ -191,14 +191,14 @@ def test_parse_frontmatter_text_custom_required_fields():
     """Custom required_fields tuple replaces the default trio."""
     text = textwrap.dedent("""\
         ---
-        name: knight-x
+        name: doctrine-x
         role: pm
         ---
         Body.
     """)
     result = parse_frontmatter_text(text, required_fields=("name", "role"))
     assert result is not None
-    assert result["name"] == "knight-x"
+    assert result["name"] == "doctrine-x"
     assert result["role"] == "pm"
 
 
@@ -206,7 +206,7 @@ def test_parse_frontmatter_text_custom_required_fields_missing_returns_none():
     """Missing key from custom required_fields → None."""
     text = textwrap.dedent("""\
         ---
-        name: knight-x
+        name: doctrine-x
         ---
         Body.
     """)

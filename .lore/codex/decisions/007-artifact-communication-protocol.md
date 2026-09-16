@@ -81,11 +81,11 @@ artifact — typically the business spec or full spec.
 
 | Phase | Step | Input | Output |
 |-------|------|-------|--------|
-| Phase 1 | intake (knight) | unstructured human request (mission description) | `preliminary-analysis` instance |
+| Phase 1 | intake (agent) | unstructured human request (mission description) | `preliminary-analysis` instance |
 | Phase 1 | intake-review (human) | `preliminary-analysis` instance | same file + Human Review Comments section |
-| Phase 1 | codex-check (knight) | `preliminary-analysis` + comments | `refined-analysis` instance |
+| Phase 1 | codex-check (agent) | `preliminary-analysis` + comments | `refined-analysis` instance |
 | Phase 1 | intake-signoff (human) | `refined-analysis` instance | same file + Final Comments and Sign-off section |
-| Phase 1 | spec-write (knight) | `refined-analysis` + sign-off | `transient-business-spec` instance in `specs/` |
+| Phase 1 | spec-write (agent) | `refined-analysis` + sign-off | `transient-business-spec` instance in `specs/` |
 | Phase 2+ | (existing steps) | spec in `specs/` | spec in `specs/` (append or rewrite) |
 
 ## Alternatives considered
@@ -104,6 +104,12 @@ and gives human steps no structure to follow.
 
 The communication protocol above describes how pipeline steps consume and produce artifact instances. It does **not** restrict how artifact files themselves are managed.
 
-Artifact instances and artifact templates may be created, updated, and deleted through `lore.api` like any other file-backed entity (knight, doctrine, watcher). This brings artifacts to full CRUD parity with the other file-backed entity types and removes the prior implicit constraint — recorded as "mutation is on-disk" in earlier reference docs — that artifacts could only be edited directly on the filesystem.
+Artifact instances and artifact templates may be created, updated, and deleted through `lore.api` like any other file-backed entity (doctrine, watcher, rite). This brings artifacts to full CRUD parity with the other file-backed entity types and removes the prior implicit constraint — recorded as "mutation is on-disk" in earlier reference docs — that artifacts could only be edited directly on the filesystem.
 
 The communication protocol is unaffected: a downstream step still reads the artifact instance produced by its upstream step. Whether that instance was written by hand, by an agent, or by a `lore.api` call is immaterial to the protocol.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The phase table's step type reads `agent`, and the amendment's file-entity enumeration drops Knight. |

@@ -479,7 +479,7 @@ class TestWatcherEditFromFile:
         assert watcher_file.read_text() == EDIT_YAML
 
     def test_watcher_edit_short_flag_f_equivalent_to_from(self, runner, project_dir):
-        # Consistency: `-f` short flag matches `--from`, same as knight/doctrine/artifact edit.
+        # Consistency: `-f` short flag matches `--from`, same as artifact edit.
         watcher_file = _make_existing_watcher(project_dir)
         source = project_dir / "updated.yaml"
         source.write_text(EDIT_YAML)

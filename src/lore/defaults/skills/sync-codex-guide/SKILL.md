@@ -84,9 +84,8 @@ Idempotent and safe. `--yes` accepts the resolved answer for every question, so
 the run stays unattended even from a terminal.
 
 It overwrites only Lore-owned files. The default trees —
-`.lore/artifacts/default/`, `doctrines/default/`, `knights/default/`,
-`watchers/default/` — are replaced in place, and `.lore/LORE-AGENT.md` is
-re-rendered. Installed skills go through reconciliation instead: one you have
+`.lore/artifacts/default/`, `doctrines/default/`, `watchers/default/` — are
+replaced in place, and `.lore/LORE-AGENT.md` is re-rendered. Installed skills go through reconciliation instead: one you have
 edited is reported and left alone unless you pass `--on-conflict overwrite`. It
 never touches `.lore/codex/codex.md` or `.lore/codex/glossary.yaml`, it rewrites
 only the leading comment block of `.lore/config.toml` and leaves every settings

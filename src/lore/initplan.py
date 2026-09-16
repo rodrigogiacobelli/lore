@@ -95,8 +95,8 @@ SEED_COUNT = "seed"
 ``InitPlan.seeded`` names roughly seventy of them on every run — the packaged
 ``default/`` trees, the copied docs, the database, the config and the manifest.
 They were in the rendered plan and in neither ``counts()`` nor ``has_changes``,
-so a run about to overwrite an edited ``.lore/knights/default/…`` file reported
-no changes to every caller that asks in Python. The CLI reads the render and
+so a run about to overwrite an edited file inside one of those ``default/``
+trees reported no changes to every caller that asks in Python. The CLI reads the render and
 Realm reads the predicate; both are told now.
 """
 

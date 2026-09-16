@@ -22,34 +22,16 @@ def _seed_doctrines(project_dir):
     shutil.rmtree(doctrines_dir)
     doctrines_dir.mkdir(parents=True)
     # Nested two-segment
-    nested = doctrines_dir / "nested-area" / "sub-area"
+    nested = doctrines_dir / "nested-area" / "sub-area" / "child"
     nested.mkdir(parents=True)
     (nested / "child.design.md").write_text(
         "---\nid: child\ntitle: Child\nsummary: Nested doctrine.\n---\n"
     )
-    (nested / "child.yaml").write_text(
-        "id: child\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
     # Root-level
-    (doctrines_dir / "root-doctrine.design.md").write_text(
+    root = doctrines_dir / "root-doctrine"
+    root.mkdir(parents=True)
+    (root / "root-doctrine.design.md").write_text(
         "---\nid: root-doctrine\ntitle: Root\nsummary: Root level.\n---\n"
-    )
-    (doctrines_dir / "root-doctrine.yaml").write_text(
-        "id: root-doctrine\nsteps:\n  - id: s1\n    title: S1\n    type: knight\n    knight: k\n"
-    )
-
-
-def _seed_knights(project_dir):
-    knights_dir = project_dir / ".lore" / "knights"
-    shutil.rmtree(knights_dir)
-    knights_dir.mkdir(parents=True)
-    deep = knights_dir / "nested-area" / "sub-area"
-    deep.mkdir(parents=True)
-    (deep / "child.md").write_text(
-        "---\nid: child\ntitle: Child\nsummary: Nested knight.\n---\n"
-    )
-    (knights_dir / "root-knight.md").write_text(
-        "---\nid: root-knight\ntitle: Root\nsummary: Root level.\n---\n"
     )
 
 
@@ -98,7 +80,6 @@ def _seed_codex(project_dir):
 
 _SEEDERS = {
     "doctrine": _seed_doctrines,
-    "knight": _seed_knights,
     "watcher": _seed_watchers,
     "artifact": _seed_artifacts,
     "codex": _seed_codex,
@@ -114,7 +95,6 @@ _SEEDERS = {
     "cmd,envelope_key",
     [
         ("doctrine", "doctrines"),
-        ("knight", "knights"),
         ("watcher", "watchers"),
         ("artifact", "artifacts"),
         ("codex", "codex"),
@@ -136,7 +116,6 @@ def test_list_json_never_hyphen_or_empty_group(runner, project_dir, cmd, envelop
     # The root seeded entity must have group is None
     root_ids = {
         "doctrine": "root-doctrine",
-        "knight": "root-knight",
         "watcher": "root-watcher",
         "artifact": "root-artifact",
         "codex": "root-doc",

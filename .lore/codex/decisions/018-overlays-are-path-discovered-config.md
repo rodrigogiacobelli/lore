@@ -27,7 +27,7 @@ show <id>` command.
 
 This creates a classification question against **ADR-006**
 (`decisions-006-id-references`): "Agents reference entities by ID, never by file
-path." ADR-006 enumerates the entity categories it governs — Doctrines, Knights,
+path." ADR-006 enumerates the entity categories it governs — Doctrines,
 Codex documents, Artifacts — each of which is a *retrievable Lore-managed entity*
 surfaced by a dedicated `lore <x> show <id>` command. A reader could either:
 
@@ -119,3 +119,9 @@ Pinning the classification protects that decision.
 3. **Overlays are path-addressed.** They are referenced as
    `.lore/custom-schemas/<kind>.yaml`, the same posture as `.lore/config.toml`
    and `.lore/codex/glossary.yaml`. ADR-006's by-ID rule does not apply.
+
+## Status History
+
+| Date | Status | Note |
+|------|--------|------|
+| 2026-09-16 | accepted | Decision unchanged. The restatement of ADR-006's entity categories drops Knights. |

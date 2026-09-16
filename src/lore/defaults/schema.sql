@@ -3,7 +3,7 @@ CREATE TABLE lore_meta (
     value TEXT NOT NULL
 );
 
-INSERT INTO lore_meta (key, value) VALUES ('schema_version', '6');
+INSERT INTO lore_meta (key, value) VALUES ('schema_version', '7');
 
 CREATE TABLE quests (
     id          TEXT PRIMARY KEY,
@@ -19,19 +19,19 @@ CREATE TABLE quests (
 );
 
 CREATE TABLE missions (
-    id           TEXT PRIMARY KEY,
-    quest_id     TEXT REFERENCES quests(id),
-    title        TEXT NOT NULL,
-    description  TEXT NOT NULL DEFAULT '',
-    status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'blocked', 'closed')),
-    priority     INTEGER NOT NULL DEFAULT 2 CHECK (priority BETWEEN 0 AND 4),
-    knight       TEXT,
-    block_reason TEXT,
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL,
-    closed_at    TEXT,
-    deleted_at   TEXT,
-    mission_type TEXT
+    id               TEXT PRIMARY KEY,
+    quest_id         TEXT REFERENCES quests(id),
+    title            TEXT NOT NULL,
+    description      TEXT NOT NULL DEFAULT '',
+    status           TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'in_progress', 'blocked', 'closed')),
+    priority         INTEGER NOT NULL DEFAULT 2 CHECK (priority BETWEEN 0 AND 4),
+    doctrine_mission TEXT,
+    block_reason     TEXT,
+    created_at       TEXT NOT NULL,
+    updated_at       TEXT NOT NULL,
+    closed_at        TEXT,
+    deleted_at       TEXT,
+    mission_type     TEXT
 );
 
 CREATE TABLE dependencies (

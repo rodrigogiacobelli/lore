@@ -28,6 +28,7 @@ related:
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-018-overlays-are-path-discovered-config
 - decisions-021-health-reports-are-ephemeral-by-default
+- decisions-032-retired-seed-trees
 - ref-lore_cli-commands
 ---
 
@@ -39,7 +40,7 @@ Planning reads the project as it stands, works out every file the current Lore r
 
 `lore init` is **idempotent**. Running it twice in succession with the same answers produces the same files and reports no second round of changes.
 
-Every seed file `lore init` ships — default doctrines, knights, watchers, artifacts, skills, and the seeded codex root — must pass `lore health --scope schemas` on a freshly-initialised project. A default file that fails its JSON Schema is an install-time regression, because the first health check after install emits schema errors on seed content.
+Every seed file `lore init` ships — default doctrines, watchers, artifacts, skills, and the seeded codex root — must pass `lore health --scope schemas` on a freshly-initialised project. A default file that fails its JSON Schema is an install-time regression, because the first health check after install emits schema errors on seed content.
 
 `tech-arch-initialized-project-structure` holds the resulting on-disk layout.
 
@@ -82,11 +83,23 @@ If `lore.db` is present but has no `lore_meta` table — a corrupted or hand-mad
 
 ### 4. Seeded default trees
 
-`.lore/doctrines/`, `.lore/knights/`, `.lore/artifacts/`, and `.lore/watchers/` are created if absent. Each shipped default file is copied into that entity's `default/` subdirectory, overwriting the matching shipped name. User-created files in the flat parent directory are never touched.
+`.lore/doctrines/`, `.lore/artifacts/`, and `.lore/watchers/` are created if absent. Each shipped default file is copied into that entity's `default/` subdirectory, overwriting the matching shipped name. User-created files in the flat parent directory are never touched.
 
 Artifacts copy recursively, preserving the subdirectory structure beneath `default/` (`default/codex/`, `default/feature-implementation/`, `default/lore-design-documents/`, `default/rites/`). The `bootstrap/` subdirectory is permanently excluded from what `lore init` copies.
 
 The summary prints `Created <entity>/default/<path>` for a new file and `Updated <entity>/default/<path>` for an overwrite.
+
+#### Retired seeded trees
+
+A seeded tree Lore has stopped shipping is named in `init.RETIRED_SEED_TREES` and walked once per run. Every regular file inside it is unlinked and reported as `Removed <label>/<path> — no longer shipped`, the emptied directories are pruned, and a symlink or an unlinkable file is left exactly where `_prune_seeded_tree` would leave it.
+
+Dropping a row from `SEEDED_TREES` is not enough on its own: the prune is reachable only from the seed, so a tree no longer seeded would never be walked again and every file in it would stay on disk forever. `RETIRED_SEED_TREES` is what walks it one last time (lore codex show decisions-032-retired-seed-trees).
+
+Files the project authored **outside** the retired subtree are not touched. They are collected and named once, so the maintainer knows Lore no longer reads them:
+
+```
+  Knights outside default/ are no longer read by Lore: .lore/knights/my-reviewer.md
+```
 
 ### 5. `.lore/GETTING-STARTED.md`
 

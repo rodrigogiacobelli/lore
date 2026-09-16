@@ -57,11 +57,11 @@ Returns `"Message cannot be empty."` if the message is empty or pure whitespace.
 
 ### `validate_name(name)`
 
-Pattern: `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Used for doctrine, knight, watcher, and artifact names. Returns `"Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores."` on failure.
+Pattern: `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Used for doctrine, watcher, and artifact names. Returns `"Invalid name: must start with alphanumeric and contain only letters, digits, hyphens, underscores."` on failure.
 
 ### `validate_group(group)`
 
-Signature: `validate_group(group: str | None) -> str | None`. Used on every entity `new` path (`doctrine new`, `knight new`, `watcher new`, `artifact new`) to validate the optional `--group <path>` parameter. Lives in `lore/validators.py` with zero `lore.*` imports per the dependency-inversion standard.
+Signature: `validate_group(group: str | None) -> str | None`. Used on every entity `new` path (`doctrine new`, `watcher new`, `artifact new`) to validate the optional `--group <path>` parameter. Lives in `lore/validators.py` with zero `lore.*` imports per the dependency-inversion standard.
 
 Accepts:
 - `None` — no group supplied; the entity lands at the entity root.
@@ -76,7 +76,7 @@ Rejects, each with a specific error message:
 - Empty segment (`a//b`) → `Error: invalid group '<value>': empty segment not allowed`
 - Segment failing `_NAME_RE` → `Error: invalid group '<value>': segment '<seg>' must start with alphanumeric and contain only letters, digits, hyphens, underscores`
 
-Used by: `lore.doctrine.create_doctrine`, `lore.knight.create_knight`, `lore.watcher.create_watcher`, `lore.artifact.create_artifact`. The CLI handlers are thin wrappers — group validation happens inside the core helpers, not in `cli.py`.
+Used by: `lore.doctrine.create_doctrine`, `lore.watcher.create_watcher`, `lore.artifact.create_artifact`. The CLI handlers are thin wrappers — group validation happens inside the core helpers, not in `cli.py`.
 
 ### `validate_access_mode(mode)`, `validate_skill_family(family)`, `validate_agent_id(agent_id)`, `validate_agent_selection(agents)`
 
@@ -128,10 +128,10 @@ The CLI helper `_validate_mission_id(entity_id, ctx)` wraps `validate_mission_id
 | Invalid mission ID format | Error string returned; exit 1 | 1 |
 | Invalid entity ID format | Error string returned; exit 1 | 1 |
 | Empty board message | Error string returned from db layer; exit 1 | 1 |
-| Invalid knight/doctrine/watcher/artifact name | Error string returned; exit 1 | 1 |
+| Invalid doctrine/watcher/artifact name | Error string returned; exit 1 | 1 |
 | Invalid group on any `new` command | `Error: invalid group '<value>': <reason>`; exit 1 | 1 |
 
 ## Out of Scope
 
-- Server-side validation beyond format and range — semantic validation (e.g., "the referenced knight must exist") is handled in the CLI or DB layer, not in `lore.validators`.
+- Server-side validation beyond format and range — semantic validation (e.g., "the referenced doctrine mission must exist") is handled in the CLI or DB layer, not in `lore.validators`.
 - Schema-level DB constraints (e.g., `NOT NULL`) — these are enforced by SQLite, not `lore.validators`.

@@ -440,17 +440,37 @@ def test_thirteen_new_names_importable_from_lore_api():
         assert getattr(api, name) is not None
 
 
-def test_no_name_removed_from_all():
-    """Scenario 2 — the difference against 0.9.0 is the thirteen and the twelve.
+# The only names that have ever left `lore.api.__all__` since 0.9.0, each one
+# carried by the `BREAKING:` block in CHANGELOG.md under [Unreleased]. ADR-010
+# allows a removal on that condition and on no other, so this set is the record:
+# a ninth removal fails the test below until it is written down here too.
+REMOVED_WITH_A_BREAKING_NOTICE: frozenset[str] = frozenset(
+    {
+        "Knight",
+        "list_knights",
+        "read_knight",
+        "create_knight",
+        "update_knight",
+        "delete_knight",
+        "Doctrine",
+        "DoctrineStep",
+    }
+)
 
-    Both additions are minor bumps under ADR-010, so the assertion stays an
-    exact set: nothing may leave, and nothing may arrive unrecorded.
+
+def test_only_recorded_names_left_the_public_surface():
+    """Scenario 2 — the difference against 0.9.0 is accounted for in both directions.
+
+    Additions are minor bumps under ADR-010; a removal is a breaking change and
+    needs its changelog notice. Both sides stay exact sets: nothing may leave
+    unrecorded, and nothing may arrive unrecorded.
     """
     from lore import api
 
     current = set(api.__all__)
-    assert PREVIOUS_RELEASE_ALL - current == set(), (
-        f"names left the public surface: {sorted(PREVIOUS_RELEASE_ALL - current)}"
+    assert PREVIOUS_RELEASE_ALL - current == REMOVED_WITH_A_BREAKING_NOTICE, (
+        "names left the public surface without a recorded breaking-change notice: "
+        f"{sorted((PREVIOUS_RELEASE_ALL - current) - REMOVED_WITH_A_BREAKING_NOTICE)}"
     )
     assert current - PREVIOUS_RELEASE_ALL == set(THIRTEEN_NEW_NAMES) | set(
         NESTED_PROJECTS_NEW_NAMES
@@ -550,9 +570,9 @@ class TestChangelogReleaseObligation:
         heading, _ = self._released()[0]
         assert heading.startswith(f"[{version}]"), heading
 
-    def test_entry_names_every_addition(self):
-        """Scenario 3 — the current release's `Added` section names what it adds."""
-        _, body = self._released()[0]
+    def test_the_nested_projects_release_entry_still_names_every_addition(self):
+        """The `0.11.0` entry is a historical guarantee, addressed by version."""
+        _, body = self._section("[0.11.0]")
         added = body.split("### Changed")[0]
         for name in NESTED_PROJECTS_NEW_NAMES:
             assert f"`{name}`" in added, f"{name} not named in the Added section"

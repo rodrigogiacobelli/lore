@@ -39,19 +39,18 @@ Four answers are recorded in `.lore/config.toml` and reused on later runs — th
 
 ### Lore owns the files it installs
 
-A skill, knight, doctrine, artifact or watcher that Lore shipped is Lore's. Re-running `lore init` replaces it with this release's version however you have edited it, and removes it — naming its successor — if the release has retired it. Nothing asks first; `lore init --dry-run` shows you every one of them before anything is written.
+A skill, doctrine, artifact or watcher that Lore shipped is Lore's. Re-running `lore init` replaces it with this release's version however you have edited it, and removes it — naming its successor — if the release has retired it. Nothing asks first; `lore init --dry-run` shows you every one of them before anything is written.
 
 So put your own work where Lore does not write:
 
 | Yours | Lore's |
 |---|---|
-| `.lore/knights/<your-own-id>.md` | `.lore/knights/default/` |
 | `.lore/doctrines/<your-own-id>/` | `.lore/doctrines/default/` |
 | `.lore/artifacts/<your-own-id>.md` | `.lore/artifacts/default/` |
 | `.lore/watchers/<your-own-id>.yaml` | `.lore/watchers/default/` |
 | `.claude/skills/<your-own-id>/` — any id Lore does not ship | every skill in the table `.lore/LORE-AGENT.md` lists |
 
-Knights, doctrines, artifacts and watchers say it with a `default/` subdirectory. Skills have no such directory — they install straight into `.claude/skills/` or `.lore/skills/` — so the id **is** the boundary: a directory named after a skill Lore ships belongs to Lore, and one named anything else is never changed or removed by any run. What Lore replaces and removes is what its own install record says it put there, so a name Lore happens to have used in the past is not a name it will take. To customise a skill Lore ships, copy its directory to an id of your own and edit the copy.
+Doctrines, artifacts and watchers say it with a `default/` subdirectory. Skills have no such directory — they install straight into `.claude/skills/` or `.lore/skills/` — so the id **is** the boundary: a directory named after a skill Lore ships belongs to Lore, and one named anything else is never changed or removed by any run. What Lore replaces and removes is what its own install record says it put there, so a name Lore happens to have used in the past is not a name it will take. To customise a skill Lore ships, copy its directory to an id of your own and edit the copy.
 
 A file Lore did **not** install, sitting at a path Lore wants to write, is the one conflict left. Lore leaves it alone and reports it — every run, not just the first — unless you pass `--on-conflict overwrite` to hand the path over.
 

@@ -49,17 +49,17 @@ There is no database column or join table recording this relationship.
 ```
 $ lore doctrine show feature-build-workflow
 Steps:
-  1. tech-spec  (knight: architect)
-  2. ba-stories (knight: ba)
-  3. implement  (knight: tech-lead)
+  1. tech-spec  (agent)
+  2. ba-stories (agent)
+  3. implement  (agent)
 
 # Orchestrator manually creates the Quest and Missions:
 $ lore quest new "Build auth module"
 Quest q-9001 created.
 
-$ lore mission new --quest q-9001 --knight architect "Tech Spec"
-$ lore mission new --quest q-9001 --knight ba "BA Stories"
-$ lore mission new --quest q-9001 --knight tech-lead "Implementation"
+$ lore new mission -q q-9001 -T agent -D quick-feature-implementation/tech-spec "Tech Spec"
+$ lore new mission -q q-9001 -T agent -D quick-feature-implementation/ba-stories "BA Stories"
+$ lore new mission -q q-9001 -T agent -D quick-feature-implementation/tech-notes "Implementation"
 ```
 
 → No FK is written. The Quest and its Missions exist independently of the Doctrine.
@@ -71,6 +71,6 @@ $ lore quest new "Build notifications module"
 Quest q-9002 created.
 
 # Same doctrine, new Quest — Lore has no record of the relationship
-$ lore mission new --quest q-9002 --knight architect "Tech Spec"
+$ lore new mission -q q-9002 -T agent -D quick-feature-implementation/tech-spec "Tech Spec"
 ...
 ```

@@ -2,8 +2,9 @@
 id: conceptual-workflows-show
 title: Show Command — lore show
 summary: 'What the system does internally when lore show <id> runs — quest inline
-  mission list (topological sort), mission detail view, ID routing, quest inference
-  for mission IDs, and not-found error paths.
+  mission list (topological sort), mission detail view with the doctrine mission body
+  spliced in under a Mission Instructions heading, ID routing, quest inference for
+  mission IDs, and not-found error paths.
 
   '
 binds:
@@ -89,7 +90,7 @@ Status: open
 Priority: 2
 Type: coding
 Description: ...
-Knight: dev.md
+Doctrine Mission: tdd-implementation/red
 Block Reason: ...  (only when blocked)
 Created: ...
 Updated: ...
@@ -104,15 +105,15 @@ Dependencies:
 Board:
   [2026-03-24T12:00:00Z] (m-prev) Handoff note
 
---- Knight Contents ---
-<full knight markdown>
+--- Mission Instructions ---
+<the doctrine mission body, frontmatter stripped>
 ```
 
-`Type`, `Description`, `Knight`, `Block Reason`, `Closed`, `Dependencies`, `Board`, and knight contents sections are omitted when empty/null.
+`Type`, `Description`, `Doctrine Mission`, `Block Reason`, `Closed`, `Dependencies`, `Board`, and the mission-instructions section are omitted when empty/null. A stored `doctrine_mission` that resolves to no file still prints its `Doctrine Mission:` line; the `--- Mission Instructions ---` section is omitted, the command exits 0, and nothing else is printed (lore codex show decisions-033-unresolvable-reference-is-silent-on-read).
 
 ### 5. JSON mode
 
-Full mission object including `knight_contents` (raw markdown string or null), `dependencies.needs`, `dependencies.blocks`, and `board` array.
+Full mission object including `doctrine_mission` (the stored `<doctrine-id>/<mission-id>` reference or null), `doctrine_mission_contents` (the resolved body with its frontmatter stripped, or null), `dependencies.needs`, `dependencies.blocks`, and `board` array. An unresolvable reference carries the reference and `"doctrine_mission_contents": null`.
 
 ## Not-Found Error Paths
 
@@ -135,5 +136,5 @@ In JSON mode: `{"error": "...", "deleted_at": "..."}` or `{"error": "..."}` to s
 
 ## Out of Scope
 
-- Showing a mission without its knight contents by default — use `--no-knight` to suppress.
+- Showing a mission without its doctrine mission instructions by default — use `--no-doctrine-mission` to suppress.
 - Paginated output for quests with many missions.

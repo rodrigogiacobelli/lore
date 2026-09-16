@@ -541,7 +541,9 @@ class TestShippedCatalogueFile:
         data = self._data()
         current = {entry["id"] for entry in data["skills"]}
         for retired_id, record in data["retired"].items():
-            assert record["into"] in current, f"{retired_id} retires into an unknown skill"
+            assert _follow_retirement_chain(retired_id) in current, (
+                f"{retired_id} retires into an unknown skill"
+            )
             assert record["reason"].strip()
 
     def test_no_retired_id_is_also_a_current_skill(self):
@@ -630,9 +632,25 @@ def _skill_md(skill_id: str) -> Path:
     return SHIPPED_SKILLS_DIR / skill_id / "SKILL.md"
 
 
+def _follow_retirement_chain(skill_id: str) -> str:
+    """Walk `into` hops until one lands on a skill the release still ships.
+
+    The ledger is append-only, so a skill retired twice leaves a chain: the
+    first row points at the id that replaced it, and that id carries its own
+    row when it is retired in turn.
+    """
+    seen: set[str] = set()
+    current = skill_id
+    while (record := skills.retirement_for(current)) is not None:
+        assert current not in seen, f"retirement cycle at {current}"
+        seen.add(current)
+        current = record.into
+    return current
+
+
 class TestShippedSkillsTree:
-    def test_the_release_ships_ten_skill_directories(self):
-        assert len(_shipped_skill_dirs()) == 10
+    def test_the_release_ships_nine_skill_directories(self):
+        assert len(_shipped_skill_dirs()) == 9
 
     def test_every_shipped_directory_holds_a_skill_md(self):
         for name in _shipped_skill_dirs():
@@ -661,8 +679,9 @@ class TestShippedSkillsTree:
         for retired_id in skills.load_catalogue().get("retired", {}):
             record = skills.retirement_for(retired_id)
             assert record is not None
-            assert record.into in shipped, (
-                f"{retired_id} retires into {record.into}, which ships no directory"
+            assert _follow_retirement_chain(retired_id) in shipped, (
+                f"{retired_id} retires into {record.into}, which resolves to no "
+                "shipped directory"
             )
 
     def test_declared_references_match_the_directory_in_both_directions(self):
@@ -681,12 +700,11 @@ class TestFamilyMembershipMatchesTheShippedTree:
     def test_the_memory_family_is_one_writer_and_one_reader(self):
         assert skills.skills_in_families(("memory",)) == ("retrieve-memory", "store-memory")
 
-    def test_the_machinery_family_is_five_update_skills(self):
+    def test_the_machinery_family_is_four_update_skills(self):
         assert skills.skills_in_families(("machinery",)) == (
             "update-artifact",
             "update-custom-schema",
             "update-doctrine",
-            "update-knight",
             "update-watcher",
         )
 

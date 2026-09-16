@@ -7,7 +7,6 @@ watch_target:
   - src/lore/artifacts.py
   - src/lore/doctrine.py
   - src/lore/watcher.py
-  - src/lore/knight.py
   - src/lore/priority.py
   - src/lore/models.py
 interval: on_merge

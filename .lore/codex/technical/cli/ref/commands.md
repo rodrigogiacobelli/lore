@@ -55,7 +55,7 @@ related:
 
 # Lore CLI — commands surface
 
-**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore knight`, `lore knight list`, `lore knight show`, `lore knight new`, `lore knight edit`, `lore knight delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore rite`, `lore rite list`, `lore rite show`, `lore rite search`, `lore rite new`, `lore rite edit`, `lore rite delete`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
+**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore doctrine edit`, `lore doctrine delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore rite`, `lore rite list`, `lore rite show`, `lore rite search`, `lore rite new`, `lore rite edit`, `lore rite delete`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
 **Source of truth:** `src/lore/cli.py` (Click decorators, handler bodies); `lore <command> --help` for per-command flags and prose (canonical per ADR-008).
 
 ## Why this exists
@@ -92,7 +92,7 @@ Errors always go to stderr. In `--json` mode they go to stderr as JSON: `{"error
 
 ### The `--project` selector
 
-`--project <name>` is accepted on 19 read commands: `codex list|show|search|map`, `doctrine list|show`, `knight list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, and `impacts`. It is rejected on every other command — write commands, `lore codex chaos`, and every quest/mission/board/health/oracle command — with a Click `UsageError` at exit 2:
+`--project <name>` is accepted on 17 read commands: `codex list|show|search|map`, `doctrine list|show`, `artifact list|show`, `watcher list|show`, `rite list|show|search`, `glossary list|search|show`, and `impacts`. It is rejected on every other command — write commands, `lore codex chaos`, and every quest/mission/board/health/oracle command — with a Click `UsageError` at exit 2:
 
 ```
 Error: --project is a read selector; it is not accepted on "codex new".
@@ -132,9 +132,9 @@ Click usage error, exit 2. Cannot edit an entity to its current state — every 
 
 ### Mission `--type` / `-T` is free-form
 
-Any string accepted. No CHECK constraint, no enum. Common values are `knight`, `constable`, `human` but custom values are valid. Omitting `-T` on `lore new mission` stores `null`; on `lore edit` leaves the existing value unchanged. Mission `null`-vs-string handling is uniform across the four output sites (text show, text list, JSON show, oracle).
+Any string accepted. No CHECK constraint, no enum. Common values are `agent`, `constable`, `human` but custom values are valid. Omitting `-T` on `lore new mission` stores `null`; on `lore edit` leaves the existing value unchanged. Mission `null`-vs-string handling is uniform across the four output sites (text show, text list, JSON show, oracle).
 
-### Knight / doctrine / watcher / artifact name validation
+### Doctrine / watcher / artifact name validation
 
 All four `new` subcommands enforce `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Failure: `Invalid name: must be alphanumeric, hyphens, underscores only.`, exit 1.
 
@@ -214,7 +214,7 @@ Matches against canonical keywords AND aliases (token-run, canonical-only). Surf
 
 ### `lore init`
 
-Idempotent. Re-init overwrites Lore-shipped default assets (doctrines, knights, artifacts, gitignore) in their `default/` subtrees; user-named files in the flat parent directories are never touched. Installed skills and instruction-file blocks are reconciled instead of blindly rewritten — see conceptual-workflows-init-reconcile.
+Idempotent. Re-init overwrites Lore-shipped default assets (doctrines, artifacts, watchers, gitignore) in their `default/` subtrees, and removes a seeded tree Lore has stopped shipping; user-named files in the flat parent directories are never touched. Installed skills and instruction-file blocks are reconciled instead of blindly rewritten — see conceptual-workflows-init-reconcile.
 
 Prompts only when standard output is a terminal. Without a terminal it takes flags, then the answers recorded in `.lore/config.toml`, then built-in defaults, and never blocks.
 
@@ -244,7 +244,7 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits the eight file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, audits canonical codex prose against the voice rules, and audits the installed skills against the install manifest. Scopes: `codex`, `artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
+Audits the seven file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, audits canonical codex prose against the voice rules, and audits the installed skills against the install manifest. Scopes: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
 
 ```
 lore health --scope voice
@@ -277,8 +277,7 @@ lore unblock <id>
 lore needs <A:B>...
 lore unneed <A:B>...
 lore ready [<count>]
-lore doctrine {list|show|new}
-lore knight    {list|show|new|edit|delete}
+lore doctrine {list|show [--mission <id>]|new|edit|delete}
 lore watcher   {list|show|new|edit|delete}
 lore artifact  {list|show|new}
 lore rite      {list|show|search|new|edit|delete}
@@ -297,6 +296,6 @@ The `--json` output contract is hand-written in CLI handlers (`src/lore/cli.py`)
 - Errors always emit to stderr as `{"error": "<message>"}`. Stdout receives only the success envelope.
 - `lore show <quest-id> --json` always includes a `"missions"` array, a `"board"` array (possibly empty), and per-mission `"dependencies"` with `"needs"` and `"blocks"` (always present, possibly empty). `deleted_at` is never included on board messages — soft-deleted rows are filtered at the SQL layer.
 - IDs in `"dependencies"` are always fully-qualified (`q-.../m-...`). `"needs"` and `"blocks"` contain only direct neighbours; transitive chains are not pre-computed.
-- `lore show <mission-id> --json` includes `knight_contents` (full knight markdown) unless `--no-knight` is passed.
+- `lore show <mission-id> --json` includes `doctrine_mission` (the stored `<doctrine-id>/<mission-id>` reference) and `doctrine_mission_contents` (the resolved body, frontmatter stripped, or `null`) unless `--no-doctrine-mission` is passed.
 
 For exhaustive shape, run the command. Don't hand-decode from this doc.

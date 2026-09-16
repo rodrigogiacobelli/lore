@@ -41,7 +41,7 @@ Every module under `lore` other than `lore.api` is internal. They are not re-exp
 - `lore.paths` — `.lore/` path helpers
 - `lore.graph` — graph algorithms
 - `lore.priority` — ready-queue logic (`get_ready_missions` re-exported)
-- `lore.knight` / `lore.doctrine` / `lore.artifact` / `lore.watcher` — file-backed entity operations (CRUD callables re-exported individually)
+- `lore.doctrine` / `lore.artifact` / `lore.watcher` / `lore.rite` — file-backed entity operations (CRUD callables re-exported individually)
 - `lore.codex` — codex scanning, retrieval, search, traversal (operations re-exported individually)
 - `lore.glossary` — glossary loading and matcher
 - `lore.impacts` — codex↔code surfacing primitive
@@ -52,7 +52,7 @@ Every module under `lore` other than `lore.api` is internal. They are not re-exp
 - `lore.init` / `lore.oracle` — `lore init` and report generation
 - `lore.ids` / `lore.root` / `lore.migrations.*` — supporting infrastructure
 
-Lore's own `cli.py` is also a consumer of `lore.api`. It reaches its internal helpers through leading-underscore namespace aliases re-exported from `api.py` (e.g. `lore.api._paths`, `lore.api._knight`, `lore.api._validate_frontmatter`). The underscore prefix keeps these out of `dir(lore.api)` and outside the public surface — they exist so the CLI does not have to breach the facade boundary it tells external consumers to honour.
+Lore's own `cli.py` is also a consumer of `lore.api`. It reaches its internal helpers through leading-underscore namespace aliases re-exported from `api.py` (e.g. `lore.api._paths`, `lore.api._doctrine`, `lore.api._health`). The underscore prefix keeps these out of `dir(lore.api)` and outside the public surface — they exist so the CLI does not have to breach the facade boundary it tells external consumers to honour.
 
 ## Why This Matters
 

@@ -20,7 +20,7 @@ Every symbol in `lore.api.__all__`. Signatures are copied from the source. For n
 
 Throughout this doc, `pr` stands for `project_root: Path` — the directory containing `.lore/`.
 
-Every read function on Knight, Doctrine, Watcher, Artifact, Codex, Glossary and Rite takes a keyword-only `scope: str | None = None` and returns records carrying `origin`. See §19 for the topology functions and `conceptual-workflows-nested-projects` for the model those functions implement.
+Every read function on Doctrine, Watcher, Artifact, Codex, Glossary and Rite takes a keyword-only `scope: str | None = None` and returns records carrying `origin`. See §18 for the topology functions and `conceptual-workflows-nested-projects` for the model those functions implement.
 
 ## 1. Quest CRUD
 
@@ -143,7 +143,7 @@ close_quest(pr, "q-7a3f")
 Create a new mission. If `quest_id` is `None` and exactly one non-closed quest exists, that quest is inferred.
 
 ```python
-create_mission(project_root: Path, title: str, quest_id: str | None = None, description: str = "", priority: int = 2, knight: str | None = None, mission_type: str | None = None) -> dict
+create_mission(project_root: Path, title: str, quest_id: str | None = None, description: str = "", priority: int = 2, doctrine_mission: str | None = None, mission_type: str | None = None) -> dict
 ```
 
 Returns `{"id": mission_id, "filename": None, "group": None}`.
@@ -151,7 +151,7 @@ Returns `{"id": mission_id, "filename": None, "group": None}`.
 Raises: `ValueError` if the named quest does not exist or priority is invalid.
 
 ```python
-create_mission(pr, "Draft guide", quest_id="q-7a3f", knight="tech-writer")
+create_mission(pr, "Draft guide", quest_id="q-7a3f", doctrine_mission="tdd-implementation/red")
 ```
 
 ### `read_mission`
@@ -172,10 +172,10 @@ m = read_mission(pr, "q-7a3f/m-001")
 
 ### `update_mission`
 
-Edit a mission. Only non-`None` fields are updated. Pass `remove_knight=True` to drop the knight assignment.
+Edit a mission. Only non-`None` fields are updated. Pass `remove_doctrine_mission=True` to drop the doctrine mission reference.
 
 ```python
-update_mission(project_root: Path, mission_id: str, title=None, description=None, priority=None, knight=None, remove_knight: bool = False, mission_type=None) -> dict
+update_mission(project_root: Path, mission_id: str, title=None, description=None, priority=None, doctrine_mission=None, remove_doctrine_mission: bool = False, mission_type=None) -> dict
 ```
 
 Returns `{"id": mission_id, "filename": None}`.
@@ -191,7 +191,7 @@ update_mission(pr, "q-7a3f/m-001", priority=1)
 Edit a mission and return the full post-edit envelope.
 
 ```python
-update_mission_full(project_root: Path, mission_id: str, *, title=None, description=None, priority=None, knight=None, remove_knight=False, mission_type=None) -> dict
+update_mission_full(project_root: Path, mission_id: str, *, title=None, description=None, priority=None, doctrine_mission=None, remove_doctrine_mission=False, mission_type=None) -> dict
 ```
 
 Returns the full mission-detail envelope including `dependencies: {needs, blocks}` as `list[str]` of mission IDs.
@@ -242,7 +242,7 @@ List missions grouped by quest with the quest title and `deleted_at` annotated. 
 list_missions_grouped(project_root: Path, *, quest_id: str | None = None, include_closed: bool = False) -> dict
 ```
 
-Returns `{"groups": [{"quest_id", "quest_title", "quest_deleted_at", "missions": [...]}]}`. Each mission has exact keys `id, quest_id, title, status, priority, mission_type, knight, created_at`.
+Returns `{"groups": [{"quest_id", "quest_title", "quest_deleted_at", "missions": [...]}]}`. Each mission has exact keys `id, quest_id, title, status, priority, mission_type, doctrine_mission, created_at`.
 
 Raises: none.
 
@@ -363,106 +363,22 @@ for row in get_ready_missions(pr, count=5):
     print(row["id"], row["title"])
 ```
 
-## 3. Knight CRUD
-
-### `create_knight`
-
-Create a knight markdown file under `.lore/knights/[group/]<name>.md`.
-
-```python
-create_knight(project_root: Path, name: str, content: str, *, group: str | None = None) -> dict
-```
-
-Returns `{"id", "filename", "group"}`. Validates name format, group, content, frontmatter schema, and subtree-wide duplicate.
-
-Raises: `ValueError` on any validation failure.
-
-```python
-create_knight(pr, "tech-writer", content_with_frontmatter)
-```
-
-### `read_knight`
-
-Return the full knight record dict, or `None` on miss.
-
-```python
-read_knight(project_root: Path, name: str, *, scope: str | None = None) -> dict | None
-```
-
-Returns `{"id", "group", "title", "summary", "filename", "body", "origin"}`. A bare name resolves locally before an inherited one of the same name, and a qualified name never resolves locally. An unexported ancestor knight is a miss, not an error.
-
-Raises: `ValueError` on path-traversal names (`/` or `\` in name).
-
-```python
-read_knight(pr, "tech-writer")
-read_knight(pr, "camelot:tech-writer", scope="self")
-```
-
-### `update_knight`
-
-Overwrite an existing knight markdown file in place. Validates frontmatter before any disk write.
-
-```python
-update_knight(project_root: Path, name: str, content: str) -> dict
-```
-
-Returns `{"id": name, "filename": str}`.
-
-Raises: `ValueError` on path-traversal, miss, empty content, or invalid frontmatter.
-
-```python
-update_knight(pr, "tech-writer", new_content)
-```
-
-### `delete_knight`
-
-Soft-delete by renaming `{name}.md` to `{name}.md.deleted`. Idempotent.
-
-```python
-delete_knight(project_root: Path, name: str) -> dict
-```
-
-Returns `{"id": name, "deleted": True, "deleted_at": None}`.
-
-Raises: `ValueError` on path-traversal names or if neither live file nor `.deleted` sibling exists.
-
-```python
-delete_knight(pr, "tech-writer")
-```
-
-### `list_knights`
-
-Return a sorted list of knight records across every project in scope.
-
-```python
-list_knights(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
-```
-
-Returns `[{"id", "group", "title", "summary", "name", "filename", "origin"}, ...]` sorted by id — the qualified id for a foreign record. Missing-metadata records get sensible fallbacks. Empty list if the directory is absent.
-
-Raises: `UnknownProjectError` when `scope` names no project in scope.
-
-```python
-list_knights(pr)
-list_knights(pr, scope="all")
-```
-
-## 4. Doctrine CRUD
+## 3. Doctrine CRUD
 
 ### `create_doctrine`
 
 Register both YAML + design source files atomically under `.lore/doctrines/`.
 
 ```python
-create_doctrine(project_root: Path, name: str, yaml_source_path: Path, design_source_path: Path, *, group: str | None = None) -> dict
+create_doctrine(project_root: Path, name: str, design_content: str, missions: dict[str, str], *, group: str | None = None) -> dict
 ```
 
-Returns `{"id", "filename", "group", "design_filename"}`.
+Returns `{"created", "group", "missions", "path"}` — `missions` sorted by id, `path` the repo-relative directory with a trailing `/`. The whole directory is built in a dot-prefixed staging directory and moved into place with one `os.replace`, so no partial doctrine is ever left on disk.
 
-Raises: `ValueError` on name/group format, duplicate, or missing/invalid source files.
+Raises: `ForeignEntityError` on an origin-qualified name; `ValueError` on name/group format, subtree-wide duplicate, design frontmatter, an empty `missions` mapping, or any mission's id or frontmatter.
 
 ```python
-create_doctrine(pr, "tdd-feature", Path("d.yaml"), Path("d.design.md"))
+create_doctrine(pr, "tdd-feature", design_body, {"red": red_body, "green": green_body})
 ```
 
 ### `read_doctrine`
@@ -470,44 +386,48 @@ create_doctrine(pr, "tdd-feature", Path("d.yaml"), Path("d.design.md"))
 Load a doctrine by ID for display.
 
 ```python
-read_doctrine(project_root: Path, doctrine_id: str, *, scope: str | None = None) -> dict | None
+read_doctrine(project_root: Path, doctrine_id: str, *, scope: str | None = None, mission: str | None = None) -> dict | None
 ```
 
-Returns `{"id", "title", "summary", "design", "raw_yaml", "steps", "origin"}` or `None` if either partner file is missing. A bare id resolves locally before an inherited one of the same name, and a qualified id never resolves locally. An unexported ancestor doctrine is a miss.
+Returns `{"id", "title", "summary", "design", "missions", "origin"}`, plus `"mission"` — `{"id", "title", "summary", "body"}` or `None` — when `mission` is given. `design` is the whole design file, frontmatter included; a mission `body` is frontmatter-stripped.
 
-Raises: none.
+A bare `None` means **the doctrine** missed and only that: when the doctrine resolves and the named mission does not, the returned dict carries `"mission": None`. A bare id resolves locally before an inherited one of the same name, and a qualified id never resolves locally. An unexported ancestor doctrine is a miss.
+
+Raises: `ValueError` when `mission` carries a path separator.
 
 ```python
 read_doctrine(pr, "tdd-feature")
+read_doctrine(pr, "tdd-feature", mission="red")
 ```
 
 ### `update_doctrine`
 
-Overwrite an existing doctrine YAML file with merged content. The design file is not touched here — that requires direct file edits.
+Replace the design, replace or add missions, and remove missions in one call. Merges by stem: a mission the caller does not name is left byte-identical.
 
 ```python
-update_doctrine(project_root: Path, name: str, content: str) -> dict
+update_doctrine(project_root: Path, name: str, design_content: str | None = None, missions: dict[str, str] | None = None, remove_missions: list[str] | None = None) -> dict
 ```
 
-Returns `{"id": name, "filename": f"{name}.yaml"}`.
+Returns `{"updated", "design_replaced", "missions_replaced", "missions_removed"}`, both lists sorted by id. A removal is a `.md.deleted` rename, never an unlink, and a doctrine always keeps at least one live mission. Everything is validated before anything is written, so a validation failure leaves the tree exactly as it was.
 
-Raises: `ValueError` on miss, missing dir, name-format failure, or schema/name-match failure.
+Raises: `ForeignEntityError` on an origin-qualified name; `ValueError` on name format, a doctrine miss, a mission's id or frontmatter, a removal naming no live mission, or a removal set that would empty the doctrine.
 
 ```python
-update_doctrine(pr, "tdd-feature", new_yaml)
+update_doctrine(pr, "tdd-feature", missions={"red": new_red})
+update_doctrine(pr, "tdd-feature", remove_missions=["lint"])
 ```
 
 ### `delete_doctrine`
 
-Soft-delete both partner files atomically.
+Soft-delete a doctrine by renaming its directory.
 
 ```python
 delete_doctrine(project_root: Path, name: str) -> dict
 ```
 
-Returns `{"id": name, "deleted": True, "deleted_at": None}`. Renames `{name}.yaml` and `{name}.design.md` to `.deleted` siblings.
+Returns `{"id": name, "deleted": True, "deleted_at": None}`. Renames the directory `{name}` to `{name}.deleted`; the skip rule then makes it invisible to every read.
 
-Raises: `ValueError` on missing target.
+Raises: `ForeignEntityError` on an origin-qualified name; `ValueError` on name format or a missing target.
 
 ```python
 delete_doctrine(pr, "tdd-feature")
@@ -515,7 +435,7 @@ delete_doctrine(pr, "tdd-feature")
 
 ### `list_doctrines`
 
-List all valid doctrine pairs across every project in scope. Orphaned files are silently skipped.
+List every doctrine directory across every project in scope, in path order. A directory whose design file carries no `id` frontmatter is silently skipped.
 
 ```python
 list_doctrines(project_root: Path, filter_groups: list[str] | None = None, *, scope: str | None = None) -> list[dict]
@@ -529,7 +449,7 @@ Raises: `UnknownProjectError` when `scope` names no project in scope.
 list_doctrines(pr)
 ```
 
-## 5. Artifact CRUD
+## 4. Artifact CRUD
 
 ### `create_artifact`
 
@@ -611,7 +531,7 @@ Raises: `UnknownProjectError` when `scope` names no project in scope.
 list_artifacts(pr)
 ```
 
-## 6. Watcher CRUD
+## 5. Watcher CRUD
 
 ### `create_watcher`
 
@@ -709,7 +629,7 @@ Raises: `UnknownProjectError` when `scope` names no project in scope.
 list_watchers(pr)
 ```
 
-## 7. Codex CRUD and read ops
+## 6. Codex CRUD and read ops
 
 ### `create_document`
 
@@ -860,7 +780,7 @@ Raises: none — missing docs fail soft.
 read_documents_with_glossary(pr, ["api-guide", "api-reference"])
 ```
 
-## 8. Glossary
+## 7. Glossary
 
 ### `create_glossary_item`
 
@@ -972,10 +892,10 @@ Returns deduped items alphabetised by casefolded keyword. Missing glossary file 
 Raises: `GlossaryError` on malformed glossary.
 
 ```python
-match_glossary(["Quest and mission and knight"], root=pr)
+match_glossary(["Quest and mission and doctrine"], root=pr)
 ```
 
-## 9. Field-level frontmatter editing
+## 8. Field-level frontmatter editing
 
 ### `update_frontmatter_fields`
 
@@ -985,7 +905,7 @@ Mutate one or more frontmatter fields of a file-backed entity without rewriting 
 update_frontmatter_fields(project_root: Path, kind: str, name: str, *, set_fields: dict | None = None, unset_fields: list | None = None, add_to_list: dict | None = None, remove_from_list: dict | None = None) -> dict
 ```
 
-`kind` ∈ `{"knight", "doctrine", "artifact", "watcher", "codex"}`. Schema validation runs against the mutated frontmatter BEFORE any disk write — invalid edits leave the file untouched. Write is atomic via tempfile + `os.replace`.
+`kind` ∈ `{"doctrine", "artifact", "watcher", "codex"}` — `doctrine` addresses the design document. Schema validation runs against the mutated frontmatter BEFORE any disk write — invalid edits leave the file untouched. Write is atomic via tempfile + `os.replace`.
 
 For `kind="codex"` validation is **overlay-merged**: the function resolves its overlay root through `codex._overlay_root`, so a canonical or `sources/` doc validates against the merged schema and a doc under `.lore/codex/transient/` validates against the packaged schema alone (ADR-019). This is what makes the CLI backfill of a newly `required` custom field possible — `set_fields={"owner": "alice"}` on a declared custom key now passes instead of failing `Unknown property 'owner'`.
 
@@ -997,7 +917,7 @@ Raises: `ValueError` on validation / lookup / schema failure — including `Over
 update_frontmatter_fields(pr, kind="codex", name="api-guide", set_fields={"summary": "New."})
 ```
 
-## 10. Board messages
+## 9. Board messages
 
 ### `add_board_message`
 
@@ -1047,7 +967,7 @@ Raises: `ValueError` if the message does not exist (or is already soft-deleted) 
 delete_board_message(pr, "q-7a3f", message_id=42)
 ```
 
-## 11. Dependencies
+## 10. Dependencies
 
 ### `add_dependency`
 
@@ -1161,7 +1081,7 @@ Raises: none.
 get_all_dependencies_for_quest(pr, "q-7a3f")
 ```
 
-## 12. Impacts engine
+## 11. Impacts engine
 
 ### `impacts`
 
@@ -1200,7 +1120,7 @@ Raises: none.
 classify_token("src/lore/api.py")  # -> "path"
 ```
 
-## 13. Health and schemas
+## 12. Health and schemas
 
 ### `health_check`
 
@@ -1236,7 +1156,7 @@ When `project_root` is passed and `kind` is overlay-eligible (`codex-frontmatter
 Raises: `FileNotFoundError` if `kind` is not a known schema; `OverlayError` (a `ValueError`) if the project overlay is malformed.
 
 ```python
-issues = validate_entity("knight-frontmatter", {"id": "x", "title": "X", "summary": "..."})
+issues = validate_entity("doctrine-mission-frontmatter", {"id": "x", "title": "X", "summary": "..."})
 issues = validate_entity("codex-frontmatter", meta, project_root=pr)  # overlay-aware
 ```
 
@@ -1285,7 +1205,7 @@ Returns a list of `SchemaIssue`. Never raises on read/parse failure.
 Raises: none.
 
 ```python
-validate_entity_file(".lore/knights/foo.md", "knight-frontmatter")
+validate_entity_file(".lore/doctrines/default/d/missions/foo.md", "doctrine-mission-frontmatter")
 ```
 
 ### `load_schema`
@@ -1301,10 +1221,10 @@ Returns the parsed schema dict (same object on repeat calls).
 Raises: `FileNotFoundError` with message `"Unknown schema kind: '<kind>'"` when the kind does not exist.
 
 ```python
-load_schema("knight-frontmatter")
+load_schema("doctrine-mission-frontmatter")
 ```
 
-## 14. Stats and dashboard
+## 13. Stats and dashboard
 
 ### `get_aggregate_stats`
 
@@ -1343,10 +1263,10 @@ get_dashboard_quests(pr)
 Full mission-detail envelope (byte-for-byte matches `lore show` JSON output).
 
 ```python
-get_mission_detail(project_root: Path, mission_id: str, *, include_knight: bool = True) -> dict | None
+get_mission_detail(project_root: Path, mission_id: str, *, include_doctrine_mission: bool = True) -> dict | None
 ```
 
-Returns the full envelope including `dependencies` and resolved `knight`. `None` on miss.
+Returns the full envelope including `dependencies`, the stored `doctrine_mission` reference and the resolved `doctrine_mission_contents` (the mission body, frontmatter stripped, or `None` when the reference resolves to no file). `None` on a mission miss.
 
 Raises: none.
 
@@ -1418,7 +1338,7 @@ Raises: `ValueError` on unknown entity ID.
 delete_entity(pr, "q-7a3f", cascade=True)
 ```
 
-## 15. Reports and initialisation
+## 14. Reports and initialisation
 
 ### `generate_reports`
 
@@ -1520,7 +1440,7 @@ Raises: none — all failure modes fall back to defaults.
 load_config(pr)
 ```
 
-## 16. Project root and paths
+## 15. Project root and paths
 
 ### `find_project_root`
 
@@ -1546,7 +1466,7 @@ Return the on-disk location for a file-backed entity. Does NOT create any direct
 entity_location(project_root: Path, kind: str, name: str | None = None, *, group: str | None = None, suffix: str | None = None) -> Path
 ```
 
-`kind` ∈ `{"knight", "doctrine", "artifact", "watcher", "codex"}`. With `name=None` and `suffix=None`, returns the (group-scoped) directory. With both, returns the full file path.
+`kind` ∈ `{"doctrine", "artifact", "watcher", "codex"}`. With `name=None` and `suffix=None`, returns the (group-scoped) directory. With both, returns the full file path.
 
 Raises: `ValueError` on unknown kind.
 
@@ -1586,7 +1506,7 @@ Raises: standard SQLite errors.
 init_database(pr / ".lore" / "lore.db")
 ```
 
-## 17. Validators
+## 16. Validators
 
 Pure functions for input validation. Each returns `None` on success or a human-readable error string. None raise.
 
@@ -1660,7 +1580,7 @@ Returns an error string if `priority` is out of `[0, 4]`.
 validate_name(name: str) -> str | None
 ```
 
-Returns an error string if `name` is not a valid knight/doctrine name.
+Returns an error string if `name` is not a valid doctrine or artifact name.
 
 ### `validate_group`
 
@@ -1724,7 +1644,7 @@ Returns `(table, id_col)` for a valid entity ID.
 
 Raises: `ValueError` on unrecognised entity IDs.
 
-## 18. Types and enums
+## 17. Types and enums
 
 All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 
@@ -1737,14 +1657,12 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 ### Domain dataclasses
 
 - **`Quest(id, title, description, status, priority, auto_close, created_at, updated_at, closed_at, deleted_at)`** — full quest row.
-- **`Mission(id, quest_id, title, description, status, mission_type, priority, knight, block_reason, created_at, updated_at, closed_at, deleted_at)`** — full mission row.
+- **`Mission(id, quest_id, title, description, status, mission_type, priority, doctrine_mission, block_reason, created_at, updated_at, closed_at, deleted_at)`** — full mission row.
 - **`Dependency(id, from_id, to_id, type, deleted_at)`** — `type` is `Literal["blocks"]`.
 - **`BoardMessage(id, entity_id, sender, message, created_at)`** — single board message.
 - **`Artifact(id, title, summary, content)`** — minimal artifact projection.
 - **`CodexDocument(id, title, summary)`** — minimal codex doc projection.
-- **`DoctrineStep(id, title, priority, type, knight, notes, needs)`** — one step of a doctrine.
 - **`Doctrine(id, title, summary, steps)`** — `steps` is `tuple[DoctrineStep, ...]`.
-- **`Knight(name, content)`** — name + raw markdown body.
 - **`DoctrineListEntry(id, group, title, summary, valid, filename)`** — `lore doctrine list` row shape.
 - **`GlossaryItem(keyword, definition, aliases, do_not_use, origin)`** — `aliases` and `do_not_use` are `tuple[str, ...]`. `origin` defaults to `"self"`; a scoped read sets it to the exporting project's name. The keyword itself stays bare in every case — it is natural language matched against document prose, not an id.
 - **`Watcher(id, group, title, summary, watch_target, interval, action, filename)`** — full watcher record.
@@ -1791,7 +1709,7 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 - **`OverlayError`** — subclass of `ValueError`; raised by `resolve_merged_schema` / `project_validator_for` / `validate_entity(project_root=...)` when a `.lore/custom-schemas/<kind>.yaml` overlay is malformed (bad YAML, packaged-field collision, undeclared `required`). Propagates unchanged through `create_document` / `update_document` (their existing `ValueError` contract).
 - **`ConflictingDepthFlags`** — raised by `map_documents` on bad depth-flag combos.
 
-## 19. Project topology (nested projects)
+## 18. Project topology (nested projects)
 
 A directory holding several Lore projects is itself a Lore project once its own `.lore/` exists. These functions are the ones a Python caller needs beyond the `scope=` keyword already on every entity read — see `conceptual-workflows-nested-projects` for the model and `tech-arch-projects-module` for the module that implements it.
 
@@ -1842,7 +1760,7 @@ Raises: none — an unreadable config falls back like an absent one.
 project_name(pr)
 ```
 
-## 20. Rite CRUD and scoped reads
+## 19. Rite CRUD and scoped reads
 
 Rite functions take `rites_dir: Path` first, not `project_root` — the one entity module that predates the `project_root`-first convention (`tech-cli-entity-crud-matrix`). The three scoped functions added for nested projects take `project_root` first instead, like every other entity module; they wrap the same on-disk reads as their `rites_dir`-first counterparts rather than duplicating them, because changing a public function's first parameter is an ADR-010 breaking change. `rd` below stands for `rites_dir: Path` — `project_root / ".lore" / "rites"` (`entity_location` does not cover the `"rite"` kind, so a caller builds the path directly).
 

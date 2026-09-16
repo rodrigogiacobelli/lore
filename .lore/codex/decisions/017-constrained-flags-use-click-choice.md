@@ -24,7 +24,7 @@ related:
 
 Several CLI flags accept a value from a fixed, closed set of tokens. The
 canonical example is `lore health --scope`, whose tokens are `codex`,
-`artifacts`, `doctrines`, `knights`, `watchers`, `schemas`, `glossary`,
+`artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`,
 `bindings`, `rites` (multi-value, space-separated per ADR-012). The set is
 enforced declaratively with `click.Choice`, so passing an out-of-set token
 (`lore health --scope xyz`) raises Click's `BadParameter` — a subclass of
@@ -125,3 +125,4 @@ unchanged for a flag that uses it.
 |------|--------|------|
 | 2026-06-02 | accepted | Recorded after the Rites US-006 cycle surfaced a proposed (and rejected) change to the `lore health --scope` invalid-value contract; pins the previously-implicit `click.Choice` / exit-2 behaviour |
 | 2026-08-25 | accepted (prose corrected) | Constraint 3 asked for a superseding ADR, which this project does not produce; corrected to require an in-place amendment with a Status History row. A parser-level change such as `SpaceSeparatedChoice` is recorded as outside this contract. The decision — `click.Choice`, Click's wording, exit 2 — is unchanged. |
+| 2026-09-16 | accepted | Decision unchanged. The canonical `--scope` token set loses `knights`. Removing a token from a `click.Choice` is not an amendment trigger under Constraint 3. |

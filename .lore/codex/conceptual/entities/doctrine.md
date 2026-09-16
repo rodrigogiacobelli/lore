@@ -1,88 +1,88 @@
 ---
 id: conceptual-entities-doctrine
 title: Doctrine
-summary: What a Doctrine is — a reusable, passive workflow template stored as a paired .yaml and .design.md file. The .design.md is the primary entry point for discovery. Doctrines are read by orchestrators to guide quest and mission creation; they have no execution engine of their own.
-related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-knight", "conceptual-entities-glossary", "ref-lore_doctrine-module", "conceptual-relationships-doctrine--knight", "conceptual-relationships-doctrine--mission", "conceptual-relationships-doctrine--quest"]
+summary: What a Doctrine is — a directory holding a design document the orchestrator reads and one mission file of prose per worker. Doctrines are passive; Lore parses no workflow structure out of them. Covers discovery, group derivation, the validation rules, and the .deleted directory rename.
+related: ["conceptual-entities-quest", "conceptual-entities-mission", "conceptual-entities-glossary", "ref-lore_doctrine-module", "conceptual-relationships-doctrine--mission", "conceptual-relationships-doctrine--quest"]
+binds:
+- src/lore/doctrine.py
 ---
 
 # Doctrine
 
-A Doctrine is a reusable workflow template stored as two paired files: a `.yaml` for machine-readable steps and a `.design.md` for human-readable design documentation. Doctrines are **passive documents** — there is no template engine, no variable substitution, no execution. An orchestrator reads a Doctrine and uses it as a guide when manually creating the corresponding Quests (lore codex show conceptual-entities-quest) and Missions (lore codex show conceptual-entities-mission) via CLI commands.
+A Doctrine is a reusable workflow template stored as a directory of prose. The directory holds `<stem>.design.md` — the design document an orchestrator reads — and an optional `missions/` subdirectory of `.md` files, one per reusable instruction. Doctrines are **passive documents**: there is no template engine, no variable substitution, no execution. An orchestrator reads a Doctrine and uses it as a guide when creating the corresponding Quests (lore codex show conceptual-entities-quest) and Missions (lore codex show conceptual-entities-mission) via CLI commands.
 
-A Doctrine describes:
+Lore parses no workflow structure out of a Doctrine. It reads the design document's frontmatter for identity — `id`, `title`, `summary` — and each mission file's frontmatter for its index entry, and treats every body as an opaque string. Step order, mission type, phases and dependencies are decided by the orchestrator from the design prose (lore codex show decisions-001-dumb-infrastructure).
 
-- What steps a workflow typically involves
-- Their suggested order and dependencies
-- Recommended Knights (lore codex show conceptual-entities-knight) for each step
-- Notes about how to execute each step, including references to Artifact (lore codex show conceptual-entities-artifact) IDs where a step produces a template-derived document
+The design document describes:
 
-The `.design.md` file contains rich human-readable documentation — tables, narratives, phase overviews — and serves as the primary entry point for all discovery. The `.yaml` file contains only machine-readable step data.
+- Which missions the workflow involves, and their suggested order and dependencies
+- Which type each mission is — `agent`, `constable` or `human`
+- What each mission reads and what it produces
+- References to Artifact (lore codex show conceptual-entities-artifact) IDs the workflow uses
 
-Doctrines are stored in the project's `.lore/doctrines/` directory tree. For the technical schema (field names, types, required/optional) see ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module). For CLI commands (`lore doctrine show`, `lore doctrine list`, etc.) see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
+A mission file is one worker's whole brief: the role it adopts, how it works, its hard rules, its inputs, its steps, its done criteria, and what it hands on. It is the single authoritative copy of every reusable instruction the workflow needs. A Lore Mission reaches one through the reference `<doctrine-id>/<mission-id>` stored in `missions.doctrine_mission` (lore codex show conceptual-relationships-doctrine--mission).
 
-## Python API
+Doctrines are stored in the project's `.lore/doctrines/` directory tree. For module internals see ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module). For CLI commands see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
 
-`Doctrine` and `DoctrineStep` are exported from `lore.models` as typed, immutable dataclasses. Python consumers import them as:
+## Directory Shape
 
-```python
-from lore.models import Doctrine, DoctrineStep
+```
+.lore/doctrines/<group…>/<stem>/
+├── <stem>.design.md
+└── missions/
+    ├── <mission-id>.md
+    └── <mission-id>.md
 ```
 
-`Doctrine` fields: `id`, `title`, `summary`, `steps` (a `tuple[DoctrineStep, ...]` — an ordered, immutable sequence). `DoctrineStep` fields: `id`, `title`, `priority`, `type`, `knight`, `notes`, `needs` (a `list[str]`, always present, empty list when the step has no dependencies).
+A directory `D` is a doctrine if and only if `D/<D.name>.design.md` exists. The design file's name is derived from the directory name, which is what makes the directory the unit of identity: a design file sitting anywhere other than a directory of its own name identifies no doctrine.
 
-**Construction source:** `Doctrine.from_dict()` accepts the dict returned by `show_doctrine(id, doctrines_dir)`. It does **not** accept `list_doctrines()` output. `list_doctrines()` returns listing dicts containing `"valid"` and `"filename"` keys but no `"steps"` — passing these to `from_dict()` raises `KeyError: 'steps'`. The correct construction pattern is:
-
-```python
-from lore.doctrine import show_doctrine
-from lore.models import Doctrine
-
-result = show_doctrine("my-workflow", doctrines_dir)
-doctrine_obj = Doctrine.from_dict(result)
-```
-
-Doctrine and DoctrineStep objects are immutable — attempting to assign to any field raises `FrozenInstanceError`. The `steps` tuple also prevents `append` — mutation attempts raise `AttributeError`.
-
+A mission's id is its filename stem. `missions/red.md` is the mission `red`, and a Lore Mission reaches it as `<doctrine-id>/red`.
 
 ## Discovery
 
-`lore init` places bundled default doctrines inside `.lore/doctrines/default/`. Each default doctrine is a paired `.yaml` and `.design.md` file. User-created doctrines (added via `lore doctrine new`) land directly in `.lore/doctrines/`. Both `lore doctrine list` and `lore doctrine show` search the full `.lore/doctrines/` directory tree recursively.
+`lore init` places bundled default doctrines inside `.lore/doctrines/default/`. User-created doctrines (added via `lore doctrine new`) land directly in `.lore/doctrines/`, or under `--group <path>`. Both `lore doctrine list` and `lore doctrine show` search the full `.lore/doctrines/` directory tree recursively.
 
-**The `.design.md` file is the discovery entry point.** `lore doctrine list` scans for `*.design.md` files and checks for a matching `.yaml` in the same directory. A `.yaml` with no `.design.md` counterpart is completely invisible — it does not appear in any listing or show operation.
+**Any path segment beginning with `.` or ending `.deleted` hides everything at and below it.** That one rule makes a soft-deleted doctrine and the staging directory `lore doctrine new` builds equally invisible to every listing, every read, and `lore health`.
 
-`lore doctrine list` returns a single flat sorted list of all valid doctrine pairs found anywhere in the tree. Only complete pairs (both files present and parseable) are returned. Orphaned design files (missing YAML) and YAML-only files are silently skipped.
+A doctrine's **group** is derived from the path between `.lore/doctrines/` and the doctrine directory, so a doctrine at `.lore/doctrines/default/feature-implementation/tdd-implementation/` carries the group `default/feature-implementation`.
 
-`lore doctrine show <name>` resolves a doctrine by its filename stem (e.g., `feature-workflow` for `feature-workflow.design.md` + `feature-workflow.yaml`). The search is recursive across the full tree. If either file is missing, the command exits with a "not found" error.
+`lore doctrine list` returns a flat list of every doctrine found in the tree, in path order. A directory whose design file carries no `id` frontmatter is silently skipped.
 
-Entity names are expected to be unique across the entire tree.
+`lore doctrine show <name>` resolves a doctrine by its directory name. The search is subtree-wide and the shallowest match wins. Doctrine names are expected to be unique across the tree; `lore health --scope doctrines` reports a duplicate declared id as an error.
 
 ## Validation Rules
 
-When a Doctrine is read, both files are validated. Validation is performed by the `doctrine.py` module (see ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module)).
+`lore doctrine new` validates everything before anything reaches disk, in this order:
 
-**YAML schema (`<name>.yaml`):**
-- `id` and `steps` are required at the top level.
-- `name`, `description`, `title`, and `summary` must NOT appear in the YAML — these are design file fields. Their presence is a validation error.
-- The `id` value must match the filename stem exactly.
-- `steps` must be a non-empty list.
-- Each step must have an `id` and a `title`.
-- Step `id` values must be unique within the doctrine.
-- `priority`, if present, must be an integer 0–4.
-- `type`, if present, must be a string.
-- Every entry in a step's `needs` list must reference an existing step `id`.
-- `needs` references must not form a cycle.
+1. Name format — one path segment, valid identifier characters
+2. Group format
+3. No doctrine of that name already exists anywhere in the subtree
+4. The design document has frontmatter and its `id` matches the command argument
+5. The design frontmatter validates against `lore://schemas/doctrine-design-frontmatter`
+6. At least one mission file is supplied
+7. Each mission id is a valid name
+8. Each mission file's frontmatter `id` equals its filename stem
+9. Each mission's frontmatter validates against `lore://schemas/doctrine-mission-frontmatter`
 
-**Design file schema (`<name>.design.md`):**
-- Must have YAML frontmatter.
-- `id` is required in frontmatter and must match the filename stem exactly.
-- `title` and `summary` are optional.
+Both schemas require exactly `id`, `title` and `summary` and reject any other key.
+
+Only when every rule passes does anything reach disk, and it reaches it whole: `create_doctrine` builds the tree inside a dot-prefixed staging directory and moves it into place with one `os.replace`, so no partial doctrine is ever left behind — a crash mid-write included (lore codex show decisions-031-staged-multi-file-entity-write).
+
+`lore doctrine edit` validates everything first as well, so a validation failure leaves the tree exactly as it was. It merges by stem: a mission the caller does not name is left byte-identical.
+
+A doctrine always keeps at least one live mission. `lore doctrine edit --remove-mission` refuses a removal set that would empty the doctrine.
 
 ## Soft-Delete Semantics
 
-`lore doctrine delete <name>` soft-deletes a Doctrine by renaming both partner files: `<name>.yaml` becomes `<name>.yaml.deleted` and `<name>.design.md` becomes `<name>.design.md.deleted`. `doctrine.delete_doctrine` raises `ValueError` when neither file exists.
+`lore doctrine delete <name>` soft-deletes a Doctrine by renaming its directory to `<name>.deleted`. The skip rule then makes the renamed directory invisible everywhere, with no second mechanism (lore codex show decisions-003-soft-delete-semantics).
+
+`lore doctrine edit --remove-mission <id>` soft-deletes one mission file: `missions/<id>.md` becomes `missions/<id>.md.deleted`.
+
+`delete_doctrine` raises `ValueError` when the directory does not exist.
 
 ## Example
 
-**`my-workflow.design.md`:**
+**`my-workflow/my-workflow.design.md`:**
 ```markdown
 ---
 id: my-workflow
@@ -92,47 +92,38 @@ summary: Standard development workflow.
 
 # My Workflow
 
-## Purpose
+## Doctrine
 
-This workflow guides a developer through the standard development lifecycle.
+| Phase | Mission | Type | Depends On | Input | Output |
+|-------|---------|------|------------|-------|--------|
+| 0 | design | agent | — | Feature request | Design document |
+| 0 | review-design | human | design | Design document | Annotated design |
+| 1 | implement | agent | review-design | Annotated design | Working code |
 
-## Phases
+## Missions
 
-| Phase | Steps |
-|-------|-------|
-| Design | design |
-| Implementation | implement |
-| Review | review-design |
+- **design** — Produces a design document with acceptance criteria.
+- **review-design** — Human review of the design.
+- **implement** — Implements the reviewed design.
 ```
 
-**`my-workflow.yaml`:**
-```yaml
-id: my-workflow
-steps:
-  - id: design
-    title: Design the feature
-    priority: 1
-    type: knight
-    knight: designer.md
-    notes: Produce a design document with acceptance criteria
-  - id: review-design
-    title: Human review of design
-    priority: 1
-    type: human
-    needs: [design]
-  - id: implement
-    title: Implement the feature
-    priority: 1
-    type: knight
-    needs: [review-design]
-    knight: developer.md
+**`my-workflow/missions/design.md`:**
+```markdown
+---
+id: design
+title: Design the feature
+summary: Produces a design document with acceptance criteria.
+---
+
+# Designer
+
+You are the Designer. …
 ```
 
 ## Related
 
 - Quest (lore codex show conceptual-entities-quest) — the live grouping of Missions that an orchestrator creates following a Doctrine
-- Mission (lore codex show conceptual-entities-mission) — the individual tasks described by each step in a Doctrine
-- Knight (lore codex show conceptual-entities-knight) — the persona files referenced by Doctrine steps
-- Artifact (lore codex show conceptual-entities-artifact) — template files referenced by ID in Doctrine step notes
+- Mission (lore codex show conceptual-entities-mission) — the individual tasks described by a Doctrine's missions
+- Artifact (lore codex show conceptual-entities-artifact) — template files referenced by ID in a design or mission body
 - ref-lore_doctrine-module (lore codex show ref-lore_doctrine-module) — validation pipeline and module internals
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore doctrine` command reference

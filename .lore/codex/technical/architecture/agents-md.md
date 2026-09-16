@@ -115,13 +115,13 @@ The rendered text is a lightweight entry point, not a copy of the CLI. It direct
 ### Orchestrator section
 
 1. **Tool availability** — Lore is installed; `lore --help` holds the entity and CLI model.
-2. **Dispatch loop** — `lore ready` returns the next mission with its type. Type `knight` → claim and spawn a worker agent with the mission ID. Type `constable` → claim and handle inline. Type `human` → do not claim; leave it for the human. The mission ID is passed to the worker.
+2. **Dispatch loop** — `lore ready` returns the next mission with its type. Type `agent` → claim and spawn a worker agent with the mission ID. Type `constable` → claim and handle inline. Type `human` → do not claim; leave it for the human. The mission ID is passed to the worker.
 3. **Mission description requirements** — descriptions are thorough and self-contained, with acceptance criteria, constraints and relevant file paths. A worker executes the mission from the description alone.
 
 ### Worker section
 
 - The worker has been assigned a mission ID by the orchestrator.
-- `lore show <mission-id>` returns the mission and the knight persona in one call.
+- `lore show <mission-id>` returns the mission and its doctrine mission instructions in one call.
 - `lore done` closes the mission and cascades.
 - `lore block` reports a blocker with a reason.
 - Workers do not create quests or missions and do not claim work.

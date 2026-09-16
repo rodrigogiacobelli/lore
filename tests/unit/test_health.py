@@ -20,7 +20,6 @@ from lore.health import (
     _check_artifacts,
     _check_codex,
     _check_doctrines,
-    _check_knights,
     _check_watchers,
     _write_report,
     health_check,
@@ -37,7 +36,7 @@ from lore.api import HealthIssue, HealthReport
 def lore_dir(tmp_path):
     """Bare .lore/ directory with all required subdirs."""
     lore = tmp_path / ".lore"
-    for d in ["knights", "doctrines", "codex", "artifacts", "watchers"]:
+    for d in ["doctrines", "codex", "artifacts", "watchers"]:
         (lore / d).mkdir(parents=True)
     (lore / "codex" / "transient").mkdir(parents=True)
     return tmp_path
@@ -86,8 +85,8 @@ def test_health_report_issues_returns_errors_then_warnings():
         severity="error",
         entity_type="doctrines",
         id="feat-auth",
-        check="broken_knight_ref",
-        detail="'senior-engineer' not found (step 2)",
+        check="broken_artifact_ref",
+        detail="'fi-nope' not found (mission recon)",
     )
     warning = HealthIssue(
         severity="warning",
@@ -520,200 +519,6 @@ def test_check_artifacts_walks_subdirectories(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# _check_doctrines
-# ---------------------------------------------------------------------------
-
-
-def _make_doctrine_dirs(tmp_path):
-    """Create and return (doctrines_dir, knights_dir, artifacts_dir)."""
-    doctrines_dir = tmp_path / ".lore" / "doctrines"
-    doctrines_dir.mkdir(parents=True)
-    knights_dir = tmp_path / ".lore" / "knights"
-    knights_dir.mkdir(parents=True)
-    artifacts_dir = tmp_path / ".lore" / "artifacts"
-    artifacts_dir.mkdir(parents=True)
-    return doctrines_dir, knights_dir, artifacts_dir
-
-
-def test_check_doctrines_yaml_without_design_md_reports_orphan(tmp_path):
-    """_check_doctrines reports error for a .yaml file with no matching .design.md."""
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-    (doctrines_dir / "orphan.yaml").write_text("id: orphan\ntitle: Orphan\nsummary: s\nsteps: []\n")
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    assert any(i.check == "orphaned_file" and i.severity == "error" for i in issues)
-
-
-def test_check_doctrines_design_md_without_yaml_reports_orphan(tmp_path):
-    """_check_doctrines reports error for a .design.md file with no matching .yaml."""
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-    (doctrines_dir / "orphan.design.md").write_text(
-        "---\nid: orphan\ntitle: Orphan\nsummary: s\n---\nBody.\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    assert any(i.check == "orphaned_file" and i.severity == "error" for i in issues)
-
-
-def test_check_doctrines_broken_artifact_ref_in_notes_reports_error(tmp_path):
-    """_check_doctrines reports error when step notes reference a non-existent artifact ID."""
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-y.design.md").write_text(
-        "---\nid: feat-y\ntitle: Y\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-y.yaml").write_text(
-        "id: feat-y\ntitle: Y\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    notes: see fi-missing-artifact\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    assert any(i.check == "broken_artifact_ref" and i.severity == "error" for i in issues)
-
-
-# ---------------------------------------------------------------------------
-# _check_knights
-# ---------------------------------------------------------------------------
-
-
-def test_check_knights_mission_refs_missing_knight_reports_error(lore_dir):
-    """_check_knights reports error when a mission references a non-existent knight file."""
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-0001", "Test Quest")
-    insert_mission(lore_dir, "m-0001", "q-0001", "Test Mission", knight="missing-knight")
-
-    knights_dir = lore_dir / ".lore" / "knights"
-    issues = _check_knights(knights_dir, lore_dir)
-
-    assert any(i.check == "missing_file" and i.severity == "error" for i in issues)
-
-
-def test_check_knights_mission_refs_soft_deleted_knight_no_error(lore_dir):
-    """_check_knights does not report error when referenced knight has .md.deleted suffix."""
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-0002", "Test Quest 2")
-    insert_mission(lore_dir, "m-0002", "q-0002", "Test Mission 2", knight="soft-deleted-knight")
-    knights_dir = lore_dir / ".lore" / "knights"
-    (knights_dir / "soft-deleted-knight.md.deleted").write_text("deleted")
-
-    issues = _check_knights(knights_dir, lore_dir)
-
-    assert not any(i.check == "missing_file" for i in issues)
-
-
-def test_check_knights_mission_refs_present_knight_no_issues(lore_dir):
-    """_check_knights returns no issues when the referenced knight file exists."""
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-0003", "Test Quest 3")
-    insert_mission(lore_dir, "m-0003", "q-0003", "Test Mission 3", knight="existing-knight")
-    knights_dir = lore_dir / ".lore" / "knights"
-    (knights_dir / "existing-knight.md").write_text(
-        "---\nid: existing-knight\ntitle: Knight\nsummary: s\n---\nBody.\n"
-    )
-
-    issues = _check_knights(knights_dir, lore_dir)
-
-    assert issues == []
-
-
-def test_check_knights_no_missions_with_knights_no_issues(lore_dir):
-    """_check_knights returns no issues when no missions reference any knight."""
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-0004", "Test Quest 4")
-    insert_mission(lore_dir, "m-0004", "q-0004", "Test Mission 4", knight=None)
-
-    knights_dir = lore_dir / ".lore" / "knights"
-    issues = _check_knights(knights_dir, lore_dir)
-
-    assert issues == []
-
-
-# ---------------------------------------------------------------------------
-# US-011: _check_knights — detail contains knight name and mission ID
-# ---------------------------------------------------------------------------
-
-
-def test_check_knights_missing_file_detail_contains_not_found_phrase(lore_dir):
-    """_check_knights HealthIssue.detail contains the phrase 'not found on disk'."""
-    # Exercises: lore codex show conceptual-workflows-health
-    # AC: detail format is "referenced by <ids> but not found on disk"
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-a001", "Quest A")
-    insert_mission(lore_dir, "m-a042", "q-a001", "Mission 42", knight="tech-lead")
-
-    knights_dir = lore_dir / ".lore" / "knights"
-    issues = _check_knights(knights_dir, lore_dir)
-
-    missing = [i for i in issues if i.check == "missing_file"]
-    assert len(missing) == 1
-    assert "not found on disk" in missing[0].detail
-
-
-def test_check_knights_missing_file_detail_contains_mission_id(lore_dir):
-    """_check_knights HealthIssue.detail contains the referencing mission ID."""
-    # Exercises: lore codex show conceptual-workflows-health
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-b001", "Quest B")
-    insert_mission(lore_dir, "m-b042", "q-b001", "Mission 42", knight="tech-lead")
-
-    knights_dir = lore_dir / ".lore" / "knights"
-    issues = _check_knights(knights_dir, lore_dir)
-
-    missing = [i for i in issues if i.check == "missing_file"]
-    assert len(missing) == 1
-    assert "m-b042" in missing[0].detail
-
-
-def test_check_knights_multiple_missions_same_missing_knight_one_issue(lore_dir):
-    """_check_knights emits one HealthIssue per unique missing knight — detail includes 'referenced by'."""
-    # Exercises: lore codex show conceptual-workflows-health
-    # AC: one issue per unique knight; detail says "referenced by ..."
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-c001", "Quest C")
-    insert_mission(lore_dir, "m-c010", "q-c001", "Mission 10", knight="tech-lead")
-    insert_mission(lore_dir, "m-c011", "q-c001", "Mission 11", knight="tech-lead")
-    insert_mission(lore_dir, "m-c012", "q-c001", "Mission 12", knight="tech-lead")
-
-    knights_dir = lore_dir / ".lore" / "knights"
-    issues = _check_knights(knights_dir, lore_dir)
-
-    missing = [i for i in issues if i.check == "missing_file"]
-    assert len(missing) == 1
-    assert "referenced by" in missing[0].detail
-
-
-def test_check_knights_multiple_missions_same_missing_knight_detail_contains_all_ids(lore_dir):
-    """_check_knights single HealthIssue detail contains all referencing mission IDs."""
-    # Exercises: lore codex show conceptual-workflows-health
-    from tests.conftest import insert_mission, insert_quest
-
-    insert_quest(lore_dir, "q-d001", "Quest D")
-    insert_mission(lore_dir, "m-d010", "q-d001", "Mission 10", knight="tech-lead")
-    insert_mission(lore_dir, "m-d011", "q-d001", "Mission 11", knight="tech-lead")
-    insert_mission(lore_dir, "m-d012", "q-d001", "Mission 12", knight="tech-lead")
-
-    knights_dir = lore_dir / ".lore" / "knights"
-    issues = _check_knights(knights_dir, lore_dir)
-
-    missing = [i for i in issues if i.check == "missing_file"]
-    assert len(missing) == 1
-    detail = missing[0].detail
-    assert "m-d010" in detail
-    assert "m-d011" in detail
-    assert "m-d012" in detail
-
-
-# ---------------------------------------------------------------------------
 # _check_watchers
 # ---------------------------------------------------------------------------
 
@@ -740,11 +545,9 @@ def test_check_watchers_valid_watcher_no_issues(tmp_path):
     doctrines_dir = tmp_path / ".lore" / "doctrines"
     doctrines_dir.mkdir(parents=True)
 
-    (doctrines_dir / "real-doctrine.design.md").write_text(
+    (doctrines_dir / "real-doctrine").mkdir()
+    (doctrines_dir / "real-doctrine" / "real-doctrine.design.md").write_text(
         "---\nid: real-doctrine\ntitle: Real\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "real-doctrine.yaml").write_text(
-        "id: real-doctrine\ntitle: Real\nsummary: s\nsteps: []\n"
     )
     (watchers_dir / "valid.yaml").write_text(
         "id: valid\ntitle: Valid\nsummary: s\naction: real-doctrine\n"
@@ -770,15 +573,14 @@ def test_check_watchers_deleted_files_excluded(tmp_path):
     assert issues == []
 
 
-def test_check_watchers_only_design_md_no_yaml_reports_broken_ref(tmp_path):
-    """_check_watchers reports broken_doctrine_ref when doctrine has only .design.md (incomplete pair)."""
+def test_check_watchers_flat_design_file_reports_broken_ref(tmp_path):
+    """A design file that is not inside its own directory is not a doctrine."""
     # Exercises: lore codex show conceptual-workflows-health
-    # Requires _build_doctrine_name_index to enforce complete pairs (both .yaml AND .design.md)
     watchers_dir = tmp_path / ".lore" / "watchers"
     watchers_dir.mkdir(parents=True)
     doctrines_dir = tmp_path / ".lore" / "doctrines"
     doctrines_dir.mkdir(parents=True)
-    # Only .design.md — no .yaml — incomplete pair, should NOT be in doctrine index
+    # Old shape — a flat design file with no directory of its own.
     (doctrines_dir / "feat-auth.design.md").write_text(
         "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
     )
@@ -794,39 +596,47 @@ def test_check_watchers_only_design_md_no_yaml_reports_broken_ref(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# US-012: _build_doctrine_name_index — complete pairs only
+# _build_doctrine_name_index — a doctrine directory, not a file pair
 # Exercises: conceptual-workflows-health
 # ---------------------------------------------------------------------------
 
 
-def test_build_doctrine_name_index_only_design_md_not_included(tmp_path):
-    """_build_doctrine_name_index excludes stem when only .design.md exists (no .yaml)."""
+def test_build_doctrine_name_index_excludes_a_flat_design_file(tmp_path):
+    """A design file outside a directory of its own name is not a doctrine."""
     # Exercises: lore codex show conceptual-workflows-health
-    # This test MUST fail until _build_doctrine_name_index enforces complete pairs
     doctrines_dir = tmp_path / ".lore" / "doctrines"
     doctrines_dir.mkdir(parents=True)
     (doctrines_dir / "feat-payments.design.md").write_text("body")
-    # No feat-payments.yaml — incomplete pair
 
     result = _build_doctrine_name_index(doctrines_dir)
 
     assert "feat-payments" not in result
 
 
-def test_build_doctrine_name_index_multiple_complete_pairs(tmp_path):
-    """_build_doctrine_name_index returns all stems with complete pairs."""
+def test_build_doctrine_name_index_returns_every_doctrine_directory(tmp_path):
+    """_build_doctrine_name_index returns the name of every doctrine directory."""
     # Exercises: lore codex show conceptual-workflows-health
     doctrines_dir = tmp_path / ".lore" / "doctrines"
     doctrines_dir.mkdir(parents=True)
     for stem in ("feat-auth", "feat-payments"):
-        (doctrines_dir / f"{stem}.design.md").write_text("body")
-        (doctrines_dir / f"{stem}.yaml").write_text(f"id: {stem}")
-    # Partial pair — should NOT be included
-    (doctrines_dir / "feat-orphan.design.md").write_text("body")
+        (doctrines_dir / "default" / stem).mkdir(parents=True)
+        (doctrines_dir / "default" / stem / f"{stem}.design.md").write_text("body")
+    # A directory with no design document of its own is a grouping directory.
+    (doctrines_dir / "feat-orphan").mkdir()
 
     result = _build_doctrine_name_index(doctrines_dir)
 
     assert result == {"feat-auth", "feat-payments"}
+
+
+def test_build_doctrine_name_index_skips_a_deleted_directory(tmp_path):
+    """A soft-deleted doctrine directory is invisible here as it is everywhere."""
+    # Exercises: lore codex show conceptual-workflows-health
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    (doctrines_dir / "gone.deleted").mkdir(parents=True)
+    (doctrines_dir / "gone.deleted" / "gone.deleted.design.md").write_text("body")
+
+    assert _build_doctrine_name_index(doctrines_dir) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -865,8 +675,8 @@ def test_write_report_with_issues_contains_markdown_table(tmp_path):
         severity="error",
         entity_type="doctrines",
         id="feat-auth",
-        check="broken_knight_ref",
-        detail="'senior-engineer' not found (step 2)",
+        check="broken_artifact_ref",
+        detail="'fi-nope' not found (mission recon)",
     )
     report = HealthReport(errors=(issue,), warnings=())
     timestamp = "2026-04-09T14-32-00"
@@ -932,7 +742,6 @@ def test_health_check_scope_codex_watchers_runs_only_those_two(lore_dir):
     entity_types_with_issues = {i.entity_type for i in report.issues}
     assert "artifacts" not in entity_types_with_issues
     assert "doctrines" not in entity_types_with_issues
-    assert "knights" not in entity_types_with_issues
 
 
 def test_health_check_clean_project_returns_empty_errors(lore_dir):
@@ -952,18 +761,15 @@ def test_health_check_scope_none_with_all_type_errors_returns_all_entity_types(l
     artifacts_dir = lore_dir / ".lore" / "artifacts"
     (artifacts_dir / "bad.md").write_text("---\ntitle: No ID\nsummary: s\n---\nBody.\n")
 
-    doctrines_dir = lore_dir / ".lore" / "doctrines"
-    (doctrines_dir / "bad.yaml").write_text(
-        "id: bad\ntitle: Bad\nsummary: s\nsteps: []\n"
-    )
-
     watchers_dir = lore_dir / ".lore" / "watchers"
     (watchers_dir / "bad.yaml").write_text(
         "id: bad-watcher\ntitle: Bad\nsummary: s\naction: nonexistent-doctrine\n"
     )
 
     insert_quest(lore_dir, "q-bb01", "Q")
-    insert_mission(lore_dir, "m-bb01", "q-bb01", "M", knight="nonexistent-knight-xyz")
+    insert_mission(
+        lore_dir, "m-bb01", "q-bb01", "M", doctrine_mission="gone/missing"
+    )
 
     report = health_check(lore_dir, scope=None)
 
@@ -972,11 +778,10 @@ def test_health_check_scope_none_with_all_type_errors_returns_all_entity_types(l
     assert "artifacts" in entity_types
     assert "doctrines" in entity_types
     assert "watchers" in entity_types
-    assert "knights" in entity_types
 
 
-def test_health_check_scope_doctrines_knights_skips_other_types(lore_dir):
-    """health_check with scope=['doctrines', 'knights'] returns only doctrines/knights issues."""
+def test_health_check_scope_doctrines_skips_other_types(lore_dir):
+    """health_check with scope=['doctrines'] returns only doctrines issues."""
     # Inject codex error and artifacts error — must not appear in report
     codex_dir = lore_dir / ".lore" / "codex"
     (codex_dir / "bad.md").write_text("---\ntitle: No ID\nsummary: s\n---\nBody.\n")
@@ -987,13 +792,13 @@ def test_health_check_scope_doctrines_knights_skips_other_types(lore_dir):
     (watchers_dir / "broken.yaml").write_text(
         "id: broken\ntitle: Broken\nsummary: s\naction: missing-doctrine\n"
     )
-    # Inject doctrines error — must appear in report
+    # Inject doctrines warning — must appear in report
     doctrines_dir = lore_dir / ".lore" / "doctrines"
     (doctrines_dir / "orphan.design.md").write_text(
         "---\nid: orphan\ntitle: Orphan\nsummary: s\n---\nBody.\n"
     )
 
-    report = health_check(lore_dir, scope=["doctrines", "knights"])
+    report = health_check(lore_dir, scope=["doctrines"])
 
     entity_types = {i.entity_type for i in report.issues}
     assert "codex" not in entity_types
@@ -1024,7 +829,6 @@ def test_health_check_scope_watchers_skips_all_other_types(lore_dir):
     assert "codex" not in entity_types
     assert "artifacts" not in entity_types
     assert "doctrines" not in entity_types
-    assert "knights" not in entity_types
 
 
 def test_health_check_scope_empty_list_returns_clean_report(lore_dir):
@@ -1043,386 +847,6 @@ def test_health_check_scope_empty_list_returns_clean_report(lore_dir):
 
     assert report.errors == ()
     assert report.warnings == ()
-
-
-# ---------------------------------------------------------------------------
-# US-008: _check_doctrines — orphaned file detection (exact HealthIssue fields)
-# Exercises: lore codex show conceptual-workflows-health
-# ---------------------------------------------------------------------------
-
-
-def test_check_doctrines_orphaned_yaml_detail_is_design_md_missing(tmp_path):
-    """`_check_doctrines`: .yaml stem with no matching .design.md returns detail='.design.md missing'."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps: []\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    orphans = [i for i in issues if i.check == "orphaned_file"]
-    assert len(orphans) == 1
-    assert orphans[0].severity == "error"
-    assert orphans[0].entity_type == "doctrines"
-    assert orphans[0].id == "feat-auth"
-    assert orphans[0].detail == ".design.md missing"
-
-
-def test_check_doctrines_orphaned_design_md_detail_is_yaml_missing(tmp_path):
-    """`_check_doctrines`: .design.md stem with no matching .yaml returns detail='.yaml missing'."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    orphans = [i for i in issues if i.check == "orphaned_file"]
-    assert len(orphans) == 1
-    assert orphans[0].severity == "error"
-    assert orphans[0].entity_type == "doctrines"
-    assert orphans[0].id == "feat-auth"
-    assert orphans[0].detail == ".yaml missing"
-
-
-def test_check_doctrines_complete_pair_no_orphaned_file_issue(tmp_path):
-    """`_check_doctrines`: complete pair (both files present) returns no orphaned_file issue."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps: []\n"
-    )
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    orphans = [i for i in issues if i.check == "orphaned_file"]
-    assert orphans == []
-
-
-def test_check_doctrines_multiple_orphans_each_produce_own_issue(tmp_path):
-    """`_check_doctrines`: multiple orphans in same directory each produce their own HealthIssue."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-    # feat-auth.yaml with no .design.md
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps: []\n"
-    )
-    # feat-payments.design.md with no .yaml
-    (doctrines_dir / "feat-payments.design.md").write_text(
-        "---\nid: feat-payments\ntitle: Payments\nsummary: s\n---\nBody.\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    orphans = [i for i in issues if i.check == "orphaned_file"]
-    assert len(orphans) == 2
-    ids = {i.id for i in orphans}
-    assert "feat-auth" in ids
-    assert "feat-payments" in ids
-
-
-# ---------------------------------------------------------------------------
-# US-009: _check_doctrines — broken knight ref detection (exact HealthIssue fields)
-# Exercises: conceptual-workflows-health
-# ---------------------------------------------------------------------------
-
-
-def test_check_doctrines_broken_knight_ref_exact_issue_fields(tmp_path):
-    """_check_doctrines returns HealthIssue with correct fields when knight not found."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n    knight: missing-knight\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_knight_ref"]
-    assert len(broken) == 1
-    issue = broken[0]
-    assert issue.severity == "error"
-    assert issue.entity_type == "doctrines"
-    assert issue.id == "feat-auth"
-    assert issue.check == "broken_knight_ref"
-    assert issue.detail == "'missing-knight' not found (step 2)"
-
-
-def test_check_doctrines_broken_knight_ref_step_number_one_based(tmp_path):
-    """_check_doctrines uses 1-based step numbering in the detail field."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    # First step (index 0, step number 1) references missing knight
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    knight: missing-knight\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_knight_ref"]
-    assert len(broken) == 1
-    assert broken[0].detail == "'missing-knight' not found (step 1)"
-
-
-def test_check_doctrines_present_knight_no_broken_knight_ref(tmp_path):
-    """_check_doctrines returns no broken_knight_ref when step knight file exists."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (knights_dir / "tech-lead.md").write_text(
-        "---\nid: tech-lead\ntitle: Tech Lead\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n    knight: tech-lead\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_knight_ref"]
-    assert broken == []
-
-
-def test_check_doctrines_soft_deleted_knight_no_broken_knight_ref(tmp_path):
-    """_check_doctrines returns no broken_knight_ref when knight is soft-deleted (.md.deleted)."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (knights_dir / "senior-engineer.md.deleted").write_text("deleted")
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n    knight: senior-engineer\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_knight_ref"]
-    assert broken == []
-
-
-def test_check_doctrines_step_without_knight_field_no_broken_knight_ref(tmp_path):
-    """_check_doctrines returns no broken_knight_ref issue when step has no knight field."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_knight_ref"]
-    assert broken == []
-
-
-def test_check_doctrines_multiple_broken_knight_refs_separate_issues(tmp_path):
-    """_check_doctrines returns separate HealthIssue per broken knight ref step."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    knight: missing-a\n"
-        "  - id: step-2\n    title: Step 2\n"
-        "  - id: step-3\n    title: Step 3\n    knight: missing-b\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_knight_ref"]
-    assert len(broken) == 2
-    details = {i.detail for i in broken}
-    assert "'missing-a' not found (step 1)" in details
-    assert "'missing-b' not found (step 3)" in details
-
-
-# ---------------------------------------------------------------------------
-# US-010: _check_doctrines — broken artifact ref detection (exact HealthIssue fields)
-# Exercises: conceptual-workflows-health
-# ---------------------------------------------------------------------------
-
-
-def test_check_doctrines_broken_artifact_ref_exact_detail_format(tmp_path):
-    """_check_doctrines detail for broken_artifact_ref is exactly: 'fi-prd-v2' not found (step 3)."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n"
-        "  - id: step-3\n    title: Step 3\n    notes: 'see artifact: fi-prd-v2'\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert len(broken) == 1
-    assert broken[0].detail == "'fi-prd-v2' not found (step 3)"
-
-
-def test_check_doctrines_broken_artifact_ref_exact_issue_fields(tmp_path):
-    """_check_doctrines returns HealthIssue with correct severity, entity_type, id, and check."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    notes: see fi-prd-v2\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert len(broken) == 1
-    issue = broken[0]
-    assert issue.severity == "error"
-    assert issue.entity_type == "doctrines"
-    assert issue.id == "feat-auth"
-    assert issue.check == "broken_artifact_ref"
-    assert issue.detail == "'fi-prd-v2' not found (step 1)"
-
-
-def test_check_doctrines_present_artifact_no_broken_artifact_ref(tmp_path):
-    """_check_doctrines returns no broken_artifact_ref when referenced artifact exists in index."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-3\n    title: Step 3\n    notes: see fi-prd-template\n"
-    )
-    (artifacts_dir / "fi-prd-template.md").write_text(
-        "---\nid: fi-prd-template\ntitle: PRD Template\nsummary: s\n---\nContent.\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert broken == []
-
-
-def test_check_doctrines_step_without_notes_no_broken_artifact_ref(tmp_path):
-    """_check_doctrines returns no broken_artifact_ref issue when step has no notes field."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n    knight: some-knight\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert broken == []
-
-
-def test_check_doctrines_notes_no_fi_pattern_no_broken_artifact_ref(tmp_path):
-    """_check_doctrines returns no broken_artifact_ref when notes contain no fi-* tokens."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n    notes: See the design doc for details.\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert broken == []
-
-
-def test_check_doctrines_multiple_missing_artifact_refs_separate_issues(tmp_path):
-    """_check_doctrines returns one broken_artifact_ref issue per missing artifact ref in same step."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-2\n    title: Step 2\n    notes: fi-missing-a and fi-missing-b\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert len(broken) == 2
-    details = {i.detail for i in broken}
-    assert "'fi-missing-a' not found (step 2)" in details
-    assert "'fi-missing-b' not found (step 2)" in details
-
-
-def test_check_doctrines_broken_artifact_ref_step_number_one_based(tmp_path):
-    """_check_doctrines uses 1-based step numbering in broken_artifact_ref detail."""
-    # Exercises: lore codex show conceptual-workflows-health
-    doctrines_dir, knights_dir, artifacts_dir = _make_doctrine_dirs(tmp_path)
-
-    (doctrines_dir / "feat-auth.design.md").write_text(
-        "---\nid: feat-auth\ntitle: Auth\nsummary: s\n---\nBody.\n"
-    )
-    (doctrines_dir / "feat-auth.yaml").write_text(
-        "id: feat-auth\ntitle: Auth\nsummary: s\nsteps:\n"
-        "  - id: step-1\n    title: Step 1\n"
-        "  - id: step-2\n    title: Step 2\n"
-        "  - id: step-3\n    title: Step 3\n    notes: fi-ghost-art\n"
-    )
-
-    issues = _check_doctrines(doctrines_dir, knights_dir, artifacts_dir)
-
-    broken = [i for i in issues if i.check == "broken_artifact_ref"]
-    assert len(broken) == 1
-    assert broken[0].detail == "'fi-ghost-art' not found (step 3)"
 
 
 # ---------------------------------------------------------------------------
@@ -1667,8 +1091,8 @@ def test_health_issue_from_dict_round_trips_all_fields():
         severity="error",
         entity_type="doctrines",
         id="feat-auth",
-        check="broken_knight_ref",
-        detail="'senior-engineer' not found (step 2)",
+        check="broken_artifact_ref",
+        detail="'fi-nope' not found (mission recon)",
     )
     d = dataclasses.asdict(original)
     reconstructed = HealthIssue.from_dict(d)
@@ -1693,10 +1117,10 @@ def test_health_issue_from_dict_produces_health_issue_instance():
     """HealthIssue.from_dict returns a HealthIssue instance."""
     d = {
         "severity": "error",
-        "entity_type": "knights",
-        "id": "missing-knight",
-        "check": "broken_knight_ref",
-        "detail": "knight file not found",
+        "entity_type": "doctrines",
+        "id": "gone/missing",
+        "check": "missing_file",
+        "detail": "referenced by q-a1b2/m-c3d4 but not found on disk",
     }
     result = HealthIssue.from_dict(d)
     assert isinstance(result, HealthIssue)
@@ -1713,8 +1137,8 @@ def test_health_report_issues_returns_errors_before_warnings_us015():
         severity="error",
         entity_type="doctrines",
         id="feat-auth",
-        check="broken_knight_ref",
-        detail="'senior-engineer' not found (step 2)",
+        check="broken_artifact_ref",
+        detail="'fi-nope' not found (mission recon)",
     )
     warning = HealthIssue(
         severity="warning",
@@ -1893,18 +1317,15 @@ def test_health_check_scope_codex_only_check_codex_runs(lore_dir):
 
     with patch("lore.health._check_artifacts") as mock_artifacts, \
          patch("lore.health._check_doctrines") as mock_doctrines, \
-         patch("lore.health._check_knights") as mock_knights, \
          patch("lore.health._check_watchers") as mock_watchers:
         mock_artifacts.return_value = []
         mock_doctrines.return_value = []
-        mock_knights.return_value = []
         mock_watchers.return_value = []
 
         health_check(lore_dir, scope=["codex"])
 
         mock_artifacts.assert_not_called()
         mock_doctrines.assert_not_called()
-        mock_knights.assert_not_called()
         mock_watchers.assert_not_called()
 
 
@@ -1926,7 +1347,7 @@ def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
     report_all = health_check(
         lore_dir,
         scope=[
-            "codex", "artifacts", "doctrines", "knights", "watchers",
+            "codex", "artifacts", "doctrines", "watchers",
             "glossary", "schemas", "bindings", "rites", "voice", "skills",
         ],
     )
@@ -2080,8 +1501,8 @@ class TestUS005HealthIssueFields:
         """conceptual-workflows-health — widening is strictly additive."""
         issue = HealthIssue(
             severity="error",
-            entity_type="knights",
-            id="pm",
+            entity_type="doctrines",
+            id="tdd-lite",
             check="broken_ref",
             detail="x",
         )
@@ -2093,15 +1514,15 @@ class TestUS005HealthIssueFields:
         """conceptual-workflows-health — schema issues carry full triple."""
         issue = HealthIssue(
             severity="error",
-            entity_type="knight",
-            id=".lore/knights/default/feature-implementation/pm.md",
+            entity_type="doctrine-mission-frontmatter",
+            id=".lore/doctrines/default/tdd-lite/missions/recon.md",
             check="schema",
             detail="Unknown property 'stability' — allowed keys are id, title, summary.",
-            schema_id="lore://schemas/knight-frontmatter",
+            schema_id="lore://schemas/doctrine-mission-frontmatter",
             rule="additionalProperties",
             pointer="/stability",
         )
-        assert issue.schema_id == "lore://schemas/knight-frontmatter"
+        assert issue.schema_id == "lore://schemas/doctrine-mission-frontmatter"
         assert issue.rule == "additionalProperties"
         assert issue.pointer == "/stability"
 
@@ -2130,21 +1551,21 @@ class TestUS005HealthIssueAsdict:
         """conceptual-workflows-json-output — PRD W5 canonical dict shape."""
         issue = HealthIssue(
             severity="error",
-            entity_type="knight",
-            id=".lore/knights/default/feature-implementation/pm.md",
+            entity_type="doctrine-mission-frontmatter",
+            id=".lore/doctrines/default/tdd-lite/missions/recon.md",
             check="schema",
             detail="Unknown property 'stability' — allowed keys are id, title, summary.",
-            schema_id="lore://schemas/knight-frontmatter",
+            schema_id="lore://schemas/doctrine-mission-frontmatter",
             rule="additionalProperties",
             pointer="/stability",
         )
         assert dataclasses.asdict(issue) == {
             "severity": "error",
-            "entity_type": "knight",
-            "id": ".lore/knights/default/feature-implementation/pm.md",
+            "entity_type": "doctrine-mission-frontmatter",
+            "id": ".lore/doctrines/default/tdd-lite/missions/recon.md",
             "check": "schema",
             "detail": "Unknown property 'stability' — allowed keys are id, title, summary.",
-            "schema_id": "lore://schemas/knight-frontmatter",
+            "schema_id": "lore://schemas/doctrine-mission-frontmatter",
             "rule": "additionalProperties",
             "pointer": "/stability",
         }
@@ -2153,8 +1574,8 @@ class TestUS005HealthIssueAsdict:
         """conceptual-workflows-json-output — asdict output must serialize cleanly."""
         issue = HealthIssue(
             severity="error",
-            entity_type="knights",
-            id="ghost",
+            entity_type="doctrines",
+            id="ghost/missing",
             check="broken_ref",
             detail="x",
         )
@@ -2228,11 +1649,11 @@ class TestUS005HasErrorsContract:
         """conceptual-workflows-health — schema errors block green (FR-7)."""
         schema_issue = HealthIssue(
             severity="error",
-            entity_type="knight",
-            id=".lore/knights/default/feature-implementation/pm.md",
+            entity_type="doctrine-mission-frontmatter",
+            id=".lore/doctrines/default/tdd-lite/missions/recon.md",
             check="schema",
             detail="x",
-            schema_id="lore://schemas/knight-frontmatter",
+            schema_id="lore://schemas/doctrine-mission-frontmatter",
             rule="additionalProperties",
             pointer="/stability",
         )
@@ -2242,11 +1663,12 @@ class TestUS005HasErrorsContract:
     def test_has_errors_true_for_mixed_schema_and_non_schema_errors(self):
         """conceptual-workflows-health — check value irrelevant to has_errors."""
         schema_issue = HealthIssue(
-            severity="error", entity_type="knight", id="x", check="schema",
+            severity="error", entity_type="doctrine-mission-frontmatter",
+            id="x", check="schema",
             detail="x", schema_id="s", rule="r", pointer="/p",
         )
         ref_issue = HealthIssue(
-            severity="error", entity_type="knights", id="ghost",
+            severity="error", entity_type="doctrines", id="ghost/missing",
             check="broken_ref", detail="x",
         )
         report = HealthReport(errors=(schema_issue, ref_issue), warnings=())
@@ -2297,8 +1719,8 @@ def test_us008_write_report_schema_section_multi_kind_exact_format(tmp_path):
     codex_dir = tmp_path / ".lore" / "codex"
     issues = (
         _schema_issue(
-            kind="knight",
-            path=".lore/knights/default/feature-implementation/pm.md",
+            kind="doctrine-mission-frontmatter",
+            path=".lore/doctrines/default/tdd-lite/missions/recon.md",
             rule="additionalProperties",
             pointer="/stability",
             message="Unknown property 'stability' — allowed keys are id, title, summary.",
@@ -2320,8 +1742,8 @@ def test_us008_write_report_schema_section_multi_kind_exact_format(tmp_path):
         "### doctrine-design-frontmatter\n"
         "- `.lore/doctrines/feature-implementation/feature-implementation.design.md` — "
         "`required` at `/` — Missing required property 'summary'.\n\n"
-        "### knight\n"
-        "- `.lore/knights/default/feature-implementation/pm.md` — "
+        "### doctrine-mission-frontmatter\n"
+        "- `.lore/doctrines/default/tdd-lite/missions/recon.md` — "
         "`additionalProperties` at `/stability` — "
         "Unknown property 'stability' — allowed keys are id, title, summary.\n"
     )
@@ -2334,22 +1756,26 @@ def test_us008_write_report_kinds_sorted_alphabetically(tmp_path):
     issues = (
         _schema_issue("watcher", ".lore/watchers/w.yaml", "required", "/", "m"),
         _schema_issue("artifact", ".lore/artifacts/a.md", "required", "/", "m"),
-        _schema_issue("knight", ".lore/knights/k.md", "required", "/", "m"),
+        _schema_issue("doctrine-mission-frontmatter", ".lore/doctrines/d/missions/k.md", "required", "/", "m"),
     )
     report = HealthReport(errors=issues, warnings=())
     path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
     text = path.read_text()
     section = text[text.index("## Schema validation"):]
-    assert section.index("### artifact") < section.index("### knight") < section.index("### watcher")
+    assert (
+        section.index("### artifact")
+        < section.index("### doctrine-mission-frontmatter")
+        < section.index("### watcher")
+    )
 
 
 def test_us008_write_report_paths_sorted_within_kind(tmp_path):
     """US-008: within a kind, entries are sorted by file path."""
     codex_dir = tmp_path / ".lore" / "codex"
     issues = (
-        _schema_issue("knight", ".lore/knights/b.md", "required", "/", "m"),
-        _schema_issue("knight", ".lore/knights/a.md", "required", "/", "m"),
-        _schema_issue("knight", ".lore/knights/c.md", "required", "/", "m"),
+        _schema_issue("doctrine-mission-frontmatter", ".lore/doctrines/d/missions/b.md", "required", "/", "m"),
+        _schema_issue("doctrine-mission-frontmatter", ".lore/doctrines/d/missions/a.md", "required", "/", "m"),
+        _schema_issue("doctrine-mission-frontmatter", ".lore/doctrines/d/missions/c.md", "required", "/", "m"),
     )
     report = HealthReport(errors=issues, warnings=())
     path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
@@ -2362,8 +1788,8 @@ def test_us008_write_report_entry_format_verbatim(tmp_path):
     """US-008: each entry renders exactly as '- `<path>` — `<rule>` at `<pointer>` — <message>'."""
     codex_dir = tmp_path / ".lore" / "codex"
     issue = _schema_issue(
-        kind="knight",
-        path=".lore/knights/pm.md",
+        kind="doctrine-mission-frontmatter",
+        path=".lore/doctrines/d/missions/pm.md",
         rule="additionalProperties",
         pointer="/stability",
         message="Unknown property 'stability'.",
@@ -2371,7 +1797,7 @@ def test_us008_write_report_entry_format_verbatim(tmp_path):
     report = HealthReport(errors=(issue,), warnings=())
     path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
     text = path.read_text()
-    line = "- `.lore/knights/pm.md` — `additionalProperties` at `/stability` — Unknown property 'stability'."
+    line = "- `.lore/doctrines/d/missions/pm.md` — `additionalProperties` at `/stability` — Unknown property 'stability'."
     assert line in text
 
 
@@ -2390,7 +1816,7 @@ def test_us008_write_report_section_appended_after_existing_issues_table(tmp_pat
     codex_dir = tmp_path / ".lore" / "codex"
     ref_issue = _non_schema_issue()
     schema_issue = _schema_issue(
-        "knight", ".lore/knights/pm.md", "required", "/", "m",
+        "doctrine-mission-frontmatter", ".lore/doctrines/d/missions/pm.md", "required", "/", "m",
     )
     report = HealthReport(errors=(ref_issue, schema_issue), warnings=())
     path = _write_report(report, codex_dir, "2026-04-15T10-00-00", schemas_ran=True)
@@ -2417,14 +1843,14 @@ def test_us008_write_report_zero_schema_issues_section_still_emitted_with_other_
 # ---------------------------------------------------------------------------
 
 
-def _write_bad_knight(lore_dir):
-    knight_dir = lore_dir / ".lore" / "knights"
-    knight_dir.mkdir(parents=True, exist_ok=True)
-    (knight_dir / "pm.md").write_text(
+def _write_bad_doctrine_mission(lore_dir):
+    missions_dir = lore_dir / ".lore" / "doctrines" / "tdd-lite" / "missions"
+    missions_dir.mkdir(parents=True, exist_ok=True)
+    (missions_dir / "recon.md").write_text(
         "---\n"
-        "id: pm\n"
-        "title: Product Manager\n"
-        "summary: Writes PRDs.\n"
+        "id: recon\n"
+        "title: Recon\n"
+        "summary: Maps the ground.\n"
         "stability: x\n"
         "---\n"
         "# Body\n"
@@ -2438,14 +1864,14 @@ def test_us009_health_check_scan_failed_on_schema_load_error(lore_dir):
     NOT silently skip the schema check (false-green). It must propagate as a
     scan_failed HealthIssue whose detail identifies the offending schema.
     """
-    _write_bad_knight(lore_dir)
+    _write_bad_doctrine_mission(lore_dir)
 
     from lore.health import _check_schemas
     from lore.schemas import _validator_for
 
     def boom(kind):
-        if kind == "knight-frontmatter":
-            raise FileNotFoundError("knight-frontmatter resource missing")
+        if kind == "doctrine-mission-frontmatter":
+            raise FileNotFoundError("doctrine-mission-frontmatter resource missing")
         return _validator_for(kind)
 
     issues = _check_schemas(lore_dir, get_validator=boom)
@@ -2458,20 +1884,23 @@ def test_us009_health_check_scan_failed_on_schema_load_error(lore_dir):
     # that failed to load" (not merely the exception text). That identifies
     # which authoritative schema the oracle could not load.
     assert any(
-        "lore://schemas/knight-frontmatter" in (i.detail or "") for i in scan_failed
+        "lore://schemas/doctrine-mission-frontmatter" in (i.detail or "")
+        for i in scan_failed
     ), (
-        "expected 'lore://schemas/knight-frontmatter' in scan_failed detail, "
+        "expected 'lore://schemas/doctrine-mission-frontmatter' in scan_failed detail, "
         f"got: {[i.detail for i in scan_failed]!r}"
     )
     # Original exception message must also be carried through for debuggability.
     assert any(
-        "knight-frontmatter resource missing" in (i.detail or "") for i in scan_failed
+        "doctrine-mission-frontmatter resource missing" in (i.detail or "")
+        for i in scan_failed
     )
     # No schema false-green: a schema check that could not load its authoritative
     # schema must not emit check='schema' entries pretending success.
     schema_issues = [i for i in issues if i.check == "schema"]
     assert not any(
-        i.schema_id == "lore://schemas/knight-frontmatter" for i in schema_issues
+        i.schema_id == "lore://schemas/doctrine-mission-frontmatter"
+        for i in schema_issues
     )
 
 
@@ -2515,7 +1944,7 @@ def _make_lore_project(tmp_path):
     without going through `lore init` — keeps the unit tests hermetic.
     """
     lore = tmp_path / ".lore"
-    for d in ("codex", "knights", "doctrines", "artifacts", "watchers"):
+    for d in ("codex", "doctrines", "artifacts", "watchers"):
         (lore / d).mkdir(parents=True, exist_ok=True)
     (lore / "codex" / "transient").mkdir(parents=True, exist_ok=True)
     return tmp_path
@@ -2933,7 +2362,7 @@ def test_check_glossary_do_not_use_collision_error(tmp_path):
     _write_glossary_yaml(
         project,
         "items:\n"
-        "  - keyword: Knight\n    definition: agent persona.\n    do_not_use: [Mission]\n"
+        "  - keyword: Persona\n    definition: an agent persona.\n    do_not_use: [Mission]\n"
         "  - keyword: Mission\n    definition: unit of work.\n",
     )
     issues = _check_glossary(project)
@@ -2942,7 +2371,7 @@ def test_check_glossary_do_not_use_collision_error(tmp_path):
     assert dnu[0].severity == "error"
     assert dnu[0].entity_type == "glossary"
     assert dnu[0].detail == (
-        "'mission' in do_not_use of 'Knight' collides with keyword/alias 'Mission'"
+        "'mission' in do_not_use of 'Persona' collides with keyword/alias 'Mission'"
     )
 
 
@@ -3012,7 +2441,7 @@ def test_all_scopes_contains_bindings():
     from lore.health import _ALL_SCOPES
 
     assert "bindings" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 11
+    assert len(_ALL_SCOPES) == 10
 
 
 def test_health_check_scope_bindings_only_routes_to_check_bindings(tmp_path):
@@ -3915,7 +3344,7 @@ def test_health_check_unknown_scope_message_verbatim(tmp_path):
         health_check(root, scope=["xyz"])
     assert str(exc.value) == (
         "Unknown scope: 'xyz'. Valid scopes: codex, artifacts, "
-        "doctrines, knights, watchers, glossary, schemas, bindings, rites, "
+        "doctrines, watchers, glossary, schemas, bindings, rites, "
         "voice, skills."
     )
 
@@ -4309,7 +3738,7 @@ def test_all_scopes_contains_skills():
     from lore.health import _ALL_SCOPES
 
     assert "skills" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 11
+    assert len(_ALL_SCOPES) == 10
 
 
 def test_health_check_routes_the_skills_scope_to_check_skills(tmp_path):
@@ -4323,3 +3752,413 @@ def test_health_check_routes_the_skills_scope_to_check_skills(tmp_path):
 
     assert [i.check for i in report.issues] == ["missing_skill_file"]
     assert report.has_errors is True
+
+
+# ---------------------------------------------------------------------------
+# _check_doctrines — the eight rows of the doctrines scope
+# Exercises: conceptual-workflows-health
+#
+# Shape validation is NOT here: `doctrine-design-frontmatter` and
+# `doctrine-mission-frontmatter` both sit in `_SCHEMA_KINDS` and run under
+# `--scope schemas`. This scope audits only what JSON Schema cannot express.
+# ---------------------------------------------------------------------------
+
+
+DESIGN_TEXT = "---\nid: {declared}\ntitle: {stem}\nsummary: A doctrine.\n---\n\n{body}\n"
+MISSION_TEXT = "---\nid: {declared}\ntitle: {mid}\nsummary: A mission.\n---\n\n{body}\n"
+
+
+def _doctrine_tree(tmp_path):
+    """Create and return (doctrines_dir, artifacts_dir, project_root)."""
+    doctrines_dir = tmp_path / ".lore" / "doctrines"
+    doctrines_dir.mkdir(parents=True)
+    artifacts_dir = tmp_path / ".lore" / "artifacts"
+    artifacts_dir.mkdir(parents=True)
+    return doctrines_dir, artifacts_dir, tmp_path
+
+
+def _write_doctrine(
+    doctrines_dir,
+    stem,
+    *,
+    group="",
+    missions=("recon",),
+    design_id=None,
+    design_body="Design.",
+    mission_bodies=None,
+    mission_ids=None,
+):
+    """Write one doctrine directory and return it."""
+    base = doctrines_dir / group if group else doctrines_dir
+    directory = base / stem
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{stem}.design.md").write_text(
+        DESIGN_TEXT.format(
+            stem=stem, declared=design_id if design_id is not None else stem,
+            body=design_body,
+        )
+    )
+    if missions:
+        (directory / "missions").mkdir(exist_ok=True)
+        for mission in missions:
+            (directory / "missions" / f"{mission}.md").write_text(
+                MISSION_TEXT.format(
+                    mid=mission,
+                    declared=(mission_ids or {}).get(mission, mission),
+                    body=(mission_bodies or {}).get(mission, f"Do {mission}."),
+                )
+            )
+    return directory
+
+
+def _checks(issues):
+    return [i.check for i in issues]
+
+
+def _only(issues, check):
+    return [i for i in issues if i.check == check]
+
+
+def test_check_doctrines_empty_tree_produces_nothing(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+
+    assert _check_doctrines(doctrines_dir, artifacts_dir, root) == []
+
+
+def test_check_doctrines_missing_doctrines_dir_produces_nothing(tmp_path):
+    assert _check_doctrines(
+        tmp_path / ".lore" / "doctrines", tmp_path / ".lore" / "artifacts", tmp_path
+    ) == []
+
+
+def test_check_doctrines_well_formed_doctrine_produces_nothing(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    _write_doctrine(doctrines_dir, "tdd-lite", group="default")
+
+    assert _check_doctrines(doctrines_dir, artifacts_dir, root) == []
+
+
+def test_check_doctrines_grouping_directory_produces_nothing(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    (doctrines_dir / "default").mkdir()
+
+    assert _check_doctrines(doctrines_dir, artifacts_dir, root) == []
+
+
+def test_check_doctrines_deleted_directory_produces_nothing(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    directory = _write_doctrine(doctrines_dir, "tdd-lite")
+    directory.rename(directory.with_name("tdd-lite.deleted"))
+
+    assert _check_doctrines(doctrines_dir, artifacts_dir, root) == []
+
+
+def test_check_doctrines_missing_missions_dir_is_a_warning(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    _write_doctrine(doctrines_dir, "tdd-lite", missions=())
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, root), "missing_missions_dir")
+
+    assert len(issues) == 1
+    assert issues[0].severity == "warning"
+    assert issues[0].entity_type == "doctrines"
+    assert issues[0].id == "tdd-lite"
+    assert issues[0].detail == (
+        "no missions/ directory — this doctrine is not readable in the current shape"
+    )
+
+
+def test_check_doctrines_old_shape_pair_warns_twice_and_never_errors(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    (doctrines_dir / "tdd-feature.design.md").write_text(
+        DESIGN_TEXT.format(stem="tdd-feature", declared="tdd-feature", body="Design.")
+    )
+    (doctrines_dir / "tdd-feature.yaml").write_text("id: tdd-feature\nsteps: []\n")
+
+    issues = _check_doctrines(doctrines_dir, artifacts_dir, root)
+
+    assert sorted(_checks(issues)) == ["missing_missions_dir", "stray_yaml"]
+    assert all(i.severity == "warning" for i in issues)
+    assert all(i.id == "tdd-feature" for i in issues)
+    stray = _only(issues, "stray_yaml")[0]
+    assert stray.detail == "tdd-feature.yaml is no longer read"
+
+
+def test_check_doctrines_stray_yaml_beside_a_converted_doctrine_warns(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    directory = _write_doctrine(doctrines_dir, "tdd-lite")
+    (directory / "tdd-lite.yaml").write_text("id: tdd-lite\nsteps: []\n")
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, root), "stray_yaml")
+
+    assert len(issues) == 1
+    assert issues[0].severity == "warning"
+    assert issues[0].detail == "tdd-lite.yaml is no longer read"
+
+
+def test_check_doctrines_missions_dir_without_a_design_is_a_warning(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    (doctrines_dir / "half-built" / "missions").mkdir(parents=True)
+    (doctrines_dir / "half-built" / "missions" / "recon.md").write_text(
+        MISSION_TEXT.format(mid="recon", declared="recon", body="Do recon.")
+    )
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, root), "missing_design")
+
+    assert len(issues) == 1
+    assert issues[0].severity == "warning"
+    assert issues[0].id == "half-built"
+    assert issues[0].detail == (
+        "no half-built.design.md — this directory is not a doctrine"
+    )
+
+
+def test_check_doctrines_design_id_disagreeing_with_the_directory_is_an_error(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    _write_doctrine(doctrines_dir, "tdd-lite", design_id="something-else")
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, root), "id_mismatch")
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].id == "tdd-lite"
+    assert issues[0].detail == (
+        "design frontmatter id 'something-else' does not match directory name"
+    )
+
+
+def test_check_doctrines_mission_id_disagreeing_with_its_stem_is_an_error(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    _write_doctrine(doctrines_dir, "tdd-lite", mission_ids={"recon": "scout"})
+
+    issues = _only(
+        _check_doctrines(doctrines_dir, artifacts_dir, root), "mission_id_mismatch"
+    )
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].id == "tdd-lite/recon"
+    assert issues[0].detail == (
+        "frontmatter id 'scout' does not match filename stem 'recon'"
+    )
+
+
+def test_check_doctrines_duplicate_ids_are_one_error(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    first = _write_doctrine(doctrines_dir, "tdd-lite", group="a")
+    second = _write_doctrine(doctrines_dir, "other", group="b", design_id="tdd-lite")
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, root), "duplicate_id")
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].id == "tdd-lite"
+    assert str(first / "tdd-lite.design.md") in issues[0].detail
+    assert str(second / "other.design.md") in issues[0].detail
+    assert issues[0].detail.startswith("declared by ")
+    assert " and " in issues[0].detail
+
+
+def test_check_doctrines_broken_artifact_ref_in_a_mission_body(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    _write_doctrine(
+        doctrines_dir,
+        "tdd-lite",
+        mission_bodies={"recon": "Use fi-nope for this."},
+    )
+
+    issues = _only(
+        _check_doctrines(doctrines_dir, artifacts_dir, root), "broken_artifact_ref"
+    )
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].id == "tdd-lite"
+    assert issues[0].detail == "'fi-nope' not found (mission recon)"
+
+
+def test_check_doctrines_broken_artifact_ref_in_the_design_body(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    _write_doctrine(doctrines_dir, "tdd-lite", design_body="Use fi-nope here.")
+
+    issues = _only(
+        _check_doctrines(doctrines_dir, artifacts_dir, root), "broken_artifact_ref"
+    )
+
+    assert len(issues) == 1
+    assert issues[0].detail == "'fi-nope' not found (design)"
+
+
+def test_check_doctrines_known_artifact_ref_produces_nothing(tmp_path):
+    doctrines_dir, artifacts_dir, root = _doctrine_tree(tmp_path)
+    (artifacts_dir / "fi-prd.md").write_text(
+        "---\nid: fi-prd\ntitle: PRD\nsummary: s\n---\nBody.\n"
+    )
+    _write_doctrine(
+        doctrines_dir, "tdd-lite", mission_bodies={"recon": "Use fi-prd for this."}
+    )
+
+    assert _check_doctrines(doctrines_dir, artifacts_dir, root) == []
+
+
+# --- dangling doctrine_mission references from active missions ---------------
+
+
+def test_check_doctrines_dangling_reference_is_an_error(lore_dir):
+    from tests.conftest import insert_mission, insert_quest
+
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    artifacts_dir = lore_dir / ".lore" / "artifacts"
+    insert_quest(lore_dir, "q-a1b2", "Q")
+    insert_mission(
+        lore_dir, "q-a1b2/m-c3d4", "q-a1b2", "M", doctrine_mission="gone/missing"
+    )
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, lore_dir), "missing_file")
+
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].entity_type == "doctrines"
+    assert issues[0].id == "gone/missing"
+    assert issues[0].detail == (
+        "referenced by q-a1b2/m-c3d4 but not found on disk"
+    )
+
+
+def test_check_doctrines_resolving_reference_produces_nothing(lore_dir):
+    from tests.conftest import insert_mission, insert_quest
+
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    artifacts_dir = lore_dir / ".lore" / "artifacts"
+    _write_doctrine(doctrines_dir, "tdd-lite", group="default")
+    insert_quest(lore_dir, "q-a1b2", "Q")
+    insert_mission(
+        lore_dir, "q-a1b2/m-c3d4", "q-a1b2", "M", doctrine_mission="tdd-lite/recon"
+    )
+
+    assert _check_doctrines(doctrines_dir, artifacts_dir, lore_dir) == []
+
+
+def test_check_doctrines_several_missions_share_one_row(lore_dir):
+    from tests.conftest import insert_mission, insert_quest
+
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    artifacts_dir = lore_dir / ".lore" / "artifacts"
+    insert_quest(lore_dir, "q-a1b2", "Q")
+    for mission_id in ("q-a1b2/m-c3d4", "q-a1b2/m-e5f6", "q-a1b2/m-a7b8"):
+        insert_mission(
+            lore_dir, mission_id, "q-a1b2", "M", doctrine_mission="gone/missing"
+        )
+
+    issues = _only(_check_doctrines(doctrines_dir, artifacts_dir, lore_dir), "missing_file")
+
+    assert len(issues) == 1
+    assert issues[0].detail == (
+        "referenced by q-a1b2/m-c3d4, q-a1b2/m-e5f6, q-a1b2/m-a7b8 "
+        "but not found on disk"
+    )
+
+
+def test_check_doctrines_closed_missions_dangling_reference_is_not_reported(lore_dir):
+    from tests.conftest import insert_mission, insert_quest
+
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    artifacts_dir = lore_dir / ".lore" / "artifacts"
+    insert_quest(lore_dir, "q-a1b2", "Q")
+    insert_mission(
+        lore_dir,
+        "q-a1b2/m-c3d4",
+        "q-a1b2",
+        "M",
+        status="closed",
+        doctrine_mission="gone/missing",
+    )
+
+    assert _only(_check_doctrines(doctrines_dir, artifacts_dir, lore_dir), "missing_file") == []
+
+
+def test_check_doctrines_soft_deleted_missions_reference_is_not_reported(lore_dir):
+    from tests.conftest import insert_mission, insert_quest
+
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    artifacts_dir = lore_dir / ".lore" / "artifacts"
+    insert_quest(lore_dir, "q-a1b2", "Q")
+    insert_mission(
+        lore_dir,
+        "q-a1b2/m-c3d4",
+        "q-a1b2",
+        "M",
+        deleted_at="2026-01-01T00:00:00Z",
+        doctrine_mission="gone/missing",
+    )
+
+    assert _only(_check_doctrines(doctrines_dir, artifacts_dir, lore_dir), "missing_file") == []
+
+
+def test_check_doctrines_soft_deleted_mission_file_suppresses_the_row(lore_dir):
+    from tests.conftest import insert_mission, insert_quest
+
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    artifacts_dir = lore_dir / ".lore" / "artifacts"
+    directory = _write_doctrine(doctrines_dir, "tdd-lite")
+    live = directory / "missions" / "recon.md"
+    live.rename(live.with_name("recon.md.deleted"))
+    (directory / "missions" / "scribe.md").write_text(
+        MISSION_TEXT.format(mid="scribe", declared="scribe", body="Do scribe.")
+    )
+    insert_quest(lore_dir, "q-a1b2", "Q")
+    insert_mission(
+        lore_dir, "q-a1b2/m-c3d4", "q-a1b2", "M", doctrine_mission="tdd-lite/recon"
+    )
+
+    assert _only(_check_doctrines(doctrines_dir, artifacts_dir, lore_dir), "missing_file") == []
+
+
+# --- the scope itself -------------------------------------------------------
+
+
+def test_all_scopes_has_ten_entries_and_no_knights_token():
+    from lore.health import _ALL_SCOPES
+
+    assert len(_ALL_SCOPES) == 10
+    assert "knights" not in _ALL_SCOPES
+
+
+def test_health_check_rejects_the_knights_scope(lore_dir):
+    with pytest.raises(ValueError) as excinfo:
+        health_check(lore_dir, scope=["knights"])
+
+    assert "knights" in str(excinfo.value)
+    for token in (
+        "codex",
+        "artifacts",
+        "doctrines",
+        "watchers",
+        "glossary",
+        "schemas",
+        "bindings",
+        "rites",
+        "voice",
+        "skills",
+    ):
+        assert token in str(excinfo.value)
+
+
+def test_a_warning_only_doctrines_run_has_no_errors(lore_dir):
+    doctrines_dir = lore_dir / ".lore" / "doctrines"
+    (doctrines_dir / "tdd-lite").mkdir()
+    (doctrines_dir / "tdd-lite" / "tdd-lite.design.md").write_text(
+        DESIGN_TEXT.format(stem="tdd-lite", declared="tdd-lite", body="Design.")
+    )
+
+    report = health_check(lore_dir, scope=["doctrines"])
+
+    assert report.has_errors is False
+    assert [i.check for i in report.warnings] == ["missing_missions_dir"]
+
+
+@pytest.mark.parametrize("name", ["_check_knights", "_is_knight_soft_deleted"])
+def test_the_knight_checkers_are_gone(name):
+    import lore.health as health_module
+
+    assert not hasattr(health_module, name)

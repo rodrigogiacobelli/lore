@@ -1,24 +1,47 @@
 """Path helpers for locating files within a Lore project.
 
-All functions accept a ``root`` Path (the value returned by
+Most functions accept a ``root`` Path (the value returned by
 ``find_project_root()``) and return a Path inside the ``.lore/``
 directory. The magic string ``".lore"`` is centralised here and must
 not appear in any other module.
+
+The ``doctrine_*`` helpers are the exception: a doctrine is a directory, so
+they take that **doctrine directory** rather than a project root, the way
+``derive_group`` and ``group_matches_filter`` already take a path and a base.
 """
 
 from pathlib import Path
+
+DESIGN_SUFFIX = ".design.md"
+"""Suffix of the design document a doctrine directory is identified by."""
+
+MISSIONS_DIRNAME = "missions"
+"""Name of the subdirectory holding a doctrine's mission files."""
 
 
 def lore_dir(root: Path) -> Path:
     return root / ".lore"
 
 
-def knights_dir(root: Path) -> Path:
-    return root / ".lore" / "knights"
-
-
 def doctrines_dir(root: Path) -> Path:
     return root / ".lore" / "doctrines"
+
+
+def doctrine_design_path(doctrine_dir: Path) -> Path:
+    """Return the design document of the doctrine held by *doctrine_dir*.
+
+    The stem comes from the directory name, which is what makes a directory a
+    doctrine: ``D`` is one iff ``D/<D.name>.design.md`` exists.
+    """
+    return doctrine_dir / f"{doctrine_dir.name}{DESIGN_SUFFIX}"
+
+
+def doctrine_missions_dir(doctrine_dir: Path) -> Path:
+    return doctrine_dir / MISSIONS_DIRNAME
+
+
+def doctrine_mission_path(doctrine_dir: Path, mission_id: str) -> Path:
+    return doctrine_missions_dir(doctrine_dir) / f"{mission_id}.md"
 
 
 def codex_dir(root: Path) -> Path:
@@ -139,7 +162,6 @@ def resolve_beneath(root: Path, relative: str) -> Path | None:
 
 
 _ENTITY_LOCATION_BASES: dict[str, tuple[str, ...]] = {
-    "knight": (".lore", "knights"),
     "doctrine": (".lore", "doctrines"),
     "artifact": (".lore", "artifacts"),
     "watcher": (".lore", "watchers"),
@@ -157,8 +179,8 @@ def entity_location(
 ) -> Path:
     """Return the on-disk location for a file-backed entity.
 
-    Supported ``kind`` values: ``"knight"``, ``"doctrine"``, ``"artifact"``,
-    ``"watcher"``, ``"codex"``. An unknown kind raises ``ValueError``.
+    Supported ``kind`` values: ``"doctrine"``, ``"artifact"``, ``"watcher"``,
+    ``"codex"``. An unknown kind raises ``ValueError``.
 
     With ``name=None`` and ``suffix=None`` the (group-scoped) directory is
     returned. With ``name`` and ``suffix`` the full file path

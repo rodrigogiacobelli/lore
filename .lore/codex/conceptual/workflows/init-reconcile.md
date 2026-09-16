@@ -20,6 +20,7 @@ related:
 - tech-arch-skill-catalogue
 - tech-arch-agents-md
 - decisions-003-soft-delete-semantics
+- decisions-032-retired-seed-trees
 ---
 
 # Init Reconciliation
@@ -56,7 +57,7 @@ The one place Lore reads a file it did not install is a path it is about to writ
 
 Inside those two sets the rule is the opposite one, and it is a product decision rather than an inference. **A file Lore installed is Lore's, whatever has been done to it since.** If this release still ships it, it is rewritten. If this release has retired it, it is removed and the successor is named. Neither asks.
 
-This is what the seeded trees have always done — `.lore/knights/default/`, `.lore/doctrines/default/`, `.lore/artifacts/default/` and `.lore/watchers/default/` are overwritten in place on every run — and skills were the one tree that behaved differently, keeping an edited file and asking about it. They no longer do. It is **intended behaviour**, not an oversight.
+This is what the seeded trees have always done — `.lore/doctrines/default/`, `.lore/artifacts/default/` and `.lore/watchers/default/` are overwritten in place on every run — and skills were the one tree that behaved differently, keeping an edited file and asking about it. They no longer do. It is **intended behaviour**, not an oversight.
 
 The row that destroys something says so, and for a skill it says where a copy of their own would have survived:
 
@@ -66,9 +67,13 @@ Overwrite .claude/skills/inquest/SKILL.md    your edit is discarded — Lore own
 Removed   .claude/skills/new-rite/SKILL.md — merged into store-memory; your edit is discarded
 ```
 
-Knights, doctrines, artifacts and watchers say where the boundary is with a `default/` subdirectory. Skills install straight into `.claude/skills/` or `.lore/skills/` and have no such marker, so **the id is the boundary**: a directory named after a skill Lore ships belongs to Lore, and one named anything else is never read, moved or deleted by any run. To customise a shipped skill, copy its directory to an id of your own and edit the copy.
+Doctrines, artifacts and watchers say where the boundary is with a `default/` subdirectory. Skills install straight into `.claude/skills/` or `.lore/skills/` and have no such marker, so **the id is the boundary**: a directory named after a skill Lore ships belongs to Lore, and one named anything else is never read, moved or deleted by any run. To customise a shipped skill, copy its directory to an id of your own and edit the copy.
 
 Lore does not move a person's edits into the file that replaced their skill. It names the successor and leaves the porting to them.
+
+## A Seeded Tree Lore Stops Shipping
+
+Reconciliation cannot answer for a seeded tree, because the manifest records nothing inside `.lore/`. A tree Lore has stopped shipping is handled by its own mechanism: `init.RETIRED_SEED_TREES` names it, every `lore init` walks it once, unlinks every regular file in it, reports each as `Removed <label>/<path> — no longer shipped`, and prunes the emptied directories. Files the project authored outside the retired subtree are named once and left on disk (lore codex show decisions-032-retired-seed-trees).
 
 ## Conflicts
 

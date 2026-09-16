@@ -14,7 +14,7 @@ Signature under test:
         suffix: str | None = None,
     ) -> Path
 
-Supported kinds: "knight" | "doctrine" | "artifact" | "watcher" | "codex".
+Supported kinds: "doctrine" | "artifact" | "watcher" | "codex".
 Behaviour:
   - name=None + suffix=None  -> the (group-scoped) directory only
   - name + suffix            -> base_dir / [group/] / f"{name}{suffix}"
@@ -34,7 +34,6 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _BASE_FOR_KIND: dict[str, tuple[str, ...]] = {
-    "knight": (".lore", "knights"),
     "doctrine": (".lore", "doctrines"),
     "artifact": (".lore", "artifacts"),
     "watcher": (".lore", "watchers"),
@@ -105,8 +104,6 @@ def test_entity_location_returns_nested_group_subdir(tmp_path: Path, kind: str):
 @pytest.mark.parametrize(
     "kind,suffix",
     [
-        ("knight", ".md"),
-        ("doctrine", ".yaml"),
         ("doctrine", ".design.md"),
         ("artifact", ".md"),
         ("watcher", ".yaml"),
@@ -126,8 +123,7 @@ def test_entity_location_returns_file_path_when_name_and_suffix_given(
 @pytest.mark.parametrize(
     "kind,suffix",
     [
-        ("knight", ".md"),
-        ("doctrine", ".yaml"),
+        ("doctrine", ".design.md"),
         ("artifact", ".md"),
         ("watcher", ".yaml"),
         ("codex", ".md"),
@@ -173,9 +169,9 @@ def test_entity_location_returns_pathlib_path(tmp_path: Path, kind: str):
     [
         "quest",
         "mission",
-        "knights",        # plural — not the supported singular
-        "doctrines",
-        "Knight",         # case-sensitive
+        "knight",         # the entity no longer exists
+        "doctrines",      # plural — not the supported singular
+        "Doctrine",       # case-sensitive
         "",
         "unknown",
         "board",
@@ -246,11 +242,33 @@ def test_entity_location_group_is_keyword_only(tmp_path: Path):
 
     with pytest.raises(TypeError):
         # group passed positionally must fail (kw-only).
-        entity_location(tmp_path, "knight", "name", "group-positional")  # type: ignore[misc]
+        entity_location(tmp_path, "doctrine", "name", "group-positional")  # type: ignore[misc]
 
 
 def test_entity_location_suffix_is_keyword_only(tmp_path: Path):
     from lore.paths import entity_location
 
     with pytest.raises(TypeError):
-        entity_location(tmp_path, "knight", "name", None, ".md")  # type: ignore[misc]
+        entity_location(tmp_path, "doctrine", "name", None, ".md")  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------------------
+# The knight kind is gone, and the message names what is left
+# ---------------------------------------------------------------------------
+
+
+def test_entity_location_rejects_the_knight_kind(tmp_path: Path):
+    from lore.paths import entity_location
+
+    with pytest.raises(ValueError) as excinfo:
+        entity_location(tmp_path, "knight")
+
+    message = str(excinfo.value)
+    assert "knight" in message
+    assert "Expected one of: artifact, codex, doctrine, watcher." in message
+
+
+def test_knights_dir_is_gone():
+    import lore.paths as paths
+
+    assert not hasattr(paths, "knights_dir")

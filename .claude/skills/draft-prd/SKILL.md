@@ -185,7 +185,7 @@ Two things to flag at handoff:
 
 - This skill replaces *authoring*, not *review*.
 - **`lore` on your PATH is a frozen tool install.** It does not see uncommitted changes under `src/lore/` — `.venv/bin/lore` does. When the answer depends on unreleased code, use the venv binary, and verify a capability against `src/lore/` rather than against whichever binary answered first.
-- **"Does Lore do X" and "does a `lore init`-ed project get X" are different questions.** This repo's own `.lore/` is customised and drifts from `src/lore/defaults/`. A doctrine, knight, or skill present here is not necessarily seeded, and vice versa. Never answer one question with the other's evidence.
+- **"Does Lore do X" and "does a `lore init`-ed project get X" are different questions.** This repo's own `.lore/` is customised and drifts from `src/lore/defaults/`. A doctrine or skill present here is not necessarily seeded, and vice versa. Never answer one question with the other's evidence.
 - **`CLAUDE.md` calls `lore.models.__all__` the public API. ADR-010 supersedes that line** — `lore.api.__all__` is the contract, and `models.py` is an internal typed-record index. When the two disagree, the ADR wins.
 - If the request is purely a documentation change, this is the wrong tool — use `update-codex`. If it is a one-line fix, skip both the PRD and the doctrine.
 - Keep the interview honest: a PRD that hides an unresolved decision behind soft language just moves the cost downstream to the architect. Resolve it now or name it as an explicit out-of-scope exclusion.

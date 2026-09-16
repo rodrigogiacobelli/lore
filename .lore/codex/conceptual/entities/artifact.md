@@ -10,7 +10,6 @@ summary: >
   artifacts.
 related:
   - conceptual-entities-doctrine
-  - conceptual-entities-knight
   - conceptual-entities-glossary
   - conceptual-workflows-lore-init
   - tech-arch-initialized-project-structure
@@ -23,7 +22,7 @@ related:
 
 An Artifact is a reusable template file stored in the project's `.lore/artifacts/` directory. Artifacts provide agents and maintainers with blank scaffolds for producing structured documents — business specifications, full technical specifications, user stories, or any other document type a project needs. Agents retrieve artifacts by their stable IDs through the CLI; they never read `.lore/artifacts/` directly.
 
-Artifacts are first-class Lore entities alongside Doctrines (lore codex show conceptual-entities-doctrine) and Knights (lore codex show conceptual-entities-knight). Like Doctrines and Knights, they are seeded by `lore init`. The CLI provides two read commands: `lore artifact list` (discover artifacts by ID and summary) and `lore artifact show <id> [id ...]` (retrieve the full body of one or more templates). Artifact files are managed directly on disk — there is no CLI command to create or delete artifacts. The CLI is read-only; file management follows the same pattern as codex documents. For CLI commands see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
+Artifacts are first-class Lore entities alongside Doctrines (lore codex show conceptual-entities-doctrine) and Watchers (lore codex show conceptual-entities-watcher). Like Doctrines and Watchers, they are seeded by `lore init`. The CLI provides two read commands: `lore artifact list` (discover artifacts by ID and summary) and `lore artifact show <id> [id ...]` (retrieve the full body of one or more templates). Artifact files are managed directly on disk — there is no CLI command to create or delete artifacts. The CLI is read-only; file management follows the same pattern as codex documents. For CLI commands see ref-lore_cli-commands (lore codex show ref-lore_cli-commands).
 
 ## Properties
 
@@ -91,6 +90,6 @@ Artifact IDs are separate from Codex document IDs. `lore artifact show codex` an
 ## Related
 
 - Doctrine (lore codex show conceptual-entities-doctrine) — step notes in Doctrines reference artifact IDs where a template is needed
-- Knight (lore codex show conceptual-entities-knight) — knights that produce template-derived documents reference artifact IDs in an `## Artifacts` section
+- Doctrine (lore codex show conceptual-entities-doctrine) — a design document lists the artifacts its workflow uses in an `## Artifacts` section, and a mission body names an artifact id where it retrieves one
 - conceptual-workflows-lore-init (lore codex show conceptual-workflows-lore-init) — the init step that seeds `.lore/artifacts/`
 - ref-lore_cli-commands (lore codex show ref-lore_cli-commands) — `lore artifact` command reference

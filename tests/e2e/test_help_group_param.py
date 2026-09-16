@@ -20,7 +20,6 @@ from lore.cli import main
     "cmd",
     [
         ["doctrine", "new", "--help"],
-        ["knight", "new", "--help"],
         ["watcher", "new", "--help"],
         ["artifact", "new", "--help"],
     ],
@@ -29,7 +28,7 @@ def test_new_help_contains_group_and_nested_example(runner, cmd):
     """Each `new --help` advertises --group plus a concrete nested example.
 
     Must contain an actual `--group a/b` style example in an invocation line —
-    not just path hints like ``.lore/knights/``.
+    not just path hints like ``.lore/doctrines/``.
     """
     result = runner.invoke(main, cmd)
     assert result.exit_code == 0, result.output
@@ -45,7 +44,6 @@ def test_new_help_contains_group_and_nested_example(runner, cmd):
     "cmd",
     [
         ["doctrine", "new", "--help"],
-        ["knight", "new", "--help"],
         ["watcher", "new", "--help"],
         ["artifact", "new", "--help"],
     ],
@@ -82,7 +80,7 @@ def test_doctrine_list_help_shows_slash_filter(runner):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 6: all five list commands advertise slash-delimited filter
+# Scenario 6: all four list commands advertise slash-delimited filter
 # ---------------------------------------------------------------------------
 
 
@@ -90,7 +88,6 @@ def test_doctrine_list_help_shows_slash_filter(runner):
     "cmd",
     [
         ["doctrine", "list", "--help"],
-        ["knight", "list", "--help"],
         ["watcher", "list", "--help"],
         ["artifact", "list", "--help"],
         ["codex", "list", "--help"],
@@ -116,7 +113,6 @@ def test_all_list_help_advertise_slash_filter(runner, cmd):
     "cmd",
     [
         ["doctrine", "list", "--help"],
-        ["knight", "list", "--help"],
         ["watcher", "list", "--help"],
         ["artifact", "list", "--help"],
         ["codex", "list", "--help"],
@@ -193,8 +189,8 @@ def test_init_help_shows_the_short_yes_flag(runner):
 def test_init_help_says_lore_replaces_the_files_it_installed(runner):
     """ADR-008: the destructive half of a command is taught, never discovered.
 
-    Re-running `lore init` discards an edit to a skill, knight, doctrine,
-    artifact or watcher Lore shipped, and asks nobody first.
+    Re-running `lore init` discards an edit to a skill, doctrine, artifact
+    or watcher Lore shipped, and asks nobody first.
     """
     collapsed = " ".join(_init_help(runner).split())
     assert "Lore owns the files it installs" in collapsed
@@ -203,7 +199,7 @@ def test_init_help_says_lore_replaces_the_files_it_installed(runner):
 def test_init_help_says_where_a_skill_of_your_own_goes(runner):
     """The convention `default/` states for the other four entity types.
 
-    Knights, doctrines, artifacts and watchers are seeded under a `default/`
+    Doctrines, artifacts and watchers are seeded under a `default/`
     subdirectory, which tells a reader where the boundary is. Skills install
     straight into the agent's own directory and have no such marker, so the
     help is where the boundary has to be stated — losing an edit is the ruling,
@@ -212,3 +208,50 @@ def test_init_help_says_where_a_skill_of_your_own_goes(runner):
     collapsed = " ".join(_init_help(runner).split())
     assert ".claude/skills/<your-own-id>/" in collapsed
     assert "an id Lore does not ship" in collapsed
+
+
+# ---------------------------------------------------------------------------
+# The top-level entity block teaches the entity model (ADR-008)
+# ---------------------------------------------------------------------------
+
+
+def _root_help(runner) -> str:
+    result = runner.invoke(main, ["--help"])
+    assert result.exit_code == 0, result.output
+    return result.output
+
+
+def test_root_help_lists_every_entity_that_exists(runner):
+    """ADR-008 — the top-level block is where a reader learns what Lore holds.
+
+    Two core entities above the split, five supporting ones below it.
+    """
+    text = _root_help(runner)
+    for entity in (
+        "Quest",
+        "Mission",
+        "Doctrine",
+        "Codex",
+        "Rite",
+        "Artifact",
+        "Watcher",
+    ):
+        assert re.search(rf"^\s*{entity}\s+—", text, re.MULTILINE), (
+            f"{entity} is missing from the top-level entity block:\n{text}"
+        )
+
+
+def test_root_help_lists_no_retired_entity(runner):
+    """An entity that no longer exists cannot stay in the teaching block."""
+    text = _root_help(runner)
+    assert not re.search(r"^\s*Knight\s+—", text, re.MULTILINE), (
+        f"the top-level entity block still names a removed entity:\n{text}"
+    )
+
+
+def test_root_help_supporting_block_has_five_entries(runner):
+    """Five supporting entities, seven named in the block in total."""
+    text = _root_help(runner)
+    supporting = text.split("Supporting entities:", 1)[1]
+    entries = re.findall(r"^\s*([A-Z][a-z]+)\s+—", supporting, re.MULTILINE)
+    assert entries == ["Doctrine", "Codex", "Rite", "Artifact", "Watcher"]

@@ -14,14 +14,12 @@ from lore.api import (
     ProjectNotFoundError,
     UnknownProjectError,
     create_artifact,
-    create_knight,
     find_project_root,
 )
 from lore.api import _agents as agent_registry
 from lore.api import _db as db_module
 from lore.api import _graph as graph
 from lore.api import _init as init_module
-from lore.api import _knight as knight_module
 from lore.api import _lore_version as __version__
 from lore.api import _paths as paths
 from lore.api import _projects as projects
@@ -38,7 +36,7 @@ from lore.api import _validators as validators
 # ---------------------------------------------------------------------------
 
 # Shared `--filter` option help for every `list` subcommand that supports
-# slash-delimited group filters (doctrine, knight, watcher, artifact, codex).
+# slash-delimited group filters (doctrine, watcher, artifact, codex).
 _FILTER_OPT_HELP = (
     "Filter by slash-delimited group token (e.g. a/b/c). Space-separated for multiple: --filter a b c."
 )
@@ -59,7 +57,7 @@ def _list_doc(summary: str, example: str) -> str:
 def _group_opt_help(resource_dir: str, example: str) -> str:
     """Build a `--group` option help string for a `new` subcommand.
 
-    resource_dir is the POSIX path under .lore/ (e.g. ``.lore/knights/``);
+    resource_dir is the POSIX path under .lore/ (e.g. ``.lore/doctrines/``);
     example is a concrete nested token such as ``feature-implementation/on-prd-ready``.
     """
     return (
@@ -134,7 +132,7 @@ def _validate_sender_id(sender, ctx):
 
 
 def _validate_name(name, ctx):
-    """Validate a knight or doctrine name. Returns True if valid, handles error if not.
+    """Validate a doctrine or artifact name. Returns True if valid, handles error if not.
 
     An origin-qualified name is passed straight through. It can never be a
     legal entity name — the grammar has no colon — but the answer the caller
@@ -199,25 +197,37 @@ def _classify_entity_id_with_db_fallback(project_root, entity_id):
     return None
 
 
-def _write_design_file(design_path: Path, doctrine_id: str, yaml_content: str) -> None:
-    """Write a minimal .design.md file alongside a newly created doctrine YAML.
+def _read_source(path: str) -> str:
+    """Read a file named on the command line, or raise the CLI's own message.
 
-    Extracts title and summary from the YAML content when present; falls back
-    to the doctrine id for title and empty string for summary.
+    Opening a path the user typed is I/O the CLI owns; what the text must
+    contain is the entity module's rule and stays there.
     """
-    import yaml as _yaml
-    title = doctrine_id
-    summary = ""
-    try:
-        data = _yaml.safe_load(yaml_content)
-        if isinstance(data, dict):
-            title = data.get("title") or doctrine_id
-            summary = data.get("summary") or ""
-    except Exception:
-        pass
-    design_path.write_text(
-        f"---\nid: {doctrine_id}\ntitle: {title}\nsummary: {summary}\n---\n"
+    source = Path(path)
+    if not source.is_file():
+        raise ValueError(f"File not found: {path}")
+    return source.read_text()
+
+
+def _mission_line(m: dict) -> str:
+    """One mission's listing line — the same shape in `ready` and `missions`."""
+    reference = f"  [{m['doctrine_mission']}]" if m["doctrine_mission"] else ""
+    type_str = f"  [{m['mission_type']}]" if m["mission_type"] else ""
+    return (
+        f"  {m['id']}  P{m['priority']}  [{m['status']}]{type_str}  "
+        f"{m['title']}{reference}"
     )
+
+
+def _mission_sources(mission_files) -> dict:
+    """Read the ``-m`` files into the ``{mission id: content}`` mapping.
+
+    The duplicate-stem and missing-file rules live in ``lore.doctrine``, which
+    raises them, so a Python caller meets the same answer the CLI prints.
+    """
+    from lore.api import _doctrine as _doctrine_mod
+
+    return _doctrine_mod.load_mission_sources([Path(p) for p in mission_files])
 
 
 def _format_table(headers: list[str], rows: list[list[str]]) -> list[str]:
@@ -305,7 +315,6 @@ def _origin_table(
 _PROJECT_READ_COMMANDS: frozenset[str] = frozenset({
     "codex list", "codex show", "codex search", "codex map",
     "doctrine list", "doctrine show",
-    "knight list", "knight show",
     "artifact list", "artifact show",
     "watcher list", "watcher show",
     "rite list", "rite show", "rite search",
@@ -384,6 +393,21 @@ def _report_and_exit(ctx, message: str) -> None:
     ctx.exit(1)
 
 
+def _fail(ctx, json_mode: bool, message: str) -> None:
+    """Report *message* as this command's failure and exit 1.
+
+    `conceptual-workflows-error-handling`: an error goes to stderr in both
+    modes, as bare text or as `{"error": …}`. Takes *json_mode* rather than
+    reading the context, because a command carrying its own `--json` flag is in
+    JSON mode when either flag is set.
+    """
+    if json_mode:
+        click.echo(json.dumps({"error": message}), err=True)
+    else:
+        click.echo(message, err=True)
+    ctx.exit(1)
+
+
 class _OrderedGroup(click.Group):
     """Click group preserving command registration order in help output.
 
@@ -447,7 +471,6 @@ def main(ctx, json_mode, project):
     Supporting entities:
 
     \b
-    Knight   — a reusable agent persona attached to missions.
     Doctrine — workflow templates that guide how missions are executed.
     Codex    — project documentation, searchable and graph-traversable.
     Rite     — procedural memory: how to do or diagnose a recurring task.
@@ -735,10 +758,10 @@ def init(
     answered neither — every project upgrading from a release before this one
     — is set up for whichever agents its own files show it uses.
 
-    Lore owns the files it installs. A skill, knight, doctrine, artifact or
-    watcher Lore shipped is replaced with this release's version however you
-    have edited it, and one this release has retired is removed with its
-    successor named. Knights and the rest are seeded under a default/
+    Lore owns the files it installs. A skill, doctrine, artifact or watcher
+    Lore shipped is replaced with this release's version however you have
+    edited it, and one this release has retired is removed with its successor
+    named. Doctrines and the rest are seeded under a default/
     subdirectory to say so; skills have no such directory, so keep a skill of
     your own under an id Lore does not ship — .claude/skills/<your-own-id>/, or
     .lore/skills/<your-own-id>/ — and no run will change or remove it. What
@@ -1102,7 +1125,13 @@ def new_quest(ctx, title, description, priority, auto_close, no_auto_close):
 @click.option("-q", "--quest", "quest_id", default=None, help="Parent quest ID.")
 @click.option("-d", "--description", default="", help="Mission description.")
 @click.option("-p", "--priority", type=int, default=2, help="Priority 0-4.")
-@click.option("-k", "--knight", default=None, help="Knight filename.")
+@click.option(
+    "-D",
+    "--doctrine-mission",
+    "doctrine_mission",
+    default=None,
+    help="Doctrine mission reference <doctrine>/<mission>.",
+)
 @click.option(
     "-T",
     "--type",
@@ -1112,7 +1141,9 @@ def new_quest(ctx, title, description, priority, auto_close, no_auto_close):
     help="Mission type.",
 )
 @click.pass_context
-def new_mission(ctx, title, quest_id, description, priority, knight, mission_type):
+def new_mission(
+    ctx, title, quest_id, description, priority, doctrine_mission, mission_type
+):
     """Create a new mission."""
     json_mode = ctx.obj.get("json", False)
 
@@ -1131,7 +1162,7 @@ def new_mission(ctx, title, quest_id, description, priority, knight, mission_typ
             quest_id=quest_id,
             description=description,
             priority=priority,
-            knight=knight,
+            doctrine_mission=doctrine_mission,
             mission_type=mission_type,
         )
     except RuntimeError:
@@ -1374,7 +1405,7 @@ def ready(ctx, count):
                     "status": m["status"],
                     "priority": m["priority"],
                     "mission_type": m["mission_type"],
-                    "knight": m["knight"],
+                    "doctrine_mission": m["doctrine_mission"],
                     "created_at": m["created_at"],
                 }
                 for m in missions
@@ -1388,11 +1419,7 @@ def ready(ctx, count):
         return
 
     for m in missions:
-        knight_str = f"  [{m['knight']}]" if m["knight"] else ""
-        type_str = f"  [{m['mission_type']}]" if m["mission_type"] else ""
-        click.echo(
-            f"  {m['id']}  P{m['priority']}  [{m['status']}]{type_str}  {m['title']}{knight_str}"
-        )
+        click.echo(_mission_line(m))
 
 
 @main.command("needs")
@@ -1581,11 +1608,6 @@ def missions(ctx, quest_id, show_all):
         click.echo("No missions found.")
         return
 
-    def _format_mission_line(m):
-        knight_str = f"  [{m['knight']}]" if m["knight"] else ""
-        type_str = f"  [{m['mission_type']}]" if m["mission_type"] else ""
-        return f"  {m['id']}  P{m['priority']}  [{m['status']}]{type_str}  {m['title']}{knight_str}"
-
     # Display quest-bound groups first (sorted by qid), then standalone.
     quest_groups = sorted(
         (g for g in envelope["groups"] if g["quest_id"] is not None),
@@ -1603,169 +1625,14 @@ def missions(ctx, quest_id, show_all):
         )
         click.echo(f"Quest: {quest_title} ({qid}){quest_deleted_annotation}")
         for m in group["missions"]:
-            click.echo(_format_mission_line(m))
+            click.echo(_mission_line(m))
         click.echo("")
 
     if standalone_group is not None:
         click.echo("Standalone:")
         for m in standalone_group["missions"]:
-            click.echo(_format_mission_line(m))
+            click.echo(_mission_line(m))
 
-
-@main.group(cls=_ScopedGroup)
-@click.pass_context
-def knight(ctx):
-    """Manage knight personas — reusable markdown files that tell a worker agent how to approach work (style, constraints, authority). Assign a knight to a mission with 'lore new mission -k <name>.md'. When a worker runs 'lore show <mission-id>', the knight's content is included in the output. Knights encode the 'how'; mission descriptions encode the 'what'.
-
-    Pass --project <name> or --project all to read the same entities in another project in this tree.
-    """
-    pass
-
-
-@knight.command(
-    "list",
-    help=_list_doc("List available knights.", "feature-implementation/prd-handlers"),
-)
-@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
-@click.option("--filter", "filter_groups", multiple=True, help=_FILTER_OPT_HELP)
-@click.argument("extra_filters", nargs=-1)
-@click.pass_context
-def knight_list(ctx, json_flag, filter_groups, extra_filters):
-    project_root = ctx.obj["project_root"]
-    json_mode = json_flag or ctx.obj.get("json", False)
-
-    combined_filters = list(filter_groups) + list(extra_filters)
-    records = knight_module.list_knights(
-        project_root,
-        filter_groups=combined_filters if combined_filters else None,
-        scope=_scope(ctx),
-    )
-
-    if json_mode:
-        filtered = [
-            {"id": r["id"], "group": _group_for_json(r["group"]), "title": r["title"],
-             "summary": r["summary"], "origin": r["origin"]}
-            for r in records
-        ]
-        click.echo(json.dumps({"knights": filtered}))
-        return
-
-    if not records:
-        click.echo("No knights found.")
-        return
-
-    rows = [[r["id"], r["group"], r["title"], r["summary"]] for r in records]
-    for line in _origin_table(
-        ["ID", "GROUP", "TITLE", "SUMMARY"], rows, _origins(records)
-    ):
-        click.echo(line)
-
-
-@knight.command("show")
-@click.argument("name")
-@click.pass_context
-def knight_show(ctx, name):
-    """Show the contents of a knight file."""
-    project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
-
-    try:
-        record = knight_module.read_knight(project_root, name, scope=_scope(ctx))
-    except ValueError:
-        record = None
-
-    if record is None:
-        if json_mode:
-            click.echo(
-                json.dumps(
-                    {"error": f'Knight "{name}" not found in .lore/knights/'}
-                ),
-                err=True,
-            )
-            ctx.exit(1)
-            return
-        click.echo(f'Knight "{name}" not found in .lore/knights/', err=True)
-        ctx.exit(1)
-        return
-
-    if json_mode:
-        # Section D: JSON mode emits the whole read_knight dict.
-        click.echo(json.dumps(record))
-        return
-
-    # Text mode emits frontmatter + body (full file shape).
-    fm_lines = "\n".join(
-        f"{k}: {record[k]}" for k in ("id", "title", "summary")
-    )
-    click.echo(f"---\n{fm_lines}\n---\n{record['body']}", nl=False)
-
-
-@knight.command(
-    "new",
-    context_settings={"ignore_unknown_options": True},
-    help=_new_doc(
-        "Create a new knight.",
-        resource="knight",
-        root=".lore/knights/",
-        example="lore knight new on-prd-ready --group feature-implementation/prd-handlers -f p.md",
-    ),
-)
-@click.argument("name")
-@click.option(
-    "--from", "-f", "from_file", default=None, help="Source file for knight content."
-)
-@click.option(
-    "--group",
-    default=None,
-    help=_group_opt_help(".lore/knights/", "feature-implementation/on-prd-ready"),
-)
-@click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
-@click.pass_context
-def knight_new(ctx, name, from_file, group, json_flag):
-    if not _validate_name(name, ctx):
-        return
-    project_root = ctx.obj["project_root"]
-    json_mode = json_flag or ctx.obj.get("json", False)
-
-    if from_file is not None and from_file != "-":
-        source = Path(from_file)
-        if not source.exists():
-            msg = f"File not found: {from_file}"
-            if json_mode:
-                click.echo(json.dumps({"error": msg}), err=True)
-            else:
-                click.echo(msg, err=True)
-            ctx.exit(1)
-            return
-        content = source.read_text()
-    else:
-        content = click.get_text_stream("stdin").read()
-        if not content.strip():
-            msg = "No content provided on stdin."
-            if json_mode:
-                click.echo(json.dumps({"error": msg}), err=True)
-            else:
-                click.echo(msg, err=True)
-            ctx.exit(1)
-            return
-
-    try:
-        result = create_knight(project_root, name, content, group=group)
-    except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
-        return
-
-    if json_mode:
-        click.echo(json.dumps(result))
-        return
-
-    suffix = f" (group: {group})" if group else ""
-    click.echo(f"Created knight {name}{suffix}")
 
 
 # ---------------------------------------------------------------------------
@@ -1868,116 +1735,10 @@ def _reject_mutex(ctx, json_mode: bool, from_file, set_kvs, unset_keys, add_kvs,
     return False
 
 
-@knight.command("edit")
-@click.argument("name")
-@click.option(
-    "--from", "-f", "from_file", default=None, help="Source file for knight content."
-)
-@click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
-@click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
-@click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
-@click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
-@click.pass_context
-def knight_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
-    """Edit an existing knight.
-
-    Field-edit mode (mutually exclusive with -f / --from):
-      --set    KEY=VALUE   set a frontmatter field
-      --unset  KEY         remove a frontmatter field
-      --add    KEY=VALUE   append to a list-typed field
-      --remove KEY=VALUE   remove a value from a list-typed field
-    """
-    if not _validate_name(name, ctx):
-        return
-    project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
-
-    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
-        return
-
-    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
-    if field_mode:
-        result = _dispatch_field_edit(
-            ctx, "knight", name, set_kvs, unset_keys, add_kvs, remove_kvs
-        )
-        if result is None:
-            return
-        if json_mode:
-            click.echo(json.dumps(result))
-            return
-        click.echo(f"Updated knight {name}")
-        return
-
-    if from_file is not None and from_file != "-":
-        source = Path(from_file)
-        if not source.exists():
-            msg = f"File not found: {from_file}"
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-        content = source.read_text()
-    else:
-        content = click.get_text_stream("stdin").read()
-        if not content.strip():
-            msg = "No content provided on stdin."
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-
-    try:
-        result = knight_module.update_knight(project_root, name, content)
-    except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
-        return
-
-    if json_mode:
-        click.echo(json.dumps(result))
-        return
-    click.echo(f"Updated knight {name}")
-
-
-@knight.command("delete")
-@click.argument("name")
-@click.pass_context
-def knight_delete(ctx, name):
-    """Delete a knight."""
-    if not _validate_name(name, ctx):
-        return
-    project_root = ctx.obj["project_root"]
-    json_mode = ctx.obj.get("json", False)
-
-    try:
-        result = knight_module.delete_knight(project_root, name)
-    except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
-        return
-
-    if json_mode:
-        click.echo(json.dumps(result))
-        return
-    click.echo(f"Deleted knight {name}")
-
-
 @main.group(cls=_ScopedGroup)
 @click.pass_context
 def doctrine(ctx):
-    """Manage doctrine templates — YAML files that describe the step sequence and suggested knights for a standard body of work (e.g. a feature or bugfix workflow). Doctrines have no execution engine; an orchestrator reads them with 'lore doctrine show <name>' and translates the steps into quests and missions as guidance. Doctrines are passive — they do not trigger actions.
+    """Manage doctrines — a directory of prose for a standard body of work (e.g. a feature or bugfix workflow): a design document that says how the work is done, and one mission file per reusable instruction. 'lore doctrine show <name>' returns the design and an index of its missions in one call; 'lore doctrine show <name> --mission <id>' returns one mission's body, which is what a worker agent is given. Lore parses none of it — an orchestrator reads the design prose and decides the order, the type and the dependencies itself. Doctrines are passive: they do not trigger actions.
 
     Pass --project <name> or --project all to read the same entities in another project in this tree.
     """
@@ -2042,55 +1803,90 @@ def doctrine_list(ctx, json_flag, filter_groups, extra_filters):
 
 @doctrine.command("show")
 @click.argument("name")
+@click.option("--mission", default=None, help="Show one mission's body instead.")
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def doctrine_show(ctx, name, json_flag):
-    """Show a doctrine (design file then YAML)."""
+def doctrine_show(ctx, name, mission, json_flag):
+    """Show a doctrine's design document and its mission index.
+
+    With --mission <id>, show that mission's body instead.
+    """
     from lore.api import _doctrine as _doctrine_mod
     project_root = ctx.obj["project_root"]
     json_mode = json_flag or ctx.obj.get("json", False)
 
-    d = _doctrine_mod.read_doctrine(project_root, name, scope=_scope(ctx))
+    try:
+        d = _doctrine_mod.read_doctrine(
+            project_root, name, scope=_scope(ctx), mission=mission
+        )
+    except ValueError as e:
+        _fail(ctx, json_mode, str(e))
+        return
+
     if d is None:
-        msg = f"Doctrine '{name}' not found"
-        if json_flag:
-            click.echo(json.dumps({"error": msg}))
-        elif json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
+        _fail(ctx, json_mode, f"Doctrine '{name}' not found")
+        return
+
+    if mission is not None:
+        record = d["mission"]
+        if record is None:
+            _fail(
+                ctx, json_mode, f'Mission "{mission}" not found in doctrine "{name}"'
+            )
+            return
+        if json_mode:
+            click.echo(json.dumps({"mission": record}))
+            return
+        click.echo(record["body"], nl=False)
         return
 
     if json_mode:
-        output = {
-            "id": d["id"],
-            "title": d["title"],
-            "summary": d["summary"],
-            "design": d["design"],
-            "steps": d["steps"],
-            "origin": d["origin"],
-        }
-        click.echo(json.dumps(output))
+        click.echo(
+            json.dumps(
+                {
+                    "doctrine": {
+                        "id": d["id"],
+                        "title": d["title"],
+                        "summary": d["summary"],
+                        "design": d["design"],
+                        "missions": d["missions"],
+                        "origin": d["origin"],
+                    }
+                }
+            )
+        )
         return
 
     click.echo(d["design"], nl=False)
-    click.echo("\n---\n", nl=False)
-    click.echo(d["raw_yaml"], nl=False)
+    click.echo("")
+    click.echo("--- Missions ---")
+    if not d["missions"]:
+        click.echo("(none)")
+    else:
+        width = max(len(m["id"]) for m in d["missions"])
+        for m in d["missions"]:
+            click.echo(f"{m['id'].ljust(width)}  {m['title']}")
 
 
 @doctrine.command(
     "new",
     help=_new_doc(
-        "Create a new doctrine from a YAML file and a design file.",
+        "Create a new doctrine from a design document and one or more mission files.",
         resource="doctrine",
         root=".lore/doctrines/",
-        example="lore doctrine new keyword-ranker --group seo-analysis/keyword-analysers -f r.yaml -d r.md",
+        example="lore doctrine new keyword-ranker --group seo-analysis/keyword-analysers -d r.md -m recon.md rank.md",
     ),
 )
 @click.argument("name")
-@click.option("--from", "-f", "from_file", default=None, help="Source YAML file.")
 @click.option("--design", "-d", "design_file", default=None, help="Source design file.")
+@click.option(
+    "--mission",
+    "-m",
+    "mission_files",
+    cls=SpaceSeparatedChoice,
+    multiple=True,
+    help="Source mission files, space-separated. The filename stem is the mission id.",
+)
 @click.option(
     "--group",
     default=None,
@@ -2098,21 +1894,12 @@ def doctrine_show(ctx, name, json_flag):
 )
 @click.option("--json", "json_flag", is_flag=True, help="Output as JSON.")
 @click.pass_context
-def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
+def doctrine_new(ctx, name, design_file, mission_files, group, json_flag):
     from lore.api import create_doctrine
     json_mode = json_flag or ctx.obj.get("json", False)
 
-    # Both flags are required
-    if from_file is None:
-        msg = "Error: -f/--from is required"
-        click.echo(msg, err=True)
-        ctx.exit(1)
-        return
-
     if design_file is None:
-        msg = "Error: -d/--design is required"
-        click.echo(msg, err=True)
-        ctx.exit(1)
+        _fail(ctx, json_mode, "Error: -d/--design is required")
         return
 
     if not _validate_name(name, ctx):
@@ -2122,38 +1909,71 @@ def doctrine_new(ctx, name, from_file, design_file, group, json_flag):
 
     try:
         result = create_doctrine(
-            project_root, name, Path(from_file), Path(design_file), group=group
+            project_root,
+            name,
+            _read_source(design_file),
+            _mission_sources(mission_files),
+            group=group,
         )
     except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
+        _fail(ctx, json_mode, str(e))
         return
 
     if json_mode:
         click.echo(json.dumps(result))
         return
 
-    suffix = f" (group: {group})" if group else ""
-    click.echo(f"Created doctrine {name}{suffix}")
+    count = len(result["missions"])
+    plural = "mission" if count == 1 else "missions"
+    suffix = f" in group {group}" if group else ""
+    click.echo(f"Created doctrine {name} with {count} {plural}{suffix}")
 
 
 @doctrine.command("edit")
 @click.argument("name")
-@click.option("--from", "-f", "from_file", default=None, help="Source file.")
+@click.option("--design", "-d", "design_file", default=None, help="Replacement design file.")
+@click.option(
+    "--mission",
+    "-m",
+    "mission_files",
+    cls=SpaceSeparatedChoice,
+    multiple=True,
+    help="Mission files to replace or add, space-separated. The stem is the mission id.",
+)
+@click.option(
+    "--remove-mission",
+    "removed_missions",
+    cls=SpaceSeparatedChoice,
+    multiple=True,
+    help="Mission ids to remove, space-separated.",
+)
 @click.option("--set", "set_kvs", multiple=True, help="Set frontmatter field KEY=VALUE.")
 @click.option("--unset", "unset_keys", multiple=True, help="Remove frontmatter field KEY.")
 @click.option("--add", "add_kvs", multiple=True, help="Append to list-typed field KEY=VALUE.")
 @click.option("--remove", "remove_kvs", multiple=True, help="Remove from list-typed field KEY=VALUE.")
 @click.pass_context
-def doctrine_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+def doctrine_edit(
+    ctx,
+    name,
+    design_file,
+    mission_files,
+    removed_missions,
+    set_kvs,
+    unset_keys,
+    add_kvs,
+    remove_kvs,
+):
     """Edit an existing doctrine.
 
-    Field-edit mode (mutually exclusive with -f / --from) targets the
-    ``<name>.yaml`` file. To edit the ``.design.md`` partner, use ``-f``.
+    Whole-file mode replaces documents:
+
+      -d FILE                 replace the design document
+      -m FILE [FILE ...]      replace or add missions; the filename stem is the id
+      --remove-mission ID ... soft-delete missions
+
+    A mission nobody names is left exactly as it was. Field-edit mode, mutually
+    exclusive with the three flags above, edits the design document's
+    frontmatter in place:
 
       --set    KEY=VALUE   set a frontmatter field
       --unset  KEY         remove a frontmatter field
@@ -2168,10 +1988,17 @@ def doctrine_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs
 
     project_root = ctx.obj["project_root"]
 
-    if _reject_mutex(ctx, json_mode, from_file, set_kvs, unset_keys, add_kvs, remove_kvs):
+    whole_file_mode = bool(design_file or mission_files or removed_missions)
+    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
+    if whole_file_mode and field_mode:
+        _fail(
+            ctx,
+            json_mode,
+            "Cannot combine -d/--design, -m/--mission or --remove-mission with "
+            "--set/--unset/--add/--remove.",
+        )
         return
 
-    field_mode = bool(set_kvs or unset_keys or add_kvs or remove_kvs)
     if field_mode:
         result = _dispatch_field_edit(
             ctx, "doctrine", name, set_kvs, unset_keys, add_kvs, remove_kvs
@@ -2184,44 +2011,33 @@ def doctrine_edit(ctx, name, from_file, set_kvs, unset_keys, add_kvs, remove_kvs
         click.echo(f"Updated doctrine {name}")
         return
 
-    # Read content (CLI-only I/O concerns stay in the CLI).
-    if from_file is not None and from_file != "-":
-        source = Path(from_file)
-        if not source.exists():
-            msg = f"File not found: {from_file}"
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
-        content = source.read_text()
-    else:
-        content = click.get_text_stream("stdin").read()
-        if not content or not content.strip():
-            msg = "No content provided on stdin."
-            if json_mode:
-                click.echo(json.dumps({"error": msg}))
-            else:
-                click.echo(msg)
-            ctx.exit(1)
-            return
+    if not whole_file_mode:
+        raise click.UsageError("Nothing to update: pass -d, -m, or --remove-mission")
 
     try:
-        result = update_doctrine(project_root, name, content)
+        result = update_doctrine(
+            project_root,
+            name,
+            _read_source(design_file) if design_file else None,
+            _mission_sources(mission_files) or None,
+            list(removed_missions) or None,
+        )
     except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}))
-        else:
-            click.echo(msg)
-        ctx.exit(1)
+        _fail(ctx, json_mode, str(e))
         return
 
     if json_mode:
         click.echo(json.dumps(result))
         return
-    click.echo(f"Updated doctrine {name}")
+
+    clauses = []
+    if result["design_replaced"]:
+        clauses.append("design replaced")
+    if result["missions_replaced"]:
+        clauses.append(f"missions replaced: {', '.join(result['missions_replaced'])}")
+    if result["missions_removed"]:
+        clauses.append(f"missions removed: {', '.join(result['missions_removed'])}")
+    click.echo(f"Updated doctrine {name} ({'; '.join(clauses)})")
 
 
 @doctrine.command("delete")
@@ -2238,12 +2054,7 @@ def doctrine_delete(ctx, name):
     try:
         result = delete_doctrine(project_root, name)
     except ValueError as e:
-        msg = str(e)
-        if json_mode:
-            click.echo(json.dumps({"error": msg}), err=True)
-        else:
-            click.echo(msg, err=True)
-        ctx.exit(1)
+        _fail(ctx, json_mode, str(e))
         return
 
     if json_mode:
@@ -2257,9 +2068,19 @@ def doctrine_delete(ctx, name):
 @click.option("-t", "--title", default=None, help="New title.")
 @click.option("-d", "--description", default=None, help="New description.")
 @click.option("-p", "--priority", type=int, default=None, help="New priority 0-4.")
-@click.option("-k", "--knight", default=None, help="Assign knight.")
 @click.option(
-    "--no-knight", is_flag=True, default=False, help="Remove knight assignment."
+    "-D",
+    "--doctrine-mission",
+    "doctrine_mission",
+    default=None,
+    help="Doctrine mission reference <doctrine>/<mission>.",
+)
+@click.option(
+    "--no-doctrine-mission",
+    "no_doctrine_mission",
+    is_flag=True,
+    default=False,
+    help="Remove doctrine mission assignment.",
 )
 @click.option(
     "--auto-close", "auto_close", is_flag=True, default=False, help="Enable auto-close."
@@ -2286,16 +2107,18 @@ def edit(
     title,
     description,
     priority,
-    knight,
-    no_knight,
+    doctrine_mission,
+    no_doctrine_mission,
     auto_close,
     no_auto_close,
     mission_type,
 ):
     """Edit a quest or mission."""
-    # Mutual exclusion check for --knight and --no-knight
-    if knight is not None and no_knight:
-        raise click.UsageError("--knight and --no-knight are mutually exclusive.")
+    # Mutual exclusion check for --doctrine-mission and --no-doctrine-mission
+    if doctrine_mission is not None and no_doctrine_mission:
+        raise click.UsageError(
+            "--doctrine-mission and --no-doctrine-mission are mutually exclusive."
+        )
 
     if auto_close and no_auto_close:
         raise click.UsageError(
@@ -2308,13 +2131,13 @@ def edit(
         title is None
         and description is None
         and priority is None
-        and knight is None
-        and not no_knight
+        and doctrine_mission is None
+        and not no_doctrine_mission
         and not has_auto_close_flag
         and mission_type is None
     ):
         raise click.UsageError(
-            "At least one of --title, --description, --priority, --knight, --no-knight, --auto-close, --no-auto-close, or --type is required."
+            "At least one of --title, --description, --priority, --doctrine-mission, --no-doctrine-mission, --auto-close, --no-auto-close, or --type is required."
         )
 
     if not _validate_entity_id(entity_id, ctx):
@@ -2340,8 +2163,8 @@ def edit(
             title,
             description,
             priority,
-            knight,
-            no_knight,
+            doctrine_mission,
+            no_doctrine_mission,
             mission_type=mission_type,
         )
 
@@ -2378,7 +2201,14 @@ def _edit_quest(ctx, quest_id, title, description, priority, auto_close=None):
 
 
 def _edit_mission(
-    ctx, mission_id, title, description, priority, knight, no_knight, mission_type=None
+    ctx,
+    mission_id,
+    title,
+    description,
+    priority,
+    doctrine_mission,
+    no_doctrine_mission,
+    mission_type=None,
 ):
     """Edit a mission's fields — thin wrapper over update_mission_full."""
     from lore.api import update_mission_full
@@ -2392,8 +2222,8 @@ def _edit_mission(
             title=title,
             description=description,
             priority=priority,
-            knight=knight,
-            remove_knight=no_knight,
+            doctrine_mission=doctrine_mission,
+            remove_doctrine_mission=no_doctrine_mission,
             mission_type=mission_type,
         )
     except ValueError as exc:
@@ -2502,7 +2332,11 @@ def delete(ctx, entity_id, cascade):
 @main.command("show")
 @click.argument("entity_id")
 @click.option(
-    "--no-knight", is_flag=True, default=False, help="Omit knight file contents."
+    "--no-doctrine-mission",
+    "no_doctrine_mission",
+    is_flag=True,
+    default=False,
+    help="Omit doctrine mission instructions.",
 )
 @click.option(
     "--json",
@@ -2513,7 +2347,7 @@ def delete(ctx, entity_id, cascade):
     help="Output as JSON.",
 )
 @click.pass_context
-def show(ctx, entity_id, no_knight, json_flag):
+def show(ctx, entity_id, no_doctrine_mission, json_flag):
     """Show details of a quest or mission."""
     if json_flag:
         ctx.obj["json"] = True
@@ -2527,7 +2361,7 @@ def show(ctx, entity_id, no_knight, json_flag):
     if table == "quests":
         _show_quest(ctx, entity_id)
     else:
-        _show_mission(ctx, entity_id, no_knight)
+        _show_mission(ctx, entity_id, no_doctrine_mission)
 
 
 def _emit_not_found(ctx, entity_id, entity_type):
@@ -2584,34 +2418,27 @@ def _dep_to_rich(dep, current_quest_id):
     return symbol, display_id, title
 
 
-def _show_mission(ctx, mission_id, no_knight):
-    """Display mission detail with optional knight contents."""
-    from lore.api import (
-        read_mission,
-        list_mission_depends_on,
-        list_mission_blocks,
-        get_deleted_at,
-        list_board_messages,
-        get_mission_detail,
-    )
+def _show_mission(ctx, mission_id, no_doctrine_mission):
+    """Display mission detail, with the doctrine mission's body spliced in.
+
+    One envelope answers both modes. The stored reference is resolved by
+    ``get_mission_detail`` and nowhere else (``decisions-011``): this renders
+    ``doctrine_mission_contents`` and looks nothing up itself.
+    """
+    from lore.api import get_deleted_at, get_mission_detail
 
     project_root = ctx.obj["project_root"]
     json_mode = ctx.obj.get("json", False)
 
-    if json_mode:
-        envelope = get_mission_detail(
-            project_root, mission_id, include_knight=not no_knight
-        )
-        if envelope is None:
-            _emit_not_found(ctx, mission_id, "mission")
-            return
-        click.echo(json.dumps(envelope))
-        return
-
-    mission = read_mission(project_root, mission_id)
-
+    mission = get_mission_detail(
+        project_root, mission_id, include_doctrine_mission=not no_doctrine_mission
+    )
     if mission is None:
         _emit_not_found(ctx, mission_id, "mission")
+        return
+
+    if json_mode:
+        click.echo(json.dumps(mission))
         return
 
     # Check if parent quest is soft-deleted
@@ -2621,9 +2448,9 @@ def _show_mission(ctx, mission_id, no_knight):
         if quest_del_at:
             quest_deleted = True
 
-    depends_on_details = list_mission_depends_on(project_root, mission_id)
-    blocks_details = list_mission_blocks(project_root, mission_id)
-    board_messages = list_board_messages(project_root, mission_id)
+    depends_on_details = mission["dependencies"]["needs"]
+    blocks_details = mission["dependencies"]["blocks"]
+    board_messages = mission["board"]
 
     quest_id = mission["quest_id"] or ""
 
@@ -2636,8 +2463,8 @@ def _show_mission(ctx, mission_id, no_knight):
         click.echo(f"Type: {mission['mission_type']}")
     if mission["description"]:
         click.echo(f"Description: {mission['description']}")
-    if mission["knight"]:
-        click.echo(f"Knight: {mission['knight']}")
+    if mission["doctrine_mission"]:
+        click.echo(f"Doctrine Mission: {mission['doctrine_mission']}")
     if mission["block_reason"]:
         click.echo(f"Block Reason: {mission['block_reason']}")
     click.echo(f"Created: {mission['created_at']}")
@@ -2671,26 +2498,13 @@ def _show_mission(ctx, mission_id, no_knight):
             else:
                 click.echo(f"  [{msg['created_at']}] {msg['message']}")
 
-    # Knight contents
-    if mission["knight"] and not no_knight:
-        knight_name = Path(mission["knight"]).stem
-        try:
-            knight_record = knight_module.read_knight(project_root, knight_name)
-        except ValueError:
-            knight_record = None
-        if knight_record is not None:
-            click.echo("")
-            click.echo("--- Knight Contents ---")
-            # Render frontmatter + body to preserve byte-identical output.
-            fm_lines = "\n".join(
-                f"{k}: {knight_record[k]}" for k in ("id", "title", "summary")
-            )
-            click.echo(f"---\n{fm_lines}\n---\n{knight_record['body']}", nl=False)
-        else:
-            click.echo("")
-            click.echo(
-                f'Warning: knight file "{mission["knight"]}" not found in .lore/knights/'
-            )
+    # The doctrine mission's instructions, exactly as written.
+    # A reference that does not resolve prints nothing at all: a read never
+    # reports a broken reference, and `lore health` is its single reporter.
+    if mission["doctrine_mission_contents"]:
+        click.echo("")
+        click.echo("--- Mission Instructions ---")
+        click.echo(mission["doctrine_mission_contents"], nl=False)
 
 
 def _show_quest(ctx, quest_id):
@@ -4828,7 +4642,7 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
-_VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "schemas", "glossary", "bindings", "rites", "voice", "skills")
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "watchers", "schemas", "glossary", "bindings", "rites", "voice", "skills")
 
 
 @main.command("health")
@@ -4837,7 +4651,7 @@ _VALID_SCOPES = ("codex", "artifacts", "doctrines", "knights", "watchers", "sche
     "scope",
     multiple=True,
     type=click.Choice(list(_VALID_SCOPES)),
-    help="Limit audit to specific entity types (space-separated, e.g. --scope codex knights schemas).",
+    help="Limit audit to specific entity types (space-separated, e.g. --scope codex doctrines schemas).",
 )
 @click.argument("extra_scopes", nargs=-1)
 @click.option("--json", "json_mode", is_flag=True, help="Output as JSON.")

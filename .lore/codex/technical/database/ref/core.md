@@ -25,7 +25,7 @@ related:
 
 ## Why this exists
 
-Lore is a single-file SQLite database that holds all task state for a project. Two consumers depend on it: the CLI (`lore.cli`) and Realm via the Python API (`lore.db`, `lore.models`). Every entity in the system either lives here (quests, missions, dependencies, board messages) or in a sibling file-based store (knights, doctrines, watchers, artifacts, codex, glossary).
+Lore is a single-file SQLite database that holds all task state for a project. Two consumers depend on it: the CLI (`lore.cli`) and Realm via the Python API (`lore.db`, `lore.models`). Every entity in the system either lives here (quests, missions, dependencies, board messages) or in a sibling file-based store (doctrines, watchers, artifacts, codex, glossary, rites).
 
 This doc captures the design choices that the schema cannot express and the rules every query must follow.
 
@@ -45,7 +45,7 @@ This doc captures the design choices that the schema cannot express and the rule
 
 - **Cascade only auto-unblocks `open` missions.** When a mission closes, dependents transition from "waiting" to "ready" only if their status is `open`. Manually `blocked` missions (set via `lore block`) are never auto-unblocked — the orchestrator must `lore unblock` them explicitly. This protects deliberate human/orchestrator pauses from being trampled by an unrelated dependency clearing.
 
-- **Mission `mission_type` is free-form (post-v5).** The column has no `CHECK` constraint and no `NOT NULL`. Pre-v5 it was an enum (`knight | constable | human`); the v4→v5 migration removed the constraint so consuming layers can interpret types without a schema bump per type. Existing values were preserved as plain strings.
+- **Mission `mission_type` is free-form (post-v5).** The column has no `CHECK` constraint and no `NOT NULL`. Pre-v5 it was an enum (`knight | constable | human`); the v4→v5 migration removed the constraint so consuming layers can interpret types without a schema bump per type. Existing values were preserved as plain strings. The v6→v7 migration rewrote the surviving `knight` token to `agent`, dropped `missions.knight` and added `missions.doctrine_mission TEXT`.
 
 - **Dependency direction reads "FROM depends on TO".** `from_id` is the blocked mission; `to_id` is what it depends on. The `lore needs A:B` syntax matches: A = `from_id`, B = `to_id`. Read left-to-right: "FROM depends on TO." This is the single mnemonic that keeps cycle detection and cascade logic legible.
 

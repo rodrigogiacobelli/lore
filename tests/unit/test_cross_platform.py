@@ -95,25 +95,24 @@ class TestDatabasePathResolution:
 
 
 # ---------------------------------------------------------------------------
-# Doctrine and Knight File Access — uses pathlib
+# Doctrine File Access — uses pathlib
 # ---------------------------------------------------------------------------
 
 
-class TestDoctrineAndKnightFileAccess:
-    """Verify doctrine.py and CLI knight access use pathlib."""
+class TestDoctrineFileAccess:
+    """Verify doctrine.py uses pathlib."""
 
     def test_doctrine_module_uses_pathlib(self):
         """doctrine.py should use pathlib.Path."""
         source = (SRC_DIR / "doctrine.py").read_text()
         assert "from pathlib import Path" in source
 
-    def test_doctrine_load_takes_pathlib_path(self):
-        """load_doctrine signature should accept Path."""
-        from lore.doctrine import load_doctrine
+    def test_read_doctrine_takes_pathlib_path(self):
+        """read_doctrine signature should accept Path."""
+        from lore.doctrine import read_doctrine
 
-        sig = inspect.signature(load_doctrine)
-        param = sig.parameters["filepath"]
-        # The annotation should be Path
+        sig = inspect.signature(read_doctrine)
+        param = sig.parameters["project_root"]
         assert param.annotation is Path
 
     def test_list_doctrines_takes_pathlib_path(self):
@@ -124,8 +123,8 @@ class TestDoctrineAndKnightFileAccess:
         param = sig.parameters["project_root"]
         assert param.annotation is Path
 
-    def test_init_uses_pathlib_for_knights_dir(self):
-        """init.py should construct knights dir path using pathlib."""
+    def test_init_uses_pathlib(self):
+        """init.py should construct its paths using pathlib."""
         source = (SRC_DIR / "init.py").read_text()
         assert "from pathlib import Path" in source
 
@@ -473,7 +472,7 @@ class TestLoreDirectoryHandling:
         lore_dir = tmp_path / ".lore"
         lore_dir.mkdir()
 
-        subdirs = ["doctrines", "knights", "reports", "reports/quests"]
+        subdirs = ["doctrines", "artifacts", "reports", "reports/quests"]
         for sub in subdirs:
             parts = sub.split("/")
             d = lore_dir
