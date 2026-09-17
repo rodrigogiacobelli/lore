@@ -26,7 +26,7 @@ entries:
       (WAL mode, busy timeout, reader/writer isolation) —
       along with the `--help`-as-teaching-interface contract and the free-form
       `mission_type` field Lore stores but never interprets.
-    authored_against: "1bec1a9dc56feb261472014d5af36932122ddcff0faabd32d8b254490bc3c6c1"
+    authored_against: "0749636b8e3fa4cc3535164fe9a7e805a3d1a1ac439eb628c3c7928ac601faf2"
 
   tech-arch-source-layout:
     slug: source-layout
@@ -84,7 +84,7 @@ entries:
       `related`, `binds` and `rites`, referencing entities by id rather than
       file path, and `lore impacts`, which maps a codex document to the code
       paths it governs.
-    authored_against: "e7682f17e262742f718c3abb06eff9fc1a3982cd17eba805ca60fb0f2f8b50ce"
+    authored_against: "d722750b4dbc51cf4bc44ceafb2a177e07c15acb5d1d7b0f77f9d8caae729b94"
 
   tech-arch-initialized-project-structure:
     slug: lore-directory
@@ -138,7 +138,7 @@ entries:
       too — how Lore, Realm and Citadel fit together — because Realm is the
       caller this contract exists for. The narrative guide and per-symbol
       reference are filed with the project-setup group.
-    authored_against: "6a982dcac436e02f426b984b6a898cee2b755d2f498f4015b5359d5f5419554e"
+    authored_against: "ebd139aa69f8fbfa6cc0f09b126046a6fde0f76283898717b5e0c481f7a21783"
 
   conceptual-entities-doctrine:
     slug: doctrines

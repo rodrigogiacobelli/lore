@@ -55,7 +55,7 @@ The one place Lore reads a file it did not install is a path it is about to writ
 
 ## Lore Owns the Files It Installs
 
-Inside those two sets the rule is the opposite one, and it is a product decision rather than an inference. **A file Lore installed is Lore's, whatever has been done to it since.** If this release still ships it, it is rewritten. If this release has retired it, it is removed and the successor is named. Neither asks.
+Inside those two sets the rule is the opposite one, and it is a product decision rather than an inference. **A file Lore installed is Lore's, whatever has been done to it since.** If the installing release still ships it, it is rewritten. If the installing release has retired it, it is removed and the successor is named. Neither asks.
 
 This is what the seeded trees have always done — `.lore/doctrines/default/`, `.lore/artifacts/default/` and `.lore/watchers/default/` are overwritten in place on every run — and skills were the one tree that behaved differently, keeping an edited file and asking about it. They no longer do. It is **intended behaviour**, not an oversight.
 
@@ -94,7 +94,7 @@ A skill Lore retires is removed, and the reason is quoted from the retirement le
 Removed .claude/skills/new-rite/SKILL.md — merged into store-memory
 ```
 
-A removal is a hard unlink, not a soft delete. `decisions-003-soft-delete-semantics` governs entities the `lore` CLI manages — quests, missions, dependency rows, and the file entities with a `lore delete` path. A skill is none of those: it has no ID retrieval, no CRUD surface and no delete command. What stands in for the soft-delete guarantee is the **record**: a path is unlinked only when something says Lore installed it and this release no longer ships it. The bytes there are not part of that test, because an edited file Lore installed is Lore's too — so the record has to be one that means it, which is why the no-manifest fallback below will not guess a path Lore owns out of a directory it cannot prove Lore wrote into.
+A removal is a hard unlink, not a soft delete. `decisions-003-soft-delete-semantics` governs entities the `lore` CLI manages — quests, missions, dependency rows, and the file entities with a `lore delete` path. A skill is none of those: it has no ID retrieval, no CRUD surface and no delete command. What stands in for the soft-delete guarantee is the **record**: a path is unlinked only when something says Lore installed it and the installing release no longer ships it. The bytes there are not part of that test, because an edited file Lore installed is Lore's too — so the record has to be one that means it, which is why the no-manifest fallback below will not guess a path Lore owns out of a directory it cannot prove Lore wrote into.
 
 Removing a marked block is different: the block is deleted and the rest of the file is left byte-identical. An instruction file is never removed, because Lore did not write the whole of it.
 
@@ -132,7 +132,7 @@ An unreadable or unrecognised manifest is treated the same way: one warning on s
 
 ## Interruption
 
-The manifest is written last. An interrupted run therefore leaves the previous manifest in place, and the next `lore init` finds the already-written files disagreeing with it. Every one of those paths is Lore's, so the recovering run writes what this release ships and the project lands where the interrupted run was heading — in one re-run, with the writes reported.
+The manifest is written last. An interrupted run therefore leaves the previous manifest in place, and the next `lore init` finds the already-written files disagreeing with it. Every one of those paths is Lore's, so the recovering run writes what the installing release ships and the project lands where the interrupted run was heading — in one re-run, with the writes reported.
 
 ## Auditing Without Running Init
 

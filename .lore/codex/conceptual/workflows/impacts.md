@@ -32,7 +32,6 @@ related:
 - decisions-011-api-parity-with-cli
 - standards-separation-of-concerns
 - standards-single-responsibility
-- vision-benchmarks
 - codex
 - conceptual-workflows-nested-projects
 - tech-arch-projects-module
@@ -53,9 +52,9 @@ conceptual-workflows-nested-projects. `lore codex chaos` is the one traversal
 sibling that never accepts it.
 
 The command never writes anything. It is the codex↔code analogue of
-`lore codex map` (which walks `related:` within the codex). Per
-`vision-benchmarks`, this is the Layer-3 citation-accuracy retrieval primitive:
-the gold-set generator for "which codex entries claim to govern this file?".
+`lore codex map` (which walks `related:` within the codex). It is also the
+retrieval primitive that citation-accuracy measurement rests on: the gold-set
+generator for "which codex entries claim to govern this file?".
 Determinism and zero false positives are therefore non-negotiable.
 
 ## Preconditions

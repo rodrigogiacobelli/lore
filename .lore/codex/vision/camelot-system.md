@@ -8,7 +8,6 @@ summary: 'What Camelot is, why it exists, and how its three projects — Lore, R
 
   '
 related:
-- tech-api-surface
 - decisions-010-public-api-stability
 - decisions-011-api-parity-with-cli
 - tech-overview
