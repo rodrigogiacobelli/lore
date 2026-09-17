@@ -2,7 +2,7 @@
 id: standards-dry
 title: DRY — Don't Repeat Yourself
 summary: Every piece of logic has one authoritative home. If the same rule, check, or transformation appears in more than one place, one of them is wrong. Covers the canonical module homes for validation, path construction, YAML parsing, JSON Schema validation, and graph algorithms.
-related: ["tech-arch-source-layout", "tech-arch-validators", "tech-arch-frontmatter", "tech-arch-graph", "tech-arch-schemas"]
+related: ["tech-arch-source-layout", "tech-arch-validators", "tech-arch-frontmatter", "tech-arch-graph", "tech-arch-schemas", "tech-arch-codex-index"]
 ---
 
 # DRY — Don't Repeat Yourself
@@ -16,7 +16,8 @@ Every piece of logic has one authoritative home. If the same rule, check, or tra
 | All input validation | `validators.py` | `lore.validators` |
 | `.lore/` path construction | `paths.py` | `lore.paths` |
 | YAML frontmatter parsing | `frontmatter.py` | `lore.frontmatter` |
-| Topological sort of missions | `graph.py` | `lore.graph` |
+| Topological sort of missions, and the codex-index graph partition | `graph.py` | `lore.graph` |
+| The codex index — partition, render, refresh, classify, match | `index.py` | `lore.index` |
 | Doctrine loading and validation | `doctrine.py` | `lore.doctrine` |
 | Watcher filesystem operations | `watcher.py` | `lore.watcher` |
 | Entity JSON Schemas + schema validation | `schemas.py` + `schemas/*.yaml` | `lore.schemas` |

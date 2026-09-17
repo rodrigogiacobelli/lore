@@ -1329,12 +1329,12 @@ def test_health_check_scope_codex_only_check_codex_runs(lore_dir):
         mock_watchers.assert_not_called()
 
 
-def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
+def test_health_check_scope_none_same_as_all_eleven_explicit(lore_dir):
     """health_check scope=None is equivalent to the full _ALL_SCOPES list.
 
     Updated by US-004: _ALL_SCOPES now includes 'schemas'. The explicit list is
-    now spelled out in full (glossary, bindings, rites, voice included) so the
-    equivalence holds whatever those checkers find.
+    now spelled out in full (glossary, bindings, rites, voice, skills, index
+    included) so the equivalence holds whatever those checkers find.
     Exercises: lore codex show conceptual-workflows-health
     """
     # Inject watcher error to produce non-empty results
@@ -1349,6 +1349,7 @@ def test_health_check_scope_none_same_as_all_five_explicit(lore_dir):
         scope=[
             "codex", "artifacts", "doctrines", "watchers",
             "glossary", "schemas", "bindings", "rites", "voice", "skills",
+            "index",
         ],
     )
 
@@ -2437,11 +2438,11 @@ def test_schema_kinds_contains_glossary_row():
 
 
 def test_all_scopes_contains_bindings():
-    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 11 (US-006 added rites, then voice, then skills)."""
+    """US-001 unit — `_ALL_SCOPES` contains `bindings`; total token count is 11 (US-006 added rites, then voice, then skills; the codex index added `index`)."""
     from lore.health import _ALL_SCOPES
 
     assert "bindings" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 10
+    assert len(_ALL_SCOPES) == 11
 
 
 def test_health_check_scope_bindings_only_routes_to_check_bindings(tmp_path):
@@ -3335,16 +3336,16 @@ def test_health_check_unknown_scope_message_verbatim(tmp_path):
     """An unknown scope raises ValueError with the shipped `Unknown scope:` text incl. rites.
 
     The library-level `health_check` keeps its historic `Unknown scope:` wording
-    (the CLI Choice validation is the user-facing guard). `rites`, `voice` and
-    `skills` appear in the listed valid scopes since each was added to
-    `_ALL_SCOPES`.
+    (the CLI Choice validation is the user-facing guard). `rites`, `voice`,
+    `skills` and `index` appear in the listed valid scopes since each was added
+    to `_ALL_SCOPES`.
     """
     root = _make_rites_root(tmp_path)
     with pytest.raises(ValueError) as exc:
         health_check(root, scope=["xyz"])
     assert str(exc.value) == (
         "Unknown scope: 'xyz'. Valid scopes: codex, artifacts, "
-        "doctrines, watchers, glossary, schemas, bindings, rites, "
+        "doctrines, watchers, glossary, index, schemas, bindings, rites, "
         "voice, skills."
     )
 
@@ -3738,7 +3739,7 @@ def test_all_scopes_contains_skills():
     from lore.health import _ALL_SCOPES
 
     assert "skills" in _ALL_SCOPES
-    assert len(_ALL_SCOPES) == 10
+    assert len(_ALL_SCOPES) == 11
 
 
 def test_health_check_routes_the_skills_scope_to_check_skills(tmp_path):
@@ -4117,10 +4118,10 @@ def test_check_doctrines_soft_deleted_mission_file_suppresses_the_row(lore_dir):
 # --- the scope itself -------------------------------------------------------
 
 
-def test_all_scopes_has_ten_entries_and_no_knights_token():
+def test_all_scopes_has_eleven_entries_and_no_knights_token():
     from lore.health import _ALL_SCOPES
 
-    assert len(_ALL_SCOPES) == 10
+    assert len(_ALL_SCOPES) == 11
     assert "knights" not in _ALL_SCOPES
 
 

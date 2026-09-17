@@ -168,9 +168,9 @@ _FRONTMATTER_KINDS = {
     "doctrine-mission-frontmatter",
 }
 
-_YAML_KINDS = {"watcher-yaml", "glossary", "main-rite", "shared-step"}
+_YAML_KINDS = {"watcher-yaml", "glossary", "main-rite", "shared-step", "index-authored"}
 
-_RAISE_KINDS = {"glossary"}
+_RAISE_KINDS = {"glossary", "index-authored"}
 
 
 def _pointer_from_path(path_parts: list) -> str:

@@ -26,7 +26,7 @@ related:
 
 # Skill Catalogue and Access-Mode Rendering
 
-Nine skills ship with Lore. The catalogue records their structure; each skill's own `SKILL.md` carries its content. `conceptual-entities-skill` describes what a skill is and where it installs.
+Ten skills ship with Lore — two `memory`, five `machinery`, three `workflow`. The catalogue records their structure; each skill's own `SKILL.md` carries its content. `conceptual-entities-skill` describes what a skill is and where it installs.
 
 ## The Catalogue
 
@@ -47,6 +47,8 @@ skills:
   - id: retrieve-memory
     family: memory
   - id: update-doctrine
+    family: machinery
+  - id: update-index
     family: machinery
   - id: update-watcher
     family: machinery

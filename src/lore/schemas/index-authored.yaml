@@ -1,0 +1,36 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/index-authored"
+title: Codex Index Authored Entries
+type: object
+additionalProperties: false
+required: [version, entries]
+properties:
+  version:
+    type: integer
+    const: 1
+  entries:
+    type: object
+    propertyNames:
+      pattern: "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [slug, name, summary, authored_against]
+      properties:
+        slug:
+          type: string
+          minLength: 1
+          maxLength: 60
+          pattern: "^[a-z0-9][a-z0-9-]*$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          pattern: "^[^\n\r]+$"
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        authored_against:
+          type: string
+          pattern: "^[0-9a-f]{64}$"

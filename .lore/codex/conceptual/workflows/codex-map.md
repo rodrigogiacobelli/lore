@@ -23,6 +23,8 @@ related:
 - tech-arch-frontmatter
 - ref-lore_cli-commands
 - decisions-011-api-parity-with-cli
+- decisions-035-node-is-a-document-cluster-is-a-set
+- conceptual-workflows-index
 - codex
 ---
 # `lore codex map` Behaviour
@@ -101,6 +103,8 @@ A single pre-pass over the index reads every document's `related` field via
 - `inbound[doc_id]` — set of IDs whose `related` field contains the document.
 
 Every id in these maps is in the index's own key space — bare for this project's own documents, origin-qualified for a foreign one. Each `related` entry is normalised into that key space before matching: an entry is qualified by the project that wrote it (a bare entry written inside `lore` is `lore`'s own document), then reduced to a bare id if that qualifier equals this project's own name (`lore.projects.index_key`) — the mechanism that lets an ancestor's document backlink to something the reading project already owns. This is the same helper used by `lore codex chaos` (`_build_adjacency`), so both commands see the same adjacency view of the resolved scope.
+
+A **node** is one codex document — a single vertex of the `related` graph. A set of nodes the codex index groups together is a **cluster**, which `lore codex map` never produces (`decisions-035-node-is-a-document-cluster-is-a-set`, `conceptual-workflows-index`).
 
 ### 5. Two-budget BFS
 

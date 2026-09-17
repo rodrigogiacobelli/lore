@@ -289,3 +289,60 @@ def test_the_three_doctrine_helpers_create_nothing(tmp_path):
     doctrine_mission_path(doctrine_dir, "recon")
 
     assert list(tmp_path.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# The codex index directory.
+# Spec: codex-index-spec (lore codex show codex-index-spec) — Part 5 unit F2
+# Anchor: Part 2 "Data and Storage" — `.lore/index/` holds two files with
+# opposite git treatment: `authored.yaml` is committed and written only by the
+# update-index skill, `codex.json` is a generated, git-ignored cache.
+# ---------------------------------------------------------------------------
+
+
+def test_index_dir_points_into_dot_lore(tmp_path):
+    # codex-index-spec — F2: index_dir -> <root>/.lore/index
+    from lore.paths import index_dir
+
+    assert index_dir(tmp_path) == tmp_path / ".lore" / "index"
+
+
+def test_index_authored_path_is_the_committed_authored_file(tmp_path):
+    # codex-index-spec — F2: index_authored_path -> <root>/.lore/index/authored.yaml
+    from lore.paths import index_authored_path
+
+    assert index_authored_path(tmp_path) == (
+        tmp_path / ".lore" / "index" / "authored.yaml"
+    )
+
+
+def test_index_rendered_path_is_the_generated_cache(tmp_path):
+    # codex-index-spec — F2: index_rendered_path -> <root>/.lore/index/codex.json
+    from lore.paths import index_rendered_path
+
+    assert index_rendered_path(tmp_path) == (
+        tmp_path / ".lore" / "index" / "codex.json"
+    )
+
+
+def test_both_index_files_sit_inside_the_index_dir(tmp_path):
+    # codex-index-spec — F2: one directory holding both halves of the index
+    from lore.paths import index_authored_path, index_dir, index_rendered_path
+
+    assert index_authored_path(tmp_path).parent == index_dir(tmp_path)
+    assert index_rendered_path(tmp_path).parent == index_dir(tmp_path)
+
+
+def test_the_three_index_helpers_create_nothing(tmp_path):
+    # A path calculation never touches the filesystem: the root itself does not
+    # exist, and none of the three brings it or the directory into being.
+    from lore.paths import index_authored_path, index_dir, index_rendered_path
+
+    root = tmp_path / "absent"
+
+    index_dir(root)
+    index_authored_path(root)
+    index_rendered_path(root)
+
+    assert not root.exists()
+    assert list(tmp_path.iterdir()) == []

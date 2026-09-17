@@ -98,12 +98,12 @@ def test_scope_bindings_accepted_empty_project(project_dir, runner):
 
 
 def test_help_lists_bindings_scope(project_dir, runner):
-    """US-001 Scenario 2 — `--help` advertises the scope choice list (US-006 appended `rites`, then `voice`, then `skills`)."""
+    """US-001 Scenario 2 — `--help` advertises the scope choice list (US-006 appended `rites`, then `voice`, then `skills`; the codex index inserted `index` after `glossary`)."""
     res = runner.invoke(main, ["health", "--help"])
     assert res.exit_code == 0, res.output
     # Click renders Choice as [a|b|c]; assert the full token block appears.
     assert (
-        "[codex|artifacts|doctrines|watchers|schemas|glossary|bindings|rites|voice|skills]"
+        "[codex|artifacts|doctrines|watchers|schemas|glossary|index|bindings|rites|voice|skills]"
         in res.stdout
     )
 

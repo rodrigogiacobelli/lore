@@ -11,6 +11,7 @@ related:
 - conceptual-workflows-rite-crud
 - decisions-016-rite-json-envelope-omits-group
 - ref-lore_cli-commands
+- conceptual-workflows-index
 ---
 
 # JSON Output Mode
@@ -41,7 +42,7 @@ Several subcommands also accept a local `--json` flag at the subcommand level. T
 
 For these commands, the local flag and the global flag produce identical output. Double-declaration (`lore --json doctrine list --json`) is harmless.
 
-`lore codex search`, `lore glossary list`, and `lore glossary search` carry **no** local `--json` — the global flag is the only way to get their JSON envelope. Every example for these three uses `lore --json <command> ...`.
+`lore codex search`, `lore glossary list`, `lore glossary search`, `lore index build` and `lore index search` carry **no** local `--json` — the global flag is the only way to get their JSON envelope. Every example for these five uses `lore --json <command> ...`.
 
 ## Success Envelopes
 
@@ -79,6 +80,8 @@ Each command documents its own JSON shape. Common patterns:
 | `lore rite new` | `{"id", "kind", "group", "filename", "path"}` — `kind` is `"main"` or `"shared"`; `group` slash-joined or `null` |
 | `lore rite edit` | Full updated entity object (the parsed rite/step dict) |
 | `lore rite delete` | `{"id", "group", "deleted_at"}` — `group` slash-joined or `null` |
+| `lore index build` | `{"clusters": [{slug, name, hub, status, members, member_paths}], "unauthored": N, "drifted": N, "stale": [{slug, hub, reason}]}` — `slug` and `name` are `null` on a cluster with no authored entry |
+| `lore index search` | `{"clusters": [{slug, name, summary, hub, members, member_paths}]}` — the three authored fields are `null` on an unauthored cluster; no match is `{"clusters": []}` |
 
 ## Error JSON Format
 

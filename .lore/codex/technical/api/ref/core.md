@@ -14,7 +14,9 @@ binds:
 - tests/unit/test_models.py
 - tests/unit/test_models_impacts.py
 - tests/unit/test_api_surface.py
+- tests/unit/test_api_all_matches_spec.py
 - tests/e2e/test_python_api.py
+- tests/e2e/test_api_parity_index.py
 related:
 - decisions-010-public-api-stability
 - decisions-011-api-parity-with-cli
@@ -36,6 +38,10 @@ related:
 - decisions-021-health-reports-are-ephemeral-by-default
 - decisions-025-cross-boundary-reads-are-read-only
 - decisions-026-project-naming-and-addressing
+- decisions-036-index-partitions-the-local-canonical-codex
+- decisions-040-no-lore-exception-shadows-a-builtin
+- conceptual-workflows-index
+- tech-arch-codex-index
 ---
 
 # Lore Python API — core surface
@@ -122,7 +128,7 @@ Doctrine, Watcher, Artifact, Codex, Glossary and Rite Read/List/Search/Traverse 
 
 The facade re-exports the operational surface in named sections; this list mirrors the structure of `__all__` in `src/lore/api.py`. New exports are appended within the relevant section, never sprinkled across sections.
 
-- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `Config`, `SharedExports`, `DescendantExport`, `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`.
+- **Types & enums** — `QuestStatus`, `MissionStatus`, `DependencyType`, `Quest`, `Mission`, `Dependency`, `BoardMessage`, `Artifact`, `CodexDocument`, `DoctrineListEntry`, `GlossaryItem`, `Watcher`, `HealthIssue`, `HealthReport`, `SchemaIssue`, `CodeBinding`, `CodexBinding`, `ImpactsError`, `ImpactsResult`, `DoctrineError`, `GlossaryError`, `OverlayError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `CodexIndexError`, `CodexIndexNotAuthoredError`, `Config`, `SharedExports`, `DescendantExport`, `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`.
 - **Project topology (nested projects)** — `ProjectRef`, `UnknownProjectError`, `ForeignEntityError`, `list_projects`, `resolve_project`, `project_name`.
 - **Project root** — `find_project_root`.
 - **Validators** — `validate_message`, `validate_entity_id`, `validate_mission_id`, `validate_priority`, `validate_name`, `validate_group`, `validate_quest_id_loose`, `validate_chaos_threshold`, `validate_access_mode`, `validate_skill_family`, `validate_agent_id`, `validate_agent_selection`, `validate_binds_entry`, `validate_project_name`, `is_glob_pattern`, `route_entity`.
@@ -139,6 +145,7 @@ The facade re-exports the operational surface in named sections; this list mirro
 - **Artifact** — `list_artifacts`, `read_artifact`, `create_artifact`, `update_artifact`, `delete_artifact`.
 - **Watcher** — `list_watchers`, `find_watcher`, `load_watcher`, `create_watcher`, `update_watcher`, `delete_watcher`, `read_watcher_text`.
 - **Codex** — `list_codex`, `search_documents`, `read_document`, `read_documents_with_glossary`, `map_documents`, `chaos_documents`.
+- **Codex index** — `build_index`, `search_index`.
 - **Rite** — `scan_rites`, `read_rite`, `search_rites`, `create_rite`, `update_rite`, `delete_rite`, `list_rites`, `find_rite`, `search_rites_scoped`.
 - **Glossary** — `scan_glossary`, `read_glossary_item`, `search_glossary`, `match_glossary`.
 - **Impacts** — `impacts`, `classify_token`.
@@ -147,6 +154,39 @@ The facade re-exports the operational surface in named sections; this list mirro
 - **Init / reports / config** — `plan_init`, `apply_init`, `run_init`, `generate_reports`, `load_config`.
 
 The authoritative list lives in `src/lore/api.py`. If this doc and the source drift, the source wins; report the drift via `lore health` or a codex update.
+
+## Codex index
+
+`build_index(project_root: Path) -> dict` and `search_index(project_root: Path, keyword: str) -> list[dict]` take `project_root` first, like the `doctrine` functions and unlike the other codex reads. Neither accepts `scope=`: the index reads the project it runs in and no other (`decisions-036-index-partitions-the-local-canonical-codex`), so no returned record carries `origin`.
+
+`build_index` re-partitions the codex, writes `.lore/index/codex.json`, and returns the classification:
+
+```python
+{
+  "clusters": [
+    {"slug": str | None, "name": str | None, "hub": str,
+     "status": "ok" | "unauthored" | "drifted",
+     "members": [str, ...], "member_paths": [str, ...]}
+  ],
+  "unauthored": int,
+  "drifted": int,
+  "stale": [{"slug": str, "hub": str,
+             "reason": "hub_not_a_hub" | "hub_not_found"}],
+}
+```
+
+A missing `.lore/index/authored.yaml` is a valid state: every cluster comes back `unauthored`. `slug` and `name` are `None` on an unauthored cluster.
+
+`search_index` refreshes the render when a stat fingerprint of the codex has moved, then returns the matching clusters — authored first by ascending `slug`, then unauthored by ascending `hub`. Each carries `slug`, `name`, `summary`, `hub`, `members` and `member_paths`, with the first three `None` on an unauthored cluster. No match is `[]`, which is an answer rather than a failure.
+
+Two exceptions, neither shadowing a builtin (`decisions-040-no-lore-exception-shadows-a-builtin`):
+
+- `CodexIndexNotAuthoredError(CodexIndexError)` — raised by `search_index` when no authored file exists. `build_index` swallows it and reports every cluster `unauthored`.
+- `CodexIndexError(ValueError)` — the authored file is present and cannot be used. It carries an `issues: list[SchemaIssue]` attribute mirroring `SchemaValidationError`, so a caller reports one row per failure with its rule and pointer rather than validating the file a second time. A parser failure carries the one issue that describes it.
+
+Both are raised by either function, and a write the atomic write gate refuses raises a plain `ValueError`.
+
+`partition_graph` and `cluster_hub` stay internal to `lore.graph` and are deliberately absent from `lore.api.__all__`. See conceptual-workflows-index and tech-arch-codex-index.
 
 ## Return-dict contracts that callers must handle
 
@@ -166,7 +206,7 @@ Validates entity existence inside the same `BEGIN IMMEDIATE` as the insert. Vali
 
 ## Diagnostic operations
 
-`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, audits codex `binds:` and `rites:` reference integrity, and audits canonical codex prose against the voice rules. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. `None` runs every scope. `health_check` takes no `--project` equivalent and never reads another project — it audits only the project it runs in, in every direction (`conceptual-workflows-nested-projects`).
+`health_check(project_root, scope=None)` audits all file-based entity types, validates every entity file's shape against its JSON Schema, audits codex `binds:` and `rites:` reference integrity, and audits canonical codex prose against the voice rules. Never prints. Returns `HealthReport` (frozen dataclass with `errors`, `warnings`, `has_errors`, `issues`). Valid scope tokens, in the order `health_check`'s own `Valid scopes:` message prints them: `codex`, `artifacts`, `doctrines`, `watchers`, `glossary`, `index`, `schemas`, `bindings`, `rites`, `voice`, `skills`. `None` runs every scope. `health_check` takes no `--project` equivalent and never reads another project — it audits only the project it runs in, in every direction (`conceptual-workflows-nested-projects`).
 
 `health_check` takes three keyword-only report arguments: `write_report` (default `False`), `timestamp`, and `retention`. `write_report=False` is a read-only audit that touches no file and never reads `.lore/config.toml`. `write_report=True` offers the report to the retention policy — `retention=None` resolves it from the `health-report-retention` config key (default `"none"`, so a caller that passes only `write_report=True` still gets no file), while an explicit `"none"` / `"latest"` / `"all"` overrides the project. Any other `retention` token raises `ValueError`, whatever `write_report` holds. Resolution lives in `health_check` rather than the CLI, so a Realm or script caller gets the project's policy without reading config itself (ADR-011 parity; `decisions-021-health-reports-are-ephemeral-by-default`). `HealthReport.report_path` names the written file, or is `None` when nothing was written.
 

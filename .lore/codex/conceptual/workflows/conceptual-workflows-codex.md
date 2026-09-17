@@ -24,11 +24,14 @@ related:
 - conceptual-entities-glossary
 - conceptual-workflows-nested-projects
 - decisions-013-toml-for-config-yaml-for-glossary
+- conceptual-workflows-index
 ---
 
 # Codex Commands — `lore codex`
 
 The codex is the agent-facing documentation store. All codex documents live under `.lore/codex/` as markdown files with YAML frontmatter. The `lore codex` command group provides read-only access.
+
+`lore codex` reaches one document at a time. Its sibling group `lore index` reaches a *cluster* of them — a set of densely linked documents the index partitions out of the same `related` graph — and is the cheaper first call on a codex a reader does not know. See `conceptual-workflows-index`.
 
 ## Preconditions
 

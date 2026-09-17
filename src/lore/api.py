@@ -113,6 +113,12 @@ from lore.codex import (
     ConflictingDepthFlags,
 )
 
+# --- Codex index ---
+from lore.index import (
+    build_index, search_index,
+    CodexIndexError, CodexIndexNotAuthoredError,
+)
+
 # --- Glossary ---
 from lore.glossary import (
     scan_glossary, read_glossary_item, search_glossary,
@@ -223,6 +229,8 @@ __all__ = [
     "UnknownProjectError",
     "ForeignEntityError",
     "ConflictingDepthFlags",
+    "CodexIndexError",
+    "CodexIndexNotAuthoredError",
     "Config",
     # config tables (nested-projects)
     "SharedExports",
@@ -328,6 +336,9 @@ __all__ = [
     "create_document",
     "update_document",
     "delete_document",
+    # codex index
+    "build_index",
+    "search_index",
     # projects (nested-projects)
     "list_projects",
     "resolve_project",

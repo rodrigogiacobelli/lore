@@ -8,6 +8,8 @@ related:
 - tech-arch-source-layout
 - standards-dry
 - standards-separation-of-concerns
+- tech-arch-graph
+- tech-arch-codex-index
 ---
 
 # Single Responsibility
@@ -29,7 +31,8 @@ Each module in the Lore source tree has exactly one job:
 | `codex.py` | Codex document discovery and retrieval |
 | `artifact.py` | Artifact file discovery and retrieval |
 | `frontmatter.py` | YAML frontmatter parsing |
-| `graph.py` | Topological sort of mission graphs |
+| `graph.py` | Graph algorithms over mission dependency sets and adjacency mappings |
+| `index.py` | The codex index — partition the `related` graph, render it, answer a keyword |
 | `oracle.py` | Report generation |
 | `root.py` | Project root detection |
 | `models.py` | Public dataclass definitions and `__all__` |

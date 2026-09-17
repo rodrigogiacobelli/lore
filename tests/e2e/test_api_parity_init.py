@@ -369,6 +369,17 @@ NESTED_PROJECTS_NEW_NAMES: tuple[str, ...] = (
     "read_watcher_text",
 )
 
+# codex-index-spec — Part 2 "Python API Surface". Held apart for the same
+# reason: each feature's addition stays legible against the 0.9.0 boundary.
+CODEX_INDEX_NEW_NAMES: tuple[str, ...] = (
+    # codex index
+    "build_index",
+    "search_index",
+    # exceptions
+    "CodexIndexError",
+    "CodexIndexNotAuthoredError",
+)
+
 # The public surface as `0.9.0` shipped it. Nothing here may ever leave
 # `lore.api.__all__` without an explicit breaking-change notice, so the list is
 # frozen at the release boundary rather than recomputed.
@@ -472,8 +483,11 @@ def test_only_recorded_names_left_the_public_surface():
         "names left the public surface without a recorded breaking-change notice: "
         f"{sorted((PREVIOUS_RELEASE_ALL - current) - REMOVED_WITH_A_BREAKING_NOTICE)}"
     )
-    assert current - PREVIOUS_RELEASE_ALL == set(THIRTEEN_NEW_NAMES) | set(
-        NESTED_PROJECTS_NEW_NAMES
+    assert (
+        current - PREVIOUS_RELEASE_ALL
+        == set(THIRTEEN_NEW_NAMES)
+        | set(NESTED_PROJECTS_NEW_NAMES)
+        | set(CODEX_INDEX_NEW_NAMES)
     )
 
 
@@ -579,6 +593,22 @@ class TestChangelogReleaseObligation:
         for key in ("project-name", "default-project-scope"):
             assert f"`{key}`" in added, f"config key {key} not named"
         for token in ("`--project`", "`[shared]`", "`[[descendants]]`", "`lore health`"):
+            assert token in added, f"{token} not named in the Added section"
+
+    def test_the_unreleased_entry_names_the_codex_index_additions(self):
+        """ADR-010 — four new names in `lore.api.__all__` is a minor bump, and
+        `standards-public-api-stability` makes `CHANGELOG.md` where it is
+        recorded. The entry also names the surface each one arrives behind."""
+        _, body = self._section("[Unreleased]")
+        added = body.split("### Changed")[0]
+        for name in CODEX_INDEX_NEW_NAMES:
+            assert f"`{name}`" in added, f"{name} not named in the Added section"
+        for token in (
+            "`lore index build`",
+            "`lore index search`",
+            "`lore health --scope index`",
+            "`update-index`",
+        ):
             assert token in added, f"{token} not named in the Added section"
 
     def test_the_init_release_entry_still_names_every_addition(self):

@@ -437,7 +437,7 @@ class _OrderedGroup(click.Group):
 class _ScopedGroup(click.Group):
     """Command group that gates `--project` on its own subcommands (FR-14).
 
-    Set as `cls=` on each of the nine `@main.group()` declarations. The root
+    Set as `cls=` on each of the ten `@main.group()` declarations. The root
     group carries its own gate in `_OrderedGroup`, because a top-level
     command's label is the command's name alone.
     """
@@ -3580,6 +3580,157 @@ def codex_delete(ctx, name):
 
 
 # ---------------------------------------------------------------------------
+# `lore index` — route into the codex by cluster.
+#
+# Sibling to `lore codex`, over the same `related` graph: a node is one
+# document and a cluster is a set of them.
+#
+# Every failure either command can meet is a `ValueError` carrying its own
+# finished message — `lore.index` composes the `.lore/index/authored.yaml: `
+# prefix and `safewrite` composes its refusal — so both handlers print
+# `str(exc)` through `_fail` and add no wording of their own (D-11,
+# `standards-dry`). The exit-2 refusals reach `_fail` never: `--project` is
+# answered by the gate `_ScopedGroup` already arms, because this group is
+# absent from `_PROJECT_READ_COMMANDS`, and a missing KEYWORD stays Click's
+# own usage error.
+# ---------------------------------------------------------------------------
+
+
+# What a cluster with no authored entry shows where its slug would go. The
+# placeholder is presentation: the absence itself is `slug: None`, decided in
+# `lore.index` and carried unchanged through the `--json` envelope.
+_UNAUTHORED_SLUG = "(unauthored)"
+
+
+def _stale_entry_line(entry: dict) -> str:
+    """One line per stale authored entry, one wording per reason.
+
+    The classification is `lore.index`'s and produces `lore health --scope
+    index`'s rows from the same two reasons, so there is no second rule here
+    to keep in step — only the sentence each one prints.
+    """
+    slug, hub = entry["slug"], entry["hub"]
+    tail = (
+        "heads no cluster"
+        if entry["reason"] == "hub_not_a_hub"
+        else "is not a document in this codex"
+    )
+    return f'Stale entry "{slug}": hub {hub} {tail}.'
+
+
+def _cluster_header(cluster: dict) -> str:
+    """The first line of a search result: the cluster's name, or its hub.
+
+    A cluster nobody has written up has no name to show, so it shows the
+    placeholder and the hub an entry would be keyed by.
+    """
+    if cluster["slug"] is None:
+        return f"  {_UNAUTHORED_SLUG} — hub: {cluster['hub']}"
+    return f"  {cluster['slug']} — {cluster['name']}"
+
+
+@main.group(cls=_ScopedGroup)
+@click.pass_context
+def index(ctx: click.Context) -> None:
+    """Route into the codex by cluster — .lore/index/ holds one authored entry per
+    cluster of densely linked documents, so a cold read starts at a named group of
+    documents instead of the whole corpus. Use 'lore index search <keyword>' to find
+    the clusters a topic lives in and 'lore index build' to re-partition the codex
+    and report which clusters need a summary written or refreshed. The entries
+    themselves are authored by the update-index skill, never by Lore.
+
+    --project is not accepted: the index is built from, and written into, the
+    project Lore runs in.
+    """
+
+
+@index.command("build")
+@click.pass_context
+def index_build(ctx: click.Context) -> None:
+    """Re-partition the codex and report which clusters need authoring."""
+    from lore.api import build_index
+
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+
+    try:
+        report = build_index(project_root)
+    except ValueError as exc:
+        _fail(ctx, json_mode, str(exc))
+        return
+
+    if json_mode:
+        click.echo(json.dumps(report))
+        return
+
+    clusters = report["clusters"]
+    if not clusters:
+        click.echo("No codex documents to index.")
+        return
+
+    # An unauthored cluster has no slug and no name, because both come from
+    # the entry it does not have; it shows the placeholder and the hub that
+    # would key one.
+    rows = [
+        [
+            cluster["slug"] or _UNAUTHORED_SLUG,
+            cluster["name"] or f"hub: {cluster['hub']}",
+            str(len(cluster["members"])),
+            cluster["status"],
+        ]
+        for cluster in clusters
+    ]
+    for line in _format_table(["SLUG", "NAME", "MEMBERS", "STATUS"], rows):
+        click.echo(line)
+
+    count = len(clusters)
+    click.echo(
+        f"{count} cluster{'' if count == 1 else 's'} — "
+        f"{report['unauthored']} unauthored, {report['drifted']} drifted."
+    )
+    for entry in report["stale"]:
+        click.echo(_stale_entry_line(entry))
+
+
+@index.command("search")
+@click.argument("keyword")
+@click.pass_context
+def index_search(ctx: click.Context, keyword: str) -> None:
+    """Find the clusters a keyword lives in."""
+    from lore.api import search_index
+
+    project_root = ctx.obj["project_root"]
+    json_mode = ctx.obj.get("json", False)
+
+    try:
+        clusters = search_index(project_root, keyword)
+    except ValueError as exc:
+        _fail(ctx, json_mode, str(exc))
+        return
+
+    if json_mode:
+        click.echo(json.dumps({"clusters": clusters}))
+        return
+
+    if not clusters:
+        click.echo(f'No clusters matching "{keyword}".')
+        return
+
+    # One column width across the whole answer, so the member ids of two
+    # clusters line up with each other and not only within their own block.
+    width = max(len(member) for row in clusters for member in row["members"])
+    for position, cluster in enumerate(clusters):
+        if position:
+            click.echo("")
+        click.echo(_cluster_header(cluster))
+        summary = cluster["summary"]
+        if summary:
+            click.echo(f"    {' '.join(summary.split())}")
+        for member, path in zip(cluster["members"], cluster["member_paths"]):
+            click.echo(f"    {member.ljust(width)}  {path}")
+
+
+# ---------------------------------------------------------------------------
 # `lore impacts` — codex<->code binding surfacing (US-003 + US-004).
 # Top-level command, sibling to `lore codex` / `lore artifact`.
 # ---------------------------------------------------------------------------
@@ -4642,7 +4793,7 @@ def watcher_delete(ctx, name, json_mode):
         click.echo(f"Deleted watcher {name}")
 
 
-_VALID_SCOPES = ("codex", "artifacts", "doctrines", "watchers", "schemas", "glossary", "bindings", "rites", "voice", "skills")
+_VALID_SCOPES = ("codex", "artifacts", "doctrines", "watchers", "schemas", "glossary", "index", "bindings", "rites", "voice", "skills")
 
 
 @main.command("health")

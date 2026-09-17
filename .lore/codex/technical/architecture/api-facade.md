@@ -17,6 +17,8 @@ related:
 - ref-lore_api-core
 - tech-arch-source-layout
 - conceptual-workflows-lore-init
+- decisions-040-no-lore-exception-shadows-a-builtin
+- tech-arch-codex-index
 ---
 
 # API Facade Module
@@ -37,13 +39,13 @@ Consequences:
 
 The `__all__` list in `api.py` is laid out in three named sections in a fixed order:
 
-1. **Types & enums** — frozen dataclasses and `StrEnum` subclasses sourced from `lore.models`, plus exception classes (`DoctrineError`, `GlossaryError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `ImpactsError`) and the read-only `Config` dataclass.
+1. **Types & enums** — frozen dataclasses and `StrEnum` subclasses sourced from `lore.models`, plus exception classes (`DoctrineError`, `GlossaryError`, `ProjectNotFoundError`, `ConflictingDepthFlags`, `ImpactsError`, `CodexIndexError`, `CodexIndexNotAuthoredError`) and the read-only `Config` dataclass. No exception name equals a Python builtin (`decisions-040-no-lore-exception-shadows-a-builtin`).
 
    A sub-block marked `# --- Operational dataclasses (sourced from their owning modules) ---` sits inside this section for result types that mirror no stored record and therefore live in the module that produces them rather than in `lore.models`: `HealthIssue` and `HealthReport` from `lore.health`, `SchemaIssue` from `lore.schemas`, `CodeBinding` and `ImpactsResult` from `lore.impacts`, and `AccessMode`, `FileAction`, `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan` and `InitResult` from `lore.initplan`. `lore.models` stays the entity-record index — every member there mirrors a DB row or an on-disk file and carries a `from_row` / `from_dict` hydrator.
 
 2. **Project root** — `find_project_root` (from `lore.root`).
 
-3. **Operational callables** — every CRUD, lifecycle, traversal, validator, schema, health, and reporting function consumers may call. Grouped by domain (validators → db quest CRUD → db mission CRUD → db status transitions → db dependencies → db board → db dashboard/stats → db envelopes → priority → doctrine → artifact → watcher → codex → glossary → impacts → health → schemas → init/reports/config, where the init block holds `plan_init`, `apply_init` and `run_init`) for diff legibility, not import order.
+3. **Operational callables** — every CRUD, lifecycle, traversal, validator, schema, health, and reporting function consumers may call. Grouped by domain (validators → db quest CRUD → db mission CRUD → db status transitions → db dependencies → db board → db dashboard/stats → db envelopes → priority → doctrine → artifact → watcher → codex → codex index → glossary → impacts → health → schemas → init/reports/config, where the codex-index block holds `build_index` and `search_index` and the init block holds `plan_init`, `apply_init` and `run_init`) for diff legibility, not import order.
 
 Each section is bounded by a comment marker. New exports go at the end of their domain block, never sprinkled across sections — this keeps `git diff` against `__all__` reviewable in one screen and ensures consumers reading the source can find names by category.
 

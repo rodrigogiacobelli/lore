@@ -1,7 +1,7 @@
 ---
 id: tech-arch-schemas
 title: Schemas Module Internals
-summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the eleven packaged schema files — the eight project schema kinds health walks, the codex-source-frontmatter kind, and the two packaged-data kinds agents and skill-catalogue (glossary, main-rite, and shared-step are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
+summary: "Technical reference for src/lore/schemas.py and the packaged src/lore/schemas/*.yaml JSON Schemas. Covers the loader, validate_entity / validate_entity_file, the twelve packaged schema files — the eight project schema kinds health walks, the codex-source-frontmatter kind, the index-authored kind lore health --scope index validates on its own, and the two packaged-data kinds agents and skill-catalogue (glossary, main-rite, shared-step and index-authored are full-YAML kinds; main-rite and shared-step are walked via the rites main and shared subfolders; codex-frontmatter additionally carries the rites field), the special yaml-parse / missing-frontmatter / read-failed rules, and how create-time validators in doctrine/watcher/artifact/rite and the audit-time lore health schema check share a single authoritative contract."
 binds:
 - src/lore/schemas/__init__.py
 - src/lore/schemas/doctrine-mission-frontmatter.yaml
@@ -15,6 +15,7 @@ binds:
 - src/lore/schemas/shared-step.yaml
 - src/lore/schemas/agents.yaml
 - src/lore/schemas/skill-catalogue.yaml
+- src/lore/schemas/index-authored.yaml
 - src/lore/health.py
 - src/lore/paths.py
 - src/lore/codex.py
@@ -31,7 +32,8 @@ binds:
 - tests/e2e/test_health_schemas_us005.py
 - tests/e2e/test_health_schemas_us007.py
 - tests/e2e/test_health_schemas_us008.py
-related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "tech-arch-agents-md", "tech-arch-skill-catalogue"]
+- tests/unit/test_schemas_index_authored.py
+related: ["tech-arch-source-layout", "tech-arch-frontmatter", "tech-overview", "conceptual-workflows-health", "conceptual-workflows-impacts", "ref-lore_doctrine-module", "standards-dry", "standards-dependency-inversion", "decisions-011-api-parity-with-cli", "conceptual-entities-glossary", "conceptual-workflows-glossary", "decisions-013-toml-for-config-yaml-for-glossary", "conceptual-entities-rite", "conceptual-workflows-rite-crud", "decisions-014-link-direction", "decisions-010-public-api-stability", "decisions-018-overlays-are-path-discovered-config", "decisions-019-overlay-scope-stops-at-transient", "tech-arch-agents-md", "tech-arch-skill-catalogue", "tech-arch-codex-index"]
 ---
 
 # Schemas Module Internals
@@ -78,6 +80,14 @@ They differ from the eight project kinds in three ways:
 
 See `tech-arch-agents-md` and `tech-arch-skill-catalogue` for the two file formats.
 
+### The codex-index kind — `index-authored`
+
+`lore://schemas/index-authored` covers `.lore/index/authored.yaml`, the committed half of the codex index (`tech-arch-codex-index`). It is a full-YAML kind, registered in both `_YAML_KINDS` and `_RAISE_KINDS`: a caller that hands it an unparseable file gets a `SchemaValidationError` raised rather than an issue list returned, the same way `glossary` does, because `index.py` needs the failure as an exception it can wrap.
+
+It is **deliberately absent from `health._SCHEMA_KINDS`**. The file is validated exactly once, by `lore health --scope index`, which reports the failure alongside the rest of the index's rows rather than as a schema row from a second walk.
+
+The schema requires `version: 1` and an `entries` object. Entry keys are codex ids, matched against `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`. Each entry carries exactly `slug` (`^[a-z0-9][a-z0-9-]*$`, 1–60 chars), `name` (1–80 chars, no newline), `summary` (1–1000 chars) and `authored_against` (`^[0-9a-f]{64}$`). The digest pattern is a string pattern, so an all-digit digest written unquoted in YAML parses as an integer and fails validation — the `update-index` skill quotes the value.
+
 ### Rite schema kinds — `main-rite` and `shared-step`
 
 Both are full-YAML kinds (parsed via `yaml.safe_load`, like `watcher`/`glossary`), `additionalProperties: false`, shipped from `src/lore/schemas/`. They validate the Rite entity's *shape* only (see `conceptual-entities-rite`); graph-level rules (reachability, single entry, dangling `then`/`goto`/`use`, conclusion reachability) are NOT expressible in JSON Schema and live in runtime checks in `rite.py`/`health.py` (see `conceptual-workflows-health`).
@@ -107,7 +117,7 @@ The validator is compiled once per kind and reused across all files of that kind
 
 Full file-level validator. Dispatches by kind:
 
-- **Full-YAML kinds** (`watcher`, `glossary`, `main-rite`, `shared-step`): calls `yaml.safe_load` on the file contents.
+- **Full-YAML kinds** (`watcher`, `glossary`, `main-rite`, `shared-step`, `index-authored`): calls `yaml.safe_load` on the file contents.
 - **Frontmatter kinds** (`doctrine-design-frontmatter`, `doctrine-mission-frontmatter`, `codex`, `artifact`): calls `frontmatter.parse_frontmatter_raw(path)` to obtain the raw mapping preserving every key.
 
 Error translation:

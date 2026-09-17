@@ -28,6 +28,8 @@ related:
 - decisions-013-toml-for-config-yaml-for-glossary
 - decisions-018-overlays-are-path-discovered-config
 - decisions-021-health-reports-are-ephemeral-by-default
+- decisions-037-index-is-a-top-level-lore-directory
+- conceptual-workflows-index
 - decisions-032-retired-seed-trees
 - ref-lore_cli-commands
 ---
@@ -118,6 +120,8 @@ These are the two narrow exceptions to the rule that `lore init` does not seed `
 ### 7. Empty rite directories
 
 `.lore/rites/main/` and `.lore/rites/shared/` are created if absent and left empty.
+
+`.lore/index/` is not among them. `lore init` seeds neither half of the codex index and creates neither the directory nor a file inside it; the first `lore index build` creates the directory on its way to writing the render (`decisions-037-index-is-a-top-level-lore-directory`). What `lore init` does write for the index is the `.lore/.gitignore` template's `!index` / `!index/**` / `index/codex.json` lines, which keep the authored half tracked and the render ignored — see `tech-arch-initialized-project-structure`.
 
 ### 8. Rendered skills
 

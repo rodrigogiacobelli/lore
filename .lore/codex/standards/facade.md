@@ -43,6 +43,7 @@ Every module under `lore` other than `lore.api` is internal. They are not re-exp
 - `lore.priority` — ready-queue logic (`get_ready_missions` re-exported)
 - `lore.doctrine` / `lore.artifact` / `lore.watcher` / `lore.rite` — file-backed entity operations (CRUD callables re-exported individually)
 - `lore.codex` — codex scanning, retrieval, search, traversal (operations re-exported individually)
+- `lore.index` — the codex index (`build_index`, `search_index` and its two exceptions re-exported individually)
 - `lore.glossary` — glossary loading and matcher
 - `lore.impacts` — codex↔code surfacing primitive
 - `lore.health` — `lore health` audit implementation

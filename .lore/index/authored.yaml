@@ -1,0 +1,332 @@
+# The authored half of the codex index.
+#
+# One entry per cluster, keyed by the cluster's hub as `lore index build`
+# reports it. Nothing regenerates this file — `lore index build` writes the
+# render at .lore/index/codex.json and never touches this one. See the
+# update-index skill before editing, and re-run `lore index build` after.
+version: 1
+entries:
+
+  conceptual-workflows-lore-init:
+    slug: project-setup
+    name: "Setting up a project — what `lore init` writes and installs"
+    summary: >-
+      Getting started: how a project gets a `.lore/` directory, and everything
+      that arrives with it.
+      Covers `lore init` end to end — the plan/apply split, the ordered write
+      sequence, the seven interactive prompts and the flag that answers each,
+      `--yes`, `--dry-run` and `--reconfigure`, and the headless defaults — then
+      how a re-run reconciles what it installed against the current release
+      through `.lore/.install-manifest.json`.
+      Also what ships: the seeded skills and `skills-catalogue.yaml`,
+      the `agents.yaml` registry and the rendered agent instruction files
+      (LORE-AGENT.md and its per-agent counterparts), and retired seed trees.
+      Three documents sit here on links rather than subject — the `lore.api`
+      guide and per-symbol reference, and the SQLite concurrency strategy
+      (WAL mode, busy timeout, reader/writer isolation) —
+      along with the `--help`-as-teaching-interface contract and the free-form
+      `mission_type` field Lore stores but never interprets.
+    authored_against: "1bec1a9dc56feb261472014d5af36932122ddcff0faabd32d8b254490bc3c6c1"
+
+  tech-arch-source-layout:
+    slug: source-layout
+    name: "The Python source tree and the standards it is held to"
+    summary: >-
+      Where code lives under `src/lore/` and the rules a change to it must
+      satisfy. Module-by-module layout with internals references for the ones
+      worth reading first — `graph.py` (topological sort, and the
+      `partition_graph` / `cluster_hub` pair behind the codex index),
+      `index.py`, `schemas.py` and the packaged JSON Schemas, `frontmatter.py`,
+      `validators.py` and the input validation rules it owns (priority ranges,
+      entity-id format, the two-layer enforce-and-translate model), and the
+      `codex map` / `codex chaos` traversals in
+      `codex.py` — plus `cli.py`, `db.py`, `paths.py`, `projects.py`,
+      `config.py`, `oracle.py`, `root.py`, `safewrite.py` and the six init
+      modules. Carries the four engineering standards this codebase is held to
+      (DRY, single responsibility, separation of concerns, dependency
+      inversion), the test authorship guidelines and their unit-vs-E2E split,
+      and the technology choices — Python 3.11+, Click, questionary, SQLite in
+      WAL mode, PyYAML, jsonschema.
+    authored_against: "f5810dd926e9c9eb96e236ddc30627e823da4c29eee23d327d869532b3bf637f"
+
+  ref-lore_cli-commands:
+    slug: cli-and-rites
+    name: "CLI conventions and the rite commands"
+    summary: >-
+      Two subjects the link graph put in one cluster. First, what every Lore
+      command shares: exit codes, idempotency rules, JSON output mode and its
+      envelope contract, global-vs-local flag position, the per-command
+      idiosyncrasies in the CLI reference, and the entity CRUD matrix naming
+      which operations each entity actually has and where the gaps are.
+      Second, the whole Rite family — Lore's procedural-memory entity, a
+      node-graph of steps in `.lore/rites/` — `lore rite list`, `show`,
+      `search`, `new`, `edit` and `delete`, the main-vs-shared split, group
+      derivation and the JSON envelopes. Three more ride along: `lore codex
+      map` and `lore codex chaos` graph traversal, `lore stats` aggregate
+      counts, and the decision fixing the two graph nouns (a node is one
+      document, a cluster is a set of them).
+    authored_against: "9ba7b7218f7fe97fa5b49755ffc4995eed179d2366fdc1398ff41d0ff1f2a4e1"
+
+  conceptual-workflows-nested-projects:
+    slug: nested-projects
+    name: "Several Lore projects in one tree"
+    summary: >-
+      Nested projects — what happens when one directory tree holds multiple
+      projects, each with its own `.lore/`. The two independent axes — upward inheritance, always on and impossible to
+      disable, and opt-in downward federation — the `--project` read selector,
+      `default-project-scope`, origin-qualified ids (`project:id`), the ORIGIN
+      column and origin JSON field, and the rule that every cross-boundary read
+      is read-only and every cross-boundary write is refused at exit 2. Also
+      project root detection (the upward `.lore/` walk), the `projects.py` and
+      `scoped.py` internals, export lists as a bloat filter rather than access
+      control, and why `transient/` and `sources/` documents never cross a
+      boundary. The linking rules share this neighbourhood: link direction for
+      `related`, `binds` and `rites`, referencing entities by id rather than
+      file path, and `lore impacts`, which maps a codex document to the code
+      paths it governs.
+    authored_against: "e7682f17e262742f718c3abb06eff9fc1a3982cd17eba805ca60fb0f2f8b50ce"
+
+  tech-arch-initialized-project-structure:
+    slug: lore-directory
+    name: "Inside `.lore/` — layout, config.toml and the glossary"
+    summary: >-
+      What sits on disk under `.lore/` once a project is initialised, and which
+      of those files a person owns and edits by hand. Covers the directory
+      layout file by file, `.lore/config.toml` — the known flat keys, the
+      `[shared]` and `[[descendants]]` tables, `health-report-retention` — the
+      seeded `.lore/.gitignore`, and the `.lore/custom-schemas/<kind>.yaml`
+      overlays with the limit of their authority (they govern canonical codex
+      documents and `sources/`, never `transient/`). Also the glossary:
+      `.lore/codex/glossary.yaml`, `lore glossary list/search/show`, the
+      auto-surfacing of matched terms on `lore codex show` and the
+      `--skip-glossary` override, and local-first collision resolution. And the
+      codex itself — what the documentation system is, and how `lore codex
+      list`, `search`, `show`, `map` and `chaos` read it.
+    authored_against: "2d7984f4032d76ba0021d155702485a584c6768cea7bfc053e3d290adebe1fa0"
+
+  conceptual-workflows-health:
+    slug: health-and-file-entities
+    name: "`lore health` and the file-backed entity commands"
+    summary: >-
+      The audit, and the list/new/show commands for the entities that live as
+      files. `lore health` runs a full or scoped check — eight scopes naming an
+      entity type (codex, artifacts, doctrines, watchers, glossary, index,
+      rites, skills) and three cutting across them (schemas, bindings, voice) —
+      with its error-vs-warning split, exit-code contract, `--json` output, and
+      the markdown report it may leave in `codex/transient` under
+      `health-report-retention`. Alongside it: what an Artifact is and the four
+      seeded namespaces, `lore artifact list` and `lore artifact new`, `lore
+      doctrine list`, `new` and `show`, `lore watcher list`, the `--filter
+      GROUP` segment-prefix matching every list command shares, and the codex
+      voice rules enforced as warnings that never change the exit code.
+    authored_against: "f7760abfdc32097083aa89411d4fdf63835360e43108d1d92e55aa968fcfdc78"
+
+  decisions-010-public-api-stability:
+    slug: public-api
+    name: "The Python API — `lore.api` as the stable surface"
+    summary: >-
+      What a Python caller may import and depend on. `lore.api.__all__` is the
+      entire public surface; every other module under `lore` is internal and
+      may change without notice. Covers the facade pattern and the pure
+      re-export module `src/lore/api.py` with its underscore aliases, parity
+      with the CLI (the CLI is a thin formatting wrapper over the same
+      callables, so any behavioural gap is a bug), the pre-1.0 semver policy
+      for additions, removals and renames, the return-dict and typed-model
+      contracts of `lore.db`, the per-entity public surface with its deliberate
+      gaps, and the rule that no Lore exception is named after a Python builtin
+      (hence `CodexIndexError`, not `IndexError`). The Camelot vision sits here
+      too — how Lore, Realm and Citadel fit together — because Realm is the
+      caller this contract exists for. The narrative guide and per-symbol
+      reference are filed with the project-setup group.
+    authored_against: "6a982dcac436e02f426b984b6a898cee2b755d2f498f4015b5359d5f5419554e"
+
+  conceptual-entities-doctrine:
+    slug: doctrines
+    name: "Doctrines — reusable workflow templates, as prose"
+    summary: >-
+      What a Doctrine is and how Lore handles one: a directory under
+      `.lore/doctrines/` holding a design document the orchestrator reads plus
+      one mission file of prose per worker. Lore parses no workflow structure
+      out of it — step order, step type, phases and dependencies are the
+      orchestrator's to decide from the prose, and every body is an opaque
+      string. Covers recursive discovery and group derivation, the skip rule
+      that hides soft-deleted and staging directories, the ten-rule validation
+      order, the staged write (the whole directory is built in a dot-prefixed
+      temp directory and moved into place with one `os.replace`, so no partial
+      doctrine is ever left on disk), the `.deleted` rename, and the
+      `src/lore/doctrine.py` internals. Also how a doctrine relates to a quest
+      and to an artifact, and why the Knight entity was removed — a doctrine
+      mission file is now the only home for a reusable instruction.
+    authored_against: "b781354adefa15a32849ea1bd0cf4e8eaf23ef7acda6c1db8108cd50cb64998f"
+
+  conceptual-entities-mission:
+    slug: mission-lifecycle
+    name: "The mission lifecycle — claim, block, done, ready"
+    summary: >-
+      What a Mission is and every command that moves one through its states.
+      The status state machine (open, in_progress, blocked, closed) and the
+      four commands that drive it: `lore claim` (open→in_progress, idempotent,
+      multi-mission), `lore block` with its stored reason and the complementary
+      unblock, `lore done` (any non-closed status → closed, cascade-unblocking
+      dependents and firing the parent quest's auto-close), and `lore ready`,
+      the priority-ordered queue that excludes blocked and closed missions and
+      gates on dependencies. Includes the mission-to-mission dependency graph
+      stored in a join table, the parent-quest status recomputation every
+      transition triggers, and the edge cases — orphaned missions, soft-delete,
+      an id that is already closed. Start here for how an agent picks up work
+      and finishes it.
+    authored_against: "eca0635fbbbfdb7a9c4fe17de2de2f86938022e78c828d220ddeea2900de7dab"
+
+  conceptual-workflows-error-handling:
+    slug: cli-errors
+    name: "How the CLI fails — exit codes and flag conventions"
+    summary: >-
+      The error paths, and the flag conventions that decide which error a
+      command produces. Covers exit codes, stderr-vs-stdout routing, the JSON
+      error format, and the exception paths behind them. The decisions fix the
+      conventions: a multi-value flag is space-separated (`--scope a b`, never
+      a repeated flag), a constrained flag uses `click.Choice` so an
+      out-of-set value is Click's own "Invalid value" usage error at exit 2
+      rather than a hand-rolled message, a command given none of a required
+      at-least-one-of flag set raises `click.UsageError` at exit 2 instead of
+      printing at exit 1, and `lore index search` answers an empty result with
+      a no-match sentence at exit 0 like every sibling read command. `lore
+      doctrine edit` is here as the worked example of the no-flags usage error.
+    authored_against: "7d0aebbf4cda294601a8546496fbff5ad4e3b18ccda1c0cf23adeae2a6015279"
+
+  ref-lore_db-core:
+    slug: database-and-quests
+    name: "The SQLite database and the quests it stores"
+    summary: >-
+      The database side of Lore. The single SQLite file and its five tables —
+      quests, missions, dependencies, board_messages, lore_meta — what each is
+      for, and which rules are deliberately not enforced there; plus schema
+      migrations: version detection, sequential application, rollback on
+      failure, and the contract of each numbered migration. Alongside them the
+      Quest entity: a live grouping of missions (a feature, bug fix, refactor
+      or spike) whose status is derived entirely from its missions rather than
+      stored on a field of its own, the per-quest `auto_close` toggle that
+      defaults off for new quests and the migration default split behind it,
+      and the edge cases for an empty quest, reopening, and soft-delete. Schema
+      source of truth is `src/lore/defaults/schema.sql`.
+    authored_against: "8b9a810ac617af69661d38944abb3cd619a641f09ebf090aa16ad1297d02f2dc"
+
+  conceptual-workflows-index:
+    slug: codex-index
+    name: "The codex index — clustering the codex for a cold read"
+    summary: >-
+      How `lore index build` and `lore index search` route an agent that has
+      read nothing to the right group of codex documents. Covers the partition
+      of the `related` graph into clusters, the hub each cluster is keyed by,
+      and the two files under `.lore/index/` — `authored.yaml`, written by a
+      human and committed, and `codex.json`, a regenerable git-ignored render.
+      Also the four cluster statuses (`ok`, `unauthored`, `drifted`, plus the
+      stale entries a moved partition leaves behind), the stat fingerprint a
+      search recomputes before matching, the human and `--json` output shapes,
+      the exit-code contract, the `--project` refusal, and the `build_index()`
+      / `search_index()` API. The decisions record why the partition is
+      deterministic Louvain local-moving with no graph library, why an entry is
+      keyed by its hub, and why no Lore command ever writes the authored file.
+    authored_against: "0724cc64dbdfb1fca5e4d1ddf9d64993af75b362ad36f38c4e5d447578a601fc"
+
+  conceptual-workflows-show:
+    slug: show-and-dependencies
+    name: "Reading one entity — `lore show` and its dependencies"
+    summary: >-
+      What `lore show <id>` prints, and how it resolves what it prints. Covers
+      id routing between quests and missions, a quest's inline mission list in
+      topological (dependency) order, the mission detail view with the doctrine
+      mission body spliced in under a Mission Instructions heading, quest
+      inference for a mission id, and the not-found paths. Alongside it,
+      declaring and removing dependencies with `lore needs` and `lore unneed`
+      and how they display; the doctrine-mission reference stored verbatim in
+      `missions.doctrine_mission` with no foreign key and no write-time
+      validation; and the rule that a read never complains about a broken
+      reference — it prints the stored reference, omits the instructions
+      section, exits 0, and leaves the reporting to `lore health --scope
+      doctrines`.
+    authored_against: "936a2ba6dc5d8e882b2727d74d2ed36060846ea01e910bfc515d4cf6e266024a"
+
+  decisions-009-mission-self-containment:
+    slug: handoffs-and-board
+    name: "Handing work between agents — board messages and artifacts"
+    summary: >-
+      How one agent leaves something for the next, and why a mission must stand
+      on its own. `lore board` posts, views and deletes lightweight operational
+      messages on a mission or quest — pointers, paths, ids — with sender
+      validation and its error paths. Structured work output travels a
+      different road: artifact instances are the official protocol between
+      pipeline steps, each step declaring an input artifact and producing an
+      output one, so a handoff is auditable and nothing important passes
+      through prose in a mission description or a side channel. The rule tying
+      both together is that a mission must be executable from its description
+      and its board alone. Soft delete sits here too — why a delete in Lore is
+      always a soft delete and no entity is ever removed outright, and why the
+      dependencies table carries no foreign keys.
+    authored_against: "d216e495c5d0f78b1365a897aa57d684a8ed3c47a19ec71d88bbe689448bef94"
+
+  ops-installation:
+    slug: install-and-release
+    name: "Installing Lore, branching, and releasing to PyPI"
+    summary: >-
+      The operational runbooks — written for a maintainer of Lore rather than
+      an agent doing project work. How to install the CLI as an end user (`uv
+      tool install`, `pipx`), how to set up a development environment, build a
+      distributable and verify the install. The git workflow: the three-tier
+      main / develop / feature branching model, commit conventions, which
+      merges belong to an AI and which to a human, the release process and the
+      hotfix procedure. And the PyPI release runbook: the pre-flight checklist
+      including the legacy-hash refresh, version bump, changelog finalisation,
+      git tag, build, upload and post-publish verification — with the warning
+      that tagging alone does not publish. The package is
+      `lore-agent-task-manager`; the old `lore-taskman` name is retired.
+    authored_against: "bd56a56913d880f7c024d45421870e91e8842b1b0d99b7b7c64d77da15c92004"
+
+  conceptual-entities-watcher:
+    slug: watchers
+    name: "Watchers — declared triggers Lore stores but never runs"
+    summary: >-
+      What a Watcher is: a YAML file under `.lore/watchers/` that declares a
+      condition and maps it to an action. Watchers are passive — Lore stores
+      and surfaces them and never executes one; running it is the consuming
+      layer's job (Realm, CI, a human). Covers watcher CRUD through the CLI —
+      name validation, duplicate detection, a YAML parse-check before every
+      write, the rglob lookup that finds a watcher for `edit` and `delete`, and
+      soft-delete by rename — and the action field, which may name a doctrine
+      by filename stem with no foreign key and no validation behind it. A small
+      group of three documents, and between them they are everything Lore says
+      about watchers.
+    authored_against: "d28d67b01c6da4aca079cf874bf0d506990b3e8da90804f82da8d4da6270ad5d"
+
+  conceptual-workflows-mission-crud:
+    slug: quest-mission-crud
+    name: "Creating and editing quests and missions"
+    summary: >-
+      The everyday write path against the two database entities. Creating,
+      listing, editing and deleting quests; the same for missions, plus the
+      mission detail view, the `-D/--doctrine-mission` and
+      `--no-doctrine-mission` flags and their mutual exclusion, active-status
+      filtering, and soft-delete behaviour. Also the complete sequence an
+      orchestrator runs — initialise the project, open a quest, create the
+      missions, declare dependencies between them, dispatch workers, close the
+      work — as a conceptual walkthrough rather than a step-by-step user guide.
+      Start here for `lore new quest`, `lore new mission` and `lore edit`; the
+      status transitions themselves (claim, block, done, ready) are their own
+      group.
+    authored_against: "3afa2c3b76b73d6ec1d763216bb294fd1cb5db2706ef2b1d17cf8dd04ae26a84"
+
+  tech-oracle-internals:
+    slug: oracle-reports
+    name: "`lore oracle` — the generated markdown reports"
+    summary: >-
+      Everything about `lore oracle`, the command that writes a tree of
+      markdown reports out of the database. Covers what a run produces — a
+      directory of per-quest and per-mission files, with mission type included
+      — and the wipe-and-recreate behaviour every run performs
+      (`shutil.rmtree`, a destructive operation, so nothing hand-edited under
+      the report directory survives). Also the `generate_reports()` entry point
+      in `src/lore/oracle.py` and the two-stage slugification that turns an
+      entity id and title into a filesystem-safe filename: `slugify()` for the
+      40-character slug portion and `make_entity_slug()` for the combined
+      `{id}-{slug}` result. Three documents, all about this one command.
+    authored_against: "9ecb016c142a1ee404ef6f09b1929dc1332bef484ec59b414eaa917c2997d05b"

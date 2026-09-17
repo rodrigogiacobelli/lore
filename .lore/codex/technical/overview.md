@@ -17,6 +17,8 @@ related:
 - ops-installation
 - tech-arch-projects-module
 - conceptual-workflows-nested-projects
+- tech-arch-codex-index
+- tech-arch-graph
 ---
 
 # Technical Overview
@@ -50,7 +52,7 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    ├──→  paths.py          (path helpers — centralises ".lore" string, derive_group)
    ├──→  watcher.py  ──→  paths.py, projects.py, scoped.py
    │        └───────────→  (no frontmatter.py — uses yaml.safe_load directly)
-   ├──→  graph.py          (topological sort)
+   ├──→  graph.py          (topological sort; the codex-index partition — stdlib only, no lore.* imports)
    ├──→  oracle.py
    ├──→  doctrine.py  ──→  paths.py, schemas.py, projects.py, scoped.py, safewrite.py
    ├──→  watcher.py   ──→  schemas.py
@@ -58,11 +60,12 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    ├──→  codex.py     ──→  frontmatter.py, projects.py, scoped.py
    ├──→  rite.py      ──→  paths.py, schemas.py, validators.py, projects.py, scoped.py
    ├──→  glossary.py  ──→  models.py, paths.py, schemas.py, projects.py, scoped.py
+   ├──→  index.py     ──→  codex.py, graph.py, paths.py, projects.py, safewrite.py, schemas.py  (the codex index for `lore index`)
    ├──→  impacts.py   ──→  frontmatter.py, codex.py, paths.py, validators.py, projects.py, scoped.py  (codex<->code surfacing for `lore impacts`)
    ├──→  projects.py  ──→  paths.py, config.py, validators.py  (project topology, export resolution, id qualification — imports no entity module)
    ├──→  scoped.py    ──→  projects.py  (which row a scoped id addresses, and where it lives — shared by every entity module's scoped reads)
    ├──→  schemas.py   ──→  frontmatter.py   (loads packaged YAML schemas; no lore.* entity imports)
-   ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py
+   ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py, index.py (lazily, inside `_check_index`)
    ├──→  prompts.py   ──→  initplan.py      (questionary imported lazily inside each function; no click, no other lore.*)
    ├──→  agents.py                          (packaged agent registry; yaml + stdlib only)
    └──→  init.py      ──→  db.py, paths.py, config.py, skills.py, reconcile.py, manifest.py, agents.py

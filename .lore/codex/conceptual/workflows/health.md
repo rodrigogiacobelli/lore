@@ -3,7 +3,7 @@ id: conceptual-workflows-health
 title: lore health Behaviour
 summary: What the system does internally when lore health runs — a full-scan or scoped
   audit across two kinds of scope. Eight scopes name a file-based entity type (codex,
-  artifacts, doctrines, watchers, glossary, rites, skills); three cut across
+  artifacts, doctrines, watchers, glossary, index, rites, skills); three cut across
   them (schemas, bindings, voice). Covers error/warning reporting, the health-report-retention
   policy that decides whether a markdown report reaches codex/transient (none by default,
   latest, or all), --scope filtering, --json output, the exit-code contract, and the
@@ -12,8 +12,10 @@ summary: What the system does internally when lore health runs — a full-scan o
   scope's reference-integrity audit over codex `binds:` (dead-literal errors and empty-glob
   warnings), the rites scope's recursive id-collision, reference-integrity, graph-well-formedness,
   and orphan-asymmetry checks, the voice scope's five warning-only prose checks over
-  the canonical codex layers, and the skills scope's manifest-driven audit of the
-  installed skills.
+  the canonical codex layers, the index scope's read-only audit of the authored codex
+  index (schema and unresolvable_hub errors; duplicate_slug, stale_entry,
+  unauthored_cluster and drifted_entry warnings), and the skills scope's
+  manifest-driven audit of the installed skills.
 binds:
 - src/lore/health.py
 - src/lore/cli.py
@@ -24,6 +26,8 @@ binds:
 - tests/e2e/test_health_rites.py
 - tests/e2e/test_health_voice.py
 - tests/e2e/test_health_skills.py
+- tests/e2e/test_health_index.py
+- tests/unit/test_health_index.py
 - tests/e2e/test_health_retention.py
 - tests/unit/test_health.py
 - tests/unit/test_health_schemas.py
@@ -50,6 +54,9 @@ related:
 - decisions-019-overlay-scope-stops-at-transient
 - decisions-020-codex-voice-is-enforced
 - decisions-021-health-reports-are-ephemeral-by-default
+- decisions-039-authored-entry-is-keyed-by-its-hub
+- conceptual-workflows-index
+- tech-arch-codex-index
 - ref-lore_api-core
 - ref-lore_cli-commands
 - tech-arch-schemas
@@ -64,7 +71,7 @@ related:
 
 `lore health` audits a Lore project's knowledge base and reports every detected inconsistency as an error or a warning. It is the only command whose sole job is to prove that knowledge base internally consistent.
 
-Its scopes divide into two kinds. **Seven name a file-based entity type**: codex, artifacts, doctrines, watchers, the Glossary (lore codex show conceptual-entities-glossary), Rites (lore codex show conceptual-entities-rite), and Skills (lore codex show conceptual-entities-skill). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
+Its scopes divide into two kinds. **Eight name a file-based entity type**: codex, artifacts, doctrines, watchers, the Glossary (lore codex show conceptual-entities-glossary), the codex index (lore codex show conceptual-workflows-index), Rites (lore codex show conceptual-entities-rite), and Skills (lore codex show conceptual-entities-skill). **Three cut across entity types instead**: `schemas` validates every entity file's shape against its JSON Schema, `bindings` audits the codex↔code `binds:` edge, and `voice` audits canonical codex prose. A scope of the second kind names a question asked of the project, not a type of file it holds.
 
 ## Preconditions
 
@@ -79,6 +86,8 @@ lore health --scope doctrines artifacts
 lore health --scope watchers
 lore health --scope glossary
 lore health --scope codex glossary
+lore health --scope index
+lore health --scope codex index
 lore health --scope bindings
 lore health --scope bindings codex
 lore health --scope rites
@@ -90,7 +99,7 @@ lore health --json
 lore health --scope codex --json
 ```
 
-`--scope` accepts one or more space-separated tokens from the set: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
+`--scope` accepts one or more space-separated tokens from a set of eleven: `codex`, `artifacts`, `doctrines`, `watchers`, `glossary`, `index`, `schemas`, `bindings`, `rites`, `voice`, `skills`. Omitting `--scope` runs every scope including `schemas`, `glossary`, `index`, `bindings`, `rites`, `voice`, and `skills`.
 
 `--json` prints machine-readable JSON to stdout instead of the human-readable table. Whether a report file is written is decided by the `health-report-retention` config key, not by `--json` — the two are independent.
 
@@ -101,9 +110,9 @@ lore health --scope codex --json
 ### 1. Resolve scope
 
 The system determines which scopes to run:
-- No `--scope`: all scopes run, including `schemas`, `glossary`, `bindings`, `rites`, `voice`, and `skills`.
+- No `--scope`: all scopes run, including `schemas`, `glossary`, `index`, `bindings`, `rites`, `voice`, and `skills`.
 - `--scope SCOPE [SCOPE ...]`: only the listed scopes are checked; all others are skipped entirely.
-- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`.
+- Valid scope tokens: `codex`, `artifacts`, `doctrines`, `watchers`, `glossary`, `index`, `schemas`, `bindings`, `rites`, `voice`, `skills` — the order `health_check`'s own `Valid scopes:` message prints them in.
 
 ### 2. Run per-scope checkers
 
@@ -151,6 +160,31 @@ In a project with an ancestor, these checks read this project's own `glossary.ya
 A missing `.lore/codex/glossary.yaml` is NOT an error — empty glossary is a valid state. Schema validation of an absent file is a no-op for this kind. The intra-glossary checks no-op on an empty/absent file.
 
 There is no cross-codex deprecated-term scan. The `do_not_use` schema field on glossary items is now a documentation hint only — it is still validated for shape and still drives the intra-file `do_not_use_collision` check, but no automated audit scans codex bodies for occurrences of deprecated terms. The replacement signal during authoring is `lore codex show`'s glossary auto-surface, which lists canonical keywords and aliases inline.
+
+#### Codex index checks (scope: `index`)
+
+The index scope audits `.lore/index/authored.yaml` against the codex as it is now. See conceptual-workflows-index (lore codex show conceptual-workflows-index) for the index itself and decisions-039-authored-entry-is-keyed-by-its-hub for why an orphaned entry is reported rather than re-attached.
+
+A missing `.lore/index/authored.yaml` produces no issues at all, the way a missing glossary does. The scope is **read-only**: when the stored render is stale the partition is recomputed in memory and nothing is written, so an audit never leaves behind a cache nobody asked for.
+
+The checker reads the same classification `lore index build` renders, so the table and the audit cannot drift apart.
+
+| Check | Severity | `id` | Condition |
+|---|---|---|---|
+| `schema` | error | the authored file's path, relative to the project root | the file fails `lore://schemas/index-authored`, or its YAML is unparseable. One row per failure, each carrying `schema_id`, `rule` and `pointer`. Short-circuits every check below. |
+| `unresolvable_hub` | error | the hub | an entry names a hub that is not a document in this codex — a deleted document, which needs a decision |
+| `duplicate_slug` | warning | the authored file's path | two entries carry the same casefolded `slug`. Nothing resolves a cluster by slug, so a collision breaks nothing; it makes the index's own output ambiguous to the reader it exists to serve |
+| `stale_entry` | warning | the hub | an entry is attached to a hub that is still an indexed document but heads no cluster — re-key or retire it |
+| `unauthored_cluster` | warning | the hub | a cluster has no entry in the authored file |
+| `drifted_entry` | warning | the hub | a summary was authored against a digest its members no longer produce |
+
+Rows within each check are ordered by ascending hub. `schema_id`, `rule` and `pointer` stay null on every check but `schema`, as they do on every non-schema check.
+
+No index check joins `_ESCALATED_WARNING_CHECKS`, so `schema` and `unresolvable_hub` are the only index rows that raise the exit code. An unauthored cluster, a drifted summary, a stale entry and a duplicate slug each report a state without failing the run.
+
+The `index-authored` schema kind is deliberately absent from the `schemas` scope's per-kind walk: the file is validated once, here, where the failure is reported with the rest of the index's rows.
+
+`--scope index` runs only these checks. `--scope codex index` runs codex reference-integrity AND index checks (multi-scope per ADR-012). `lore health` with no `--scope` runs index as part of the default-all-scopes execution.
 
 #### Watcher checks
 
@@ -433,6 +467,7 @@ report = health_check(project_root=Path("."), scope=["bindings"])
 report = health_check(project_root=Path("."), scope=["rites"])
 report = health_check(project_root=Path("."), scope=["codex", "rites"])
 report = health_check(project_root=Path("."), scope=["voice"])
+report = health_check(project_root=Path("."), scope=["index"])
 
 # Report persistence — keyword-only, all three default off/None.
 report = health_check(project_root=Path("."), write_report=True)                     # policy from config
@@ -454,8 +489,8 @@ report.report_path      # Path | None — the written report, or None
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Value passed to `--scope` outside the token set | The flag is `click.Choice`-guarded, so Click raises `BadParameter` (a `UsageError` subclass) before the handler body runs. Exit **2**, stderr: `Error: Invalid value for '--scope': 'xyz' is not one of 'codex', 'artifacts', 'doctrines', 'watchers', 'schemas', 'glossary', 'bindings', 'rites', 'voice', 'skills'.` Adding a token to the set is non-breaking; rewording the message or changing the exit code is a breaking contract change (`decisions-017-constrained-flags-use-click-choice`, conceptual-workflows-error-handling). |
-| Unknown token in the positional `extra_scopes` argument | The positional argument carries no `click.Choice`, so the token reaches `health_check(scope=...)`, which raises `ValueError`. The handler rewrites the prefix and exits **1**, stderr: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, watchers, glossary, schemas, bindings, rites, voice, skills.` This is the only path that produces the exit-1 `Invalid scope:` text. |
+| Value passed to `--scope` outside the token set | The flag is `click.Choice`-guarded, so Click raises `BadParameter` (a `UsageError` subclass) before the handler body runs. Exit **2**, stderr: `Error: Invalid value for '--scope': 'xyz' is not one of 'codex', 'artifacts', 'doctrines', 'watchers', 'schemas', 'glossary', 'index', 'bindings', 'rites', 'voice', 'skills'.` The flag lists the eleven tokens in `cli._VALID_SCOPES`'s order, which differs from `health._ALL_SCOPES`'s; the two sets are identical and only the order diverges. Adding a token to the set is non-breaking; rewording the message or changing the exit code is a breaking contract change (`decisions-017-constrained-flags-use-click-choice`, conceptual-workflows-error-handling). |
+| Unknown token in the positional `extra_scopes` argument | The positional argument carries no `click.Choice`, so the token reaches `health_check(scope=...)`, which raises `ValueError`. The handler rewrites the prefix and exits **1**, stderr: `Invalid scope: 'xyz'. Valid scopes: codex, artifacts, doctrines, watchers, glossary, index, schemas, bindings, rites, voice, skills.` This is the only path that produces the exit-1 `Invalid scope:` text. |
 | Authoritative schema file missing at load time | Propagated as a `scan_failed` error naming the missing schema id. No partial false-green. |
 | Entity directory missing | `scan_failed` error added for that entity type; other types continue |
 | `retention=` argument outside `none`, `latest`, `all` | `health_check` raises `ValueError: Unknown retention: 'xyz'. Valid values: none, latest, all.` The raise is unconditional — it fires even when `write_report=False` — and mirrors the unknown-scope raise. No CLI path reaches it: `lore health` never passes `retention` |

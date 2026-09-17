@@ -184,6 +184,7 @@ def test_lore_health_gains_no_scope_token():
         "watchers",
         "schemas",
         "glossary",
+        "index",
         "bindings",
         "rites",
         "voice",

@@ -649,8 +649,8 @@ def _follow_retirement_chain(skill_id: str) -> str:
 
 
 class TestShippedSkillsTree:
-    def test_the_release_ships_nine_skill_directories(self):
-        assert len(_shipped_skill_dirs()) == 9
+    def test_the_release_ships_ten_skill_directories(self):
+        assert len(_shipped_skill_dirs()) == 10
 
     def test_every_shipped_directory_holds_a_skill_md(self):
         for name in _shipped_skill_dirs():
@@ -700,11 +700,12 @@ class TestFamilyMembershipMatchesTheShippedTree:
     def test_the_memory_family_is_one_writer_and_one_reader(self):
         assert skills.skills_in_families(("memory",)) == ("retrieve-memory", "store-memory")
 
-    def test_the_machinery_family_is_four_update_skills(self):
+    def test_the_machinery_family_is_five_update_skills(self):
         assert skills.skills_in_families(("machinery",)) == (
             "update-artifact",
             "update-custom-schema",
             "update-doctrine",
+            "update-index",
             "update-watcher",
         )
 

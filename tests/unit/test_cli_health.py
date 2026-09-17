@@ -32,13 +32,14 @@ def test_valid_scopes_tuple_shape():
         "watchers",
         "schemas",
         "glossary",
+        "index",
         "bindings",
         "rites",
         "voice",
         "skills",
     )
     assert _VALID_SCOPES[-1] == "skills"
-    assert len(_VALID_SCOPES) == 10
+    assert len(_VALID_SCOPES) == 11
 
 
 def test_valid_scopes_has_no_retired_entity_token():

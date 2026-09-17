@@ -199,7 +199,24 @@ Then confirm the knowledge is findable. Re-run the search from step 4 and check
 the new or edited document comes back. If it does not, the discoverability words
 are wrong — fix the summary or the body until the search finds it.
 
-## Step 8 — Report
+## Step 8 — Refresh the codex index
+
+A new or deleted document changes the `related` graph, which changes the
+clusters `lore index search` routes by.
+
+```
+lore index build
+```
+
+A project that has never authored an index reports every cluster `unauthored` —
+leave it, authoring one is its own act. A project that *has* one reports what
+your change moved: an `unauthored` cluster your new document created, a
+`drifted` summary whose members you edited, a stale entry whose hub you deleted.
+Update those rows now, from the documents already in context — you have just
+read them, and nobody after you will have that advantage. The file, the fields
+and the digest are in the `update-index` skill.
+
+## Step 9 — Report
 
 Tell the user:
 
@@ -207,6 +224,6 @@ Tell the user:
 - Ids edited, and the fact that changed.
 - Ids deleted, and why the knowledge stopped being true.
 - Anything deliberately left alone, and why — dedup, out of scope, speculation.
-- The `lore health` result.
+- The `lore health` result, and any index cluster left `unauthored` or `drifted`.
 
 Report what *changed*, not what the documents *say*. The user can read them.

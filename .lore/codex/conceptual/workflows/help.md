@@ -12,6 +12,7 @@ related:
 - conceptual-workflows-init-interactive
 - conceptual-workflows-health
 - conceptual-workflows-nested-projects
+- conceptual-workflows-index
 ---
 
 # Help Output Contract
@@ -108,6 +109,16 @@ Every one of the 17 read commands that accepts `--project` (`codex list|show|sea
 Must explain:
 - Codex is a set of typed markdown files maintained in `.lore/codex/`.
 - Preference for multi-ID retrieval: `lore codex show id1 id2` over multiple calls.
+
+### `lore index --help`
+
+Must explain:
+- The index groups the codex into clusters of densely linked documents, one authored entry per cluster under `.lore/index/`, so a cold read starts at a named group rather than at the whole corpus.
+- Which subcommand does what: `lore index search <keyword>` finds the clusters a topic lives in; `lore index build` re-partitions and reports which clusters need a summary written or refreshed.
+- That the entries are authored by the `update-index` skill and never by Lore.
+- That `--project` is not accepted, and why: the index is built from, and written into, the project Lore runs in.
+
+`build` and `search` keep one-line help each — the concept paragraph belongs to the group (`decisions-008-help-as-teaching-interface`).
 
 ### `lore new --help`
 

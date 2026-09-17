@@ -4,7 +4,7 @@ Lore is your project task manager.
 
 ```bash
 lore --help
-Usage: lore [OPTIONS] COMMAND [ARGS]...
+Usage: lore [OPTIONS] [COMMAND] [ARGS]...
 
   Lore — Agent Task Manager.
 
@@ -56,6 +56,7 @@ Commands:
   show      Show details of a quest or mission.
   rite      Manage rites — procedural memory ("how to do or diagnose...
   codex     Access project documentation — a set of typed markdown files...
+  index     Route into the codex by cluster — .lore/index/ holds one...
   impacts   Surface codex<->code bindings.
   glossary  Access the project glossary — the controlled vocabulary at...
   artifact  Access project artifacts — reusable template files stored in...
@@ -162,6 +163,16 @@ Read project state before you act. Project memory has two surfaces — the codex
 holds what is true, the rites hold how to do or diagnose a recurring task — and
 `retrieve-memory` walks both in one pass.
 
+**`lore index search <kw>` is the cheapest first call on a codex you have not
+read, in every access mode.** One answer is a named cluster of related documents
+with their paths, rather than one document. It stays on the CLI even when you
+otherwise use your own file tools — like `lore codex map` and `lore impacts`, it
+computes something no file read reproduces, re-fingerprinting the codex and
+rebuilding the render before it matches, so `.lore/index/` read by hand answers
+from the last build instead of from now. A `no index authored for this project`
+refusal means this project has no index yet; the `update-index` skill authors
+one, and `lore index build` regenerates the render.
+
 <!-- lore:access cli -->
 - **`lore codex search <kw>` / `lore codex show <id1> <id2>`** — typed markdown
   documents under `.lore/codex/`. Batch ids into one `show` call; it deduplicates
@@ -195,10 +206,10 @@ whichever way your project reads the rest:
 - **`lore impacts <path>`** — which codex documents govern this file. Run before
   editing code. **`lore impacts <codex-id>`** — which files a document binds.
   Run when assessing a document's reach.
-- **`lore health`** — audit codex, rites, schemas, bindings, glossary, voice and
-  the skills `lore init` installed. Run after structural changes. It writes no
-  report file unless `health-report-retention` in `.lore/config.toml` is
-  `"latest"` or `"all"`.
+- **`lore health`** — audit codex, rites, schemas, bindings, glossary, the codex
+  index, voice and the skills `lore init` installed. Run after structural
+  changes. It writes no report file unless `health-report-retention` in
+  `.lore/config.toml` is `"latest"` or `"all"`.
 
 Everything else — artifacts, doctrines, watchers, quests, missions and board
 messages — is reached by id through the Lore CLI in every mode. Those commands

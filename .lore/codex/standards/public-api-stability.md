@@ -14,6 +14,7 @@ related:
 - tech-arch-api-facade
 - decisions-010-public-api-stability
 - decisions-011-api-parity-with-cli
+- decisions-040-no-lore-exception-shadows-a-builtin
 ---
 
 # Public API Stability
@@ -49,11 +50,9 @@ __all__ = [
     "CodexBinding",
     "ImpactsError",
     "ImpactsResult",
-    "GlossaryError",
-    "OverlayError",
-    "ProjectNotFoundError",
-    "ConflictingDepthFlags",
-    "Config",
+    # project topology (nested-projects)
+    "ProjectRef",
+    # operational dataclasses — initialisation
     "AccessMode",
     "FileAction",
     "AgentTarget",
@@ -61,6 +60,17 @@ __all__ = [
     "InitAnswers",
     "InitPlan",
     "InitResult",
+    "GlossaryError",
+    "ProjectNotFoundError",
+    "UnknownProjectError",
+    "ForeignEntityError",
+    "ConflictingDepthFlags",
+    "CodexIndexError",
+    "CodexIndexNotAuthoredError",
+    "Config",
+    # config tables (nested-projects)
+    "SharedExports",
+    "DescendantExport",
     # project root
     "find_project_root",
     # validators
@@ -72,13 +82,16 @@ __all__ = [
     "validate_group",
     "validate_quest_id_loose",
     "validate_chaos_threshold",
+    "validate_binds_entry",
+    "is_glob_pattern",
+    "route_entity",
+    # validators — initialisation (interactive-init-us-017)
     "validate_access_mode",
     "validate_skill_family",
     "validate_agent_id",
     "validate_agent_selection",
-    "validate_binds_entry",
-    "is_glob_pattern",
-    "route_entity",
+    # validators — nested projects
+    "validate_project_name",
     # db: quest CRUD
     "create_quest",
     "list_quests",
@@ -127,7 +140,7 @@ __all__ = [
     "init_database",
     # priority
     "get_ready_missions",
-    # doctrine
+    # doctrine — a doctrine is a directory: a design document plus mission files
     "list_doctrines",
     "read_doctrine",
     "create_doctrine",
@@ -145,6 +158,8 @@ __all__ = [
     "create_watcher",
     "update_watcher",
     "delete_watcher",
+    # watcher — scoped raw text (nested-projects)
+    "read_watcher_text",
     # frontmatter field-edit (cross-entity)
     "update_frontmatter_fields",
     # codex
@@ -157,6 +172,13 @@ __all__ = [
     "create_document",
     "update_document",
     "delete_document",
+    # codex index
+    "build_index",
+    "search_index",
+    # projects (nested-projects)
+    "list_projects",
+    "resolve_project",
+    "project_name",
     # glossary
     "scan_glossary",
     "read_glossary_item",
@@ -176,18 +198,39 @@ __all__ = [
     "validate_entity_file",
     "resolve_merged_schema",
     "project_validator_for",
+    "OverlayError",
     # init / reports / config
+    "run_init",
     "plan_init",
     "apply_init",
-    "run_init",
     "generate_reports",
     "load_config",
-    # paths
+    # paths (G15 — amendment C1)
     "entity_location",
+    # rite (US-007 — functions + types + validator)
+    "scan_rites",
+    "read_rite",
+    "search_rites",
+    "create_rite",
+    "update_rite",
+    "delete_rite",
+    "Rite",
+    "RiteNode",
+    "RiteBranch",
+    "RiteConclusion",
+    "SharedStep",
+    "RiteError",
+    "validate_rite_id",
+    # rite — scoped reads (nested-projects)
+    "list_rites",
+    "find_rite",
+    "search_rites_scoped",
 ]
 ```
 
 The authoritative copy lives in `src/lore/api.py`. If this doc and the source drift, the source wins.
+
+No name in `lore.api.__all__` equals a Python builtin — `decisions-040-no-lore-exception-shadows-a-builtin`. A collision would make `except <Name>` around a `lore.api` call catch two unrelated failures with nothing at the call site to distinguish them.
 
 ## Internal Modules — Not Part of the Public API
 
@@ -198,12 +241,13 @@ Every module under `lore` **other than `lore.api`** is internal. None of the fol
 - `lore.models` — internal typed-record index (dataclasses & enums sourced by `lore.api`)
 - `lore.validators` — input validation utilities
 - `lore.paths` — `.lore/` path helpers
-- `lore.graph` — graph algorithms on mission dependency sets
+- `lore.graph` — graph algorithms over mission dependency sets and adjacency mappings
 - `lore.priority` — ready-queue logic
 - `lore.doctrine` — doctrine directory discovery, reading, and the staged create/edit/delete write path
 - `lore.watcher` — watcher YAML filesystem operations
 - `lore.artifact` — artifact filesystem operations
 - `lore.codex` — codex scanning, retrieval, search, traversal
+- `lore.index` — the codex index: partition, render, refresh, keyword answer
 - `lore.glossary` — glossary loading and matcher
 - `lore.impacts` — codex↔code surfacing primitive
 - `lore.health` — `lore health` audit implementation

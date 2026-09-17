@@ -51,11 +51,14 @@ related:
 - conceptual-workflows-init-interactive
 - conceptual-workflows-init-reconcile
 - conceptual-entities-skill
+- conceptual-workflows-index
+- decisions-035-node-is-a-document-cluster-is-a-set
+- decisions-042-index-search-prints-a-no-match-sentence
 ---
 
 # Lore CLI — commands surface
 
-**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore doctrine edit`, `lore doctrine delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore rite`, `lore rite list`, `lore rite show`, `lore rite search`, `lore rite new`, `lore rite edit`, `lore rite delete`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
+**Covers:** `lore`, `lore init`, `lore`, `lore stats`, `lore new`, `lore new quest`, `lore new mission`, `lore list`, `lore show`, `lore edit`, `lore delete`, `lore claim`, `lore done`, `lore block`, `lore unblock`, `lore needs`, `lore unneed`, `lore missions`, `lore ready`, `lore doctrine`, `lore doctrine list`, `lore doctrine show`, `lore doctrine new`, `lore doctrine edit`, `lore doctrine delete`, `lore watcher`, `lore watcher list`, `lore watcher show`, `lore watcher new`, `lore watcher edit`, `lore watcher delete`, `lore artifact`, `lore artifact list`, `lore artifact show`, `lore artifact new`, `lore rite`, `lore rite list`, `lore rite show`, `lore rite search`, `lore rite new`, `lore rite edit`, `lore rite delete`, `lore codex`, `lore codex list`, `lore codex show`, `lore codex search`, `lore codex map`, `lore codex chaos`, `lore index`, `lore index build`, `lore index search`, `lore impacts`, `lore glossary`, `lore glossary list`, `lore glossary show`, `lore glossary search`, `lore board`, `lore board add`, `lore board delete`, `lore oracle`, `lore health`
 **Source of truth:** `src/lore/cli.py` (Click decorators, handler bodies); `lore <command> --help` for per-command flags and prose (canonical per ADR-008).
 
 ## Why this exists
@@ -201,6 +204,25 @@ Enforced in two places: Click `IntRange(min=30, max=100)` and `lore.validators.v
 
 Matches against canonical keywords AND aliases (token-run, canonical-only). Surfaces a `## Glossary` block at the bottom of each shown document. `--skip-glossary` per-call suppresses it. The root-level `show-glossary-on-codex-commands = false` in `.lore/config.toml` disables it globally. See conceptual-workflows-glossary.
 
+### `lore index` — the codex index
+
+`lore index` is a sibling of `lore codex` over the same `related` graph: `lore codex` reaches one document, `lore index` reaches a cluster of them. A node is one document; a cluster is a set of them (`decisions-035-node-is-a-document-cluster-is-a-set`).
+
+Two subcommands, neither taking a local `--json` flag — both carry their envelope through the global one:
+
+- `lore index build` — re-partitions the codex, writes `.lore/index/codex.json`, and prints a `SLUG NAME MEMBERS STATUS` table, a `N clusters — U unauthored, D drifted.` line, and one line per authored entry whose hub no longer heads a cluster. JSON envelope: `{"clusters": [...], "unauthored": N, "drifted": N, "stale": [...]}`.
+- `lore index search <KEYWORD>` — prints the clusters the keyword lives in, each with its summary and its members' ids and paths. JSON envelope: `{"clusters": [...]}`. A cluster with no authored entry carries `null` for `slug`, `name` and `summary`.
+
+Exit codes:
+
+| Code | Condition |
+|---|---|
+| 0 | Both success paths, including a table whose every row is `unauthored` and a search that matched nothing. No match prints `No clusters matching "<keyword>".` (`decisions-042-index-search-prints-a-no-match-sentence`); an empty codex prints `No codex documents to index.` |
+| 1 | `lore index search` with no `.lore/index/authored.yaml`; an authored file that is unreadable, unparseable or fails its schema; a write refused by the atomic write gate. Every message is `str(exc)` from the layer that composed it, unchanged by the handler. |
+| 2 | `--project` on either subcommand (the group is absent from `_PROJECT_READ_COMMANDS`, so `_ScopedGroup`'s gate answers it — the root-group form `lore --project other index search beta` gives the same label); a missing `KEYWORD`; a bare `lore index`, whose help Click prints on **stderr**, not stdout; an unknown subcommand. |
+
+See conceptual-workflows-index.
+
 ### `lore impacts` token classification
 
 `lore impacts` is a **top-level command**, not a subcommand under `lore codex` — `lore codex` walks within the codex (`map`, `chaos` on the `related:` edge); `lore impacts` crosses the codex↔code boundary (the `binds:` edge). The token is classified before any I/O: a `/` or `.` in the string → path; otherwise → codex id. Codex ids match `[a-z0-9-]+` and never contain either character, so classification is unambiguous. Path tokens are normalised against `find_project_root()` — absolute paths inside the repo are accepted and normalised; absolute paths outside the repo and any `..` segment exit 1. `--direct-links` drops glob matches from path-seed output and is a silent no-op on codex-seed lookups. JSON envelope key is `"impacts"`; error envelope is the standard `{"error": "..."}` to stderr. See conceptual-workflows-impacts.
@@ -244,7 +266,7 @@ Writes per-quest markdown reports under `.lore/codex/transient/oracle/`. Slug de
 
 ### `lore health`
 
-Audits the seven file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, audits canonical codex prose against the voice rules, and audits the installed skills against the install manifest. Scopes: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `bindings`, `rites`, `voice`, `skills`. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
+Audits the eight file-based entity types, JSON-Schema-validates entity files, audits codex `binds:` and codex `rites:` reference integrity, audits the authored codex index against the codex, audits canonical codex prose against the voice rules, and audits the installed skills against the install manifest. Eleven scopes: `codex`, `artifacts`, `doctrines`, `watchers`, `schemas`, `glossary`, `index`, `bindings`, `rites`, `voice`, `skills` — the order `--scope`'s `click.Choice` lists them in, which differs from the order `health_check`'s own `Valid scopes:` message prints. `None` (default) runs every scope. Exit code is 1 on any error, 0 otherwise. Warnings never affect exit code. `--json` returns `{"errors": [...], "warnings": [...]}`.
 
 ```
 lore health --scope voice
@@ -252,6 +274,7 @@ lore health --scope codex voice
 ```
 
 The `voice` scope emits warnings only — every `voice_*` row is a `warning` and none escalates, so `--scope voice` never changes the exit code (`decisions-020-codex-voice-is-enforced`). It reports five checks (`voice_past_narration`, `voice_expiry_hedge`, `voice_forward_promise`, `voice_dangling_deixis`, `voice_sales_register`) over canonical codex layers, skipping `sources/` and `vision/` outright; `lore artifact show codex-voice` is the normative rule set.
+The `index` scope audits `.lore/index/authored.yaml` read-only — a missing file emits nothing, and a stale render is recomputed in memory rather than written. It emits `schema` and `unresolvable_hub` as errors and `duplicate_slug`, `stale_entry`, `unauthored_cluster` and `drifted_entry` as warnings; none escalates, so only the two errors raise the exit code. The `index-authored` schema kind is absent from the `schemas` scope's walk, so the file is validated once, here.
  The `bindings` scope emits `dead_binding` (error) for literal `binds:` paths missing on disk and `empty_glob_binding` (warning) for glob patterns matching zero files; both `HealthIssue` rows carry `entity_type="codex"`, `id=<codex-id>`, and `schema_id`/`rule`/`pointer` all `null`. Codex schema validation uses the overlay-merged schema for canonical and `codex/sources/**` docs and the packaged schema only for `codex/transient/**` (ADR-019), so a project's custom required field never fails health's own transient reports. The `skills` scope reads `.lore/.install-manifest.json` and walks only the paths it names: `missing_skill_file` and `missing_skill_frontmatter` are errors, `modified_skill_file` and `retired_skill_present` are warnings, and a project with no manifest emits nothing. See conceptual-workflows-health.
 
 The command has no retention flag. Whether a markdown report is persisted to `.lore/codex/transient/health-<timestamp>.md` is decided by the root-level `health-report-retention` key in `.lore/config.toml` — `none` (default, no file), `latest` (prune prior `health-*.md`, then write), `all` (write, prune nothing). The handler always calls `health_check(write_report=True, timestamp=...)` and passes no `retention`; `health_check` reads the key, so a Python caller gets the same policy (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default`). Persistence is independent of `--json` and never affects the exit code.
@@ -282,6 +305,7 @@ lore watcher   {list|show|new|edit|delete}
 lore artifact  {list|show|new}
 lore rite      {list|show|search|new|edit|delete}
 lore codex     {list|show|search|map|chaos}
+lore index     {build|search <keyword>}
 lore impacts   <codex-id|path> [--direct-links]
 lore glossary  {list|show|search}
 lore board     {add|delete}

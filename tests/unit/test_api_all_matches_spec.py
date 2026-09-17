@@ -71,6 +71,8 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "UnknownProjectError",
     "ForeignEntityError",
     "ConflictingDepthFlags",
+    "CodexIndexError",
+    "CodexIndexNotAuthoredError",
     "Config",
     # config tables (nested-projects)
     "SharedExports",
@@ -176,6 +178,9 @@ SPEC_SECTION_1_ALL: tuple[str, ...] = (
     "create_document",
     "update_document",
     "delete_document",
+    # codex index
+    "build_index",
+    "search_index",
     # projects (nested-projects)
     "list_projects",
     "resolve_project",

@@ -13,6 +13,7 @@ related:
 - decisions-034-missing-required-combination-is-a-usage-error
 - conceptual-workflows-init-interactive
 - conceptual-workflows-nested-projects
+- conceptual-workflows-index
 ---
 
 # CLI Error Handling
@@ -110,7 +111,9 @@ JSON: `{"error": "...", "deleted_at": "2026-03-24T12:00:00Z"}`.
 | Entity not found | Error to stderr | 1 |
 | Wrong status for operation | Error to stderr | 1 |
 | DB integrity error | Exception propagates; unhandled error | 1 |
-| `--project` passed to a write, quest, or mission command | `Error: --project is a read selector; it is not accepted on "<command>".` to stderr (handler-raised, envelope under `--json`) | 2 |
+| `--project` passed to a write, quest, mission, or `lore index` command | `Error: --project is a read selector; it is not accepted on "<command>".` to stderr (handler-raised, envelope under `--json`) | 2 |
+| `lore index search` with no authored index | `no index authored for this project. Run the update-index skill to author it.` to stderr; a Python caller gets `CodexIndexNotAuthoredError` | 1 |
+| `.lore/index/authored.yaml` unparseable or schema-invalid | `<path>: <failure>` to stderr; a Python caller gets `CodexIndexError` carrying one `SchemaIssue` per failure | 1 |
 | A write against an origin-qualified entity id | `Error: Cannot write "<id>": an entity from another project is read-only.` to stderr; a Python caller gets `ForeignEntityError` | 1 |
 | `--project <name>` naming a project not in scope | `Unknown project "<name>". Projects in scope: <others>.` to stderr | 1 |
 | A project in scope is unreadable during a merged read | One `lore: project "<name>" is unreadable: <reason>; skipped` line to stderr; the command completes with every other project's rows | 0 |

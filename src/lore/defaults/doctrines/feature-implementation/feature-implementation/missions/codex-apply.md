@@ -57,11 +57,20 @@ Apply every change listed in the proposal — exactly as proposed, do not improv
 
 Then run `lore health --scope voice` and clear or justify every warning.
 
+Finally, refresh the codex index. Your changes moved the `related` graph, so the clusters `lore index search` routes by have moved with it:
+
+```
+lore index build
+```
+
+A project that has never authored an index reports every cluster `unauthored` — leave it alone. A project that has one reports what your change moved: a cluster your new documents created, a summary whose members you edited, an entry whose hub you retired. Update those rows from the documents already in context, following the `update-index` skill.
+
 ## Done Criteria
 
 - Every change the proposal lists is applied, and nothing else is.
 - `lore health --scope voice` reports no warning you have not cleared or justified.
 - Every code-governing document created or updated carries a populated `binds:` field.
+- `lore index build` reports no `unauthored`, `drifted` or stale row this feature's changes created, in a project that already carries an authored index.
 
 Post a board message to the tech-notes-draft mission listing all codex document IDs created, updated, or retired — by codex ID only, never by file path:
 

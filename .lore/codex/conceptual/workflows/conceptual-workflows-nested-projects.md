@@ -39,6 +39,8 @@ related:
 - decisions-026-project-naming-and-addressing
 - decisions-027-glossary-collision-resolves-local-first
 - decisions-028-inheritance-unconditional-federation-opt-in
+- decisions-036-index-partitions-the-local-canonical-codex
+- conceptual-workflows-index
 ---
 
 # Nested Projects
@@ -147,6 +149,10 @@ A health run validates only the project it runs in, in every direction, with no 
 ## `codex chaos` is excluded
 
 `--project` is not accepted on `lore codex chaos`. Its termination ratio is defined over the reachable subgraph the seed can walk within one project; crossing a boundary would change what that ratio measures, and nothing requires it to.
+
+## `lore index` is excluded
+
+`--project` is not accepted on `lore index build` or `lore index search`. The index is built from, and written into, the project Lore runs in: it partitions that project's own canonical codex, and its render carries a path per member relative to that codex root, which an ancestor's document does not have. An ancestor editing its export set would otherwise drift entries in a project whose own files nobody touched (`decisions-036-index-partitions-the-local-canonical-codex`). A descendant that wants an index authors its own — see `conceptual-workflows-index`.
 
 ## Python API
 

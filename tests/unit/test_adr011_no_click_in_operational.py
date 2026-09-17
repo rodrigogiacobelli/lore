@@ -27,7 +27,6 @@ from pathlib import Path
 
 import pytest
 
-
 SRC_LORE = Path(__file__).resolve().parents[2] / "src" / "lore"
 
 
@@ -208,6 +207,72 @@ def test_interactive_init_module_ast_imports_no_click(module_name: str) -> None:
     assert not bad_imports, (
         f"src/lore/{module_name}.py imports click: {bad_imports}. "
         "ADR-011 forbids click outside cli.py."
+    )
+
+
+# ---------------------------------------------------------------------------
+# codex-index scope — `index.py` joins the invariant.
+#
+# `index.py` is a core module: it owns the partition, the render, the refresh,
+# the classification and the search, which is every rule a Python caller would
+# otherwise have to reimplement. The CLI above it formats a table and nothing
+# else (ADR-011), so a click import here would be the rule leaking upward.
+# ---------------------------------------------------------------------------
+
+
+CODEX_INDEX_MODULES = ("index",)
+
+
+@pytest.mark.parametrize("module_name", CODEX_INDEX_MODULES)
+def test_codex_index_module_source_has_no_click_text_reference(module_name: str) -> None:
+    """Grep-equivalent: module source contains no 'click' substring."""
+    path = _module_path(module_name)
+    text = path.read_text()
+    assert "click" not in text, (
+        f"src/lore/{module_name}.py still references 'click' — "
+        "ADR-011 forbids click in operational modules."
+    )
+
+
+@pytest.mark.parametrize("module_name", CODEX_INDEX_MODULES)
+def test_codex_index_module_ast_imports_no_click(module_name: str) -> None:
+    """AST check: module imports no ``click`` name."""
+    path = _module_path(module_name)
+    tree = ast.parse(path.read_text(), filename=str(path))
+    bad_imports: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "click" or alias.name.startswith("click."):
+                    bad_imports.append(f"import {alias.name}")
+        elif isinstance(node, ast.ImportFrom) and (
+            node.module == "click" or (node.module or "").startswith("click.")
+        ):
+            bad_imports.append(f"from {node.module} import ...")
+    assert not bad_imports, (
+        f"src/lore/{module_name}.py imports click: {bad_imports}. "
+        "ADR-011 forbids click in operational modules."
+    )
+
+
+@pytest.mark.parametrize("module_name", CODEX_INDEX_MODULES)
+def test_codex_index_module_reaches_neither_cli_nor_api(module_name: str) -> None:
+    """`standards-dependency-inversion` — the arrow points inward only."""
+    path = _module_path(module_name)
+    tree = ast.parse(path.read_text(), filename=str(path))
+    reached: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            reached |= {a.name for a in node.names if a.name.startswith("lore")}
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == "lore":
+                reached |= {f"lore.{a.name}" for a in node.names}
+            elif module.startswith("lore"):
+                reached.add(module)
+    assert not reached & {"lore.cli", "lore.api", "lore.db"}, (
+        f"src/lore/{module_name}.py reaches {sorted(reached)}; "
+        "a core module imports neither the surface above it nor the database."
     )
 
 

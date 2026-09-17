@@ -80,6 +80,8 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "UnknownProjectError",
     "ForeignEntityError",
     "ConflictingDepthFlags",
+    "CodexIndexError",
+    "CodexIndexNotAuthoredError",
     # config type
     "Config",
     # config tables (nested-projects)
@@ -187,6 +189,9 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "create_document",
     "update_document",
     "delete_document",
+    # codex index
+    "build_index",
+    "search_index",
     # projects (nested-projects)
     "list_projects",
     "resolve_project",
@@ -283,6 +288,8 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "UnknownProjectError": "lore.projects",
     "ForeignEntityError": "lore.projects",
     "ConflictingDepthFlags": "lore.codex",
+    "CodexIndexError": "lore.index",
+    "CodexIndexNotAuthoredError": "lore.index",
     # config
     "Config": "lore.config",
     "SharedExports": "lore.config",
@@ -380,6 +387,9 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "create_document": "lore.codex",
     "update_document": "lore.codex",
     "delete_document": "lore.codex",
+    # codex index
+    "build_index": "lore.index",
+    "search_index": "lore.index",
     # projects (nested-projects)
     "list_projects": "lore.projects",
     "resolve_project": "lore.projects",

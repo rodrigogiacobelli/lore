@@ -31,6 +31,18 @@ start from a rite, you find the codex document by searching for it.
 
 Decide what the question is really asking, then pick the entry point.
 
+**Start with `lore index search <keyword>`, in every access mode.** It answers a
+keyword with named *clusters* of densely linked documents rather than one
+document at a time, so a cold read lands on the whole group a topic lives in.
+
+It stays on the CLI even where the rest of this skill uses your own file tools,
+for the same reason `lore codex map` and `lore impacts` do: the command
+re-fingerprints the codex and rebuilds the render before it matches, so reading
+`.lore/index/` by hand answers from whatever was true at the last build. A miss,
+or a `no index authored for this project` refusal, means the project has not
+authored an index — fall back to the keyword entry point below and carry on.
+Authoring one is the `update-index` skill's job, not this one's.
+
 <!-- lore:access cli -->
 | Goal | Command |
 |---|---|

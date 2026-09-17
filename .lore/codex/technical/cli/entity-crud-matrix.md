@@ -29,6 +29,7 @@ related:
 - conceptual-entities-skill
 - conceptual-workflows-lore-init
 - conceptual-workflows-nested-projects
+- conceptual-workflows-index
 ---
 
 # CLI Entity CRUD Matrix
@@ -90,13 +91,14 @@ Quest and Mission have additional lifecycle commands beyond CRUD.
 
 | Command | Description |
 |---------|-------------|
-| `lore health [--scope SCOPE [SCOPE ...]] [--json]` | Audit the project's knowledge base and report errors/warnings. Seven scopes name a file-based entity type; three cut across them — `schemas` (file shape), `bindings` (codex↔code `binds:`), `voice` (canonical codex prose, warnings only). Omitting `--scope` runs every scope. Exits `1` on any error, `0` on clean or warnings-only. Writes a markdown report to `.lore/codex/transient/` on every run. See conceptual-workflows-health. |
+| `lore health [--scope SCOPE [SCOPE ...]] [--json]` | Audit the project's knowledge base and report errors/warnings. Eight scopes name a file-based entity type — including `index`, the authored codex index; three cut across them — `schemas` (file shape), `bindings` (codex↔code `binds:`), `voice` (canonical codex prose, warnings only). Eleven in all. Omitting `--scope` runs every scope. Exits `1` on any error, `0` on clean or warnings-only. Writes a markdown report to `.lore/codex/transient/` on every run. See conceptual-workflows-health. |
 
 ## Surfacing Operations
 
 | Command | Description |
 |---------|-------------|
 | `lore impacts <token> [--direct-links] [--json]` | Read-only bidirectional lookup over the codex↔code graph defined by the optional `binds:` frontmatter field. Token is a codex id or a repo-relative / absolute path (containing `/` or `.` → path; otherwise codex id). Top-level command, **not** a `lore codex` subcommand — codex traversal stays inside the codex (map, chaos); impacts crosses the codex↔code boundary. See `conceptual-workflows-impacts`. |
+| `lore index build [--json]` / `lore index search <keyword> [--json]` | The codex index: `build` re-partitions the `related` graph into clusters and reports which need a summary written or refreshed; `search` answers a keyword with the clusters it lives in. A sibling group of `lore codex`, over the same graph — `lore codex` reaches one document, `lore index` reaches a set of them. The entries are authored by the `update-index` skill and by no Lore command. `--project` is refused at exit 2. See `conceptual-workflows-index`. |
 
 ## Gaps
 

@@ -91,8 +91,9 @@ def test_all_scopes_is_tuple_and_contains_schemas():
 
 
 def test_all_scopes_length_after_the_retired_entity_scope_left():
-    """glossary → 7; bindings → 8; rites → 9; voice → 10; skills → 11; one out → 10."""
-    assert len(_ALL_SCOPES) == 10
+    """glossary → 7; bindings → 8; rites → 9; voice → 10; skills → 11; one out
+    → 10; index → 11."""
+    assert len(_ALL_SCOPES) == 11
 
 
 # ---------------------------------------------------------------------------

@@ -82,7 +82,7 @@ class HealthReport:
         return self.errors + self.warnings
 
 
-_ALL_SCOPES = ("codex", "artifacts", "doctrines", "watchers", "glossary", "schemas", "bindings", "rites", "voice", "skills")
+_ALL_SCOPES = ("codex", "artifacts", "doctrines", "watchers", "glossary", "index", "schemas", "bindings", "rites", "voice", "skills")
 
 # Report persistence policies, in the order the error message lists them.
 #   none   — write nothing (default; pre-existing reports are left alone)
@@ -1080,6 +1080,142 @@ def _check_glossary(project_root: Path) -> list[HealthIssue]:
         *_glossary_alias_collision_issues(items),
         *_glossary_do_not_use_collision_issues(items),
     ]
+
+
+def _index_rows(rows: list[dict], field: str, value: str) -> list[dict]:
+    """The rows whose ``field`` equals ``value``, by ascending hub.
+
+    Rows within one check are ordered by their id, and an index row's id is its
+    hub — but ``_classify`` hands its two lists back in the order the build
+    table renders them, which is a different order on purpose.
+    """
+    matching = (row for row in rows if row[field] == value)
+    return sorted(matching, key=lambda row: row["hub"])
+
+
+def _index_issue(severity: str, entity_id: str, check: str, detail: str) -> HealthIssue:
+    """One ``index`` row. ``schema_id``, ``rule`` and ``pointer`` stay null, as
+    they do on every non-schema check."""
+    return HealthIssue(
+        severity=severity,
+        entity_type="index",
+        id=entity_id,
+        check=check,
+        detail=detail,
+    )
+
+
+def _check_index(project_root: Path) -> list[HealthIssue]:
+    """Audit the authored codex index against the codex as it is now.
+
+    Read-only. When the render is stale the partition is recomputed in memory
+    and nothing is written, so an audit never leaves behind a cache nobody
+    asked for. A missing ``.lore/index/authored.yaml`` produces no issues at
+    all, the way a missing glossary does.
+
+    One classification answers every check, so the build table and this audit
+    cannot drift apart. A schema failure short-circuits the rest. An entry
+    whose hub is not a document in this codex is an error, because a deleted
+    document needs a decision. Everything else is a warning — two entries
+    sharing a slug, an entry the partition has left behind, a cluster nobody
+    has written up, and a summary authored against a digest its members no
+    longer produce are each a state to report rather than a thing that is
+    broken.
+    """
+    from lore.index import (
+        _AUTHORED_KIND,
+        CodexIndexError,
+        _authored_label,
+        _classify,
+        _current_clusters,
+        _load_authored,
+    )
+    from lore.paths import index_authored_path
+    from lore.schemas import load_schema
+
+    if not index_authored_path(project_root).exists():
+        return []
+
+    file_id = _authored_label(project_root)
+    try:
+        entries = _load_authored(project_root)
+    except CodexIndexError as exc:
+        fallback_id = f"lore://schemas/{_AUTHORED_KIND}"
+        schema_id = str(load_schema(_AUTHORED_KIND).get("$id", fallback_id))
+        return [
+            HealthIssue(
+                severity="error",
+                entity_type="index",
+                id=file_id,
+                check="schema",
+                detail=issue.message,
+                schema_id=schema_id,
+                rule=issue.rule,
+                pointer=issue.pointer,
+            )
+            for issue in exc.issues
+        ]
+
+    classified = _classify(_current_clusters(project_root), entries)
+
+    unresolvable = [
+        _index_issue(
+            "error",
+            row["hub"],
+            "unresolvable_hub",
+            f'entry "{row["slug"]}" names a hub that is not a document in this codex',
+        )
+        for row in _index_rows(classified["stale"], "reason", "hub_not_found")
+    ]
+
+    duplicates: list[HealthIssue] = []
+    slug_owner: dict[str, str] = {}
+    for hub in sorted(entries):
+        slug = str(entries[hub]["slug"]).casefold()
+        if slug in slug_owner:
+            duplicates.append(_index_issue(
+                "warning",
+                file_id,
+                "duplicate_slug",
+                f"'{slug}' is the slug of both {slug_owner[slug]} and {hub}",
+            ))
+        else:
+            slug_owner[slug] = hub
+
+    stale = [
+        _index_issue(
+            "warning",
+            row["hub"],
+            "stale_entry",
+            f'entry "{row["slug"]}" is attached to a hub that heads no cluster; '
+            "re-key or retire it",
+        )
+        for row in _index_rows(classified["stale"], "reason", "hub_not_a_hub")
+    ]
+
+    unauthored = [
+        _index_issue(
+            "warning",
+            row["hub"],
+            "unauthored_cluster",
+            f"cluster of {len(row['members'])} "
+            f"document{'' if len(row['members']) == 1 else 's'} "
+            f"has no entry in {file_id}",
+        )
+        for row in _index_rows(classified["clusters"], "status", "unauthored")
+    ]
+
+    drifted = [
+        _index_issue(
+            "warning",
+            row["hub"],
+            "drifted_entry",
+            "summary was authored against a digest its members no longer produce",
+        )
+        for row in _index_rows(classified["clusters"], "status", "drifted")
+    ]
+
+    return [*unresolvable, *duplicates, *stale, *unauthored, *drifted]
 
 
 def _rite_targets(then) -> list[str]:
@@ -2081,6 +2217,7 @@ def health_check(
         "watchers": lambda: _check_watchers(watchers_dir, doctrines_dir),
         "schemas": lambda: _check_schemas(project_root),
         "glossary": lambda: _check_glossary(project_root),
+        "index": lambda: _check_index(project_root),
         "bindings": lambda: _check_bindings(project_root),
         "rites": lambda: _check_rites(project_root),
         "voice": lambda: _check_voice(project_root),

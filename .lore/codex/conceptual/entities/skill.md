@@ -19,6 +19,8 @@ related:
 - tech-arch-install-manifest
 - tech-cli-entity-crud-matrix
 - decisions-006-id-references
+- conceptual-workflows-index
+- decisions-039-authored-entry-is-keyed-by-its-hub
 ---
 
 # Skill
@@ -34,6 +36,7 @@ A skill is not a Lore-managed entity in the sense the other seven are. It has no
 | memory | `store-memory` | Records knowledge into project memory — a codex document, a rite, or a source snapshot — creating, editing or deleting as the request requires. |
 | memory | `retrieve-memory` | Answers a question from project memory, consulting both the codex and the rites. |
 | machinery | `update-doctrine` | Authors or edits a doctrine. |
+| machinery | `update-index` | Authors and refreshes the codex index — the slug, name and summary for each cluster of documents Lore has partitioned. The only writer of `.lore/index/authored.yaml`. |
 | machinery | `update-watcher` | Authors or edits a watcher. |
 | machinery | `update-artifact` | Authors or edits an artifact template. |
 | machinery | `update-custom-schema` | Authors or edits a project custom-schema overlay. |
@@ -46,7 +49,7 @@ A skill is not a Lore-managed entity in the sense the other seven are. It has no
 The three families are the unit a person selects at `lore init`:
 
 - **memory** — project memory: the codex, the rites and the glossary, consulted together.
-- **machinery** — Lore's own configuration entities: doctrines, watchers, artifacts, custom schemas.
+- **machinery** — Lore's own configuration entities: doctrines, watchers, artifacts, custom schemas, the codex index.
 - **workflow** — multi-step processes over quests and missions.
 
 A family is selected or not selected as a whole. `conceptual-workflows-init-interactive` holds the prompt and its flag.

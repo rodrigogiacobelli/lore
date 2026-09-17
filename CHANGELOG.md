@@ -8,6 +8,18 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+### Added
+
+#### The codex index — routing into the codex by cluster
+
+A codex is a graph of documents joined by `related`. Lore now partitions that graph into clusters of densely linked documents, names each cluster's hub, and answers a keyword with the clusters it lives in, so an agent opening a codex cold starts at a named group of documents instead of at the whole corpus. The partition is deterministic — no model, no network, no seed — so the same codex produces the same clusters on every run and on every machine.
+
+- **A `lore index` command group with two commands.** `lore index build` re-partitions the codex, writes the render, and prints one row per cluster with its slug, name, member count and status — `ok`, `unauthored` or `drifted` — plus one line per authored entry whose hub no longer heads a cluster. A cluster needing attention is a state to report, so it exits 0. `lore index search` takes one keyword and prints the clusters it lives in, each with its members and their paths, matching case-insensitively against a cluster's name, its summary and its member ids. Both carry their documented `--json` envelope through the global `--json` flag; neither takes a local one. `--project` is refused on both at exit 2: the index is built from, and written into, the project Lore runs in.
+- **Four new public API names** — `build_index` and `search_index` from `lore.index`, which take `project_root` first and return the same shapes the `--json` envelopes carry, plus the exceptions `CodexIndexError` and `CodexIndexNotAuthoredError`. Additive: nothing left `__all__` and no returned shape narrowed.
+- **Two files under a new `.lore/index/`.** `authored.yaml` is committed and hand-written, one entry per cluster keyed by that cluster's hub, validated against the packaged `lore://schemas/index-authored` schema. No Lore command ever creates, edits or deletes it. `codex.json` is generated and git-ignored — a pure cache, refreshed before a search only when a stat-level fingerprint of the codex has moved, and rebuilt unconditionally by `lore index build`. Deleting it loses nothing.
+- **A `lore health --scope index` audit** — the scope vocabulary grows to eleven tokens. It reports an entry whose hub names no document in this codex as an error, and reports an unauthored cluster, a drifted summary, an entry whose hub heads no cluster, and two entries sharing a slug as warnings. It writes nothing.
+- **An `update-index` skill** in the `machinery` family — the one writer of `.lore/index/authored.yaml`, run by a person or an agent to author and refresh the summaries Lore itself never writes.
+
 ## [0.12.0] - 2026-09-16
 
 ### Changed

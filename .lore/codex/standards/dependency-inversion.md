@@ -9,6 +9,8 @@ related:
 - tech-overview
 - tech-arch-source-layout
 - tech-arch-validators
+- tech-arch-graph
+- tech-arch-codex-index
 ---
 
 # Dependency Inversion
@@ -23,6 +25,8 @@ Core logic does not depend on the CLI. The dependency arrow always points inward
 | `paths.py` | stdlib only | Any `lore.*` module |
 | `db.py` | `validators`, `paths`, `models`; entity modules (`doctrine.py`, …) **lazily** for envelope hydration only — see note below | `cli.py`; entity modules at module-top |
 | `doctrine.py`, `codex.py`, `artifact.py`, `watcher.py`, `rite.py` | `paths`, `frontmatter`, `validators` (`watcher.py` omits `frontmatter.py` — uses `yaml.safe_load` directly) | `cli.py`, `db.py` |
+| `graph.py` | stdlib only | Any `lore.*` module |
+| `index.py` | `paths`, `graph`, `codex`, `projects`, `schemas`, `safewrite` | `cli.py`, `db.py`, `api.py` |
 | `cli.py` | All layers below it | Nothing — it is the outermost layer |
 
 ## Rule

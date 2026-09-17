@@ -23,6 +23,8 @@ related:
 - tech-arch-schemas
 - standards-dry
 - decisions-011-api-parity-with-cli
+- decisions-035-node-is-a-document-cluster-is-a-set
+- tech-arch-codex-index
 ---
 # Codex Map — `map_documents` Internals
 
@@ -102,6 +104,7 @@ discarded, and `id` is the qualified form for a foreign record. `group` comes of
 
 ### Key properties
 
+- **A node is one codex document** — a single vertex of the `related` graph. A set of nodes is a **cluster**, which belongs to the codex index and never to this traversal (`decisions-035-node-is-a-document-cluster-is-a-set`, `tech-arch-codex-index`).
 - **Seed-exclusion** is enforced at append-time by `if doc_id != seed_id`.
 - **Dedupe-by-ID** is enforced by the `visited` set, checked before enqueueing
   in either direction.
