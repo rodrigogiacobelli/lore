@@ -8,6 +8,8 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-05
+
 ### Added
 
 #### The codex index — routing into the codex by cluster

@@ -410,7 +410,7 @@ class TestWheelCarriesEveryPackagedDataFile:
 
 class TestReleaseMetadata:
     def test_version_is_the_minor_bump(self):
-        assert _read_pyproject()["project"]["version"] == "0.12.0"
+        assert _read_pyproject()["project"]["version"] == "0.13.0"
 
     def test_requires_python_is_unchanged(self):
         assert _read_pyproject()["project"]["requires-python"] == ">=3.11"

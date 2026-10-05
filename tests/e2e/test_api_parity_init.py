@@ -595,11 +595,13 @@ class TestChangelogReleaseObligation:
         for token in ("`--project`", "`[shared]`", "`[[descendants]]`", "`lore health`"):
             assert token in added, f"{token} not named in the Added section"
 
-    def test_the_unreleased_entry_names_the_codex_index_additions(self):
-        """ADR-010 — four new names in `lore.api.__all__` is a minor bump, and
+    def test_the_codex_index_release_entry_still_names_every_addition(self):
+        """The `0.13.0` entry is a historical guarantee, addressed by version.
+
+        ADR-010 — four new names in `lore.api.__all__` is a minor bump, and
         `standards-public-api-stability` makes `CHANGELOG.md` where it is
         recorded. The entry also names the surface each one arrives behind."""
-        _, body = self._section("[Unreleased]")
+        _, body = self._section("[0.13.0]")
         added = body.split("### Changed")[0]
         for name in CODEX_INDEX_NEW_NAMES:
             assert f"`{name}`" in added, f"{name} not named in the Added section"
