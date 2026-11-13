@@ -8,7 +8,7 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
-## [0.14.0] - 2026-10-31
+## [0.14.0] - 2026-11-13
 
 ### Changed
 
