@@ -1,14 +1,17 @@
-"""The skill catalogue and the access-mode renderer.
+"""The skill catalogue and the skill renderer.
 
-Two things live here, both driven by shipped data:
+Everything here is driven by shipped data:
 
-* the catalogue (``src/lore/defaults/skills-catalogue.yaml``) — which skills a
-  release ships, which family each belongs to, and where every retired skill
-  went. A skill's description is authored once in its own ``SKILL.md``
-  frontmatter and is deliberately not repeated in the catalogue.
-* ``render`` — the access-mode block selector. Each skill is authored once with
-  both command layers marked inline, and the project's chosen mode is injected
-  at install time, so the two variants cannot drift apart.
+* the catalogue (``src/lore/defaults/skills-catalogue.yaml``, version 3) — which
+  skills a release ships, which blocks each skill file and each instruction
+  document is assembled from, the explicit line-cap exceptions, the retired
+  family table the deprecated ``--skills`` alias reads, and where every retired
+  skill went. A skill's description is authored once, in its head block.
+* the profile renderer — :func:`installed_skills`, :func:`render_skill_file`,
+  :func:`render_document` and :func:`desired_files` assemble skills and
+  instruction text from tagged blocks (``lore.blocks``) for a
+  :class:`~lore.initplan.Profile`. A skill with no surviving body block is
+  never written, and nothing refers to it.
 
 Like ``lore.agents``, the catalogue is package data read through
 ``importlib.resources`` and cached for the process: ``lore init`` runs where no
@@ -22,14 +25,23 @@ from __future__ import annotations
 
 import functools
 import re
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, replace
 from importlib import resources
-from typing import Any, Iterable
+from typing import Any, overload
 
 import jsonschema
 import yaml
 
-from lore.initplan import AccessMode, AgentTarget, DesiredFile
+import lore.blocks as blocks_module
+from lore.initplan import (
+    QUESTIONS,
+    AgentTarget,
+    DesiredFile,
+    Profile,
+    Route,
+    question_kwarg,
+)
 
 PACKAGED_CATALOGUE = "src/lore/defaults/skills-catalogue.yaml"
 """Where the catalogue is authored — quoted in the build-defect message."""
@@ -115,10 +127,31 @@ def load_catalogue() -> dict[str, Any]:
     return payload
 
 
+def _require_skill_bodies_gated(
+    catalogue: dict[str, Any], known: Mapping[str, blocks_module.Block]
+) -> None:
+    """A skill whose ``SKILL.md`` body holds only ``core`` blocks is a build defect.
+
+    ``core`` survives every profile, so such a skill would install in a project
+    that uses none of Lore. Checked where the blocks are first needed rather
+    than in :func:`load_catalogue`, which ``click.Choice`` reaches at import
+    time and must not pay for parsing every block. Block ids the shipped tree
+    does not carry are left to ``lore.blocklint`` (L3): this judges only what it
+    can see.
+    """
+    for entry in catalogue["skills"]:
+        listed = [known[b] for b in entry["files"][0]["blocks"] if b in known]
+        if listed and all(block.feature == "core" for block in listed):
+            raise _build_defect(
+                f"skill '{entry['id']}': its SKILL.md holds only core blocks, which "
+                "survive every profile; gate at least one on a feature"
+            )
+
+
 @functools.lru_cache(maxsize=1)
 def family_ids() -> tuple[str, ...]:
-    """Return every family id, sorted. This is the concrete half of ``--skills``."""
-    return tuple(sorted(load_catalogue()["families"]))
+    """Return every legacy family id, sorted. This is the concrete half of ``--skills``."""
+    return tuple(sorted(load_catalogue()["legacy_families"]))
 
 
 def _require_known_family(token: str, *, aggregates_ok: bool) -> None:
@@ -160,23 +193,6 @@ def resolve_families(tokens: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted(set(requested)))
 
 
-def skills_in_families(families: Iterable[str]) -> tuple[str, ...]:
-    """Return the catalogue's skill ids for *families*, in catalogue order.
-
-    Takes concrete family ids — ``resolve_families`` has already expanded any
-    aggregate. Raises ``ValueError`` naming the offending token when a family is
-    unknown.
-    """
-    selected = set()
-    for family in families:
-        _require_known_family(family, aggregates_ok=False)
-        selected.add(family)
-
-    return tuple(
-        entry["id"] for entry in load_catalogue()["skills"] if entry["family"] in selected
-    )
-
-
 def retirement_for(skill_id: str) -> Retirement | None:
     """Return where *skill_id* went, or None when it is current or unknown."""
     record = load_catalogue().get("retired", {}).get(skill_id)
@@ -186,77 +202,14 @@ def retirement_for(skill_id: str) -> Retirement | None:
 
 
 # ---------------------------------------------------------------------------
-# The access-mode renderer
+# Markers that can never survive assembly
 # ---------------------------------------------------------------------------
 
 
-_MARKER_RE = re.compile(r"^<!--\s*lore:access\s+(\S+)\s*-->$")
-_END = "end"
-_MODE_TOKENS = frozenset(mode.value for mode in AccessMode)
-_EXPECTED_TOKENS = ", ".join(f"'{mode.value}'" for mode in AccessMode) + f" or '{_END}'"
-
-
-def render(text: str, mode: AccessMode, source: str | None = None) -> str:
-    """Resolve the ``<!-- lore:access ... -->`` blocks in *text* for *mode*.
-
-    Text outside every block is unconditional — which is where a command no file
-    tool reproduces (``lore codex map``, ``lore codex chaos``, ``lore impacts``)
-    is authored, so no third "both" token is needed. Text inside a block
-    survives only when the block names the selected mode; a block that does not
-    is dropped whole, its two marker lines included.
-
-    Pure string in, string out: the caller reads the file and writes the result.
-    *source* is used only in error messages — pass the path when there is one.
-
-    Raises ``ValueError`` naming the source and the line for an unterminated
-    block, an unknown mode token, an ``end`` with no opener, or a nested opener.
-    """
-    selected = AccessMode(mode).value
-    where = source or "<text>"
-
-    kept: list[str] = []
-    open_token: str | None = None
-    open_line = 0
-
-    for lineno, line in enumerate(text.splitlines(keepends=True), start=1):
-        match = _MARKER_RE.match(line.strip())
-
-        if match is None:
-            if open_token is None or open_token == selected:
-                kept.append(line)
-            continue
-
-        token = match.group(1)
-
-        if token == _END:
-            if open_token is None:
-                raise ValueError(
-                    f"{where}:{lineno}: <!-- lore:access end --> with no open block"
-                )
-            open_token = None
-            continue
-
-        if token not in _MODE_TOKENS:
-            raise ValueError(
-                f"{where}:{lineno}: unknown access-mode token '{token}' — "
-                f"expected {_EXPECTED_TOKENS}"
-            )
-
-        if open_token is not None:
-            raise ValueError(
-                f"{where}:{lineno}: nested <!-- lore:access {token} --> block; "
-                "access blocks never nest"
-            )
-
-        open_token = token
-        open_line = lineno
-
-    if open_token is not None:
-        raise ValueError(
-            f"{where}:{open_line}: unterminated <!-- lore:access {open_token} --> block"
-        )
-
-    return "".join(kept)
+_ACCESS_MARKER_RE = re.compile(r"^<!--\s*lore:access\s+(\S+)\s*-->$")
+"""The marker grammar of the earlier access-mode renderer, which is gone. An
+installed file carrying one is output nothing here can produce."""
+_BLOCK_MARKER_PREFIXES = ("<!-- lore:block", "<!-- lore:skills-table")
 
 
 # ---------------------------------------------------------------------------
@@ -281,94 +234,202 @@ def install_roots(targets: Iterable[AgentTarget]) -> tuple[str, ...]:
     return tuple(sorted(roots))
 
 
-def skill_files(skill_id: str) -> tuple[str, ...]:
-    """Return one skill's packaged files, as paths relative to its directory.
-
-    ``SKILL.md`` always, plus whatever reference files the catalogue declares.
-    """
-    entry = next(
-        (row for row in load_catalogue()["skills"] if row["id"] == skill_id), None
-    )
+def _skill_entry(skill_id: str) -> dict[str, Any]:
+    entry = next((row for row in load_catalogue()["skills"] if row["id"] == skill_id), None)
     if entry is None:
         raise ValueError(f"Unknown skill: '{skill_id}'.")
-    references = entry.get("references") or []
-    return (SKILL_FILE, *(f"{_REFERENCES_DIR}/{name}" for name in references))
+    return entry
 
 
-def _read_packaged(skill_id: str, relative: str) -> str:
-    """Read one packaged skill file as text."""
-    return (
-        resources.files(_RESOURCE_PACKAGE)
-        .joinpath(f"skills/{skill_id}/{relative}")
-        .read_text(encoding="utf-8")
+def _block_table() -> Mapping[str, blocks_module.Block]:
+    """The shipped blocks, after the catalogue's skills have been judged against them."""
+    table = blocks_module.load_blocks()
+    _require_skill_bodies_gated(load_catalogue(), table)
+    return table
+
+
+def _surviving(
+    block_ids: Sequence[str], profile: Profile, *, skills_installed: bool = False
+) -> list[blocks_module.Block]:
+    return blocks_module.assemble(
+        block_ids, profile, blocks=_block_table(), skills_installed=skills_installed
     )
+
+
+def _is_installed(entry: dict[str, Any], profile: Profile) -> bool:
+    """A skill is installed when at least one body block of its SKILL.md survives."""
+    return bool(_surviving(entry["files"][0]["blocks"], profile))
+
+
+def installed_skills(profile: Profile) -> tuple[str, ...]:
+    """The skill ids *profile* installs, in catalogue order.
+
+    A skill is installed when at least one body block of its ``SKILL.md``
+    survives. The head block never counts.
+    """
+    return tuple(
+        entry["id"] for entry in load_catalogue()["skills"] if _is_installed(entry, profile)
+    )
+
+
+def skill_description(skill_id: str) -> str:
+    """The one-line description in *skill_id*'s head block."""
+    head = _block_table()[_skill_entry(skill_id)["head"]]
+    lines = head.body.splitlines()
+    fence = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    meta = yaml.safe_load("\n".join(lines[fence[0] + 1 : fence[1]])) if len(fence) >= 2 else None
+    description = meta.get("description") if isinstance(meta, dict) else None
+    if not isinstance(description, str) or not description.strip():
+        raise _build_defect(f"head block '{head.id}' of skill '{skill_id}' has no description")
+    return description
+
+
+@overload
+def skill_files(skill_id: str) -> tuple[str, ...]: ...
+@overload
+def skill_files(skill_id: str, profile: Profile) -> tuple[str, ...]: ...
+def skill_files(skill_id: str, profile: Profile | None = None) -> tuple[str, ...]:
+    """Return one skill's files, as paths relative to its directory.
+
+    Without a profile, every file the catalogue declares (``SKILL.md`` first).
+    With one, only the files that materialise: none at all when the skill is not
+    installed, and a reference file only when one of its blocks survives.
+    """
+    entry = _skill_entry(skill_id)
+    declared = tuple(row["path"] for row in entry["files"])
+    if profile is None:
+        return declared
+    if not _is_installed(entry, profile):
+        return ()
+    return tuple(
+        row["path"] for row in entry["files"] if _surviving(row["blocks"], profile)
+    )
+
+
+def render_skill_file(skill_id: str, relative: str, profile: Profile) -> str | None:
+    """The text of one skill file for *profile*, or ``None`` when it is not written.
+
+    ``SKILL.md`` is the head block, one blank line, then the joined body; a
+    reference file is its joined blocks alone. ``None`` for a skill that is not
+    installed and for a reference file none of whose blocks survive.
+    """
+    entry = _skill_entry(skill_id)
+    row = next((r for r in entry["files"] if r["path"] == relative), None)
+    if row is None:
+        raise ValueError(f"Unknown file '{relative}' for skill '{skill_id}'.")
+    if not _is_installed(entry, profile):
+        return None
+    survivors = _surviving(row["blocks"], profile)
+    if not survivors:
+        return None
+    body = blocks_module.join(survivors)
+    if relative != SKILL_FILE:
+        return body
+    return f"{_block_table()[entry['head']].body}\n\n{body}"
+
+
+def render_document(name: str, profile: Profile) -> str | None:
+    """The instruction document *name* (``lore-agent`` or ``getting-started``).
+
+    ``None`` when no block survives.
+    """
+    documents = load_catalogue()["documents"]
+    if name not in documents:
+        raise ValueError(f"Unknown document: '{name}'.")
+    survivors = _surviving(
+        documents[name]["blocks"], profile, skills_installed=bool(installed_skills(profile))
+    )
+    return blocks_module.join(survivors) if survivors else None
+
+
+def neighbor_profiles(profile: Profile) -> Iterator[tuple[str, Profile]]:
+    """Every profile one answer away from *profile*, labelled ``<question>=<value>``.
+
+    The route yields its other token, each yes/no its opposite: six neighbours
+    in all, after normalising (a Memory opt-in flipped while Memory is off is no
+    new profile). `lore health` renders a file under each to tell a file
+    installed for another answer from one that was merely edited.
+    """
+    current = profile.as_answers()
+    seen = {profile}
+    for question in QUESTIONS:
+        name = question_kwarg(question)
+        value = current[name]
+        if isinstance(value, bool):
+            label, changed = str(not value).lower(), not value
+        else:
+            other = next(route for route in Route if route.value != value)
+            label, changed = other.value, other
+        neighbour = replace(profile, **{name: changed}).normalized()
+        if neighbour not in seen:
+            seen.add(neighbour)
+            yield f"{question}={label}", neighbour
 
 
 def unresolved_marker(text: str) -> str | None:
-    """The first access-block marker still standing in *text*, or ``None``.
+    """The first marker still standing in *text*, or ``None``.
 
-    ``render`` consumes every one of these, so nothing it returns can carry one:
+    Covers the earlier ``<!-- lore:access -->`` grammar and the block and
+    skills-table markers: a skill file carries none of them once rendered, so
     this is the question "was this text rendered?" asked of output rather than
     of input. `lore health` uses it to tell a half-converted install from an
     ordinary edit, which a digest comparison reports identically.
 
-    It lives beside ``render`` because the marker grammar has exactly one owner
-    (``standards-single-source``) — a second regex elsewhere would be a second
-    opinion about what a marker is.
+    It lives beside the renderer because the marker grammar has exactly one
+    owner (``standards-single-source``) — a second regex elsewhere would be a
+    second opinion about what a marker is.
     """
     for line in text.splitlines():
         stripped = line.strip()
-        if _MARKER_RE.match(stripped):
+        if _ACCESS_MARKER_RE.match(stripped) or stripped.startswith(_BLOCK_MARKER_PREFIXES):
             return stripped
     return None
 
 
-def rendered_bytes(skill_id: str, relative: str, access_mode: AccessMode) -> bytes:
-    """The bytes an install of *skill_id*'s *relative* file would write in *access_mode*.
+def rendered_bytes(skill_id: str, relative: str, profile: Profile) -> bytes | None:
+    """The bytes an install of *skill_id*'s *relative* file would write for *profile*.
 
-    The one place a packaged skill file becomes installed content. `lore init`
-    reaches it through ``desired_files``; `lore health` reaches it directly, to
-    ask whether a file on disk is this release's other mode — a question a
-    digest comparison can only answer as "edited", and the mode is the thing the
-    project most plausibly got wrong.
+    ``None`` when that profile does not write the file. `lore init` reaches it
+    through ``desired_files``; `lore health` reaches it directly, to ask whether
+    a file on disk is another render of this release — a question a digest
+    comparison can only answer as "edited".
 
-    Raises ``ValueError`` for an unknown skill or an unreadable packaged file,
-    which for health is a broken install rather than a broken project.
+    Raises ``ValueError`` for an unknown skill or file, which for health is a
+    broken install rather than a broken project.
     """
-    source_path = f"skills/{skill_id}/{relative}"
-    return render(
-        _read_packaged(skill_id, relative), access_mode, source=source_path
-    ).encode("utf-8")
+    text = render_skill_file(skill_id, relative, profile)
+    return None if text is None else text.encode("utf-8")
 
 
 def desired_files(
-    *,
-    targets: Iterable[AgentTarget],
-    skill_families: Iterable[str],
-    access_mode: AccessMode,
+    *, targets: Iterable[AgentTarget], profile: Profile
 ) -> dict[str, DesiredFile]:
-    """Enumerate the skill files this release would write, keyed by path.
+    """Enumerate the skill files *profile* would write, keyed by path.
 
-    Takes concrete family ids — ``resolve_families`` has already expanded any
-    aggregate. Every packaged file goes through ``render`` exactly once, blocks
-    or not, so one code path decides what an installed file says.
-
-    Decides *what*, never *when*: nothing here touches the project, and the
-    result is the ``desired`` half of the reconciliation comparison.
+    Every installed skill's materialised files, assembled from blocks, in each
+    root the targets install into. Decides *what*, never *when*: nothing here
+    touches the project, and the result is the ``desired`` half of the
+    reconciliation comparison.
     """
     roots = install_roots(targets)
-    selected = skills_in_families(skill_families)
-
     desired: dict[str, DesiredFile] = {}
-    for skill_id in selected:
-        for relative in skill_files(skill_id):
-            content = rendered_bytes(skill_id, relative, access_mode)
-            for root in roots:
-                path = f"{root}/{skill_id}/{relative}"
-                desired[path] = DesiredFile(
-                    path=path,
-                    kind=OWNED_KIND,
-                    source=f"skill:{skill_id}",
-                    content=content,
-                )
+    for skill_id in installed_skills(profile):
+        for relative in skill_files(skill_id, profile):
+            content = rendered_bytes(skill_id, relative, profile)
+            assert content is not None
+            _place(desired, roots, skill_id, relative, content)
     return desired
+
+
+def _place(
+    desired: dict[str, DesiredFile],
+    roots: tuple[str, ...],
+    skill_id: str,
+    relative: str,
+    content: bytes,
+) -> None:
+    for root in roots:
+        path = f"{root}/{skill_id}/{relative}"
+        desired[path] = DesiredFile(
+            path=path, kind=OWNED_KIND, source=f"skill:{skill_id}", content=content
+        )

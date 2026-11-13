@@ -112,8 +112,14 @@ def test_init_creates_config_toml_with_the_skeleton_and_the_recorded_answers(
         "show-glossary-on-codex-commands": True,
         "health-report-retention": "none",
         "init-agents": [],
-        "init-access-mode": "native",
-        "init-skill-families": ["machinery", "memory", "workflow"],
+        # The feature answers, seeded at the headless defaults.
+        "init-route": "cli",
+        "init-memory": True,
+        "init-memory-search": True,
+        "init-memory-index": True,
+        "init-memory-graph": True,
+        "init-quests": True,
+        "init-watchers": True,
         "init-skills-gitignore": "lore-only",
         "project-name": "",
         "default-project-scope": "self",
@@ -171,19 +177,16 @@ def test_init_idempotent_does_not_overwrite_user_config(runner, initialised_dir)
     text = config_p.read_text()
     # The user's setting line survives byte for byte — that is the ADR-013
     # guarantee, and it is the whole point of the scenario. What joins it are
-    # the four answers this run resolved: interactive-init-us-013 records them
+    # the answers this run resolved: interactive-init-us-013 records them
     # so the next run does not ask again (FR-10, Tech Spec §9.2), and the
     # regenerated known-key header above them (interactive-init-us-020).
     assert text.startswith(expected_config_header() + user_config)
     assert "show-glossary-on-codex-commands = true" not in text
+    from lore.initplan import QUESTIONS, question_key
+
     assert sorted(
         line.split(" =")[0] for line in text.splitlines() if line.startswith("init-")
-    ) == [
-        "init-access-mode",
-        "init-agents",
-        "init-skill-families",
-        "init-skills-gitignore",
-    ]
+    ) == sorted(["init-agents", *map(question_key, QUESTIONS), "init-skills-gitignore"])
     assert "Created config.toml" not in result.output
 
 

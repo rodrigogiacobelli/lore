@@ -48,6 +48,7 @@ related:
 - tech-arch-schemas
 - tech-arch-agents-md
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-features
 - conceptual-workflows-init-interactive
 - conceptual-workflows-init-reconcile
 - conceptual-entities-skill
@@ -238,27 +239,36 @@ See conceptual-workflows-index.
 
 Idempotent. Re-init overwrites Lore-shipped default assets (doctrines, artifacts, watchers, gitignore) in their `default/` subtrees, and removes a seeded tree Lore has stopped shipping; user-named files in the flat parent directories are never touched. Installed skills and instruction-file blocks are reconciled instead of blindly rewritten — see conceptual-workflows-init-reconcile.
 
-Prompts only when standard output is a terminal. Without a terminal it takes flags, then the answers recorded in `.lore/config.toml`, then built-in defaults, and never blocks.
+Prompts only when standard output is a terminal. Without a terminal it takes flags, then the answers recorded in `.lore/config.toml`, then built-in defaults, and never blocks. The skills, instruction text, getting-started page and seeded defaults it installs follow the feature answers below (conceptual-workflows-init-features).
 
 | Flag | Type | Default | Answers |
 |---|---|---|---|
 | `--agent ID [ID ...]` | `SpaceSeparatedChoice` over registry ids | recorded `init-agents`, else none | which coding agents the project uses |
-| `--access {cli,native}` | `click.Choice` | recorded `init-access-mode`, else `native` | whether skills use the Lore CLI or the agent's own tools |
-| `--skills FAMILY [FAMILY ...]` | `SpaceSeparatedChoice` over `memory` `machinery` `workflow` `all` `none` | recorded `init-skill-families`, else all three | which skill families install |
+| `--route {harness,cli}` | `click.Choice` | recorded `init-route`, else `cli` | how agents work with doctrines, artifacts and every optional file feature: their own tools, or `lore` commands |
+| `--memory {yes,no}` | `click.Choice` | recorded `init-memory`, else `yes` | the codex, rites and glossary |
+| `--memory-search`, `--memory-index`, `--memory-graph` `{yes,no}` | `click.Choice` | recorded `init-memory-*`, else `yes` | which CLI-only Memory commands the text teaches; asked only while Memory is on |
+| `--quests {yes,no}` | `click.Choice` | recorded `init-quests`, else `yes` | whether the text teaches the quest and mission commands; needs the Lore CLI |
+| `--watchers {yes,no}` | `click.Choice` | recorded `init-watchers`, else `yes` | watchers |
+| `--access {cli,native}` | `click.Choice` | none | deprecated: sets the route (`native` is `harness`) |
+| `--skills FAMILY [FAMILY ...]` | `SpaceSeparatedChoice` over `memory` `machinery` `workflow` `all` `none` | none | deprecated: maps the old families onto the features |
 | `--on-existing-agent-file {append,skip}` | `click.Choice` | `append` | what to do with an instruction file that has no Lore markers |
 | `--skills-gitignore {lore-only,none,all}` | `click.Choice` | recorded `init-skills-gitignore`, else `lore-only` | how installed skills are tracked in git |
 | `--on-conflict {skip,overwrite}` | `click.Choice` | `skip` | what to do with a file Lore did not install, sitting where Lore would write; no say over Lore's own files |
 | `-y, --yes` | flag | off | accept every prompt without asking |
-| `--reconfigure` | flag | off | re-prompt for the four recorded answers; needs a terminal, or all four as flags |
+| `--reconfigure` | flag | off | re-prompt for the recorded answers; needs a terminal, or the agent, skills-gitignore, route, memory, quests and watchers answers as flags |
 | `--dry-run` | flag | off | print the plan, write nothing, exit 0 |
 
 `cli.py` reads no config key. Every unset flag arrives as `None` and `plan_init` resolves argument → `.lore/config.toml` → built-in default; the prompts preselect from the plan's own answers (ADR-011, `decisions-021-health-reports-are-ephemeral-by-default` constraint 2).
 
 `--agent none` combined with another id is a usage error at exit 2: `--agent none cannot be combined with other agents.` The rule lives in `validators.validate_agent_selection`, which `plan_init` calls too, so a Python caller is rejected identically. A run whose *recorded* answer breaks that rule — or any other token `plan_init` refuses — exits 1 with the same message plus the config key holding it and the flag that replaces it; it is never a traceback.
 
-`--reconfigure` without a terminal is a usage error at exit 2 unless all four recorded answers arrive as flags: there is no prompt to ask in, and resolving those four to their built-in defaults would deselect every agent and uninstall what the project has.
+A Memory opt-in that contradicts `--memory no` on its face, such as `--memory-graph yes --memory no`, is a usage error at exit 2. A contradiction that needs the resolved answers is an error at exit 1.
 
-Does NOT support `--json` — the flag is accepted, has no effect, and the command exits 0. See conceptual-workflows-lore-init, conceptual-workflows-init-interactive, tech-arch-agents-md.
+The deprecated `--access` and `--skills` print one `Warning:` sentence to stderr each, naming the flags that replace them, and exit as the run would otherwise.
+
+`--reconfigure` without a terminal is a usage error at exit 2 unless the recorded answers arrive as flags: there is no prompt to ask in, and resolving them to their built-in defaults would deselect every agent and uninstall what the project has.
+
+Does NOT support `--json` — the flag is accepted, has no effect, and the command exits 0. See conceptual-workflows-lore-init, conceptual-workflows-init-features, conceptual-workflows-init-interactive, tech-arch-agents-md.
 
 ### `lore oracle`
 

@@ -110,8 +110,8 @@ to stay in sync word-for-word.
   each command-group level.
 - `--help --json` is not implemented. Agents needing structured CLI reference
   use `lore codex show ref-lore_cli-commands`.
-- The `LORE-AGENT.md` default template (`src/lore/defaults/docs/LORE-AGENT.md`)
-  is reduced to a concise basics guide, retaining only the dispatch loop and
+- The `lore-agent` instruction blocks (`src/lore/defaults/blocks/`)
+  are reduced to a concise basics guide, retaining only the dispatch loop and
   worker workflow.
 - The `board` command group is excluded from this round of enrichment. It does
   not yet exist in the codebase (`spec-mission-board` is unimplemented).

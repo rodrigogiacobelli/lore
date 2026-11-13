@@ -39,7 +39,8 @@ class TestPackageStructure:
 
     def test_defaults_bundled(self):
         defaults = ROOT / "src" / "lore" / "defaults"
-        assert (defaults / "docs" / "LORE-AGENT.md").is_file()
+        assert (defaults / "blocks" / "commands.yaml").is_file()
+        assert (defaults / "skills-catalogue.yaml").is_file()
         assert (defaults / "gitignore").is_file()
         assert (defaults / "schema.sql").is_file()
         assert any((defaults / "doctrines").rglob("*.design.md"))

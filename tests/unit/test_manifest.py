@@ -560,3 +560,34 @@ class TestEveryPathThisReleaseWritesSurvivesTheRule:
         for row in load_registry():
             if row.skills_dir:
                 assert manifest.unownable_reason(f"{row.skills_dir}/x/SKILL.md") is None
+
+
+PROFILE = {"memory_read": "harness", "quests": True}
+
+
+class TestAnswersCarryTheProfile:
+    """`answers.profile` is informational: readers that predate it ignore it."""
+
+    def test_the_profile_round_trips_inside_the_answers(self, tmp_path):
+        _write(
+            tmp_path,
+            _planned(".claude/skills/a/SKILL.md"),
+            answers={"agents": ["claude"], "profile": PROFILE},
+        )
+        assert manifest.load(tmp_path).answers["profile"] == PROFILE
+
+    def test_a_manifest_with_answers_this_reader_does_not_know_still_loads(self, tmp_path):
+        _write(
+            tmp_path,
+            _planned(".claude/skills/a/SKILL.md"),
+            answers={"agents": [], "something-newer": {"nested": [1, 2]}},
+        )
+        assert manifest.load(tmp_path).answers["something-newer"] == {"nested": [1, 2]}
+
+    def test_a_manifest_without_a_profile_loads_with_none_recorded(self, tmp_path):
+        _write(tmp_path, _planned(".claude/skills/a/SKILL.md"))
+        assert "profile" not in manifest.load(tmp_path).answers
+
+    def test_the_catalogue_version_is_written_as_given(self, tmp_path):
+        _write(tmp_path, _planned(".claude/skills/a/SKILL.md"), catalogue_version=3)
+        assert manifest.load(tmp_path).catalogue_version == 3

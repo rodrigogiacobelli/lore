@@ -3662,9 +3662,11 @@ def test_severity_mapping_for_the_skills_checks(tmp_path):
     Lore claiming to have installed a file that is gone is an inconsistency and
     flips the exit code; a person editing a skill is legitimate and warns.
 
-    The two access-mode rows are errors on the same reasoning as the first
-    group: neither is an edit anybody made on purpose, and following either
-    means reaching Lore the way the project decided not to. A name that
+    The two profile rows (a render for a neighbouring profile, a leftover
+    marker) are errors on the same reasoning as the first group: neither is an
+    edit anybody made on purpose, and following either means reaching Lore the
+    way the project decided not to. A command the recorded profile does not
+    grant warns, like an edit: it is stale or hand-edited text. A name that
     disagrees with its directory warns — the skill is still there and still
     readable, it is only the harness's invocation that breaks.
     """
@@ -3674,9 +3676,10 @@ def test_severity_mapping_for_the_skills_checks(tmp_path):
         "missing_skill_file": "error",
         "missing_skill_frontmatter": "error",
         "skills_scan_failed": "error",
-        "wrong_access_mode": "error",
+        "wrong_profile": "error",
         "unrendered_access_marker": "error",
         "modified_skill_file": "warning",
+        "leaked_command": "warning",
         "retired_skill_present": "warning",
         "skill_name_mismatch": "warning",
     }

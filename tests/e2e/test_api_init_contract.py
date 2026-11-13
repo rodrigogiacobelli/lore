@@ -54,7 +54,14 @@ class TestReconfigureNeedsItsAnswers:
             plan_init(tmp_path, reconfigure=True)
 
         message = str(excinfo.value)
-        for parameter in ("agents", "access_mode", "skill_families", "skills_gitignore"):
+        for parameter in (
+            "agents",
+            "skills_gitignore",
+            "route",
+            "memory",
+            "quests",
+            "watchers",
+        ):
             assert parameter in message, message
 
     def test_a_partially_answered_reconfigure_names_only_what_is_missing(self, tmp_path):
@@ -66,13 +73,15 @@ class TestReconfigureNeedsItsAnswers:
                 reconfigure=True,
                 agents=["claude"],
                 access_mode="cli",
+                skill_families=["memory"],
             )
 
         message = str(excinfo.value)
-        assert "skill_families" in message
         assert "skills_gitignore" in message
         assert "agents" not in message
         assert "access_mode" not in message
+        assert "route" not in message
+        assert "quests" not in message
 
     def test_all_four_answers_make_reconfigure_legal(self, tmp_path):
         apply_init(plan_init(tmp_path, agents=["claude"]))
@@ -87,7 +96,7 @@ class TestReconfigureNeedsItsAnswers:
         )
 
         assert plan.answers.agents == ("claude",)
-        assert plan.answers.skill_families == ("memory",)
+        assert plan.answers.skill_families == ("machinery", "memory")
 
     def test_the_gate_is_reachable_through_the_facade(self, tmp_path):
         apply_init(api.plan_init(tmp_path, agents=["claude"]))
@@ -100,14 +109,19 @@ class TestReconfigureNeedsItsAnswers:
 
         assert missing_recorded_answers({}) == (
             "agents",
-            "access_mode",
-            "skill_families",
             "skills_gitignore",
+            "route",
+            "memory",
+            "quests",
+            "watchers",
         )
-        assert missing_recorded_answers({"agents": ["claude"], "access_mode": "cli"}) == (
-            "skill_families",
-            "skills_gitignore",
-        )
+        assert missing_recorded_answers(
+            {
+                "agents": ["claude"],
+                "access_mode": "cli",
+                "skill_families": ["memory"],
+            }
+        ) == ("skills_gitignore",)
 
 
 # ---------------------------------------------------------------------------
@@ -285,9 +299,8 @@ class TestARemovalOnlyTargetsAPathLoreInstalls:
 
         apply_init(plan_init(tmp_path, agents=["claude"], skill_families=["none"]))
 
-        assert not (installed.is_dir() and any(
-            child.is_dir() for child in installed.iterdir()
-        ))
+        left = {child.name for child in installed.iterdir() if child.is_dir()}
+        assert left == {"update-doctrine", "update-artifact", "run-doctrine"}
 
 
 # ---------------------------------------------------------------------------
@@ -384,12 +397,11 @@ class TestCountsAgreesWithTheSummary:
         ]
 
     def test_both_kinds_of_conflict_count_as_conflicts(self, tmp_path):
-        from lore.initplan import InitAnswers, AccessMode
+        from lore.initplan import InitAnswers, Profile
 
         answers = InitAnswers(
             agents=(),
-            access_mode=AccessMode.NATIVE,
-            skill_families=(),
+            profile=Profile(),
             on_existing_agent_file="append",
             skills_gitignore="none",
             on_conflict="skip",

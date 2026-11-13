@@ -4,7 +4,7 @@ bindings, and voice scopes."""
 import dataclasses
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import yaml
 
@@ -23,7 +23,11 @@ from lore.schemas import _validator_for as get_validator  # noqa: F401
 from lore.schemas import project_validator_for as project_get_validator  # noqa: F401
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from jsonschema import Draft202012Validator
+
+    from lore.initplan import Profile
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1311,15 +1315,18 @@ _SKILL_CHECK_SEVERITY: dict[str, str] = {
     "missing_skill_file": "error",
     "missing_skill_frontmatter": "error",
     "skills_scan_failed": "error",
-    # An installed file carrying instructions for the mode this project did not
-    # choose, or the marker grammar `render` resolves away, is not an edit
-    # anybody made on purpose — it is a half-finished conversion, and following
-    # it means reaching Lore the way the project decided not to.
-    "wrong_access_mode": "error",
+    # An installed file rendered for a neighbouring profile, or carrying the
+    # marker grammar assembly resolves away, is not an edit anybody made on
+    # purpose — it is a half-finished conversion, and following it means
+    # reaching Lore the way the project decided not to.
+    "wrong_profile": "error",
     "unrendered_access_marker": "error",
     # A person editing an installed skill, or keeping a retired one, is
-    # legitimate: `lore init` asks before touching either.
+    # legitimate: `lore init` asks before touching either. A command the
+    # recorded profile does not grant is the same kind of finding — stale or
+    # hand-edited text, never something shipped content can cause.
     "modified_skill_file": "warning",
+    "leaked_command": "warning",
     "retired_skill_present": "warning",
     "skill_name_mismatch": "warning",
 }
@@ -1362,41 +1369,81 @@ def _packaged_relative(path: str, skill_id: str) -> str | None:
     return tail if separator and tail else None
 
 
-def _wrong_mode(
-    project_root: Path, path: str, skill_id: str, recorded_mode: str | None, digest: str
-) -> str | None:
-    """The access mode *path* was rendered for, when it is not the recorded one.
+def _recorded_profile(answers: "Mapping[str, Any]") -> "Profile | None":
+    """The profile the install manifest records, or ``None`` when it records none.
+
+    Health judges an install against the run that wrote it, so the manifest is
+    the only source: ``.lore/config.toml`` is `plan_init`'s alone. A manifest
+    from before the profile was recorded, or a profile this release cannot read,
+    skips every check that needs one — the old missing-mode rule.
+    """
+    from lore.initplan import Profile
+
+    recorded = answers.get("profile")
+    if not isinstance(recorded, dict):
+        return None
+    try:
+        return Profile.from_answers(recorded)
+    except ValueError:
+        return None
+
+
+def _wrong_profile(
+    path: str, skill_id: str, profile: "Profile | None", digest: str
+) -> tuple[str, str, str] | None:
+    """``(answer, rendered value, recorded value)`` when *path* is another render of this release.
 
     A digest mismatch says only "edited". This asks the follow-up question the
-    digest cannot: is this file *this release's own bytes for the other mode*?
-    Pasting one project's render into another, or converting a tree by hand and
-    stopping half way, both land here — and both leave a native-mode agent
-    following CLI instructions or the reverse, which is the one thing the access
-    mode exists to decide.
+    digest cannot: is this file *this release's own bytes for a neighbouring
+    profile* — the profile with exactly one answer changed? Pasting one
+    project's render into another, or converting a tree by hand and stopping
+    half way, both land here, and both leave an agent following instructions for
+    a route or capability the project decided against.
 
     Only reached for a file that already failed its digest check, so a clean
-    install never renders anything. ``None`` when the manifest records no mode
-    (a manifest written before the answer existed), when the packaged file is
-    gone, or when the bytes are simply an edit.
+    install never renders anything. ``None`` when the manifest records no
+    profile, when the packaged file is gone, or when the bytes are simply an edit.
     """
     from lore import manifest, skills
-    from lore.initplan import AccessMode
+    from lore.initplan import QUESTIONS, question_kwarg
 
-    if recorded_mode is None:
+    if profile is None:
         return None
     relative = _packaged_relative(path, skill_id)
     if relative is None:
         return None
-    for mode in AccessMode:
-        if mode.value == recorded_mode:
-            continue
+    recorded = profile.as_answers()
+    for label, neighbour in skills.neighbor_profiles(profile):
         try:
-            candidate = skills.rendered_bytes(skill_id, relative, mode)
+            candidate = skills.rendered_bytes(skill_id, relative, neighbour)
         except (ValueError, OSError):
             return None
-        if manifest.bytes_digest(candidate) == digest:
-            return mode.value
+        if candidate is None or manifest.bytes_digest(candidate) != digest:
+            continue
+        answer, _, value = label.partition("=")
+        kwarg = next(question_kwarg(q) for q in QUESTIONS if q == answer)
+        return answer, value, str(recorded[kwarg]).lower()
     return None
+
+
+def _leaked_command_issues(path: str, text: str, profile: "Profile") -> list[HealthIssue]:
+    """One row per command phrase in *text* that no capability of *profile* grants."""
+    from lore import blocks, skills
+
+    grants = blocks.load_grants()
+    installed = bool(skills.installed_skills(profile))
+    rows = []
+    for phrase in blocks.leaked_commands(text, profile, skills_installed=installed, grants=grants):
+        wanted = " or ".join(c.text for c in grants.get(phrase, ())) or "a capability"
+        rows.append(
+            _skill_issue(
+                "leaked_command",
+                path,
+                f"mentions 'lore {phrase}' but {wanted} is off in the recorded profile; "
+                "run lore init",
+            )
+        )
+    return rows
 
 
 def _frontmatter_issues(path: str, text: str, skill_dir: str) -> list[HealthIssue]:
@@ -1449,21 +1496,23 @@ def _frontmatter_issues(path: str, text: str, skill_dir: str) -> list[HealthIssu
 def _check_skills(project_root: Path) -> list[HealthIssue]:
     """Audit the skill files ``.lore/.install-manifest.json`` records.
 
-    Eight checks: a recorded file that is gone (``missing_skill_file``), one
-    holding this release's bytes for the other access mode
-    (``wrong_access_mode``), one otherwise edited since install
-    (``modified_skill_file``), one still carrying an unresolved access marker
-    (``unrendered_access_marker``), one whose skill the catalogue has retired
-    (``retired_skill_present``), a ``SKILL.md`` whose frontmatter lacks ``name``
-    or ``description`` (``missing_skill_frontmatter``), one whose ``name``
-    disagrees with its directory (``skill_name_mismatch``), and a manifest that
-    exists and does not parse (``skills_scan_failed``).
+    Nine checks: a recorded file that is gone (``missing_skill_file``), one
+    holding this release's bytes for a neighbouring profile
+    (``wrong_profile``), one otherwise edited since install
+    (``modified_skill_file``), one still carrying an unresolved marker
+    (``unrendered_access_marker``), one naming a command the recorded profile
+    does not grant (``leaked_command``), one whose skill the catalogue has
+    retired (``retired_skill_present``), a ``SKILL.md`` whose frontmatter lacks
+    ``name`` or ``description`` (``missing_skill_frontmatter``), one whose
+    ``name`` disagrees with its directory (``skill_name_mismatch``), and a
+    manifest that exists and does not parse (``skills_scan_failed``).
 
-    The three added last are all about the access mode and the agent harness,
-    which the digest check can see only as "edited": a file rendered for the
-    wrong mode, a marker the renderer can never emit, and the ``description``
-    field the harness selects skills on. A skill with a broken description is
-    invisible to the agent and, before this, invisible to health as well.
+    The profile checks are about what the digest check can see only as
+    "edited": a file rendered for another answer, a marker assembly can never
+    emit, a command the profile turned off, and the ``description`` field the
+    harness selects skills on. Both profile checks read the profile from the
+    manifest alone and are skipped when it records none; ``leaked_command``
+    covers the skill files and ``.lore/LORE-AGENT.md``.
 
     Walks **only the paths the manifest names** — the same
     never-touch-what-Lore-did-not-install discipline reconciliation follows, so
@@ -1505,16 +1554,20 @@ def _check_skills(project_root: Path) -> list[HealthIssue]:
 
     issues: list[HealthIssue] = []
     retired_reported: set[str] = set()
-    # The mode this install was performed in. Taken from the manifest rather
-    # than from `.lore/config.toml`: the question is whether a file matches the
-    # run that wrote it, and the manifest is the record of that run.
-    recorded_mode = recorded.answers.get("access_mode")
-    if not isinstance(recorded_mode, str):
-        recorded_mode = None
+    # The profile this install was performed with. Taken from the manifest
+    # rather than from `.lore/config.toml`: the question is whether a file
+    # matches the run that wrote it, and the manifest is the record of that run.
+    profile = _recorded_profile(recorded.answers)
 
     for entry in recorded.files:
         skill_id = _skill_id_of(entry.source)
         if skill_id is None:
+            if entry.source == "lore-agent" and profile is not None:
+                agent_doc = manifest.resolve_path(project_root, entry.path)
+                if agent_doc.is_file():
+                    issues.extend(
+                        _leaked_command_issues(entry.path, manifest.read_text(agent_doc), profile)
+                    )
             continue
 
         target = manifest.resolve_path(project_root, entry.path)
@@ -1533,18 +1586,17 @@ def _check_skills(project_root: Path) -> list[HealthIssue]:
             digest = manifest.file_digest(target)
             if digest != entry.hash:
                 # "Edited" is the fallback verdict, not the first one: a file
-                # holding this release's bytes for the *other* access mode is a
+                # holding this release's bytes for a *neighbouring* profile is a
                 # half-converted project rather than somebody's edit, and only
                 # one of those is a warning.
-                other_mode = _wrong_mode(
-                    project_root, entry.path, skill_id, recorded_mode, digest
-                )
-                if other_mode is not None:
+                other = _wrong_profile(entry.path, skill_id, profile, digest)
+                if other is not None:
+                    answer, rendered, kept = other
                     issues.append(_skill_issue(
-                        "wrong_access_mode",
+                        "wrong_profile",
                         entry.path,
-                        f"rendered for the '{other_mode}' access mode; this project "
-                        f"records '{recorded_mode}'. Run lore init to convert it",
+                        f"rendered for {answer}={rendered}; this project records "
+                        f"{answer}={kept}. Run lore init to convert it",
                     ))
                 else:
                     issues.append(_skill_issue(
@@ -1554,19 +1606,21 @@ def _check_skills(project_root: Path) -> list[HealthIssue]:
                         "the shipped version",
                     ))
             text = manifest.read_text(target)
-            # Resolving access blocks is the whole of what the mode does at
+            # Assembling blocks is the whole of what the profile does at
             # install time, so a marker surviving in an installed file is
-            # output `render` cannot produce. The one skills check that needs
+            # output assembly cannot produce. The one skills check that needs
             # no hash, no manifest answer and no packaged file to be certain.
             marker = skills.unresolved_marker(text)
             if marker is not None:
                 issues.append(_skill_issue(
                     "unrendered_access_marker",
                     entry.path,
-                    f"holds a literal {marker!r}; access blocks are resolved at "
+                    f"holds a literal {marker!r}; blocks are resolved at "
                     "install time, so an installed file can never carry one. "
                     "Run lore init to re-render it",
                 ))
+            if profile is not None:
+                issues.extend(_leaked_command_issues(entry.path, text, profile))
             if target.name == skills.SKILL_FILE:
                 issues.extend(
                     _frontmatter_issues(entry.path, text, target.parent.name)

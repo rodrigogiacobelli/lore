@@ -39,7 +39,11 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from lore import manifest, reconcile, skills
+from lore import legacy_init, manifest, reconcile, skills
+
+# Every test here is about what a changed answer rewrites, so the whole module
+# runs in a world where the installed text depends on the Memory write route.
+pytestmark = pytest.mark.usefixtures("route_sensitive_text")
 
 
 # ---------------------------------------------------------------------------
@@ -1295,7 +1299,7 @@ class TestACloneOfAProjectThatCommitsItsSkills:
         init(runner, *self.INSTALL, "--access", "native", "--yes")
 
         desired = skills.desired_files(
-            targets=(), skill_families=skills.family_ids(), access_mode="native"
+            targets=(), profile=legacy_init.profile_from_legacy("native", skills.family_ids())
         )
         installed = desired[f"{LORE_SKILLS}/inquest/SKILL.md"].content
         assert (cloned / self.SKILL).read_bytes() == installed
@@ -1676,13 +1680,13 @@ class TestAccessModeFlip:
     """Rendered content changes, so an unmodified file is a clean overwrite."""
 
     def test_unmodified_skills_are_overwrites(self, runner, installed):
-        assert plan_counts(plan(runner, "--access", "cli"))["overwrite"] > 0
+        assert plan_counts(plan(runner, "--access", "native"))["overwrite"] > 0
 
     def test_no_unmodified_skill_is_a_conflict(self, runner, installed):
-        assert plan_counts(plan(runner, "--access", "cli"))["conflict"] == 0
+        assert plan_counts(plan(runner, "--access", "native"))["conflict"] == 0
 
     def test_every_reported_skill_row_is_an_overwrite(self, runner, installed):
-        rows = plan_rows(plan(runner, "--access", "cli"))
+        rows = plan_rows(plan(runner, "--access", "native"))
         actions = {
             action
             for path, (action, _) in rows.items()
@@ -1692,24 +1696,24 @@ class TestAccessModeFlip:
 
     def test_the_flip_changes_the_installed_bytes(self, runner, installed):
         before = tree(installed, CLAUDE_SKILLS)
-        init(runner, "--access", "cli", "--yes")
+        init(runner, "--access", "native", "--yes")
         assert tree(installed, CLAUDE_SKILLS) != before
 
     def test_flipping_back_restores_the_original_bytes(self, runner, installed):
         before = tree(installed, CLAUDE_SKILLS)
-        init(runner, "--access", "cli", "--yes")
         init(runner, "--access", "native", "--yes")
+        init(runner, "--access", "cli", "--yes")
         assert tree(installed, CLAUDE_SKILLS) == before
 
     def test_the_flipped_project_settles_in_one_run(self, runner, installed):
-        init(runner, "--access", "cli", "--yes")
+        init(runner, "--access", "native", "--yes")
         assert plan_counts(plan(runner)) == dict.fromkeys(COUNT_BUCKETS, 0)
 
     def test_an_edited_skill_raises_no_conflict_in_a_flip(self, runner, installed):
         edited = f"{CLAUDE_SKILLS}/inquest/SKILL.md"
         edit(installed, edited)
 
-        rows = plan_rows(plan(runner, "--access", "cli"))
+        rows = plan_rows(plan(runner, "--access", "native"))
 
         assert not [path for path, (action, _) in rows.items() if action == "Conflict"]
         assert rows[edited][0] == "Overwrite"
@@ -1717,13 +1721,13 @@ class TestAccessModeFlip:
     def test_the_edit_does_not_survive_the_flip(self, runner, installed):
         edited = f"{CLAUDE_SKILLS}/inquest/SKILL.md"
         expected = edit(installed, edited)
-        init(runner, "--access", "cli", "--yes")
+        init(runner, "--access", "native", "--yes")
         assert (installed / edited).read_bytes() != expected
 
     def test_a_flip_and_an_upgrade_in_one_run_do_both(self, runner, aged):
         alias = retired_alias("update-doctrine")
 
-        result = init(runner, "--access", "cli", "--yes")
+        result = init(runner, "--access", "native", "--yes")
 
         assert shown(f"{CLAUDE_SKILLS}/{alias}/SKILL.md") in removals(result.output)
         assert f"{CLAUDE_SKILLS}/update-doctrine/SKILL.md" in written(result.output)
@@ -1759,23 +1763,23 @@ class TestAnInstructionFileWithMarkersLoreWillNotGuessAt:
         return runner.invoke(main, ["init", *args])
 
     def test_the_run_exits_one(self, runner, doubled):
-        assert self.run(runner, "--access", "cli", "--yes").exit_code == 1
+        assert self.run(runner, "--access", "native", "--yes").exit_code == 1
 
     def test_the_failure_is_not_an_unhandled_exception(self, runner, doubled):
-        result = self.run(runner, "--access", "cli", "--yes")
+        result = self.run(runner, "--access", "native", "--yes")
         assert isinstance(result.exception, SystemExit)
 
     def test_the_message_names_the_file(self, runner, doubled):
-        result = self.run(runner, "--access", "cli", "--yes")
+        result = self.run(runner, "--access", "native", "--yes")
         assert "CLAUDE.md" in result.stderr
 
     def test_the_message_reaches_stderr_as_an_error(self, runner, doubled):
-        result = self.run(runner, "--access", "cli", "--yes")
+        result = self.run(runner, "--access", "native", "--yes")
         assert result.stderr.startswith("Error: ")
 
     def test_the_file_is_left_alone(self, runner, doubled):
         expected = (doubled / "CLAUDE.md").read_bytes()
-        self.run(runner, "--access", "cli", "--yes")
+        self.run(runner, "--access", "native", "--yes")
         assert (doubled / "CLAUDE.md").read_bytes() == expected
 
     def test_removing_the_extra_pair_lets_the_run_through(self, runner, doubled):
@@ -1784,11 +1788,11 @@ class TestAnInstructionFileWithMarkersLoreWillNotGuessAt:
             target.read_text(encoding="utf-8").replace(STRAY_BLOCK, ""),
             encoding="utf-8",
         )
-        assert self.run(runner, "--access", "cli", "--yes").exit_code == 0
+        assert self.run(runner, "--access", "native", "--yes").exit_code == 0
 
     def test_the_manifest_still_describes_the_run_before_it(self, runner, doubled):
         before = read_manifest(doubled)["files"]
-        self.run(runner, "--access", "cli", "--yes")
+        self.run(runner, "--access", "native", "--yes")
         assert read_manifest(doubled)["files"] == before
 
     def test_the_next_run_picks_up_the_write_this_one_never_reached(
@@ -1799,14 +1803,14 @@ class TestAnInstructionFileWithMarkersLoreWillNotGuessAt:
         The files this run did write already hold what the next one would put
         there, so they are no-ops rather than rows anybody has to answer for.
         """
-        self.run(runner, "--access", "cli", "--yes")
+        self.run(runner, "--access", "native", "--yes")
         target = doubled / "CLAUDE.md"
         target.write_text(
             target.read_text(encoding="utf-8").replace(STRAY_BLOCK, ""),
             encoding="utf-8",
         )
 
-        summary = plan(runner, "--access", "cli")
+        summary = plan(runner, "--access", "native")
 
         assert plan_rows(summary)["CLAUDE.md"][0] == "Section"
         assert plan_counts(summary)["conflict"] == 0
@@ -1814,16 +1818,16 @@ class TestAnInstructionFileWithMarkersLoreWillNotGuessAt:
     def test_the_run_after_the_repair_leaves_nothing_outstanding(
         self, runner, doubled
     ):
-        self.run(runner, "--access", "cli", "--yes")
+        self.run(runner, "--access", "native", "--yes")
         target = doubled / "CLAUDE.md"
         target.write_text(
             target.read_text(encoding="utf-8").replace(STRAY_BLOCK, ""),
             encoding="utf-8",
         )
 
-        init(runner, "--access", "cli", "--yes")
+        init(runner, "--access", "native", "--yes")
 
-        assert plan_counts(plan(runner, "--access", "cli")) == dict.fromkeys(
+        assert plan_counts(plan(runner, "--access", "native")) == dict.fromkeys(
             COUNT_BUCKETS, 0
         )
 

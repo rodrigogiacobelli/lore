@@ -180,3 +180,99 @@ def write_document() -> Callable[..., Path]:
 def write_authored() -> Callable[[Path, str], Path]:
     """Write `.lore/index/authored.yaml` from an `entries:` block."""
     return write_authored_yaml
+
+
+# ---------------------------------------------------------------------------
+# A route-sensitive world for the tests about what a changed answer rewrites
+#
+# The shipped blocks are interim placeholders until the content lane lands, and
+# no test may depend on their prose (decisions-006-no-seed-content-tests). A test
+# that asks "does flipping the Memory route rewrite every installed skill?" needs
+# a text that depends on the route, so this fixture supplies one: two
+# test-authored blocks, one per route, added to every skill and to
+# the instruction document, each gated exactly like the first body block of the
+# file it joins plus the route. They can only survive where that block does, so
+# no profile installs a skill it did not install before. The legacy-hash table is
+# extended with every rendering of the new world, as the release script would.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def route_sensitive_text():
+    """Make every installed skill and the instruction text differ by route."""
+    from lore import blocklint, reconcile
+    from lore import blocks as blocks_module
+    from lore import skills as skills_module
+    from lore.manifest import bytes_digest
+
+    real_files = blocks_module._read_block_files
+    real_catalogue = skills_module._read_catalogue_payload
+    real_legacy = reconcile._read_legacy_payload
+    routes = ("harness", "cli")
+
+    def variant_text(block_id: str, base: blocks_module.Block, route: str) -> str:
+        tags = [f"id: {block_id}", f"feature: {base.feature}", f"route: {route}"]
+        if base.capabilities:
+            tags.append(f"capabilities: [{', '.join(base.capabilities)}]")
+        if base.requires:
+            tags.append(f"requires: [{', '.join(base.requires)}]")
+        if base.unless:
+            tags.append(f"unless: [{', '.join(base.unless)}]")
+        return (
+            "---\n" + "\n".join(tags) + "\n---\n"
+            f"Test-authored text for the {route} route.\n"
+        )
+
+    def plan_of_variants() -> list[tuple[str, str, str]]:
+        """``(new block id, base block id, route)`` for every file that gains a pair."""
+        payload = real_catalogue()
+        wanted = [
+            (f"zz-{entry['id']}", entry["files"][0]["blocks"][0]) for entry in payload["skills"]
+        ]
+        wanted.append(("zz-lore-agent", payload["documents"]["lore-agent"]["blocks"][0]))
+        return [(f"{new}-{route}", base, route) for new, base in wanted for route in routes]
+
+    def files():
+        found = dict(real_files())
+        parsed = {
+            path: blocks_module.parse_block(text, source=path) for path, text in found.items()
+        }
+        by_id = {block.id: block for block in parsed.values()}
+        for block_id, base_id, route in plan_of_variants():
+            base = by_id[base_id]
+            found[f"{base.feature}/{block_id}.md"] = variant_text(block_id, base, route)
+        return found
+
+    def catalogue():
+        payload = real_catalogue()
+        for entry in payload["skills"]:
+            entry["files"][0]["blocks"] += [f"zz-{entry['id']}-{route}" for route in routes]
+        payload["documents"]["lore-agent"]["blocks"] += [f"zz-lore-agent-{route}" for route in routes]
+        return payload
+
+    def legacy():
+        payload = real_legacy()
+        table = payload["files"]
+        for entry in skills_module.load_catalogue()["skills"]:
+            for row in entry["files"]:
+                key = f".lore/skills/{entry['id']}/{row['path']}"
+                digests = {
+                    bytes_digest(text.encode("utf-8"))
+                    for text in blocklint.distinct_renders(entry["id"], row["path"])
+                }
+                table[key] = sorted({*table.get(key, []), *digests})
+        return payload
+
+    def clear_caches():
+        blocks_module.load_blocks.cache_clear()
+        skills_module.load_catalogue.cache_clear()
+        skills_module.family_ids.cache_clear()
+        reconcile.load_legacy_hashes.cache_clear()
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(blocks_module, "_read_block_files", files)
+        patch.setattr(skills_module, "_read_catalogue_payload", catalogue)
+        clear_caches()
+        patch.setattr(reconcile, "_read_legacy_payload", legacy)
+        yield
+    clear_caches()

@@ -38,8 +38,8 @@ index reads this project alone, the render carries `member_paths` without
 meeting the reason `search_documents` drops `path` from a scoped result. That
 field was dropped because a merged result can carry a *foreign* path, and this
 one cannot. A `member_path` is a convenience emitted beside the id, never a
-handle a command accepts — ADR-006's by-id rule is untouched, and its `native`
-access-mode carve-out already lifts that rule for codex documents specifically.
+handle a command accepts — ADR-006's by-id rule is untouched, and its
+harness-route carve-out already lifts that rule for codex documents specifically.
 
 A document becomes indexable by graduating out of `transient/`, which is the
 same gate ADR-019 and ADR-023 already apply.

@@ -87,13 +87,13 @@ class TestInitPlanTypesOnThePythonSurface:
         from pathlib import Path
 
         from lore.initplan import (
-            AccessMode,
             AgentTarget,
             FileAction,
             InitAnswers,
             InitPlan,
             InitResult,
             PlannedFile,
+            Profile,
         )
 
         assert AgentTarget is not None
@@ -103,8 +103,7 @@ class TestInitPlanTypesOnThePythonSurface:
 
         answers = InitAnswers(
             agents=(),
-            access_mode=AccessMode.NATIVE,
-            skill_families=(),
+            profile=Profile(),
             on_existing_agent_file="append",
             skills_gitignore="lore-only",
             on_conflict="skip",
@@ -127,19 +126,19 @@ class TestInitPlanTypesOnThePythonSurface:
         import pytest
 
         from lore.initplan import (
-            AccessMode,
             AgentTarget,
             FileAction,
             InitAnswers,
             InitPlan,
             InitResult,
             PlannedFile,
+            Profile,
+            Route,
         )
 
         answers = InitAnswers(
             agents=(),
-            access_mode=AccessMode.CLI,
-            skill_families=(),
+            profile=Profile(route=Route.CLI),
             on_existing_agent_file="append",
             skills_gitignore="none",
             on_conflict="skip",
@@ -345,6 +344,15 @@ THIRTEEN_NEW_NAMES: tuple[str, ...] = (
     "validate_agent_selection",
 )
 
+# adaptive-init — the feature answer types `plan_init` takes and `InitAnswers`
+# carries.
+ADAPTIVE_INIT_NEW_NAMES: tuple[str, ...] = (
+    "Feature",
+    "Route",
+    "Capability",
+    "Profile",
+)
+
 # nested-projects-spec — Part 2 "lore.api.__all__ additions". The thirteen names
 # that release adds, held apart from the thirteen so each feature's addition
 # stays legible against the 0.9.0 boundary.
@@ -488,6 +496,7 @@ def test_only_recorded_names_left_the_public_surface():
         == set(THIRTEEN_NEW_NAMES)
         | set(NESTED_PROJECTS_NEW_NAMES)
         | set(CODEX_INDEX_NEW_NAMES)
+        | set(ADAPTIVE_INIT_NEW_NAMES)
     )
 
 

@@ -58,12 +58,25 @@ from lore.validators import validate_project_name
 # Unknown root keys (and nested tables) are preserved verbatim in
 # ``Config.extras`` for forward compatibility — never silently dropped.
 
+# The seven feature answers `lore init` records. Restates
+# ``lore.initplan.QUESTIONS`` (this module sits below it in spirit and keeps to
+# the stdlib, ``lore.paths`` and ``lore.validators``); a unit test pins the two.
+_PROFILE_QUESTIONS: tuple[str, ...] = (
+    "route",
+    "memory",
+    "memory-search",
+    "memory-index",
+    "memory-graph",
+    "quests",
+    "watchers",
+)
+_ROUTE_TOKENS: tuple[str, ...] = ("harness", "cli")
+
 _FROM_TOML: dict[str, str] = {
     "show-glossary-on-codex-commands": "show_glossary_on_codex_commands",
     "health-report-retention": "health_report_retention",
     "init-agents": "init_agents",
-    "init-access-mode": "init_access_mode",
-    "init-skill-families": "init_skill_families",
+    **{f"init-{q}": "init_" + q.replace("-", "_") for q in _PROFILE_QUESTIONS},
     "init-skills-gitignore": "init_skills_gitignore",
     "project-name": "project_name",
     "default-project-scope": "default_project_scope",
@@ -76,8 +89,7 @@ _EXPECTED_TYPE: dict[str, type] = {
     "show-glossary-on-codex-commands": bool,
     "health-report-retention": str,
     "init-agents": list,
-    "init-access-mode": str,
-    "init-skill-families": list,
+    **{f"init-{q}": (str if q == "route" else bool) for q in _PROFILE_QUESTIONS},
     "init-skills-gitignore": str,
     "project-name": str,
     "default-project-scope": str,
@@ -87,7 +99,7 @@ _EXPECTED_TYPE: dict[str, type] = {
 # take any value of the right type.
 _ALLOWED_VALUES: dict[str, tuple[str, ...]] = {
     "health-report-retention": ("none", "latest", "all"),
-    "init-access-mode": ("cli", "native"),
+    "init-route": _ROUTE_TOKENS,
     "init-skills-gitignore": ("lore-only", "none", "all"),
     "default-project-scope": ("self", "all"),
 }
@@ -99,8 +111,6 @@ _ALLOWED_VALUES: dict[str, tuple[str, ...]] = {
 #
 # A list holding one unknown token drops the WHOLE key to its default, which is
 # fail-soft parity with the scalar path: half a selection is not a selection.
-# `init-skill-families` never accepts the aggregates `all` and `none`; those
-# resolve in `skills.resolve_families` before anything is persisted.
 def _agent_ids() -> tuple[str, ...]:
     from lore.agents import agent_ids
 
@@ -108,6 +118,7 @@ def _agent_ids() -> tuple[str, ...]:
 
 
 def _family_ids() -> tuple[str, ...]:
+    """The legacy family ids, which only the retired ``init-skill-families`` still names."""
     from lore.skills import family_ids
 
     return family_ids()
@@ -115,7 +126,6 @@ def _family_ids() -> tuple[str, ...]:
 
 _ALLOWED_ITEM_VALUES: dict[str, Callable[[], tuple[str, ...]]] = {
     "init-agents": _agent_ids,
-    "init-skill-families": _family_ids,
 }
 
 # One line of prose per known key, rendered under its row in the generated
@@ -134,10 +144,20 @@ _KEY_DOC: dict[str, str] = {
     "init-agents": (
         "which coding agents `lore init` installs skills and instructions for"
     ),
-    "init-access-mode": (
-        "whether skills tell agents to use the Lore CLI or their own file tools"
+    "init-route": (
+        "how agents create, read, update and delete Lore's files (doctrines,\n"
+        "artifacts and every optional feature that is on)\n"
+        "harness - agents use their own file tools\n"
+        "cli     - agents use `lore` commands"
     ),
-    "init-skill-families": "which seeded skill families `lore init` installs",
+    "init-memory": "use project memory: the codex, rites and glossary",
+    "init-memory-search": "teach `lore codex|rite|glossary search`; needs memory",
+    "init-memory-index": "teach `lore index`; needs memory",
+    "init-memory-graph": (
+        "teach `lore codex map`, `lore codex chaos` and `lore impacts`; needs memory"
+    ),
+    "init-quests": "use quests and missions through the Lore CLI",
+    "init-watchers": "use watchers",
     "init-skills-gitignore": "how the installed skills are tracked in git",
     "project-name": (
         "this project's name in an origin qualifier and in --project "
@@ -158,6 +178,60 @@ _VALUE_CHECK: dict[str, Callable[[object], str | None]] = {
 }
 
 
+# Keys `lore init` no longer asks and no longer writes, kept readable so a
+# project initialised by an earlier release can be migrated once. Each maps to
+# the ``Config`` field holding its fail-soft value (None when absent or
+# unusable). They are neither "known" (no warning, no answered-key status) nor
+# "unknown" (never in ``Config.extras``). The setting lines themselves are left
+# untouched in the file (decisions-013, constraint 2).
+_RETIRED_KEYS: dict[str, str] = {
+    "init-access-mode": "legacy_init_access_mode",
+    "init-skill-families": "legacy_init_skill_families",
+}
+
+# The keys the unreleased 0.14.0 build wrote for its fifteen-question model and
+# that no longer mean anything: a read and a write route per file feature and a
+# validate opt-in per file feature. (Its `init-memory-index`, `init-memory-graph`
+# and `init-quests` kept their names and meaning, so they are ordinary keys.)
+# Collected into ``Config.legacy_init_interim`` so `init` can migrate once.
+_INTERIM_ROUTE_KEYS: tuple[str, ...] = tuple(
+    f"init-{feature}-{action}"
+    for feature in ("memory", "doctrines", "artifacts", "watchers")
+    for action in ("read", "write")
+)
+_INTERIM_BOOL_KEYS: tuple[str, ...] = tuple(
+    f"init-{feature}-validate" for feature in ("memory", "doctrines", "artifacts", "watchers")
+)
+_INTERIM_KEYS: tuple[str, ...] = (*_INTERIM_ROUTE_KEYS, *_INTERIM_BOOL_KEYS)
+_INTERIM_ROUTE_TOKENS: tuple[str, ...] = ("off", "harness", "cli")
+
+_LEGACY_ACCESS_MODES: tuple[str, ...] = ("cli", "native")
+
+
+def _legacy_access_mode(value: object) -> str | None:
+    return value if isinstance(value, str) and value in _LEGACY_ACCESS_MODES else None
+
+
+def _legacy_skill_families(value: object) -> tuple[str, ...] | None:
+    if not isinstance(value, list):
+        return None
+    if not all(isinstance(item, str) and item in _family_ids() for item in value):
+        return None
+    return tuple(value)
+
+
+_RETIRED_PARSE: dict[str, Callable[[object], object]] = {
+    "init-access-mode": _legacy_access_mode,
+    "init-skill-families": _legacy_skill_families,
+}
+
+
+def _usable_interim(key: str, value: object) -> bool:
+    if key in _INTERIM_ROUTE_KEYS:
+        return isinstance(value, str) and value in _INTERIM_ROUTE_TOKENS
+    return isinstance(value, bool)
+
+
 # Root keys the loader parses as tables rather than as flat settings. Consulted
 # beside :data:`_FROM_TOML` so a known table never also lands in
 # :attr:`Config.extras`, which is documented as holding only keys the loader
@@ -168,15 +242,6 @@ _KNOWN_TABLES: frozenset[str] = frozenset({"shared", "descendants"})
 # ---------------------------------------------------------------------------
 # Public (within-package) types
 # ---------------------------------------------------------------------------
-
-
-DEFAULT_SKILL_FAMILIES: tuple[str, ...] = ("memory", "machinery", "workflow")
-"""The non-interactive default for ``init-skill-families``.
-
-Every family, so a deployment depending on a machinery skill keeps it across an
-upgrade. The interactive checkbox preselects a smaller set; that is a CLI-layer
-concern and never reaches this file (Tech Spec §9.2).
-"""
 
 
 @dataclass(frozen=True)
@@ -225,16 +290,20 @@ class Config:
             answered, and ``init.plan_init`` derives the selection from what
             the project holds rather than taking a silence as "deselect every
             agent and uninstall the lot".
-        init_access_mode: Whether installed skills tell an agent to use the
-            Lore CLI (``"cli"``) or its own file tools (``"native"``). Default
-            ``"native"``.
-        init_skill_families: Which seeded skill families install. Default is
-            every family, so a deployment that depends on one keeps it across
-            an upgrade.
+        init_route: How agents reach Lore's files — ``"harness"`` or
+            ``"cli"``. Default ``"cli"``.
+        init_memory, init_memory_search, init_memory_index, init_memory_graph,
+            init_quests, init_watchers: The yes/no opt-ins. Default ``True``
+            (the full Lore).
         init_skills_gitignore: How the installed skills are tracked in git —
             ``"lore-only"``, ``"none"`` or ``"all"``. Default ``"lore-only"``.
 
-    The four ``init_*`` fields are read by ``init.plan_init`` and by nothing
+    ``legacy_init_access_mode`` and ``legacy_init_skill_families`` hold the two
+    pre-0.14 retired keys (``None`` when absent or unusable), and
+    ``legacy_init_interim`` the usable ones of the unreleased 0.14.0 build's
+    route and validate keys; they exist so ``init`` can migrate a project once.
+
+    The ``init_*`` fields are read by ``init.plan_init`` and by nothing
     else (ADR-021 constraint 2): a second reader of a command-scoped key is a
     duplicate implementation and an ADR-011 violation.
         project_name: This project's name in an origin qualifier and in
@@ -259,15 +328,21 @@ class Config:
     show_glossary_on_codex_commands: bool = True
     health_report_retention: str = "none"
     init_agents: list[str] = field(default_factory=list)
-    init_access_mode: str = "native"
-    init_skill_families: list[str] = field(
-        default_factory=lambda: list(DEFAULT_SKILL_FAMILIES)
-    )
+    init_route: str = "cli"
+    init_memory: bool = True
+    init_memory_search: bool = True
+    init_memory_index: bool = True
+    init_memory_graph: bool = True
+    init_quests: bool = True
+    init_watchers: bool = True
     init_skills_gitignore: str = "lore-only"
     project_name: str = ""
     default_project_scope: str = "self"
     shared: SharedExports = SharedExports()
     descendants: tuple[DescendantExport, ...] = ()
+    legacy_init_access_mode: str | None = None
+    legacy_init_skill_families: tuple[str, ...] | None = None
+    legacy_init_interim: Mapping[str, object] = field(default_factory=dict)
     extras: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -408,8 +483,19 @@ def _read(root: Path, *, warn: bool) -> tuple[Config, frozenset[str]]:
     # whose fields have heterogeneous types.
     kwargs: dict[str, Any] = {}
     extras: dict[str, object] = {}
+    interim: dict[str, object] = {}
     answered: set[str] = set()
     for key, value in data.items():
+        if key in _INTERIM_KEYS:
+            if _usable_interim(key, value):
+                interim[key] = value
+            continue
+        retired = _RETIRED_KEYS.get(key)
+        if retired is not None:
+            parsed_value = _RETIRED_PARSE[key](value)
+            if parsed_value is not None:
+                kwargs[retired] = parsed_value
+            continue
         attr = _FROM_TOML.get(key)
         if attr is None:
             if key not in _KNOWN_TABLES:
@@ -425,7 +511,7 @@ def _read(root: Path, *, warn: bool) -> tuple[Config, frozenset[str]]:
 
     tables = _read_tables(data, root, path, warn=warn)
     kwargs.update(tables)
-    return Config(extras=extras, **kwargs), frozenset(answered | set(tables))
+    return Config(extras=extras, legacy_init_interim=interim, **kwargs), frozenset(answered | set(tables))
 
 
 class _TableError(Exception):
@@ -638,6 +724,11 @@ def render_known_keys_header() -> str:
             f"#   {key.ljust(width)} : {_key_signature(key)}, default {default}"
         )
         lines.extend(f"#       {doc}" for doc in _KEY_DOC[key].splitlines())
+    lines.append("#")
+    lines.append(
+        "# Retired keys (read once to migrate, then ignored): "
+        + ", ".join((*_RETIRED_KEYS, *_INTERIM_KEYS))
+    )
     return "".join(f"{line}\n" for line in lines)
 
 

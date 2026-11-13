@@ -11,6 +11,15 @@ Three things live here, in dependency order:
 * ``apply_init``, which performs one, writing the manifest last so an
   interrupted run leaves a state the next reconcile recovers from.
 
+What a project installs follows the features it uses. ``plan_init`` settles
+seven answers (the one route, Memory with its search, index and graph opt-ins,
+Quests & Missions, Watchers) into a ``Profile``; Doctrines, Artifacts and
+``lore health`` are core and always on. The skills, the instruction text and the
+seeded default trees are all functions of it, so a feature that is off installs
+nothing and a feature switched off later takes back what it installed. A
+project initialised by an earlier release is migrated once, in memory, from its
+retired answers.
+
 ``run_init()`` is ``apply_init(plan_init())`` and keeps its zero-argument
 signature: it is the pinned public contract (standards-public-api-stability),
 and a positional-argument change would be a major bump.
@@ -29,14 +38,14 @@ without a terminal.
 """
 
 import textwrap
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path, PurePath, PurePosixPath
 from typing import Any
 
 from lore import agents as agent_registry
-from lore import manifest, paths, reconcile, safewrite, skills, validators
+from lore import blocks, legacy_init, manifest, paths, reconcile, safewrite, skills, validators
 from lore.config import (
     DEFAULT_CONFIG,
     load_config,
@@ -46,30 +55,29 @@ from lore.config import (
     render_toml_value,
 )
 from lore.db import SCHEMA_VERSION, init_database
-from lore.frontmatter import parse_frontmatter_text
 from lore.initplan import (
+    QUESTIONS,
     SUMMARY_ACTIONS,
     SUMMARY_ORDER,
     WRITING_ACTIONS,
-    AccessMode,
     DesiredFile,
+    Feature,
     FileAction,
     InitAnswers,
     InitPlan,
     InitResult,
     PlannedFile,
+    Profile,
+    Route,
+    question_flag,
+    question_key,
+    question_kwarg,
 )
 
-
-AGENT_TEMPLATE = "docs/LORE-AGENT.md"
-"""The packaged instruction text. A render source, not a file `lore init` copies."""
 
 _TABLE_OPENER = "<!-- lore:skills-table -->"
 _TABLE_CLOSER = "<!-- lore:skills-table end -->"
 _TABLE_HEADER = ("| Skill | What it does | Where |", "|---|---|---|")
-
-DEFAULT_ACCESS_MODE = AccessMode.NATIVE
-"""The access mode a run with no recorded answer uses (`init-access-mode`)."""
 
 OWNED_KIND = "owned"
 """Lore wrote the whole file, and it is eligible for removal."""
@@ -104,8 +112,6 @@ Two answers, not three: `.lore/LORE-AGENT.md` is written either way, so the
 """
 
 PROMPT_AGENTS = "agents"
-PROMPT_ACCESS_MODE = "access-mode"
-PROMPT_SKILL_FAMILIES = "skill-families"
 PROMPT_EXISTING_AGENT_FILE = "on-existing-agent-file"
 PROMPT_SKILLS_GITIGNORE = "skills-gitignore"
 PROMPT_ON_CONFLICT = "on-conflict"
@@ -124,11 +130,15 @@ core function, which is how ADR-011 holds without a callback.
 
 PERSISTED_ANSWER_PROMPTS = {
     "init-agents": PROMPT_AGENTS,
-    "init-access-mode": PROMPT_ACCESS_MODE,
-    "init-skill-families": PROMPT_SKILL_FAMILIES,
+    **{question_key(question): question for question in QUESTIONS},
     "init-skills-gitignore": PROMPT_SKILLS_GITIGNORE,
 }
-"""The four config keys that answer a question, and the question each answers."""
+"""The ten config keys that answer a question, and the question each answers.
+
+A profile question's prompt token is its id (``route``, ``memory-graph``, ...),
+derived from ``QUESTIONS`` so the table cannot disagree with the question list.
+The retired ``init-access-mode`` and ``init-skill-families`` answer nothing.
+"""
 
 
 def answered_prompts(project_root: Path) -> frozenset[str]:
@@ -143,11 +153,11 @@ def answered_prompts(project_root: Path) -> frozenset[str]:
     Presence is the test, not value — a recorded answer that happens to equal
     the built-in default is still an answer the project gave.
     """
-    return frozenset(
-        PERSISTED_ANSWER_PROMPTS[key]
-        for key in recorded_keys(Path(project_root))
-        if key in PERSISTED_ANSWER_PROMPTS
-    )
+    keys = recorded_keys(Path(project_root))
+    return frozenset(PERSISTED_ANSWER_PROMPTS[key] for key in keys if key in PERSISTED_ANSWER_PROMPTS)
+
+
+_PROFILE_KEYS = tuple(question_key(question) for question in QUESTIONS)
 
 MANIFEST_PATH = ".lore/.install-manifest.json"
 LORE_DIR_PATH = ".lore"
@@ -329,6 +339,88 @@ def _seed_user_tracked(project_root: Path) -> list[str]:
 
 
 @dataclass(frozen=True)
+class _SeedGate:
+    """What a profile must hold for one seeded file or directory to be written.
+
+    Seeding follows the *owning* feature of the content and nothing else:
+    Doctrines and Artifacts are core, so their default trees are written in
+    every project, except the files whose subject is an optional feature — the
+    codex skeleton and the codex, glossary, rite and inquest design documents
+    belong to Memory, the mission design document to Quests — and the changelog
+    watcher belongs to Watchers. ``requires`` lists the conditions (the block
+    gate grammar) that must *all* hold; an empty tuple is core.
+
+    The route a feature is read or written through is deliberately not a
+    condition. The default content is written for the CLI route; a project that
+    reads its codex through the harness still gets the default doctrines, and
+    their `lore` lines are the documented cost of that choice.
+
+    Gating is by tree and by file, never by content: nothing here reads a seeded
+    file, and a test that did would pin prose (decisions-006-no-seed-content-tests).
+    ``scripts/check_seed_gates.py`` compares the rows with the files at release time.
+    """
+
+    package: str
+    """The subdirectory of ``lore.defaults`` the row governs."""
+
+    prefix: str
+    """A file path, or a directory path ending in ``/``, relative to the package."""
+
+    requires: tuple[str, ...]
+
+    def matches(self, package: str, relative: str) -> bool:
+        if package != self.package:
+            return False
+        if self.prefix.endswith("/"):
+            return relative.startswith(self.prefix)
+        return relative == self.prefix
+
+
+SEED_GATES = (
+    # Doctrines are core: every default doctrine, whatever the other answers.
+    _SeedGate("doctrines", "feature-implementation/", ()),
+    _SeedGate("doctrines", "update-changelog/", ()),
+    # The watcher that starts the changelog doctrine belongs to Watchers.
+    _SeedGate("watchers", "change-log-updates.yaml", ("watchers",)),
+    # Artifacts are core, but the trees about an optional feature follow it.
+    _SeedGate("artifacts", "codex/", ("memory",)),
+    # The feature-implementation templates are core: the always-seeded doctrines
+    # name every one of them, `codex-change-proposal` included, and a doctrine
+    # pointing at a missing artifact is a `lore health` error.
+    _SeedGate("artifacts", "feature-implementation/codex-change-proposal.md", ()),
+    _SeedGate("artifacts", "feature-implementation/context-map.md", ()),
+    _SeedGate("artifacts", "feature-implementation/crazy-prd.md", ()),
+    _SeedGate("artifacts", "feature-implementation/crazy-tech-spec.md", ()),
+    _SeedGate("artifacts", "feature-implementation/prd-draft.md", ()),
+    _SeedGate("artifacts", "feature-implementation/prd.md", ()),
+    _SeedGate("artifacts", "feature-implementation/tech-spec-draft.md", ()),
+    _SeedGate("artifacts", "feature-implementation/tech-spec.md", ()),
+    _SeedGate("artifacts", "feature-implementation/user-story-index.md", ()),
+    _SeedGate("artifacts", "feature-implementation/user-story.md", ()),
+    _SeedGate("artifacts", "lore-design-documents/codex-voice.md", ("memory",)),
+    _SeedGate("artifacts", "lore-design-documents/doctrine-design.md", ()),
+    _SeedGate("artifacts", "lore-design-documents/glossary-design.md", ("memory",)),
+    _SeedGate("artifacts", "lore-design-documents/inquest-design.md", ("memory",)),
+    _SeedGate("artifacts", "lore-design-documents/mission-design.md", ("quests",)),
+    _SeedGate("artifacts", "lore-design-documents/rite-design.md", ("memory",)),
+    _SeedGate("artifacts", "rites/rite-main.md", ("memory",)),
+    _SeedGate("artifacts", "rites/rite-shared-step.md", ("memory",)),
+)
+"""Every packaged seed file's gate: exactly one row matches each.
+
+The ruling behind the rows: a default tree is written when its owning feature
+is on, and Doctrines and Artifacts are always on. Narrowing a row is one edit
+here.
+"""
+
+
+def _gate_for(package: str, relative: str) -> _SeedGate | None:
+    """The one row that governs *relative* in *package*, or ``None`` when none does."""
+    found = [gate for gate in SEED_GATES if gate.matches(package, relative)]
+    return found[0] if len(found) == 1 else None
+
+
+@dataclass(frozen=True)
 class _SeedTree:
     """One packaged tree `lore init` copies into `.lore/` on every run.
 
@@ -341,37 +433,36 @@ class _SeedTree:
     And nothing removed a file the release stopped shipping, so a project seeded
     by 0.1.0 kept artifacts at paths since renamed, failing `lore health`
     against a schema that had moved on.
+
+    A file the *profile* does not keep is treated exactly like one the release
+    stopped shipping: it is not written, and when it is on disk the prune
+    removes it. Turning a feature off therefore takes its default tree with it
+    through the mechanism that already existed.
     """
 
     package: str
     """The subdirectory of ``lore.defaults`` the files come from."""
 
     relative: str
-    """Where they land under `.lore/`. Empty for ``docs``, which lands at the root."""
+    """Where they land under `.lore/`."""
 
     exclude: frozenset[str] = frozenset()
     """Directory names skipped at every level, in the tree and in the prune alike."""
 
     exclude_files: frozenset[str] = frozenset()
-    """File names something else produces — ``LORE-AGENT.md`` is rendered, not copied."""
+    """File names something else produces."""
 
     prune: bool = False
     """Whether a file this release no longer ships is removed.
 
-    True for the four ``default/`` trees, which are Lore's alone. False for
-    ``docs``, whose target is `.lore/` itself: pruning there would delete the
-    project.
+    True for the three ``default/`` trees, which are Lore's alone.
     """
 
     @property
     def label(self) -> str:
         """The prefix the status lines put on a path from this tree.
 
-        The tree's destination, never its source package. ``docs`` lands at
-        `.lore/` itself and so carries no prefix at all: reporting
-        ``docs/GETTING-STARTED.md`` named a path that does not exist, and a plan
-        cannot promise to list every file the run writes while the run reports
-        them under a directory of its own invention.
+        The tree's destination, never its source package.
         """
         return self.relative
 
@@ -383,13 +474,27 @@ class _SeedTree:
     def target(self, project_root: Path) -> Path:
         return paths.lore_dir(project_root) / self.relative
 
+    def keep(self, profile: Profile) -> Callable[[str], bool]:
+        """The predicate over tree-relative paths: does *profile* keep this file?
+
+        Total and closed: a path no gate row governs is not kept, so a file
+        added without a row is absent rather than ungated.
+        """
+
+        def kept(relative: str) -> bool:
+            gate = _gate_for(self.package, relative)
+            return gate is not None and all(
+                blocks.holds(condition, profile) for condition in gate.requires
+            )
+
+        return kept
+
 
 SEEDED_TREES = (
     _SeedTree("doctrines", "doctrines/default", prune=True),
     _SeedTree(
         "artifacts", "artifacts/default", exclude=frozenset({"bootstrap"}), prune=True
     ),
-    _SeedTree("docs", "", exclude_files=frozenset({"LORE-AGENT.md"})),
     _SeedTree("watchers", "watchers/default", prune=True),
 )
 """Every packaged tree `_seed_lore_directory` copies, in the order it copies them."""
@@ -431,24 +536,31 @@ named once so the maintainer knows Lore no longer reads them.
 UNTRACKED_WRITES = (
     ".lore/.gitignore",
     ".lore/lore.db",
-    ".lore/codex/codex.md",
-    ".lore/codex/glossary.yaml",
     CONFIG_PATH,
     MANIFEST_PATH,
 )
-"""The single files `lore init` writes that reconciliation does not manage.
+"""The single files every `lore init` writes that reconciliation does not manage.
 
 Named here for one reason: the plan is the consent surface. `lore init --help`
 says the flow "prints every file it would create, replace or remove, and writes
 nothing until you confirm", and a plan that omitted these was asking for consent
-to something narrower than what ran.
+to something narrower than what ran. The files that depend on the profile — the
+codex root, the glossary, the getting-started page — are added by
+:func:`seeded_paths`.
 """
+
+MEMORY_SEEDS = (".lore/codex/codex.md", ".lore/codex/glossary.yaml")
+"""The user-tracked skeletons written when Memory is on, and never removed."""
+
+GETTING_STARTED_PATH = ".lore/GETTING-STARTED.md"
+"""The rendered getting-started page, written when any block of it survives."""
 
 
 def _defaults_tree_files(
     source_package: str,
     exclude: set[str] | None = None,
     exclude_files: set[str] | None = None,
+    keep: Callable[[str], bool] | None = None,
 ) -> tuple[tuple[str, object], ...]:
     """Every file a seeded tree would copy, as ``(relative POSIX path, node)``.
 
@@ -457,6 +569,10 @@ def _defaults_tree_files(
     what the copy will overwrite, and the prune that removes what this release
     stopped shipping. Two implementations of "which files are in this tree"
     would be two ways to disagree about it.
+
+    *keep*, when given, drops every file it rejects, by tree-relative POSIX path.
+    Because the prune derives "shipped" from this same walk, a file the profile
+    does not keep is pruned exactly like one the release stopped shipping.
 
     Sorted, so a run's status lines and the plan's listing arrive in the same
     order twice running.
@@ -473,6 +589,8 @@ def _defaults_tree_files(
             elif item.is_file():
                 if exclude_files and item.name in exclude_files:
                     continue
+                if keep is not None and not keep(f"{prefix}{item.name}"):
+                    continue
                 found.append((f"{prefix}{item.name}", item))
 
     _walk(source_root, "")
@@ -485,6 +603,7 @@ def _copy_defaults_tree(
     exclude: set[str] | None = None,
     label: str | None = None,
     exclude_files: set[str] | None = None,
+    keep: Callable[[str], bool] | None = None,
 ) -> list[str]:
     """Copy default files from a nested package subdirectory tree, overwriting existing files.
 
@@ -497,15 +616,16 @@ def _copy_defaults_tree(
                empty string means no prefix — the tree lands at *target_dir*
                itself, so a path from it is already the path it is written to.
         exclude_files: Optional set of file names this tree does not copy
-               verbatim, because something else produces them. ``docs/`` holds
-               one such file: ``LORE-AGENT.md`` is rendered, not copied.
+               verbatim, because something else produces them.
+        keep: Optional predicate over tree-relative paths; a file it rejects is
+               not copied.
 
     Returns:
         List of human-readable status messages (one per file copied).
     """
     messages = []
     prefix = source_package if label is None else label
-    for relative, item in _defaults_tree_files(source_package, exclude, exclude_files):
+    for relative, item in _defaults_tree_files(source_package, exclude, exclude_files, keep):
         dest = target_dir / relative
         verb = "Updated" if dest.is_file() else "Created"
         # The tree is copied *into* ``target_dir``, so that is the boundary a
@@ -517,28 +637,33 @@ def _copy_defaults_tree(
     return messages
 
 
-def _seed_tree(project_root: Path, spec: _SeedTree) -> list[str]:
-    """Copy one packaged tree in, then remove what this release stopped shipping."""
+def _seed_tree(project_root: Path, spec: _SeedTree, profile: Profile) -> list[str]:
+    """Copy one packaged tree in, then remove what this release or profile drops."""
     target = spec.target(project_root)
+    keep = spec.keep(profile)
     messages = _copy_defaults_tree(
         spec.package,
         target,
         exclude=set(spec.exclude) or None,
         label=spec.label,
         exclude_files=set(spec.exclude_files) or None,
+        keep=keep,
     )
     if spec.prune:
-        messages.extend(_prune_seeded_tree(target, spec))
+        messages.extend(_prune_seeded_tree(target, spec, keep=keep))
     return messages
 
 
-def _prune_seeded_tree(target_dir: Path, spec: _SeedTree) -> list[str]:
+def _prune_seeded_tree(
+    target_dir: Path, spec: _SeedTree, keep: Callable[[str], bool] | None = None
+) -> list[str]:
     """Remove files under *target_dir* this release no longer ships.
 
     The rule is the one the tree already lives by rather than a per-version
     migration chain: a ``default/`` tree is Lore's, so a file in it that Lore
     does not ship is stale, whatever release put it there and whether it was
-    renamed, merged or dropped. That is what makes a hop from the oldest release
+    renamed, merged, dropped or — through *keep* — switched off by the project's
+    answers. That is what makes a hop from the oldest release
     land on the same tree as a fresh install.
 
     Reported, never silent, and never taken on trust: a link is left alone, and
@@ -551,7 +676,10 @@ def _prune_seeded_tree(target_dir: Path, spec: _SeedTree) -> list[str]:
     shipped = {
         target_dir / relative
         for relative, _ in _defaults_tree_files(
-            spec.package, set(spec.exclude) or None, set(spec.exclude_files) or None
+            spec.package,
+            set(spec.exclude) or None,
+            set(spec.exclude_files) or None,
+            keep,
         )
     }
     messages: list[str] = []
@@ -641,19 +769,27 @@ def _authored_outside(root_dir: Path, retired_dir: Path) -> list[Path]:
     )
 
 
-def seeded_paths() -> tuple[str, ...]:
-    """Every path `lore init` writes that the reconciliation table does not cover.
+def seeded_paths(profile: Profile) -> tuple[str, ...]:
+    """Every path `lore init` writes for *profile* that the reconciliation table does not cover.
 
-    The seeded trees plus the handful of single files in ``UNTRACKED_WRITES``.
-    Read by ``plan_init`` alone, so the plan can name what the run will
+    The seeded trees *profile* keeps, the single files in ``UNTRACKED_WRITES``,
+    the Memory skeletons when Memory is on and the getting-started page when it
+    renders. Read by ``plan_init`` alone, so the plan can name what the run will
     overwrite; nothing here consults the working tree, and nothing here writes.
     """
     found = list(UNTRACKED_WRITES)
+    if profile.feature_on(Feature.MEMORY):
+        found.extend(MEMORY_SEEDS)
+    if skills.render_document("getting-started", profile) is not None:
+        found.append(GETTING_STARTED_PATH)
     for spec in SEEDED_TREES:
         found.extend(
             f"{spec.path}/{relative}"
             for relative, _ in _defaults_tree_files(
-                spec.package, set(spec.exclude) or None, set(spec.exclude_files) or None
+                spec.package,
+                set(spec.exclude) or None,
+                set(spec.exclude_files) or None,
+                spec.keep(profile),
             )
         )
     return tuple(sorted(set(found)))
@@ -662,34 +798,6 @@ def seeded_paths() -> tuple[str, ...]:
 # ---------------------------------------------------------------------------
 # The agent instruction text
 # ---------------------------------------------------------------------------
-
-
-def _read_agent_template() -> str:
-    """Return the packaged instruction template.
-
-    The single read step, so a test can inject a template without touching the
-    shipped file.
-    """
-    return (
-        resources.files("lore.defaults").joinpath(AGENT_TEMPLATE).read_text(encoding="utf-8")
-    )
-
-
-def _skill_description(skill_id: str) -> str:
-    """Return a skill's own one-line description, from its packaged frontmatter.
-
-    The description is authored once, in the skill's ``SKILL.md``, and is
-    deliberately absent from the catalogue (standards-dry). Returns an empty
-    string when the frontmatter carries none — a `lore health --scope skills`
-    finding, not a reason to fail an installation.
-    """
-    text = (
-        resources.files("lore.defaults")
-        .joinpath(f"skills/{skill_id}/SKILL.md")
-        .read_text(encoding="utf-8")
-    )
-    record = parse_frontmatter_text(text, required_fields=("name", "description"))
-    return record["description"].strip() if record else ""
 
 
 def _posix_root(install_root: PurePath | str) -> PurePosixPath:
@@ -722,7 +830,7 @@ def _render_skills_table(
     rows = []
     for skill_id in sorted(skill_ids):
         where = ", ".join(f"`{root / skill_id}/`" for root in roots)
-        rows.append(f"| `{skill_id}` | {_skill_description(skill_id)} | {where} |")
+        rows.append(f"| `{skill_id}` | {skills.skill_description(skill_id)} | {where} |")
     return "\n".join([*_TABLE_HEADER, *rows]) + "\n"
 
 
@@ -764,16 +872,16 @@ def _replace_skills_table_region(text: str, table: str, source: str) -> str:
 
 def render_agent_instructions(
     *,
-    skill_ids: tuple[str, ...] | list[str],
+    profile: Profile,
     install_roots: Iterable[PurePath | str],
-    access_mode: AccessMode,
-) -> str:
-    """Render the packaged instruction template into one project's text.
+) -> str | None:
+    """Render the instruction document for *profile* into one project's text.
 
-    Two regions are generated rather than authored: the skills table, filled
-    from *skill_ids* and every root they were installed into, and the
-    access-mode blocks, resolved for *access_mode* by ``skills.render`` — the
-    one block selector. Neither marker survives.
+    The text is the ``lore-agent`` document the catalogue assembles from the
+    blocks that survive *profile*. One region is generated rather than
+    authored: the skills table, filled from the skills *profile* installs and
+    every root they were installed into. ``None`` only when no block survives,
+    which the always-on core makes a build defect rather than a profile.
 
     *install_roots* is what the text is written *for*: one agent's own block
     names that agent's directory, and the canonical ``.lore/LORE-AGENT.md``
@@ -782,10 +890,11 @@ def render_agent_instructions(
     Deterministic — the same arguments produce the same bytes, because the
     manifest records this text by hash.
     """
-    text = _read_agent_template()
-    table = _render_skills_table(skill_ids, install_roots)
-    text = _replace_skills_table_region(text, table, AGENT_TEMPLATE)
-    return skills.render(text, access_mode, source=AGENT_TEMPLATE)
+    text = skills.render_document("lore-agent", profile)
+    if text is None:
+        return None
+    table = _render_skills_table(skills.installed_skills(profile), install_roots)
+    return _replace_skills_table_region(text, table, "lore-agent")
 
 
 # ---------------------------------------------------------------------------
@@ -986,53 +1095,44 @@ def build_desired(
 ) -> dict[str, DesiredFile]:
     """Compose everything this release would write, keyed by repo-relative path.
 
-    The skills come from the catalogue; the rest is produced here — the
-    canonical instruction text, each selected agent's marked block and the
-    installed-skill listing. The seeded ``.lore/`` default trees are
-    deliberately absent: re-init overwrites those in place and reconciliation
-    does not manage them.
+    The skills come from the catalogue, assembled from the blocks the profile
+    keeps; the rest is produced here — the canonical instruction text, each
+    selected agent's marked block and the installed-skill listing. A profile
+    that uses nothing of Lore desires none of the instruction text, which turns
+    a previous install's copies into removals. The seeded ``.lore/`` default
+    trees are deliberately absent: re-init overwrites those in place and
+    reconciliation does not manage them.
 
     Takes the resolved answers rather than loose keywords so ``plan_init`` and
     ``apply_init`` cannot compose the same desired set two different ways.
     """
-    access_mode = answers.access_mode
+    profile = answers.profile
     skills_gitignore = answers.skills_gitignore
-    desired = dict(
-        skills.desired_files(
-            targets=targets,
-            skill_families=answers.skill_families,
-            access_mode=access_mode,
-        )
-    )
-    skill_ids = skills.skills_in_families(answers.skill_families)
+    desired = dict(skills.desired_files(targets=targets, profile=profile))
+    skill_ids = skills.installed_skills(profile)
     roots = skills.install_roots(targets)
 
     # The canonical rendered text, written whether or not an agent is selected,
     # and read by every selected agent — so it names every root, not the first.
-    desired[LORE_AGENT_PATH] = _owned(
-        LORE_AGENT_PATH,
-        LORE_AGENT_SOURCE,
-        render_agent_instructions(
-            skill_ids=skill_ids, install_roots=roots, access_mode=access_mode
-        ),
-    )
+    canonical = render_agent_instructions(profile=profile, install_roots=roots)
+    if canonical is not None:
+        desired[LORE_AGENT_PATH] = _owned(LORE_AGENT_PATH, LORE_AGENT_SOURCE, canonical)
 
-    for target in targets:
-        if not target.instruction_file:
-            continue
-        if _leaves_existing_file_alone(
-            project_root, target.instruction_file, answers.on_existing_agent_file
-        ):
-            continue
-        desired[target.instruction_file] = _section(
-            target.instruction_file,
-            f"agent-instructions:{target.id}",
-            render_agent_instructions(
-                skill_ids=skill_ids,
+        for target in targets:
+            if not target.instruction_file:
+                continue
+            if _leaves_existing_file_alone(
+                project_root, target.instruction_file, answers.on_existing_agent_file
+            ):
+                continue
+            block = render_agent_instructions(
+                profile=profile,
                 install_roots=(target.skills_dir or skills.LORE_SKILLS_ROOT,),
-                access_mode=access_mode,
-            ),
-        )
+            )
+            assert block is not None
+            desired[target.instruction_file] = _section(
+                target.instruction_file, f"agent-instructions:{target.id}", block
+            )
 
     # The root `.gitignore` is deliberately absent. Lore used to write a marked
     # block there naming its generated artefacts, and every one of those paths
@@ -1099,17 +1199,23 @@ def _unknown_token(name: str, value: str, accepted: tuple[str, ...]) -> str | No
     return f"Unknown {name}: '{value}'. Accepted tokens: {', '.join(accepted)}."
 
 
+_RECORDED_QUESTIONS = ("route", "memory", "quests", "watchers")
+"""The questions `--reconfigure` asks again: the route and the three features.
+
+Search, index and graph are not here: an unsupplied one keeps its default and
+changes instruction text, so a script has no need to restate them."""
+
 RECORDED_ANSWER_FLAGS = {
     "agents": ("init-agents", "--agent"),
-    "access_mode": ("init-access-mode", "--access"),
-    "skill_families": ("init-skill-families", "--skills"),
     "skills_gitignore": ("init-skills-gitignore", "--skills-gitignore"),
+    **{
+        question_kwarg(question): (question_key(question), question_flag(question))
+        for question in _RECORDED_QUESTIONS
+    },
 }
-"""The four persisted answers: the key that records each, and the flag that replaces it.
+"""The persisted answers `--reconfigure` asks again: the key that records each, and the flag.
 
-Read by ``_reject_recorded`` for the way out of a recorded answer that no
-longer validates, and by `lore init` for the questions a run with no terminal
-cannot ask. One table, because the two have to name the same four flags.
+One table, because `_reject_recorded` and `lore init` have to name the same flags.
 """
 
 AGENTS_CONFIG_KEY = RECORDED_ANSWER_FLAGS["agents"][0]
@@ -1117,20 +1223,31 @@ AGENTS_CONFIG_KEY = RECORDED_ANSWER_FLAGS["agents"][0]
 
 
 def missing_recorded_answers(answers: Mapping[str, Any]) -> tuple[str, ...]:
-    """Which of the four recorded answers *answers* leaves unsupplied.
+    """Which recorded answers *answers* leaves unsupplied.
 
-    Returned as parameter names, in ``RECORDED_ANSWER_FLAGS`` order, because
-    both callers name the same four things in different vocabularies: the CLI
-    maps them through the table to `--agent`, `--access`, `--skills` and
-    `--skills-gitignore`, and `plan_init` reports them as its own keywords.
+    Returned as keyword names, in ``RECORDED_ANSWER_FLAGS`` order, because both
+    callers name the same things in different vocabularies: the CLI maps them
+    through the table to flags, and `plan_init` reports them as its own keywords.
 
     The rule they share is `--reconfigure`'s: it means "ask me again", so a run
     that supplies no new answer for a question is not reconfiguring it — it is
-    silently re-resolving it from the built-in default. Pure argument
-    inspection, with nothing terminal-shaped about it, which is why it may not
-    live in `cli.py` alone (ADR-011).
+    silently re-resolving it from the built-in default. The deprecated
+    ``access_mode`` and ``skill_families`` pair, given together, answers every
+    profile question at once. Pure argument inspection, with nothing
+    terminal-shaped about it, which is why it may not live in `cli.py` alone
+    (ADR-011).
     """
-    return tuple(field for field in RECORDED_ANSWER_FLAGS if answers.get(field) is None)
+    alias_pair = answers.get("access_mode") is not None and answers.get(
+        "skill_families"
+    ) is not None
+    missing = []
+    for field in RECORDED_ANSWER_FLAGS:
+        if answers.get(field) is not None:
+            continue
+        if alias_pair and field not in ("agents", "skills_gitignore"):
+            continue
+        missing.append(field)
+    return tuple(missing)
 
 
 def _reject_recorded(message: str | None, *, field: str, value, recorded: bool) -> None:
@@ -1185,7 +1302,13 @@ def _selected_targets(agent_ids) -> tuple:
     return tuple(row for row in agent_registry.load_registry() if row.id in wanted)
 
 
-def _recorded_entries(project_root: Path) -> tuple[dict, frozenset[str]]:
+_LOAD: Any = object()
+"""Says "read the manifest yourself" where ``None`` already means "there is none"."""
+
+
+def _recorded_entries(
+    project_root: Path, stored: Any = _LOAD
+) -> tuple[dict, frozenset[str]]:
     """The ``recorded`` half of the comparison, and the paths Lore has shipped to.
 
     A project initialised before the manifest existed has no manifest, so the
@@ -1229,7 +1352,8 @@ def _recorded_entries(project_root: Path) -> tuple[dict, frozenset[str]]:
     records = reconcile.legacy_records(
         project_root, retirement_reason=skills.retirement_for
     )
-    stored = manifest.load(project_root)
+    if stored is _LOAD:
+        stored = manifest.load(project_root)
     if stored is None:
         merged = dict(records.retired_edits)
         merged.update(records.installed)
@@ -1287,7 +1411,9 @@ def unmarked_instruction_files(project_root: Path, targets) -> tuple[str, ...]:
     )
 
 
-def _prompts_needed(project_root: Path, targets, unresolved) -> tuple[str, ...]:
+def _prompts_needed(
+    project_root: Path, targets, unresolved, profile: Profile
+) -> tuple[str, ...]:
     """Name the conditional questions this project state justifies.
 
     This is what lets the CLI know a prompt is warranted without the core
@@ -1304,22 +1430,188 @@ def _prompts_needed(project_root: Path, targets, unresolved) -> tuple[str, ...]:
     needed = []
     if unmarked_instruction_files(project_root, targets):
         needed.append(PROMPT_EXISTING_AGENT_FILE)
-    if skills.install_roots(targets):
-        # Every project has an install root, so every project has a tracking
-        # answer worth asking for. The gate used to read `target.skills_dir`,
-        # which is null for five of the six agents — so the projects whose
-        # skills land in `.lore/skills/` were never asked the one question that
-        # decides whether their own authored skills reach a clone.
+    if skills.install_roots(targets) and skills.installed_skills(profile):
+        # Every project has an install root, so every project that installs a
+        # skill has a tracking answer worth asking for. The gate used to read
+        # `target.skills_dir`, which is null for five of the six agents — so the
+        # projects whose skills land in `.lore/skills/` were never asked the one
+        # question that decides whether their own authored skills reach a
+        # clone. A profile that installs no skill has nothing to track.
         needed.append(PROMPT_SKILLS_GITIGNORE)
     if unresolved:
         needed.append(PROMPT_ON_CONFLICT)
     return tuple(needed)
 
 
+_OPT_IN_FIELDS = tuple(question_kwarg(q) for q in QUESTIONS if q != "route")
+"""The six yes/no answers."""
+
+_PROFILE_FIELDS = ("route", *_OPT_IN_FIELDS)
+
+_NEW_MODEL_KEYS = ("init-route", "init-memory", "init-memory-search", "init-watchers")
+"""Keys only the current model writes. Any one of them means the project is not migrating:
+the other profile keys (`init-memory-index`, `-graph`, `-quests`) kept their
+names across the unreleased 0.14.0 build and say nothing about which model wrote them."""
+
+
+def _explicit_profile_answers(given: Mapping[str, Any]) -> dict[str, Route | bool]:
+    """The seven keywords a caller supplied, checked, with the absent ones dropped.
+
+    The route is a token or a ``Route``; an opt-in is a ``bool``. A bare string
+    where a bool is expected is the likeliest library mistake — the flag it
+    mirrors takes ``yes``/``no`` — and ``bool("no")`` is true, so it is refused
+    by name rather than coerced.
+    """
+    checked: dict[str, Route | bool] = {}
+    value = given.get("route")
+    if value is not None:
+        _reject(validators.validate_route(value))
+        checked["route"] = Route(value)
+    for name in _OPT_IN_FIELDS:
+        value = given.get(name)
+        if value is None:
+            continue
+        if not isinstance(value, bool):
+            _reject(f"{name} takes True or False, not {value!r}.")
+        checked[name] = bool(value)
+    return checked
+
+
+def _recorded_profile_answers(config: Any, keys: frozenset[str]) -> dict[str, Route | bool]:
+    """The profile answers `.lore/config.toml` records, read from the loaded config."""
+    recorded: dict[str, Route | bool] = {}
+    for question in QUESTIONS:
+        if question_key(question) not in keys:
+            continue
+        name = question_kwarg(question)
+        value = getattr(config, f"init_{name}")
+        recorded[name] = Route(value) if name == "route" else bool(value)
+    return recorded
+
+
+def _current_skill_id(source: str) -> str:
+    """The skill a recorded ``skill:<id>`` source is today, following the retirement ledger.
+
+    A project that kept an old skill under a retired id still installed that
+    skill's family: ``explore-codex`` became ``retrieve-memory``, which is a
+    Memory skill.
+    """
+    skill_id = source.removeprefix("skill:")
+    retirement = skills.retirement_for(skill_id)
+    return retirement.into if retirement is not None else skill_id
+
+
+def _migrated_base(
+    config: Any, stored: manifest.Manifest | None, recorded: Mapping[str, Any]
+) -> tuple[Profile, tuple[str, ...]]:
+    """The profile an earlier release's project means, and the notice for it.
+
+    Two earlier models are read, newest first. The unreleased 0.14.0 build's
+    fifteen ``init-*`` keys (a route per file-feature action, a validate opt-in
+    each) are folded by :func:`legacy_init.profile_from_interim`. Before that,
+    the retired config keys, the previous manifest's answers and — for the
+    families only — the skills the manifest recorded are folded by
+    :func:`legacy_init.profile_from_legacy`; whatever is still unknown takes the
+    earlier headless default (`native`, every family). A project that shows no
+    evidence of any earlier answer is not migrating: it is new, and gets the
+    headless profile without a notice.
+    """
+    if config.legacy_init_interim:
+        profile = legacy_init.profile_from_interim(
+            config.legacy_init_interim,
+            memory_index=config.init_memory_index,
+            memory_graph=config.init_memory_graph,
+            quests=config.init_quests,
+        )
+        retired = ", ".join(sorted(config.legacy_init_interim))
+        notice = (
+            f"Migrated the retired per-feature answers ({retired}) to "
+            f"{profile.summary()}. The retired keys are ignored from now on; the "
+            "new init-route, init-memory and the other init-* keys are recorded."
+        )
+        return profile, (notice,)
+
+    mode = config.legacy_init_access_mode
+    families = config.legacy_init_skill_families
+    answers = stored.answers if stored is not None else {}
+    if mode is None and answers.get("access_mode") in ("cli", "native"):
+        mode = answers["access_mode"]
+    if families is None:
+        listed = answers.get("skill_families")
+        if isinstance(listed, list) and all(f in legacy_init.LEGACY_FAMILIES for f in listed):
+            families = tuple(listed)
+    if families is None:
+        inferred = legacy_init.infer_families(
+            _current_skill_id(entry.source)
+            for entry in recorded.values()
+            if entry.source.startswith("skill:")
+        )
+        if inferred:
+            families = inferred
+    if mode is None and families is None:
+        return Profile(), ()
+
+    profile = legacy_init.profile_from_legacy(
+        mode or "native", families if families is not None else legacy_init.LEGACY_FAMILIES
+    )
+    notice = (
+        "Migrated init-access-mode/init-skill-families to feature answers: "
+        f"{profile.summary()}. The retired keys are ignored from now on; the "
+        "init-route, init-memory and the other init-* keys are recorded."
+    )
+    return profile, (notice,)
+
+
+def _resolve_profile(
+    project_root: Path,
+    *,
+    explicit: Mapping[str, Route | bool],
+    access_mode: str | None,
+    skill_families: tuple[str, ...] | None,
+    reconfigure: bool,
+    stored: manifest.Manifest | None,
+    recorded: Mapping[str, Any],
+) -> tuple[Profile, tuple[str, ...]]:
+    """Settle the seven feature answers, and the notices that explain how.
+
+    One order: explicit keyword, then deprecated alias, then a recorded key,
+    then the base layer. The base is the headless defaults when the project has
+    recorded a key only the current model writes (a partial config fills its
+    gaps with defaults; it never re-migrates) or is being reconfigured, and
+    otherwise whatever an earlier release's answers translate to. Normalising
+    comes last: a dead opt-in is an error only when the caller supplied it.
+    """
+    config = load_config(project_root)
+    keys = frozenset() if reconfigure else recorded_keys(project_root)
+    notices: list[str] = []
+
+    if reconfigure or any(key in keys for key in _NEW_MODEL_KEYS):
+        base = Profile()
+    else:
+        base, migration = _migrated_base(config, stored, recorded)
+        notices.extend(migration)
+    values: dict[str, Any] = {name: getattr(base, name) for name in _PROFILE_FIELDS}
+    values.update(_recorded_profile_answers(config, keys))
+
+    if access_mode is not None or skill_families is not None:
+        translation = legacy_init.translate_aliases(
+            access_mode=access_mode,
+            skill_families=skill_families,
+            current_route=values["route"],
+        )
+        values.update(translation.answers)
+        notices.extend(translation.notices)
+
+    values.update(explicit)
+    _reject(validators.validate_profile_answers(values, explicit=set(explicit)))
+    return Profile(**values).normalized(), tuple(notices)
+
+
 def _resolve_answers(
     project_root: Path,
     *,
     agents: list[str] | None,
+    explicit: Mapping[str, Route | bool],
     access_mode: str | None,
     skill_families: list[str] | None,
     on_existing_agent_file: str,
@@ -1327,12 +1619,14 @@ def _resolve_answers(
     on_conflict: str,
     reconfigure: bool,
     recorded: dict,
-) -> InitAnswers:
+    stored: manifest.Manifest | None,
+) -> tuple[InitAnswers, tuple[str, ...]]:
     """Settle every answer, in one order: argument, then config, then default.
 
-    ``reconfigure=True`` drops the config layer for the four persisted answers,
-    so a caller that means "ask me again" gets the built-in defaults rather than
-    what the project recorded last time.
+    ``reconfigure=True`` drops the config layer for the persisted answers, so a
+    caller that means "ask me again" gets the built-in defaults rather than what
+    the project recorded last time. The feature answers have their own, longer
+    order — see :func:`_resolve_profile`.
 
     The agents answer has a fourth layer, and it exists because its built-in
     default is the only one that *destroys* something. "Deselect every agent"
@@ -1363,12 +1657,6 @@ def _resolve_answers(
         agent_tokens = list(config.init_agents)
     else:
         agent_tokens = list(agents_in_evidence(recorded))
-    mode_token = access_mode if access_mode is not None else config.init_access_mode
-    family_tokens = (
-        list(skill_families)
-        if skill_families is not None
-        else list(config.init_skill_families)
-    )
     gitignore_token = (
         skills_gitignore
         if skills_gitignore is not None
@@ -1384,20 +1672,6 @@ def _resolve_answers(
         recorded=agents is None and AGENTS_CONFIG_KEY in answered,
     )
     _reject_recorded(
-        validators.validate_access_mode(mode_token),
-        field="access_mode",
-        value=mode_token,
-        recorded=access_mode is None,
-    )
-    accepted_families = (*skills.family_ids(), skills.ALL_FAMILIES, skills.NO_FAMILIES)
-    for token in family_tokens:
-        _reject_recorded(
-            validators.validate_skill_family(token, accepted_families),
-            field="skill_families",
-            value=family_tokens,
-            recorded=skill_families is None,
-        )
-    _reject_recorded(
         _unknown_token(
             "skills gitignore policy", gitignore_token, SKILLS_GITIGNORE_TOKENS
         ),
@@ -1412,20 +1686,45 @@ def _resolve_answers(
         )
     )
 
-    return InitAnswers(
+    families = None
+    if skill_families is not None:
+        accepted = (*skills.family_ids(), skills.ALL_FAMILIES, skills.NO_FAMILIES)
+        for token in skill_families:
+            _reject(validators.validate_skill_family(token, accepted))
+        families = skills.resolve_families(skill_families)
+    if access_mode is not None:
+        _reject(validators.validate_access_mode(access_mode))
+
+    profile, notices = _resolve_profile(
+        project_root,
+        explicit=explicit,
+        access_mode=access_mode,
+        skill_families=families,
+        reconfigure=reconfigure,
+        stored=stored,
+        recorded=recorded,
+    )
+    answers = InitAnswers(
         agents=tuple(target.id for target in _selected_targets(agent_tokens)),
-        access_mode=AccessMode(mode_token),
-        skill_families=skills.resolve_families(family_tokens),
+        profile=profile,
         on_existing_agent_file=on_existing_agent_file,
         skills_gitignore=gitignore_token,
         on_conflict=on_conflict,
     )
+    return answers, notices
 
 
 def plan_init(
     project_root: Path | None = None,
     *,
     agents: list[str] | None = None,
+    route: str | Route | None = None,
+    memory: bool | None = None,
+    memory_search: bool | None = None,
+    memory_index: bool | None = None,
+    memory_graph: bool | None = None,
+    quests: bool | None = None,
+    watchers: bool | None = None,
     access_mode: str | None = None,
     skill_families: list[str] | None = None,
     on_existing_agent_file: str = "append",
@@ -1436,11 +1735,17 @@ def plan_init(
     """Compute what an initialisation would do, without performing any of it.
 
     Every keyword defaulting to ``None`` resolves in one order: explicit
-    argument, then ``.lore/config.toml``, then the built-in default.
-    ``reconfigure=True`` skips the config layer for the four persisted answers,
-    which is what ``--reconfigure`` means.
+    argument, then ``.lore/config.toml``, then the built-in default. The
+    seven feature answers (the one route, Memory and its three opt-ins, Quests,
+    Watchers) are resolved by :func:`_resolve_profile`;
+    ``access_mode`` and ``skill_families`` are the deprecated aliases, sit
+    between the two, and are named in ``InitPlan.notices``. A project recording
+    none of the feature keys but holding an earlier release's answers is
+    migrated, in memory, and says so in the same place.
+    ``reconfigure=True`` skips the config layer, which is what ``--reconfigure``
+    means.
 
-    **This function is the only reader of the four ``init-*`` config keys**
+    **This function is the only reader of the ``init-*`` config keys**
     (ADR-021 constraint 2): a second reader is a duplicate implementation and an
     ADR-011 violation, which is why no CLI flag carries a config-derived
     default.
@@ -1452,13 +1757,15 @@ def plan_init(
     Raises ``ValueError`` on any token the CLI's constrained-flag layer would
     reject, so the Python surface rejects exactly what the CLI does — and on
     the argument *shapes* click's own parsing makes unreachable, which is where
-    a library caller's mistakes actually land.
+    a library caller's mistakes actually land. A Memory opt-in set to ``True``
+    while ``memory`` is ``False`` is such an error.
 
-    ``reconfigure=True`` needs all four recorded answers supplied. `--reconfigure`
-    means "ask me again", and a call has no way to ask: without them it would
-    re-resolve every one from the built-in defaults, silently, which is what the
-    CLI refuses at the terminal for the same reason (ADR-011 — the rule is
-    argument inspection, so it belongs here and not in `cli.py`).
+    ``reconfigure=True`` needs every recorded answer supplied (see
+    :func:`missing_recorded_answers`). `--reconfigure` means "ask me again", and
+    a call has no way to ask: without them it would re-resolve every one from
+    the built-in defaults, silently, which is what the CLI refuses at the
+    terminal for the same reason (ADR-011 — the rule is argument inspection, so
+    it belongs here and not in `cli.py`).
     """
     agents = _token_sequence(agents, parameter="agents", noun="agent ids")
     skill_families = _token_sequence(
@@ -1468,18 +1775,29 @@ def plan_init(
         raise ValueError(
             f"reconfigure takes True or False, not {type(reconfigure).__name__}."
         )
+    given = {
+        "route": route,
+        "memory": memory,
+        "memory_search": memory_search,
+        "memory_index": memory_index,
+        "memory_graph": memory_graph,
+        "quests": quests,
+        "watchers": watchers,
+    }
+    explicit = _explicit_profile_answers(given)
     if reconfigure:
         unsupplied = missing_recorded_answers(
             {
                 "agents": agents,
+                "skills_gitignore": skills_gitignore,
                 "access_mode": access_mode,
                 "skill_families": skill_families,
-                "skills_gitignore": skills_gitignore,
+                **explicit,
             }
         )
         if unsupplied:
             raise ValueError(
-                "reconfigure=True asks the four recorded questions again, and this "
+                "reconfigure=True asks the recorded questions again, and this "
                 f"call has no way to ask them. Pass {', '.join(unsupplied)}, or drop "
                 "reconfigure=True to reuse what .lore/config.toml records."
             )
@@ -1492,10 +1810,12 @@ def plan_init(
     root = Path(project_root).resolve() if project_root is not None else Path.cwd()
     # Read before the answers are settled, not after: what Lore installed last
     # time is what an unanswered agents question falls back on.
-    recorded, shipped = _recorded_entries(root)
-    answers = _resolve_answers(
+    stored = manifest.load(root)
+    recorded, shipped = _recorded_entries(root, stored)
+    answers, notices = _resolve_answers(
         root,
         agents=agents,
+        explicit=explicit,
         access_mode=access_mode,
         skill_families=skill_families,
         on_existing_agent_file=on_existing_agent_file,
@@ -1503,6 +1823,7 @@ def plan_init(
         on_conflict=on_conflict,
         reconfigure=reconfigure,
         recorded=recorded,
+        stored=stored,
     )
     targets = _selected_targets(answers.agents)
     _reject_escaping_roots(root, targets)
@@ -1524,11 +1845,12 @@ def plan_init(
         answers=answers,
         targets=targets,
         files=files,
-        prompts_needed=_prompts_needed(root, targets, unresolved),
-        seeded=seeded_paths(),
+        prompts_needed=_prompts_needed(root, targets, unresolved, answers.profile),
+        seeded=seeded_paths(answers.profile),
         unstated_uninstall=_unstated_uninstall(
             answers, recorded, files, stated=agents is not None
         ),
+        notices=notices,
     )
 
 
@@ -1732,7 +2054,7 @@ def _seeded_block(seeded: tuple[str, ...]) -> list[str]:
 def render_plan(plan: InitPlan) -> str:
     """Render *plan* as the block `lore init` shows before it writes anything.
 
-    A header naming the project and the three answers that shape the file set,
+    A header naming the project, the agents and the features that are on,
     one line per path that would change, a counts line, and then the files Lore
     refreshes in place. Rows that would change nothing — a file already
     byte-identical to what Lore would write — are absent from both the listing
@@ -1743,9 +2065,7 @@ def render_plan(plan: InitPlan) -> str:
     reported = [entry for entry in plan.files if entry.reported]
     header = (
         f"Plan for {plan.project_root} "
-        f"(agents: {_answer_summary(answers.agents)} · "
-        f"access: {answers.access_mode} · "
-        f"families: {_answer_summary(answers.skill_families)})"
+        f"(agents: {_answer_summary(answers.agents)} · {answers.profile.summary()})"
     )
     listing = [_summary_line(entry) for entry in reported]
     # One blank line between the parts, and no empty listing block: a project
@@ -2200,20 +2520,27 @@ def _manifest_rows(
     return rows
 
 
-_PERSISTED_KEYS = (
-    ("init-agents", "agents"),
-    ("init-access-mode", "access_mode"),
-    ("init-skill-families", "skill_families"),
-    ("init-skills-gitignore", "skills_gitignore"),
-)
+def _persisted_values(answers: InitAnswers) -> list[tuple[str, Any]]:
+    """The ten ``(config key, value)`` pairs a run records, in file order.
+
+    The agents, the seven feature answers in question order, then the tracking
+    policy. The retired keys are not here and are never written: their lines
+    stay where an earlier release put them (decisions-013, constraint 2).
+    """
+    profile = answers.profile.as_answers()
+    return [
+        ("init-agents", list(answers.agents)),
+        *((question_key(question), profile[question_kwarg(question)]) for question in QUESTIONS),
+        ("init-skills-gitignore", answers.skills_gitignore),
+    ]
 
 
 def _persist_answers(project_root: Path, answers: InitAnswers) -> None:
-    """Record the four persisted answers in `.lore/config.toml`.
+    """Record the ten persisted answers in `.lore/config.toml`.
 
     A key already present is rewritten in place; anything else in the file —
-    values, ordering, blank lines, inline comments — is left byte-identical, so
-    a project's own settings survive every run.
+    values, ordering, blank lines, inline comments, the two retired keys — is
+    left byte-identical, so a project's own settings survive every run.
     """
     target = paths.config_path(project_root)
     _reject_occupied_path(target, project_root)
@@ -2221,8 +2548,8 @@ def _persist_answers(project_root: Path, answers: InitAnswers) -> None:
         manifest.read_text(target).splitlines(keepends=True) if target.is_file() else []
     )
 
-    for key, field in _PERSISTED_KEYS:
-        rendered = f"{key} = {render_toml_value(getattr(answers, field))}\n"
+    for key, value in _persisted_values(answers):
+        rendered = f"{key} = {render_toml_value(value)}\n"
         for index, line in enumerate(lines):
             head = line.split("=", 1)[0].strip()
             if head == key:
@@ -2291,6 +2618,10 @@ def apply_init(plan: InitPlan) -> InitResult:
             root,
             answers={
                 "agents": list(answers.agents),
+                "profile": answers.profile.as_answers(),
+                # Derived, and still written so a downgrade reads a coherent
+                # manifest; nothing in this release reads them back except the
+                # migration of a project that records no profile.
                 "access_mode": str(answers.access_mode),
                 "skill_families": list(answers.skill_families),
                 "skills_gitignore": answers.skills_gitignore,
@@ -2305,7 +2636,7 @@ def apply_init(plan: InitPlan) -> InitResult:
         )
 
     try:
-        messages = _seed_lore_directory(root)
+        messages = _seed_lore_directory(root, answers.profile)
 
         for entry in sorted(plan.files, key=lambda row: (_step(row), row.path)):
             if entry.path in stale:
@@ -2368,13 +2699,38 @@ def _lore_version() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _seed_lore_directory(project_root: Path) -> list[str]:
+def _seed_getting_started(project_root: Path, profile: Profile) -> list[str]:
+    """Write the rendered getting-started page, or take back one that no longer renders.
+
+    The page is Lore's own file in Lore's own directory, rewritten on every run.
+    A profile for which no block of it survives has nothing to say, and a page
+    left behind from an earlier profile would still say it — so it is removed.
+    """
+    target = paths.lore_dir(project_root) / "GETTING-STARTED.md"
+    text = skills.render_document("getting-started", profile)
+    if text is None:
+        if target.is_symlink() or not target.is_file():
+            return []
+        try:
+            target.unlink()
+        except OSError:
+            return []
+        return ["  Removed GETTING-STARTED.md — no longer shipped"]
+    verb = "Updated" if target.is_file() else "Created"
+    safewrite.atomic_write_text(target, text, project_root=project_root)
+    return [f"  {verb} GETTING-STARTED.md"]
+
+
+def _seed_lore_directory(project_root: Path, profile: Profile) -> list[str]:
     """Create and refresh everything under `.lore/` that reconciliation does not manage.
 
-    The database, the seeded ``default/`` trees, the copied docs and the
-    user-tracked skeletons. These are overwritten in place on every run — they
-    are Lore's own files inside Lore's own directory, and the manifest has no
-    job to do for them.
+    The database, the seeded ``default/`` trees *profile* keeps, the rendered
+    getting-started page and the user-tracked skeletons. These are overwritten in
+    place on every run — they are Lore's own files inside Lore's own directory,
+    and the manifest has no job to do for them. What a feature that is off would
+    have seeded is not written, and the prune takes back what an earlier run
+    wrote; files the project authored, the codex root and the glossary are never
+    touched once written.
     """
     lore_dir = paths.lore_dir(project_root)
     messages: list[str] = []
@@ -2392,26 +2748,31 @@ def _seed_lore_directory(project_root: Path) -> list[str]:
     db_path = paths.db_path(project_root)
     # SQLite opens the path it is handed and follows whatever link is on it, so
     # the one write `lore init` does not perform itself is checked before it.
+    # The database is always created: Quests can be switched on later, and an
+    # absent one is a message rather than a failure only for the commands that
+    # have a fallback.
     _reject_occupied_path(db_path, project_root)
     messages.extend(_format_db_status(init_database(db_path)))
 
     # Each tree is described once in ``SEEDED_TREES`` — the copy here, the prune
     # that follows it and the plan's listing all read the same row. The order is
     # the one the status lines have always arrived in, with the user-tracked
-    # skeletons between `docs` and `watchers`.
-    #
-    # GETTING-STARTED.md is copied verbatim; LORE-AGENT.md is rendered from the
-    # same tree and arrives with the plan, so `docs` excludes it.
+    # skeletons between `artifacts` and `watchers`.
     by_package = {spec.package: spec for spec in SEEDED_TREES}
-    for package in ("doctrines", "artifacts", "docs"):
-        messages.extend(_seed_tree(project_root, by_package[package]))
+    for package in ("doctrines", "artifacts"):
+        messages.extend(_seed_tree(project_root, by_package[package], profile))
+    messages.extend(_seed_getting_started(project_root, profile))
 
-    messages.extend(_seed_user_tracked(project_root))
-    messages.extend(_seed_tree(project_root, by_package["watchers"]))
+    if profile.feature_on(Feature.MEMORY):
+        messages.extend(_seed_user_tracked(project_root))
+    else:
+        messages.extend(_seed_config(project_root))
+    messages.extend(_seed_tree(project_root, by_package["watchers"], profile))
     messages.extend(_remove_retired_seed_trees(project_root))
 
-    for subfolder in ("main", "shared"):
-        (paths.rites_dir(project_root) / subfolder).mkdir(parents=True, exist_ok=True)
+    if profile.feature_on(Feature.MEMORY):
+        for subfolder in ("main", "shared"):
+            (paths.rites_dir(project_root) / subfolder).mkdir(parents=True, exist_ok=True)
 
     return messages
 

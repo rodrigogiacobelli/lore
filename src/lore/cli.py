@@ -1,7 +1,9 @@
 """Click command definitions for the Lore CLI."""
 
+import dataclasses
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,7 @@ from lore.api import _agents as agent_registry
 from lore.api import _db as db_module
 from lore.api import _graph as graph
 from lore.api import _init as init_module
+from lore.api import _initplan as initplan
 from lore.api import _lore_version as __version__
 from lore.api import _paths as paths
 from lore.api import _projects as projects
@@ -633,10 +636,48 @@ class SpaceSeparatedChoice(click.Option):
 
 
 _ACCESS_HELP = (
-    "How agents reach Lore's local files: 'native' uses their own file tools, "
-    "'cli' routes every read and write through `lore ...`. Covers codex, rites "
-    "and the glossary only."
+    "Deprecated: sets the route: 'native' is --route harness, 'cli' is --route cli."
 )
+
+_SKILLS_HELP = (
+    "Deprecated: the old skill families, space-separated ('all' and 'none' "
+    "accepted), mapped onto the feature flags below."
+)
+
+_ROUTE_FLAG_HELP = (
+    "harness is the agent's own file tools, cli is `lore` commands. One answer for "
+    "Doctrines, Artifacts and every optional file feature that is on."
+)
+
+
+def _question_option(question_id: str) -> Callable[[Any], Any]:
+    """The `click.option` of one profile question, built from the question table.
+
+    The flag, the keyword and the choice set all derive from the id
+    (standards-dry): adding a question to `initplan.QUESTIONS` adds its flag.
+    Every one defaults to None so that "not given" stays distinguishable, and an
+    opt-in takes `yes`/`no` because Click has no tri-state boolean (ADR-017).
+    """
+    if question_id == "route":
+        help_text = f"{prompts.ROUTE_TITLE} {_ROUTE_FLAG_HELP}"
+        choices = list(validators.ROUTE_TOKENS)
+    else:
+        help_text = prompts.OPT_IN_QUESTIONS[question_id]
+        choices = ["yes", "no"]
+    return click.option(
+        initplan.question_flag(question_id),
+        initplan.question_kwarg(question_id),
+        default=None,
+        type=click.Choice(choices),
+        help=help_text,
+    )
+
+
+def _profile_options(command: Any) -> Any:
+    """Apply every profile question's option to *command*, in question order."""
+    for question_id in reversed(initplan.QUESTIONS):
+        command = _question_option(question_id)(command)
+    return command
 
 
 @main.command()
@@ -654,6 +695,7 @@ _ACCESS_HELP = (
         "and cannot be combined with another id."
     ),
 )
+@_profile_options
 @click.option(
     "--access",
     "access_mode",
@@ -671,7 +713,7 @@ _ACCESS_HELP = (
         [*skill_catalogue.family_ids(), skill_catalogue.ALL_FAMILIES, skill_catalogue.NO_FAMILIES]
     ),
     metavar="FAMILY [FAMILY ...]",
-    help="Skill families to install, space-separated. 'all' and 'none' are accepted.",
+    help=_SKILLS_HELP,
 )
 @click.option(
     "--on-existing-agent-file",
@@ -713,9 +755,10 @@ _ACCESS_HELP = (
     is_flag=True,
     default=False,
     help=(
-        "Ask the four recorded questions again instead of reusing the answers. "
-        "Needs a terminal to ask in: a run that cannot prompt must pass all "
-        "four as flags, or it stops with a usage error."
+        "Ask the recorded questions again instead of reusing the answers. "
+        "Needs a terminal to ask in: a run that cannot prompt must pass the "
+        "agent, skills-gitignore, route and --quests flags, or it stops with a "
+        "usage error."
     ),
 )
 @click.option(
@@ -736,21 +779,44 @@ def init(
     yes,
     reconfigure,
     dry_run,
+    **profile_flags,
 ):
     """Initialize a Lore project in the current directory.
 
-    When standard output is a terminal, `lore init` asks how the project
-    works, prints every file it would create, replace or remove, and writes
-    nothing until you confirm. Without a terminal — a pipe, a CI job, Realm
-    calling the Python API — no prompt fires and the flags below, the answers
-    recorded in .lore/config.toml and the built-in defaults decide everything.
+    When standard output is a terminal, `lore init` asks how agents work with
+    Lore and which optional features the project uses, prints every file it
+    would create, replace or remove, and writes nothing until you confirm.
+    Without a terminal — a pipe, a CI job, Realm calling the Python API — no
+    prompt fires and the flags below, the answers recorded in
+    .lore/config.toml and the built-in defaults decide everything. The
+    built-in defaults install every feature through the Lore CLI.
 
-    Four answers are recorded and reused: the agents, the access mode, the
-    skill families and how installed skills are tracked in git. Pass
+    \b
+    Core, always installed: Doctrines, Artifacts and `lore health`.
+      --route harness|cli   agents use their own file tools (harness) or the
+                            Lore CLI to create, read, update and delete
+                            Lore's files. One answer for everything below.
+    Optional:
+      --memory yes|no       codex, rites and glossary (follow --route)
+        --memory-search yes|no   `lore codex|rite|glossary search` (CLI)
+        --memory-index yes|no    `lore index` (CLI)
+        --memory-graph yes|no    `lore codex map|chaos`, `lore impacts` (CLI)
+      --quests yes|no       quests and missions (CLI); also teaches starting
+                            a quest from a doctrine
+      --watchers yes|no     watchers (follow --route)
+    The search, index and graph answers apply only while Memory is on.
+
+    Skills and instruction files contain only what the chosen features use: a
+    command whose feature is off appears nowhere.
+
+    All answers are recorded in .lore/config.toml and reused; pass
     --reconfigure to be asked again. Asking needs a terminal, so a run without
-    one takes those four from the flags below, then from .lore/config.toml,
-    then from the built-in defaults — and --reconfigure, which only means
-    "ask me again", needs all four as flags or it stops.
+    one passes the agent, skills-gitignore, --route, --memory, --quests and
+    --watchers flags, or stops with a usage error.
+
+    --access and --skills are deprecated. --access sets --route; --skills
+    memory machinery workflow maps the old families onto the features above.
+    Projects initialised by an earlier Lore are migrated once.
 
     Deselecting every agent uninstalls Lore's skills from every agent
     directory, so it is never a default: --agent none does it, and so does an
@@ -773,7 +839,8 @@ def init(
     \b
     Every prompt has a flag, so the whole flow is reachable from a script.
     Multi-value flags take space-separated tokens:
-      lore init --agent claude agents-md --skills memory workflow --yes
+      lore init --agent claude --route harness --memory yes \\
+        --memory-search yes --quests no --yes
 
     \b
     JSON output is not supported for this command. Use the Python API —
@@ -787,6 +854,10 @@ def init(
         "on_existing_agent_file": on_existing_agent_file,
         "skills_gitignore": skills_gitignore,
         "on_conflict": on_conflict,
+        **{
+            name: _flag_value(value)
+            for name, value in profile_flags.items()
+        },
     }
 
     # The `none` exclusivity rule belongs to `validators`, not to argv parsing:
@@ -799,6 +870,15 @@ def init(
         )
         if problem is not None:
             raise click.UsageError(problem)
+
+    # Contradictions the arguments show on their own (`--memory-search yes`
+    # beside `--memory no`) are the same rule `plan_init` applies to
+    # the resolved profile; this layer only turns the verdict into exit 2.
+    contradiction = validators.validate_explicit_contradictions(
+        {name: answers[name] for name in profile_flags if answers[name] is not None}
+    )
+    if contradiction is not None:
+        raise click.UsageError(contradiction)
 
     at_a_terminal = sys.stdout.isatty()
     interactive = at_a_terminal and not yes
@@ -815,6 +895,8 @@ def init(
 
     if interactive:
         plan = _ask_init_questions(ctx, plan, answers, reconfigure=reconfigure)
+
+    _echo_notices(plan)
 
     if at_a_terminal or dry_run:
         click.echo(init_module.render_plan(plan))
@@ -848,38 +930,53 @@ def init(
         click.echo(msg)
 
 
+def _flag_value(token: str | None) -> str | bool | None:
+    """A flag's token as the `plan_init` keyword value: `yes`/`no` become booleans."""
+    if token == "yes":
+        return True
+    if token == "no":
+        return False
+    return token
+
+
+def _echo_notices(plan: Any) -> None:
+    """Print the plan's deprecation and migration sentences to stderr."""
+    for notice in plan.notices:
+        click.echo(f"Warning: {notice}", err=True)
+
+
 def _reject_reconfigure_with_no_prompt(answers):
     """Stop a `--reconfigure` run that has no way to ask the questions again.
 
     Without a terminal there is no prompt, so there are no new answers — and a
     flag whose help says it asks a question would instead silently re-resolve
-    all four from the built-in defaults, which is not what anybody typing it
-    meant. The agents answer is the one that used to make that destructive:
-    `plan_init` now derives a project's agents from what it is rather than
-    defaulting to none, but "resolve it again from scratch" is still not
-    "reconfigure", and the other three would move without being asked either.
+    the recorded ones from the built-in defaults, which is not what anybody
+    typing it meant.
 
-    A caller that passes all four as flags has supplied the new answers itself
-    and is not asking for a prompt, so that run proceeds. Anything short of
-    that stops here, before any I/O, with the flags it is missing named
-    (ADR-017's exit-2 usage error).
+    A caller that passes every recorded answer as a flag has supplied the new
+    answers itself and is not asking for a prompt, so that run proceeds.
+    Anything short of that stops here, before any I/O, with the flags it is
+    missing named (ADR-017's exit-2 usage error).
 
-    Which four are missing is `plan_init`'s question, not this layer's:
+    Which answers are missing is `plan_init`'s question, not this layer's:
     `missing_recorded_answers` answers it for both, and `plan_init` raises on
     the same condition for a caller with no terminal to be missing. This only
     translates the parameter names into the flags that set them, and into the
     exit code a usage error takes.
     """
-    missing = [
-        init_module.RECORDED_ANSWER_FLAGS[field][1]
-        for field in init_module.missing_recorded_answers(answers)
-    ]
-    if not missing:
+    fields = init_module.missing_recorded_answers(answers)
+    if not fields:
         return
+    flags = ", ".join(init_module.RECORDED_ANSWER_FLAGS[field][1] for field in fields)
+    pair = (
+        " (the deprecated --access and --skills pair answers the route, memory, quests and watchers flags)"
+        if set(fields) - {"agents", "skills_gitignore"}
+        else ""
+    )
     raise click.UsageError(
-        "--reconfigure asks the four recorded questions again, and this run has "
-        f"no terminal to ask in. Pass {', '.join(missing)} to answer without a "
-        "prompt, or drop --reconfigure to reuse what .lore/config.toml records."
+        "--reconfigure asks the recorded questions again, and this run has no "
+        f"terminal to ask in. Pass {flags}{pair} to answer without a prompt, or "
+        "drop --reconfigure to reuse what .lore/config.toml records."
     )
 
 
@@ -932,14 +1029,17 @@ def _replan(answers, plan):
     what keeps an interactive run at two plan computations rather than three.
     """
     settled = plan.answers
-    comparable = (
+    resolved_profile = settled.profile.as_answers()
+    comparable = [
         (answers["agents"], settled.agents, True),
-        (answers["skill_families"], settled.skill_families, True),
-        (answers["access_mode"], str(settled.access_mode), False),
         (answers["skills_gitignore"], settled.skills_gitignore, False),
         (answers["on_existing_agent_file"], settled.on_existing_agent_file, False),
         (answers["on_conflict"], settled.on_conflict, False),
-    )
+        *(
+            (answers[name], resolved_profile[name], False)
+            for name in map(initplan.question_kwarg, initplan.QUESTIONS)
+        ),
+    ]
     if all(_same(given, resolved, as_set) for given, resolved, as_set in comparable):
         return plan
     return _plan_init(answers)
@@ -957,17 +1057,19 @@ def _same(given, resolved, as_set=False):
 
 
 def _ask_init_questions(ctx, plan, answers, *, reconfigure):
-    """Ask what this run has not been told, in the mission's fixed order.
+    """Ask what this run has not been told, in the fixed order.
 
-    The three questions that settle the file set come first, and the plan is
-    then recomputed: which conditional prompts a project state justifies
-    depends on the agents it selected, and `plan_init` is the only thing that
-    may decide that (ADR-011). Every answer collected here is a keyword
-    argument on `plan_init` and nothing else — the CLI asks, it never rules.
+    The agents come first, then every profile question in `initplan.QUESTIONS`
+    order, and the plan is then recomputed: which conditional prompts a project
+    state justifies depends on the agents and features selected, and
+    `plan_init` is the only thing that may decide that (ADR-011). Every answer
+    collected here is a keyword argument on `plan_init` and nothing else — the
+    CLI asks, it never rules. Which profile questions are skipped is
+    `Profile.applies`' decision, taken on the answers given so far.
 
-    A question is open when nothing has answered it: no flag, and no value
-    recorded in `.lore/config.toml`. `--reconfigure` drops the second half,
-    which is what "ask me again" means.
+    A question is open when nothing has answered it: no flag, no deprecated
+    alias that sets it, and no value recorded in `.lore/config.toml`.
+    `--reconfigure` drops the last, which is what "ask me again" means.
     """
     recorded = (
         frozenset() if reconfigure else init_module.answered_prompts(plan.project_root)
@@ -985,18 +1087,32 @@ def _ask_init_questions(ctx, plan, answers, *, reconfigure):
 
     if unanswered("agents", init_module.PROMPT_AGENTS):
         answers["agents"] = _ask_agents(plan.answers.agents)
-    if unanswered("access_mode", init_module.PROMPT_ACCESS_MODE):
-        ask(
-            "access_mode",
-            prompts.ask_access_mode(current=str(plan.answers.access_mode)),
-        )
-    if unanswered("skill_families", init_module.PROMPT_SKILL_FAMILIES):
-        ask(
-            "skill_families",
-            prompts.ask_skill_families(
-                skill_catalogue.family_ids(), selected=plan.answers.skill_families
-            ),
-        )
+
+    working = plan.answers.profile
+    alias_set = _alias_answered(answers)
+    remembered = bool(plan.notices)
+    on_record = init_module.answered_prompts(plan.project_root)
+    for question in initplan.QUESTIONS:
+        name = initplan.question_kwarg(question)
+        if answers[name] is None and (
+            name in alias_set
+            or question in recorded
+            or not working.applies(question)
+        ):
+            continue
+        if answers[name] is None:
+            current = getattr(working, name)
+            if question == "route":
+                answers[name] = _answered(prompts.ask_route(str(current.value)))
+            else:
+                # A yes/no is "no" until the project says otherwise: a recorded
+                # or migrated answer is the only thing that preselects "yes".
+                kept = current if (remembered or question in on_record) else False
+                answers[name] = _answered(prompts.ask_opt_in(question, kept))
+        value = answers[name]
+        if question == "route":
+            value = initplan.Route(value)
+        working = dataclasses.replace(working, **{name: value})
 
     plan = _replan(answers, plan)
     needed = plan.prompts_needed
@@ -1022,6 +1138,21 @@ def _ask_init_questions(ctx, plan, answers, *, reconfigure):
         )
 
     return _replan(answers, plan)
+
+
+def _alias_answered(answers: dict[str, Any]) -> frozenset[str]:
+    """The profile keywords a deprecated flag already answers.
+
+    `--skills` yields a complete profile and `--access` the route
+    (`legacy_init.translate_aliases`), so a person who typed either is not asked
+    those questions again; a new flag still wins over the alias for its own
+    answer, which `plan_init` resolves.
+    """
+    if answers["skill_families"] is not None:
+        return frozenset(map(initplan.question_kwarg, initplan.QUESTIONS))
+    if answers["access_mode"] is not None:
+        return frozenset({"route"})
+    return frozenset()
 
 
 def _ask_agents(selected):

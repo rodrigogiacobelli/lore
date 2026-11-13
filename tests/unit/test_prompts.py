@@ -102,9 +102,6 @@ def _targets():
     )
 
 
-FAMILIES = ("machinery", "memory", "workflow")
-
-
 def _values(call):
     return [choice.value for choice in call["choices"]]
 
@@ -220,95 +217,117 @@ class TestAskAgents:
 
 
 # ---------------------------------------------------------------------------
-# Prompt 2 — access mode
+# Prompt 2 — the one route
 # ---------------------------------------------------------------------------
 
 
-class TestAskAccessMode:
-    def test_offers_exactly_two_choices(self, fake_questionary):
+class TestAskRoute:
+    def test_offers_their_own_tools_and_the_cli_in_that_order(self, fake_questionary):
         from lore import prompts
 
-        fake = fake_questionary("native")
-        prompts.ask_access_mode()
-        assert _values(fake.call) == ["native", "cli"]
+        fake = fake_questionary("harness")
+        prompts.ask_route("harness")
+        assert _values(fake.call) == ["harness", "cli"]
+        titles = _titles(fake.call)
+        assert titles[0].startswith("Their own tools")
+        assert titles[1].startswith("The Lore CLI")
 
-    def test_native_is_preselected(self, fake_questionary):
-        from lore import prompts
-
-        fake = fake_questionary("native")
-        prompts.ask_access_mode()
-        assert fake.call["kwargs"]["default"] == "native"
-
-    def test_a_recorded_answer_is_preselected_instead(self, fake_questionary):
+    def test_there_is_no_way_to_turn_the_core_off(self, fake_questionary):
         from lore import prompts
 
         fake = fake_questionary("cli")
-        prompts.ask_access_mode(current="cli")
+        prompts.ask_route("cli")
+        assert "off" not in _values(fake.call)
+
+    def test_is_a_select_asking_the_cross_feature_question(self, fake_questionary):
+        from lore import prompts
+
+        fake = fake_questionary("cli")
+        prompts.ask_route("cli")
+        assert fake.call["kind"] == "select"
+        assert fake.call["message"] == prompts.ROUTE_TITLE
+        assert "Lore CLI" in fake.call["message"] and "harness" in fake.call["message"]
+
+    @pytest.mark.parametrize("current", ["harness", "cli"])
+    def test_the_cursor_starts_on_the_current_route(self, fake_questionary, current):
+        from lore import prompts
+
+        fake = fake_questionary(current)
+        prompts.ask_route(current)
+        assert fake.call["kwargs"]["default"] == current
+
+    def test_the_cursor_defaults_to_the_cli(self, fake_questionary):
+        from lore import prompts
+
+        fake = fake_questionary("cli")
+        prompts.ask_route()
         assert fake.call["kwargs"]["default"] == "cli"
 
-    def test_the_prompt_states_that_the_choice_covers_three_stores_only(
-        self, fake_questionary
-    ):
+    def test_returns_a_route_token(self, fake_questionary):
         from lore import prompts
 
-        fake = fake_questionary("native")
-        prompts.ask_access_mode()
-        message = fake.call["message"]
-        for word in ("codex", "rites", "glossary"):
-            assert word in message
-        assert "CLI" in message
-
-    def test_returns_an_access_mode_token(self, fake_questionary):
-        from lore import prompts
-
-        fake_questionary("cli")
-        assert prompts.ask_access_mode() == "cli"
+        fake_questionary("harness")
+        assert prompts.ask_route("cli") == "harness"
 
 
 # ---------------------------------------------------------------------------
-# Prompt 3 — skill families
+# Prompt 3 — one yes/no per optional feature and CLI opt-in
 # ---------------------------------------------------------------------------
 
+OPT_IN_COMMANDS = {
+    "memory": "codex",
+    "memory-search": "search",
+    "memory-index": "lore index",
+    "memory-graph": "lore codex map",
+    "quests": "Quests & Missions",
+    "watchers": "Watchers",
+}
 
-class TestAskSkillFamilies:
-    def test_offers_one_choice_per_family(self, fake_questionary):
+
+class TestAskOptIn:
+    @pytest.mark.parametrize("question_id", sorted(OPT_IN_COMMANDS))
+    def test_each_text_names_its_command(self, fake_questionary, question_id):
         from lore import prompts
 
-        fake = fake_questionary(["memory"])
-        prompts.ask_skill_families(FAMILIES)
-        assert sorted(_values(fake.call)) == sorted(FAMILIES)
+        fake = fake_questionary(True)
+        prompts.ask_opt_in(question_id, False)
+        assert fake.call["kind"] == "confirm"
+        assert OPT_IN_COMMANDS[question_id] in fake.call["message"]
 
-    def test_memory_and_workflow_are_preselected_and_machinery_is_not(
-        self, fake_questionary
-    ):
+    def test_memory_graph_names_all_three_commands(self, fake_questionary):
         from lore import prompts
 
-        fake = fake_questionary(["memory", "workflow"])
-        prompts.ask_skill_families(FAMILIES)
-        assert sorted(_checked(fake.call)) == ["memory", "workflow"]
+        fake = fake_questionary(True)
+        prompts.ask_opt_in("memory-graph", False)
+        for command in ("lore codex map", "lore codex chaos", "lore impacts"):
+            assert command in fake.call["message"]
 
-    def test_a_recorded_selection_is_preselected_instead(self, fake_questionary):
+    def test_the_default_answer_is_no(self, fake_questionary):
         from lore import prompts
 
-        fake = fake_questionary(["machinery"])
-        prompts.ask_skill_families(FAMILIES, selected=("machinery",))
-        assert _checked(fake.call) == ["machinery"]
+        fake = fake_questionary(False)
+        prompts.ask_opt_in("memory-index")
+        assert fake.call["kwargs"]["default"] is False
 
-    def test_never_offers_or_returns_an_aggregate_token(self, fake_questionary):
+    @pytest.mark.parametrize("current", [True, False])
+    def test_a_recorded_answer_is_the_default(self, fake_questionary, current):
         from lore import prompts
 
-        fake = fake_questionary(["memory", "workflow"])
-        answer = prompts.ask_skill_families(FAMILIES)
-        assert "all" not in _values(fake.call)
-        assert "none" not in _values(fake.call)
-        assert answer == ["memory", "workflow"]
-        assert "all" not in answer and "none" not in answer
+        fake = fake_questionary(current)
+        prompts.ask_opt_in("quests", current)
+        assert fake.call["kwargs"]["default"] is current
 
-    def test_an_empty_selection_is_an_empty_list_not_none(self, fake_questionary):
+    def test_returns_a_bool(self, fake_questionary):
         from lore import prompts
 
-        fake_questionary([])
-        assert prompts.ask_skill_families(FAMILIES) == []
+        fake_questionary(True)
+        assert prompts.ask_opt_in("memory", False) is True
+
+    def test_a_route_question_is_refused(self):
+        from lore import prompts
+
+        with pytest.raises(ValueError):
+            prompts.ask_opt_in("route", False)
 
 
 # ---------------------------------------------------------------------------
@@ -478,8 +497,8 @@ def _every_prompt_call(prompts):
     """One zero-work invocation per prompt function, with its required arguments."""
     return {
         "ask_agents": lambda: prompts.ask_agents(_targets()),
-        "ask_access_mode": lambda: prompts.ask_access_mode(),
-        "ask_skill_families": lambda: prompts.ask_skill_families(FAMILIES),
+        "ask_route": lambda: prompts.ask_route("harness"),
+        "ask_opt_in": lambda: prompts.ask_opt_in("quests", False),
         "ask_existing_agent_file": lambda: prompts.ask_existing_agent_file(("CLAUDE.md",)),
         "ask_skills_gitignore": lambda: prompts.ask_skills_gitignore(),
         "ask_on_conflict": lambda: prompts.ask_on_conflict(1),
@@ -497,7 +516,7 @@ class TestTheAbortSignal:
         for name, call in _every_prompt_call(prompts).items():
             assert call() is None, f"{name} did not pass the abort signal through"
 
-    def test_the_module_exposes_exactly_the_seven_questions(self):
+    def test_the_module_exposes_exactly_these_questions(self):
         from lore import prompts
 
         asks = sorted(name for name in dir(prompts) if name.startswith("ask_"))
@@ -507,72 +526,3 @@ class TestTheAbortSignal:
         """The abort surfaces at the CLI boundary; `prompts.py` stays click-free."""
         source = PROMPTS_SOURCE.read_text(encoding="utf-8")
         assert "click" not in source
-
-
-# ---------------------------------------------------------------------------
-# The prompt text names the entities that exist
-# ---------------------------------------------------------------------------
-
-
-class TestAccessScopeNote:
-    """`conceptual-workflows-init-interactive` — the note is user-visible text."""
-
-    def test_it_names_no_retired_entity(self):
-        from lore.prompts import ACCESS_SCOPE_NOTE
-
-        assert "knight" not in ACCESS_SCOPE_NOTE.lower()
-
-    def test_it_still_names_every_entity_that_exists(self):
-        from lore.prompts import ACCESS_SCOPE_NOTE
-
-        for entity in (
-            "codex",
-            "rites",
-            "glossary",
-            "quests",
-            "missions",
-            "artifacts",
-            "doctrines",
-            "watchers",
-        ):
-            assert entity in ACCESS_SCOPE_NOTE
-
-    def test_it_still_renders_as_two_indented_lines(self):
-        from lore.prompts import ACCESS_SCOPE_NOTE
-
-        lines = ACCESS_SCOPE_NOTE.splitlines()
-        assert len(lines) == 2
-        assert lines[0].startswith("  (")
-        assert lines[1].startswith("   ")
-        assert lines[1].endswith(")")
-
-
-class TestDefaultSkillFamilies:
-    """The machinery family is opt-in, and its docstring counts its skills."""
-
-    def test_the_value_is_unchanged(self):
-        from lore.prompts import DEFAULT_SKILL_FAMILIES
-
-        assert DEFAULT_SKILL_FAMILIES == ("memory", "workflow")
-
-    def test_the_docstring_names_no_retired_entity(self):
-        import lore.prompts as prompts
-
-        source = Path(prompts.__file__).read_text(encoding="utf-8")
-        docstring = source.split('DEFAULT_SKILL_FAMILIES: tuple[str, ...]', 1)[1]
-        docstring = docstring.split('"""')[1]
-        assert "knight" not in docstring.lower()
-
-    def test_the_docstring_counts_the_machinery_skills(self):
-        """Retiring the fifth machinery skill leaves four.
-
-        The catalogue this counts lives under ``src/lore/defaults/`` and the
-        count there is pinned by ``tests/unit/test_skills.py``; this pins only
-        that the prompt text agrees with it.
-        """
-        import lore.prompts as prompts
-
-        source = Path(prompts.__file__).read_text(encoding="utf-8")
-        docstring = source.split('DEFAULT_SKILL_FAMILIES: tuple[str, ...]', 1)[1]
-        docstring = docstring.split('"""')[1]
-        assert "four skills" in docstring

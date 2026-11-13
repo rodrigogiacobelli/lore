@@ -13,9 +13,9 @@ Two import rules hold this module in place, and both are pinned by tests:
   ``_prompts`` so the CLI can reach it, and a module-level import would pull
   ``prompt_toolkit`` into every ``lore ready`` — ADR-001 makes per-invocation
   cost a design constraint.
-* The only ``lore`` module it reaches is ``lore.initplan``, which gives it
-  ``AccessMode`` and nothing else. The registry rows and family ids arrive as
-  arguments, from the caller that already holds them.
+* The only ``lore`` module it reaches is ``lore.initplan``, which gives it the
+  agent row type and the headless defaults a question falls back to. The
+  registry rows arrive as arguments, from the caller that already holds them.
 
 ``questionary`` returns ``None`` when the user presses Ctrl-C. Every function
 passes that through unchanged; the caller turns it into an abort at the CLI
@@ -26,22 +26,54 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from lore.initplan import AccessMode, AgentTarget
+from lore.initplan import AgentTarget, Profile
 
 
 DEFAULT_AGENTS: tuple[str, ...] = ("claude",)
 """Preselected in the agent checkbox when a project has recorded nothing."""
 
-DEFAULT_SKILL_FAMILIES: tuple[str, ...] = ("memory", "workflow")
-"""Preselected in the family checkbox. Machinery is opt-in: a project that
-never edits a doctrine does not need the four skills that do."""
 
-ACCESS_SCOPE_NOTE = (
-    "  (codex, rites and the glossary only — quests, missions, artifacts,\n"
-    "   doctrines and watchers always go through the Lore CLI)"
+ROUTE_TITLE = (
+    "Do you want your agents to use the Lore CLI, or let their own tools "
+    "(the harness) handle creating, reading, updating and deleting Lore's files?"
 )
-"""The access-mode answer's blast radius, stated at the prompt because it is
-not guessable from the question."""
+"""The one question for the core (Doctrines, Artifacts) and every optional file feature."""
+
+ROUTE_CHOICES: tuple[tuple[str, str], ...] = (
+    (
+        "harness",
+        "Their own tools   Read, Write, Edit and Grep on the files under .lore/ "
+        "(`lore health` still validates)",
+    ),
+    ("cli", "The Lore CLI      lore doctrine|artifact|codex|rite|glossary|watcher list, show, new, edit, delete"),
+)
+"""The route tokens with the line each is offered under."""
+
+OPT_IN_QUESTIONS: dict[str, str] = {
+    "memory": (
+        "Memory: keep a codex, rites and glossary? (reading and writing follow the "
+        "choice above)"
+    ),
+    "memory-search": (
+        "Memory: use `lore codex|rite|glossary search`? (needs the Lore CLI)"
+    ),
+    "memory-index": (
+        "Memory: use the codex index (`lore index`)? (the cheapest first search on a "
+        "codex nobody has read; needs the Lore CLI and an authored index, which the "
+        "update-index skill writes)"
+    ),
+    "memory-graph": (
+        "Memory: use graph traversal and code bindings "
+        "(`lore codex map`, `lore codex chaos`, `lore impacts`)? (needs the Lore CLI)"
+    ),
+    "quests": (
+        "Quests & Missions: track work on Lore's board? (needs the Lore CLI: create, "
+        "claim, done, block, dependencies, board messages, ready, list, show, stats, "
+        "oracle)"
+    ),
+    "watchers": "Watchers: define watchers that react to project state? (they follow the choice above)",
+}
+"""The yes/no questions by id: the full prompt text."""
 
 
 def _convention(target: AgentTarget) -> str:
@@ -78,47 +110,27 @@ def ask_agents(
     ).ask()
 
 
-def ask_access_mode(current: str = AccessMode.NATIVE) -> str | None:
-    """Ask whether agents use their own file tools or the Lore CLI."""
-    import questionary
+def ask_route(current: str | None = None) -> str | None:
+    """Ask how agents work with Lore's files. Returns a route token.
 
-    choices = [
-        questionary.Choice(
-            title="Their own tools     Read/Write/Edit directly; `lore health` validates after",
-            value=AccessMode.NATIVE.value,
-        ),
-        questionary.Choice(
-            title="The Lore CLI        every read and write goes through `lore ...`",
-            value=AccessMode.CLI.value,
-        ),
-    ]
-    return questionary.select(
-        f"How should agents read and write Lore's local files?\n{ACCESS_SCOPE_NOTE}",
-        choices=choices,
-        default=str(current),
-    ).ask()
-
-
-def ask_skill_families(
-    families: Iterable[str], selected: Sequence[str] = ()
-) -> list[str] | None:
-    """Ask which skill families to install. Returns concrete family ids.
-
-    The aggregates ``all`` and ``none`` are a flag convenience; a checkbox
-    already says the same thing by having every box ticked or none.
+    *current* places the cursor: the recorded or migrated route, else the
+    headless default.
     """
     import questionary
 
-    preselected = set(selected) or set(DEFAULT_SKILL_FAMILIES)
-    choices = [
-        questionary.Choice(title=family, value=family, checked=family in preselected)
-        for family in families
-    ]
-    return questionary.checkbox(
-        "Which skill families should be installed?",
-        choices=choices,
-        instruction="(space to toggle, enter to accept)",
-    ).ask()
+    if current is None:
+        current = Profile().route.value
+    choices = [questionary.Choice(title=title, value=token) for token, title in ROUTE_CHOICES]
+    return questionary.select(ROUTE_TITLE, choices=choices, default=str(current)).ask()
+
+
+def ask_opt_in(question_id: str, current: bool = False) -> bool | None:
+    """Ask a yes/no. Defaults to *current*."""
+    import questionary
+
+    if question_id not in OPT_IN_QUESTIONS:
+        raise ValueError(f"'{question_id}' is not a yes/no question.")
+    return questionary.confirm(OPT_IN_QUESTIONS[question_id], default=bool(current)).ask()
 
 
 def ask_existing_agent_file(instruction_files: Iterable[str]) -> str | None:

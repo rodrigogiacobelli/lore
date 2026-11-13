@@ -24,6 +24,7 @@ import pytest
 from click.testing import CliRunner
 
 from lore.cli import main
+from tests.unit.conftest import FIXTURE_PROFILES
 
 
 # ---------------------------------------------------------------------------
@@ -286,12 +287,16 @@ def test_python_surface_reports_the_same_issue(skills_project):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 9 — the access mode is a thing the scope can see
+# Scenario 9 — the profile is a thing the scope can see
 #
 # Round 4 of adversarial smoke testing pasted a whole native render into a cli
 # project and left a literal `<!-- lore:access native -->` block in another, and
 # both exited 0 with a generic "edited since install". The scope this feature
-# added had no assertion about the thing the feature does.
+# added had no assertion about the thing the feature does. The answer is no
+# longer one access mode but a profile of feature answers: a file rendered for a
+# neighbouring profile (one answer changed) is `wrong_profile`, and a command a
+# recorded profile does not grant is `leaked_command`. Both are judged from the
+# manifest alone — health never reads `.lore/config.toml`.
 # ---------------------------------------------------------------------------
 
 
@@ -306,72 +311,283 @@ def _rerecord(project_dir: Path, relative: str, text: str) -> None:
     write_manifest(project_dir, payload)
 
 
-def _other_mode_render(skill_id: str, relative: str) -> str:
-    """The packaged file rendered for the mode `skills_project` did not choose."""
-    from lore.initplan import AccessMode
-    from lore.skills import rendered_bytes
+def _neighbour_render(skill_id: str, relative: str) -> str:
+    """The skill file rendered with the route flipped to the harness."""
+    from dataclasses import replace
 
-    return rendered_bytes(skill_id, relative, AccessMode.CLI).decode("utf-8")
+    from lore.initplan import Profile, Route
+    from lore.skills import render_skill_file
 
-
-def test_a_file_rendered_for_the_other_mode_is_an_error(skills_project, runner):
-    relative = ".claude/skills/inquest/SKILL.md"
-    (skills_project / relative).write_text(
-        _other_mode_render("inquest", "SKILL.md"), encoding="utf-8"
-    )
-
-    result = runner.invoke(main, ["health", "--scope", "skills"])
-
-    row = row_for(result, "wrong_access_mode")
-    assert row.startswith("ERROR")
-    assert relative in row
-    assert "'cli'" in row and "'native'" in row
-    assert result.exit_code == 1, result.output
+    text = render_skill_file(skill_id, relative, replace(Profile(), route=Route.HARNESS))
+    assert text is not None
+    return text
 
 
-def test_the_wrong_mode_verdict_replaces_the_generic_edited_one(skills_project, runner):
-    (skills_project / ".claude" / "skills" / "inquest" / "SKILL.md").write_text(
-        _other_mode_render("inquest", "SKILL.md"), encoding="utf-8"
-    )
-
-    result = runner.invoke(main, ["health", "--scope", "skills"])
-
-    assert not [line for line in skills_rows(result) if "modified_skill_file:" in line]
-
-
-def test_an_ordinary_edit_is_still_only_a_warning(skills_project, runner):
-    target = skills_project / ".claude" / "skills" / "inquest" / "SKILL.md"
-    target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-
-    result = runner.invoke(main, ["health", "--scope", "skills"])
-
-    assert row_for(result, "modified_skill_file").startswith("WARNING")
+@pytest.fixture()
+def route_project(route_sensitive_text, tmp_path, monkeypatch):
+    """A Claude project installed in a world where every skill depends on the route."""
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(main, ["init", "--agent", "claude", "--yes"])
     assert result.exit_code == 0, result.output
+    return tmp_path
 
 
-def test_an_unrendered_access_marker_is_an_error(skills_project, runner):
-    relative = ".claude/skills/inquest/SKILL.md"
-    target = skills_project / relative
-    text = (
-        target.read_text(encoding="utf-8")
-        + "\n<!-- lore:access native -->\nsecret\n<!-- lore:access end -->\n"
-    )
-    target.write_text(text, encoding="utf-8")
-    _rerecord(skills_project, relative, text)
+class TestWrongProfile:
+    def test_a_file_rendered_for_a_neighbouring_profile_is_an_error(self, route_project, runner):
+        relative = ".claude/skills/inquest/SKILL.md"
+        (route_project / relative).write_text(
+            _neighbour_render("inquest", "SKILL.md"), encoding="utf-8"
+        )
 
-    result = runner.invoke(main, ["health", "--scope", "skills"])
+        result = runner.invoke(main, ["health", "--scope", "skills"])
 
-    row = row_for(result, "unrendered_access_marker")
-    assert row.startswith("ERROR")
-    assert relative in row
-    assert result.exit_code == 1, result.output
+        row = row_for(result, "wrong_profile")
+        assert row.startswith("ERROR")
+        assert relative in row
+        assert "route=cli" in row and "route=harness" in row
+        assert result.exit_code == 1, result.output
+
+    def test_the_verdict_replaces_the_generic_edited_one(self, route_project, runner):
+        (route_project / ".claude" / "skills" / "inquest" / "SKILL.md").write_text(
+            _neighbour_render("inquest", "SKILL.md"), encoding="utf-8"
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert not [line for line in skills_rows(result) if "modified_skill_file:" in line]
+
+    def test_the_old_access_mode_check_is_gone(self, route_project, runner):
+        (route_project / ".claude" / "skills" / "inquest" / "SKILL.md").write_text(
+            _neighbour_render("inquest", "SKILL.md"), encoding="utf-8"
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert "wrong_access_mode" not in result.output
+
+    def test_an_ordinary_edit_is_still_only_a_warning(self, route_project, runner):
+        target = route_project / ".claude" / "skills" / "inquest" / "SKILL.md"
+        target.write_text(target.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert row_for(result, "modified_skill_file").startswith("WARNING")
+        assert result.exit_code == 0, result.output
+
+    def test_the_verdict_is_judged_from_the_manifest_not_the_config(self, route_project, runner):
+        """Health never reads `.lore/config.toml`: the manifest records the run."""
+        (route_project / ".lore" / "config.toml").write_text(
+            'init-route = "harness"\n', encoding="utf-8"
+        )
+        (route_project / ".claude" / "skills" / "inquest" / "SKILL.md").write_text(
+            _neighbour_render("inquest", "SKILL.md"), encoding="utf-8"
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert "route=cli" in row_for(result, "wrong_profile")
 
 
-def test_a_clean_install_reports_no_access_mode_issue(skills_project, runner):
-    result = runner.invoke(main, ["health", "--scope", "skills"])
+class TestLeakedCommand:
+    """A command the recorded profile does not grant is a warning, never an error."""
 
-    assert skills_rows(result) == [], result.output
-    assert result.exit_code == 0, result.output
+    @pytest.fixture()
+    def narrow_project(self, tmp_path, monkeypatch):
+        """Memory only, on the harness: no `lore` command but `lore health` is granted."""
+        from lore.api import apply_init, plan_init
+
+        monkeypatch.chdir(tmp_path)
+        apply_init(
+            plan_init(
+                tmp_path,
+                agents=["claude"],
+                route="harness",
+                memory=True,
+                memory_search=False,
+                memory_index=False,
+                memory_graph=False,
+                quests=False,
+                watchers=False,
+            )
+        )
+        return tmp_path
+
+    def _inject(self, project: Path, relative: str, line: str) -> None:
+        target = project / relative
+        text = target.read_text(encoding="utf-8") + f"\n{line}\n"
+        target.write_text(text, encoding="utf-8")
+        _rerecord(project, relative, text)
+
+    def test_a_skill_that_names_an_ungranted_command_warns(self, narrow_project, runner):
+        relative = ".claude/skills/retrieve-memory/SKILL.md"
+        self._inject(narrow_project, relative, "Run `lore doctrine new` first.")
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        row = row_for(result, "leaked_command")
+        assert row.startswith("WARNING")
+        assert relative in row
+        assert "lore doctrine new" in row
+        assert "doctrines.cli" in row
+        assert "lore init" in row
+        assert result.exit_code == 0, result.output
+
+    def test_the_instruction_file_is_checked_too(self, narrow_project, runner):
+        self._inject(narrow_project, ".lore/LORE-AGENT.md", "Use `lore watcher show`.")
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        row = row_for(result, "leaked_command")
+        assert ".lore/LORE-AGENT.md" in row
+        assert "lore watcher show" in row
+
+    def test_a_granted_command_is_not_a_leak(self, tmp_path, monkeypatch, runner):
+        from lore.api import apply_init, plan_init
+
+        monkeypatch.chdir(tmp_path)
+        apply_init(
+            plan_init(
+                tmp_path,
+                agents=["claude"],
+                route="cli",
+                memory=True,
+                memory_search=False,
+                memory_index=False,
+                memory_graph=False,
+                quests=False,
+                watchers=False,
+            )
+        )
+        self._inject(
+            tmp_path,
+            ".claude/skills/retrieve-memory/SKILL.md",
+            "Use `lore codex list` and `lore --help`.",
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert skills_rows(result) == [], result.output
+
+    def test_each_phrase_is_one_row(self, narrow_project, runner):
+        self._inject(
+            narrow_project,
+            ".claude/skills/retrieve-memory/SKILL.md",
+            "`lore doctrine new` and again `lore doctrine new`, then `lore artifact show`.",
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        rows = [line for line in skills_rows(result) if "leaked_command:" in line]
+        assert len(rows) == 2
+
+    def test_a_manifest_without_a_profile_skips_the_check(self, narrow_project, runner):
+        relative = ".claude/skills/retrieve-memory/SKILL.md"
+        self._inject(narrow_project, relative, "Run `lore doctrine new` first.")
+        payload = read_manifest(narrow_project)
+        del payload["answers"]["profile"]
+        write_manifest(narrow_project, payload)
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert "leaked_command" not in result.output
+        assert skills_rows(result) == [], result.output
+
+    def test_an_unusable_profile_skips_the_check_rather_than_failing(self, narrow_project, runner):
+        relative = ".claude/skills/retrieve-memory/SKILL.md"
+        self._inject(narrow_project, relative, "Run `lore doctrine new` first.")
+        payload = read_manifest(narrow_project)
+        payload["answers"]["profile"] = {"route": "everywhere"}
+        write_manifest(narrow_project, payload)
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert "leaked_command" not in result.output
+        assert result.exit_code == 0, result.output
+
+
+class TestUnrenderedBlockMarker:
+    def test_a_block_marker_left_in_an_installed_file_is_an_error(self, skills_project, runner):
+        relative = ".claude/skills/inquest/SKILL.md"
+        target = skills_project / relative
+        text = target.read_text(encoding="utf-8") + "\n<!-- lore:block sq-purpose -->\n"
+        target.write_text(text, encoding="utf-8")
+        _rerecord(skills_project, relative, text)
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        row = row_for(result, "unrendered_access_marker")
+        assert row.startswith("ERROR")
+        assert relative in row
+        assert result.exit_code == 1, result.output
+
+    def test_a_skills_table_marker_left_in_an_installed_file_is_an_error(
+        self, skills_project, runner
+    ):
+        relative = ".claude/skills/inquest/SKILL.md"
+        target = skills_project / relative
+        text = target.read_text(encoding="utf-8") + "\n<!-- lore:skills-table -->\n"
+        target.write_text(text, encoding="utf-8")
+        _rerecord(skills_project, relative, text)
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert row_for(result, "unrendered_access_marker").startswith("ERROR")
+
+    def test_a_marker_of_the_earlier_access_grammar_is_still_an_error(
+        self, skills_project, runner
+    ):
+        relative = ".claude/skills/inquest/SKILL.md"
+        target = skills_project / relative
+        text = (
+            target.read_text(encoding="utf-8")
+            + "\n<!-- lore:access native -->\nsecret\n<!-- lore:access end -->\n"
+        )
+        target.write_text(text, encoding="utf-8")
+        _rerecord(skills_project, relative, text)
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        row = row_for(result, "unrendered_access_marker")
+        assert row.startswith("ERROR")
+        assert relative in row
+        assert result.exit_code == 1, result.output
+
+
+class TestManifestWithoutProfileSkipsProfileChecks:
+    def test_a_neighbouring_render_is_only_an_edit_without_a_recorded_profile(
+        self, route_project, runner
+    ):
+        payload = read_manifest(route_project)
+        del payload["answers"]["profile"]
+        write_manifest(route_project, payload)
+        (route_project / ".claude" / "skills" / "inquest" / "SKILL.md").write_text(
+            _neighbour_render("inquest", "SKILL.md"), encoding="utf-8"
+        )
+
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert "wrong_profile" not in result.output
+        assert row_for(result, "modified_skill_file").startswith("WARNING")
+
+
+class TestCleanInstallHasNoSkillFindings:
+    @pytest.mark.parametrize("name", list(FIXTURE_PROFILES))
+    def test_a_fresh_install_for_each_fixture_profile_is_clean(self, name, tmp_path, monkeypatch):
+        from lore.api import apply_init, plan_init
+
+        monkeypatch.chdir(tmp_path)
+        apply_init(plan_init(tmp_path, agents=["claude"], **FIXTURE_PROFILES[name].as_answers()))
+
+        result = CliRunner().invoke(main, ["health", "--scope", "skills"])
+
+        assert skills_rows(result) == [], result.output
+        assert result.exit_code == 0, result.output
+
+    def test_a_clean_install_reports_no_profile_issue(self, skills_project, runner):
+        result = runner.invoke(main, ["health", "--scope", "skills"])
+
+        assert skills_rows(result) == [], result.output
+        assert result.exit_code == 0, result.output
 
 
 # ---------------------------------------------------------------------------

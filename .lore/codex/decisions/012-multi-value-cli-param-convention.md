@@ -42,7 +42,7 @@ A command may have only one variadic positional, so this shape serves exactly on
 
 ### More than one multi-value flag: `SpaceSeparatedChoice`
 
-A command needing two or more multi-value flags uses `SpaceSeparatedChoice`, a `click.Option` subclass in `cli.py` that greedily consumes the following non-flag tokens into its own value list. `lore init --agent` and `lore init --skills` are its callers. Because the extra tokens are attributed to the flag that opened them, two multi-value flags coexist on one command.
+A command needing two or more multi-value flags uses `SpaceSeparatedChoice`, a `click.Option` subclass in `cli.py` that greedily consumes the following non-flag tokens into its own value list. `lore init --agent` and the deprecated `lore init --skills` are its callers. Because the extra tokens are attributed to the flag that opened them, two multi-value flags coexist on one command.
 
 `SpaceSeparatedChoice` changes the parser, not the validator. `type=click.Choice(...)` still owns the closed set, so `decisions-017-constrained-flags-use-click-choice` holds untouched: an out-of-set token — first or greedily consumed — is a `BadParameter` on stderr at exit 2, in Click's standard wording.
 

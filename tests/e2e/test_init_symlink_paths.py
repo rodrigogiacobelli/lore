@@ -409,7 +409,8 @@ class TestASymlinkedSkillDirectory:
             for path in skills_root.iterdir()
             if path.is_dir() and not path.is_symlink()
         )
-        assert left == [], f"orphaned directories: {left}"
+        # `--skills none` switches the optional features off; the core skills stay.
+        assert left == ["run-doctrine", "update-artifact", "update-doctrine"], f"orphaned directories: {left}"
 
     def test_the_link_itself_is_left_alone(self, runner, linked_skill_dir):
         run_init(runner, {"--skills": "none"})

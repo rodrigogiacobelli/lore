@@ -4,6 +4,7 @@ No imports from lore.* — this is a standalone utility module.
 """
 
 import re
+from collections.abc import Collection, Mapping
 
 # ---------------------------------------------------------------------------
 # Compiled regex patterns (strict hex: [0-9a-f], length 4–6)
@@ -322,3 +323,62 @@ def validate_agent_selection(
     if AGENT_NONE in agents and len(set(agents)) > 1:
         return f"--agent {AGENT_NONE} cannot be combined with other agents."
     return None
+
+
+# ---------------------------------------------------------------------------
+# Adaptive init: route tokens and the profile rules
+#
+# Plain tokens in, message or None out. ``lore.initplan`` cannot be imported
+# here (standards-dependency-inversion), so the token and name tables restate
+# what ``Route`` and ``Profile`` declare; unit tests pin the two together.
+# ---------------------------------------------------------------------------
+
+ROUTE_TOKENS: tuple[str, ...] = ("harness", "cli")
+"""The two route tokens. Mirrors ``lore.initplan.Route``."""
+
+MEMORY_CAPABILITY_ANSWERS: tuple[str, ...] = ("memory_search", "memory_index", "memory_graph")
+"""The Memory opt-ins, which mean nothing while Memory is off. Mirrors ``Profile``."""
+
+
+def validate_route(value: object, accepted: tuple[str, ...] = ROUTE_TOKENS) -> str | None:
+    """Return an error string if *value* is not a route token, else None."""
+    if isinstance(value, str) and value in accepted:
+        return None
+    return f"Unknown route: '{value}'. Accepted tokens: {', '.join(accepted)}."
+
+
+def _explicit_rules(values: Mapping[str, object], explicit: Collection[str]) -> str | None:
+    if values.get("memory") is not False:
+        return None
+    for capability in MEMORY_CAPABILITY_ANSWERS:
+        if capability in explicit and values.get(capability) is True:
+            return f"{capability} needs Memory on: set memory to true."
+    return None
+
+
+def validate_profile_answers(
+    resolved: Mapping[str, object], *, explicit: Collection[str]
+) -> str | None:
+    """Return the first rule the merged profile answers break, else None.
+
+    *resolved* holds the merged plain values keyed by keyword name; *explicit*
+    names the ones the caller supplied itself. An unknown route token is
+    reported first. A Memory opt-in that is ``True`` while Memory is off is an
+    error only when it was supplied explicitly: a recorded one is dropped by
+    normalisation, silently.
+    """
+    if "route" in resolved:
+        error = validate_route(resolved["route"])
+        if error is not None:
+            return error
+    return _explicit_rules(resolved, explicit)
+
+
+def validate_explicit_contradictions(explicit: Mapping[str, object]) -> str | None:
+    """Return an error string when the arguments alone contradict each other.
+
+    The same rule as :func:`validate_profile_answers`, applied to a partial
+    mapping of explicit answers; it fires only when ``memory`` is present.
+    Whatever needs the resolved profile is left to ``plan_init``.
+    """
+    return _explicit_rules(explicit, explicit)

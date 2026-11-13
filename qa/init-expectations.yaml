@@ -1,0 +1,345 @@
+# Oracle for the `lore init` model: ONE route question + optional features.
+# Written from the product-owner RULE (see qa/init-inventory.md), independent of
+# the implementation.  Consumed by scripts/qa_init_matrix.py WITHOUT importing lore.
+#
+# EXPRESSIONS (every `when:` / `installed_when:` value) are Python expressions
+# evaluated with empty builtins over the answer + derived names below, plus
+# True/False.  Operators: ==, !=, and, or, not, parentheses.
+#
+# Severity: a finding of a rule/row carrying `jc: N` (judgement call N in the
+# inventory) is reported as WARN (does not fail the run) so the owner can
+# overrule it; everything else is FAIL.
+
+answers:
+  route:         {values: [harness, cli], default: cli}
+  memory:        {values: [true, false],  default: true}
+  memory_search: {values: [true, false],  default: true, only_when: memory}
+  memory_index:  {values: [true, false],  default: true, only_when: memory}
+  memory_graph:  {values: [true, false],  default: true, only_when: memory}
+  quests:        {values: [true, false],  default: true}
+  watchers:      {values: [true, false],  default: true}
+# config.toml keys: init-route, init-memory, init-memory-search, init-memory-index,
+# init-memory-graph, init-quests, init-watchers  (the answer name with dashes).
+
+derived:               # evaluated top to bottom
+  cli:          "route == 'cli'"
+  harness:      "route == 'harness'"
+  search_on:    "memory and memory_search"
+  index_on:     "memory and memory_index"
+  graph_on:     "memory and memory_graph"
+  memory_cli:   "memory and route == 'cli'"
+  watchers_cli: "watchers and route == 'cli'"
+
+# ---------------------------------------------------------------------------
+# AGENTS (instruction file + where skills go).  Instruction text lives between
+# <!-- lore:begin --> and <!-- lore:end --> in a shared file.
+# ---------------------------------------------------------------------------
+agents:
+  claude:    {instruction_file: CLAUDE.md, skills_dir: .claude/skills}
+  agents-md: {instruction_file: AGENTS.md, skills_dir: .lore/skills}
+  gemini:    {instruction_file: GEMINI.md, skills_dir: .lore/skills}
+  none:      {instruction_file: null,      skills_dir: .lore/skills}
+markers: {begin: "<!-- lore:begin -->", end: "<!-- lore:end -->"}
+# Extra instruction-bearing docs checked for command grants / placeholders /
+# paths when they exist (their existence is not required).
+extra_docs: [.lore/LORE-AGENT.md, .lore/GETTING-STARTED.md]
+
+fixed_files:
+  always: [.lore/config.toml, .lore/.gitignore, .lore/.install-manifest.json, .lore/lore.db]
+# Entries directly under .lore/ that Lore may own (anything else is WARN).
+lore_dir_entries: [config.toml, .gitignore, .install-manifest.json, lore.db, GETTING-STARTED.md, LORE-AGENT.md,
+                   codex, rites, doctrines, artifacts, watchers, skills, index, custom-schemas, reports, audit.log]
+
+# ---------------------------------------------------------------------------
+# SEEDS.  `owner` = the feature that owns the seed.  Doctrines: ALL default
+# doctrines, always.  Artifacts: all seeded always EXCEPT trees whose subject
+# is an optional feature (rules below, first match wins, applied to every file
+# in src/lore/defaults/artifacts; an unclassified file is a FAIL so a new
+# default must be classified here).
+# ---------------------------------------------------------------------------
+seeds:
+  doctrines:
+    from: src/lore/defaults/doctrines
+    to: .lore/doctrines/default
+    when: "True"
+  watchers:
+    from: src/lore/defaults/watchers
+    to: .lore/watchers/default
+    when: "watchers"
+  artifacts:
+    from: src/lore/defaults/artifacts
+    to: .lore/artifacts/default
+    rules:           # glob (fnmatch on path relative to artifacts/), when, owner, jc
+      - {glob: "codex/*",                                  when: "memory",  owner: memory}
+      - {glob: "rites/*",                                  when: "memory",  owner: memory}
+      - {glob: "lore-design-documents/codex-voice.md",     when: "memory",  owner: memory}
+      - {glob: "lore-design-documents/glossary-design.md", when: "memory",  owner: memory}
+      - {glob: "lore-design-documents/rite-design.md",     when: "memory",  owner: memory}
+      - {glob: "lore-design-documents/inquest-design.md",  when: "memory",  owner: memory, jc: 2}
+      - {glob: "lore-design-documents/mission-design.md",  when: "quests",  owner: quests}
+      - {glob: "lore-design-documents/doctrine-design.md", when: "True",    owner: core}
+      - {glob: "feature-implementation/codex-change-proposal.md", when: "True", owner: core, jc: 3}   # the always-on feature-implementation doctrine references it; `lore health` fails without it
+      - {glob: "feature-implementation/*",                 when: "True",    owner: core, jc: 4}
+  memory:            # default memory content (not under a default/ dir)
+    when: "memory"
+    must_exist: [.lore/codex/codex.md, .lore/codex/glossary.yaml, .lore/rites/main, .lore/rites/shared]
+    must_not_exist_when_off: [.lore/codex, .lore/rites]
+
+# ---------------------------------------------------------------------------
+# SKILLS.  Installed iff installed_when; a skill whose every block would be
+# dropped never exists.  Only store-memory may ship references/.
+# ---------------------------------------------------------------------------
+skills:
+  - {id: update-doctrine,      installed_when: "True",              owner: doctrines}
+  - {id: update-artifact,      installed_when: "True",              owner: artifacts}
+  - {id: retrieve-memory,      installed_when: "memory",            owner: memory}
+  - {id: store-memory,         installed_when: "memory",            owner: memory}
+  - {id: update-custom-schema, installed_when: "memory",            owner: memory, jc: 5}
+  - {id: sync-codex-guide,     installed_when: "memory",            owner: memory, jc: 5}
+  - {id: update-index,         installed_when: "index_on",          owner: memory}
+  - {id: update-watcher,       installed_when: "watchers",          owner: watchers}
+  - {id: run-doctrine,         installed_when: "True",              owner: doctrines}
+  - {id: start-quest,          installed_when: "quests",            owner: quests}
+  - {id: inquest,              installed_when: "quests and memory", owner: quests, jc: 2}
+skill_rules:
+  - "A skill file is <dir>/SKILL.md with frontmatter: name == directory name, non-empty description."
+  - "No Lore-owned skill directory other than the ones installed_when exists, in any agent skills dir."
+
+# ---------------------------------------------------------------------------
+# SIZES
+# ---------------------------------------------------------------------------
+sizes:
+  instruction_block_max_lines: 100       # marked block, markers included
+  instruction_file_max_lines: 100        # a Lore-only file (fresh project) incl. everything
+  skill_max_lines: 100
+  skill_exceptions: {store-memory: 150, update-index: 120, sync-codex-guide: 110, update-doctrine: 110}
+references:
+  allowed: {store-memory: [references/codex-doc.md, references/rite.md, references/source.md]}
+  rule: "any references/ directory in a skill not listed under allowed is a FAIL; a SKILL.md link to a references file that does not exist is a FAIL"
+
+# ---------------------------------------------------------------------------
+# COMMAND GRANTS.  Scope: instruction block(s), LORE-AGENT.md, GETTING-STARTED.md,
+# every installed SKILL.md + its references.  Seeded .lore content is excluded.
+# Extraction: `lore <w1> [<w2>]` in code fences / inline code; two words for the
+# group verbs listed in `groups`, one otherwise; `lore health --scope X ...`
+# yields one phrase per scope token.  A phrase with no row, or whose `when` is
+# False, is a FAIL.
+# ---------------------------------------------------------------------------
+groups: [codex, rite, glossary, doctrine, artifact, watcher, index, board, health]
+ignore_phrases: ["lore schema"]
+commands:
+  # always
+  - {phrase: "lore --help",    when: "True"}
+  - {phrase: "lore --version", when: "True"}
+  - {phrase: "lore --json",    when: "True"}
+  - {phrase: "lore init",      when: "True"}
+  - {phrase: "lore health",    when: "True"}            # validate is integral
+  - {phrase: "lore health --scope skills",     when: "True"}
+  - {phrase: "lore health --scope doctrines",  when: "True"}
+  - {phrase: "lore health --scope artifacts",  when: "True"}
+  # core entities: read/write commands only on the CLI route
+  - {phrase: "lore doctrine list",   when: "cli"}
+  - {phrase: "lore doctrine show",   when: "cli"}
+  - {phrase: "lore doctrine new",    when: "cli"}
+  - {phrase: "lore doctrine edit",   when: "cli"}
+  - {phrase: "lore doctrine delete", when: "cli"}
+  - {phrase: "lore artifact list",   when: "cli"}
+  - {phrase: "lore artifact show",   when: "cli"}
+  - {phrase: "lore artifact new",    when: "cli"}
+  - {phrase: "lore artifact edit",   when: "cli"}
+  - {phrase: "lore artifact delete", when: "cli"}
+  # memory: read/write follow the route; search/index/graph need memory + the opt-in, any route
+  - {phrase: "lore codex list",    when: "memory_cli"}
+  - {phrase: "lore codex show",    when: "memory_cli"}
+  - {phrase: "lore codex new",     when: "memory_cli"}
+  - {phrase: "lore codex edit",    when: "memory_cli"}
+  - {phrase: "lore codex delete",  when: "memory_cli"}
+  - {phrase: "lore rite list",     when: "memory_cli"}
+  - {phrase: "lore rite show",     when: "memory_cli"}
+  - {phrase: "lore rite new",      when: "memory_cli"}
+  - {phrase: "lore rite edit",     when: "memory_cli"}
+  - {phrase: "lore rite delete",   when: "memory_cli"}
+  - {phrase: "lore glossary list", when: "memory_cli"}
+  - {phrase: "lore glossary show", when: "memory_cli"}
+  - {phrase: "lore glossary new",  when: "memory_cli"}
+  - {phrase: "lore glossary edit", when: "memory_cli"}
+  - {phrase: "lore glossary delete", when: "memory_cli"}
+  - {phrase: "lore codex search",    when: "search_on"}
+  - {phrase: "lore rite search",     when: "search_on", jc: 6}
+  - {phrase: "lore glossary search", when: "search_on", jc: 6}
+  - {phrase: "lore index",          when: "index_on"}
+  - {phrase: "lore index build",    when: "index_on"}
+  - {phrase: "lore index search",   when: "index_on"}
+  - {phrase: "lore codex map",      when: "graph_on"}
+  - {phrase: "lore codex chaos",    when: "graph_on"}
+  - {phrase: "lore codex impacts",  when: "graph_on"}
+  - {phrase: "lore impacts",        when: "graph_on"}
+  - {phrase: "lore health --scope codex",    when: "memory"}
+  - {phrase: "lore health --scope rites",    when: "memory"}
+  - {phrase: "lore health --scope glossary", when: "memory"}
+  - {phrase: "lore health --scope voice",    when: "memory"}
+  - {phrase: "lore health --scope schemas",  when: "memory", jc: 5}
+  - {phrase: "lore health --scope index",    when: "index_on"}
+  - {phrase: "lore health --scope bindings", when: "graph_on"}
+  # watchers
+  - {phrase: "lore watcher list",   when: "watchers_cli"}
+  - {phrase: "lore watcher show",   when: "watchers_cli"}
+  - {phrase: "lore watcher new",    when: "watchers_cli"}
+  - {phrase: "lore watcher edit",   when: "watchers_cli"}
+  - {phrase: "lore watcher delete", when: "watchers_cli"}
+  - {phrase: "lore health --scope watchers", when: "watchers"}
+  # quests & missions: one block, CLI only, regardless of route
+  - {phrase: "lore new",      when: "quests"}
+  - {phrase: "lore claim",    when: "quests"}
+  - {phrase: "lore done",     when: "quests"}
+  - {phrase: "lore block",    when: "quests"}
+  - {phrase: "lore unblock",  when: "quests"}
+  - {phrase: "lore ready",    when: "quests"}
+  - {phrase: "lore needs",    when: "quests"}
+  - {phrase: "lore unneed",   when: "quests"}
+  - {phrase: "lore deps",     when: "quests"}
+  - {phrase: "lore list",     when: "quests"}
+  - {phrase: "lore missions", when: "quests"}
+  - {phrase: "lore show",     when: "quests"}
+  - {phrase: "lore stats",    when: "quests"}
+  - {phrase: "lore oracle",   when: "quests"}
+  - {phrase: "lore board add",    when: "quests"}
+  - {phrase: "lore board delete", when: "quests"}
+  - {phrase: "lore edit",     when: "quests"}
+  - {phrase: "lore delete",   when: "quests"}
+forbidden_text:       # regex (case-insensitive) that must not appear in the scope when `when` holds
+  - {when: "not quests", regex: '(?<![\w-])-D\s+[<\w]',  why: "-D doctrine link is quests-only"}
+  - {when: "harness",    regex: 'lore\s+(codex|rite|glossary|doctrine|artifact|watcher)\s+(show|list|new|edit|delete)\b', why: "harness route: no read/write commands anywhere"}
+skill_text:           # per-skill assertions: `absent` regexes must not match, `present` regexes must match, when `when` holds
+  - {skill: run-doctrine, when: "True",   absent: ['lore new', 'lore needs', 'lore list', 'lore show', 'lore ready', 'lore board', ' -D ', 'q-xxxx'], why: "run-doctrine uses no quest apparatus"}
+  - {skill: start-quest,  when: "quests", present: ['lore new quest'], why: "start-quest creates the quest"}
+term_leak:            # instruction block + LORE-AGENT/GETTING-STARTED only (FAIL); skills: WARN
+  - {when: "not memory",   words: [codex, rite, rites, glossary]}
+  - {when: "not watchers", words: [watcher, watchers]}
+  - {when: "not quests",   words: [quest, quests]}
+
+# ---------------------------------------------------------------------------
+# PLACEHOLDERS / REFERENCES
+# ---------------------------------------------------------------------------
+placeholders: ['{{', '}}', '<<', '>>']
+user_roots: [codex, rites, artifacts, doctrines, watchers, custom-schemas]   # illustrative sub-paths here are only WARN if the root exists
+on_demand_paths: [.lore/codex/transient, .lore/custom-schemas, .lore/index, .lore/reports, .lore/audit.log, .lore/lore.db, .lore/skills]
+# every mentioned .lore/... path (without <, >, *, {, ... ) must exist after init, or be on-demand
+# or be a prefix of an on-demand path.
+
+# ---------------------------------------------------------------------------
+# SCENARIO SPACE
+# ---------------------------------------------------------------------------
+scenarios:
+  fixed:
+    agents_base: [claude, agents-md]          # the "multiple" agent selection used for all 72
+    note: "route(2) x [memory off | memory on x search,index,graph (8)] x quests(2) x watchers(2) = 72"
+  agent_samples:                              # extra runs of representative profiles with other agent selections
+    selections: [[claude], [agents-md], [none]]
+    profiles:
+      - {route: cli,     memory: true,  memory_search: true,  memory_index: true,  memory_graph: true,  quests: true,  watchers: true}
+      - {route: harness, memory: true,  memory_search: true,  memory_index: true,  memory_graph: true,  quests: true,  watchers: true}
+      - {route: harness, memory: false, quests: false, watchers: false}
+      - {route: cli,     memory: false, quests: false, watchers: false}
+      - {route: harness, memory: true,  memory_search: false, memory_index: false, memory_graph: false, quests: false, watchers: true}
+      - {route: cli,     memory: true,  memory_search: true,  memory_index: false, memory_graph: true,  quests: true,  watchers: false}
+  headless:                                   # no answer flags at all: defaults decide
+    agent: [claude]
+    expect: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true}
+  switches:           # same dir: init A then init B (all answers explicit); result must equal a fresh B
+    - {id: cli-to-harness,   a: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true},
+                             b: {route: harness, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true}}
+    - {id: harness-to-cli,   a: {route: harness, memory: true, memory_search: false, memory_index: false, memory_graph: false, quests: false, watchers: false},
+                             b: {route: cli, memory: true, memory_search: false, memory_index: false, memory_graph: false, quests: false, watchers: false}}
+    - {id: memory-off,       a: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true},
+                             b: {route: cli, memory: false, quests: true, watchers: true}}
+    - {id: memory-on,        a: {route: harness, memory: false, quests: false, watchers: false},
+                             b: {route: harness, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: false, watchers: false}}
+    - {id: quests-off,       a: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true},
+                             b: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: false, watchers: true}}
+    - {id: watchers-off,     a: {route: harness, memory: false, quests: true, watchers: true},
+                             b: {route: harness, memory: false, quests: true, watchers: false}}
+    - {id: index-off,        a: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: false, watchers: false},
+                             b: {route: cli, memory: true, memory_search: true, memory_index: false, memory_graph: true, quests: false, watchers: false}}
+    - {id: everything-off,   a: {route: cli, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true},
+                             b: {route: harness, memory: false, quests: false, watchers: false}}
+  switch_leftovers_allowed:    # extras vs a fresh B tolerated as WARN (jc 7): user-owned memory content
+    prefixes: [.lore/codex, .lore/rites, .lore/index]
+    jc: 7
+  invalid:            # expected: exit code 2 and nothing written under .lore/
+    - {id: bad-route,         args: ["--agent", "claude", "--route", "foo"], exit: 2}
+    - {id: none-with-other,   args: ["--agent", "none", "claude"],           exit: 2}
+
+# ---------------------------------------------------------------------------
+# MIGRATION.  `config` is written verbatim into .lore/config.toml (plus
+# init-agents = ["claude"]) before `lore init --yes`; `expect` is the profile
+# the migration must produce (rule: memory on iff memory-read or memory-write
+# != off; route cli iff any remaining route key was cli; watchers on iff either
+# watchers route != off; quests as given; search on iff memory-read == cli;
+# index/graph as given.  Pre-0.14: family memory -> memory on + search/index/
+# graph on; native -> harness, cli -> cli; family workflow -> quests on.)
+# Hand-derived; do not recompute with code.
+# ---------------------------------------------------------------------------
+migration:
+  interim15:
+    - id: i15-defaults
+      config: {init-memory-read: harness, init-memory-write: harness, init-memory-validate: true, init-memory-index: true, init-memory-graph: true,
+               init-doctrines-read: cli, init-doctrines-write: cli, init-doctrines-validate: true,
+               init-artifacts-read: cli, init-artifacts-write: cli, init-artifacts-validate: true,
+               init-watchers-read: cli, init-watchers-write: cli, init-watchers-validate: true, init-quests: true}
+      expect: {route: cli, memory: true, memory_search: false, memory_index: true, memory_graph: true, quests: true, watchers: true}
+    - id: i15-all-harness
+      config: {init-memory-read: harness, init-memory-write: harness, init-memory-validate: true, init-memory-index: true, init-memory-graph: true,
+               init-doctrines-read: harness, init-doctrines-write: harness, init-doctrines-validate: true,
+               init-artifacts-read: harness, init-artifacts-write: harness, init-artifacts-validate: true,
+               init-watchers-read: harness, init-watchers-write: harness, init-watchers-validate: true, init-quests: true}
+      expect: {route: harness, memory: true, memory_search: false, memory_index: true, memory_graph: true, quests: true, watchers: true}
+    - id: i15-memory-read-cli-only
+      config: {init-memory-read: cli, init-memory-write: "off", init-memory-validate: false, init-memory-index: false, init-memory-graph: true,
+               init-doctrines-read: "off", init-doctrines-write: "off", init-doctrines-validate: false,
+               init-artifacts-read: "off", init-artifacts-write: "off", init-artifacts-validate: false,
+               init-watchers-read: "off", init-watchers-write: "off", init-watchers-validate: false, init-quests: false}
+      expect: {route: cli, memory: true, memory_search: true, memory_index: false, memory_graph: true, quests: false, watchers: false}
+    - id: i15-memory-off-harness-rest
+      config: {init-memory-read: "off", init-memory-write: "off", init-memory-validate: false, init-memory-index: false, init-memory-graph: false,
+               init-doctrines-read: harness, init-doctrines-write: harness, init-doctrines-validate: true,
+               init-artifacts-read: harness, init-artifacts-write: "off", init-artifacts-validate: true,
+               init-watchers-read: "off", init-watchers-write: harness, init-watchers-validate: true, init-quests: true}
+      expect: {route: harness, memory: false, quests: true, watchers: true}
+    - id: i15-write-only-memory-watchers-cli
+      config: {init-memory-read: "off", init-memory-write: harness, init-memory-validate: true, init-memory-index: true, init-memory-graph: false,
+               init-doctrines-read: "off", init-doctrines-write: "off", init-doctrines-validate: false,
+               init-artifacts-read: "off", init-artifacts-write: "off", init-artifacts-validate: false,
+               init-watchers-read: cli, init-watchers-write: "off", init-watchers-validate: true, init-quests: false}
+      expect: {route: cli, memory: true, memory_search: false, memory_index: true, memory_graph: false, quests: false, watchers: true}
+    - id: i15-everything-off
+      config: {init-memory-read: "off", init-memory-write: "off", init-memory-validate: false, init-memory-index: false, init-memory-graph: false,
+               init-doctrines-read: "off", init-doctrines-write: "off", init-doctrines-validate: false,
+               init-artifacts-read: "off", init-artifacts-write: "off", init-artifacts-validate: false,
+               init-watchers-read: "off", init-watchers-write: "off", init-watchers-validate: false, init-quests: false}
+      expect: {route: harness, memory: false, quests: false, watchers: false}
+    - id: i15-mixed-write-cli
+      config: {init-memory-read: harness, init-memory-write: cli, init-memory-validate: true, init-memory-index: false, init-memory-graph: true,
+               init-doctrines-read: harness, init-doctrines-write: harness, init-doctrines-validate: true,
+               init-artifacts-read: harness, init-artifacts-write: harness, init-artifacts-validate: true,
+               init-watchers-read: "off", init-watchers-write: "off", init-watchers-validate: false, init-quests: true}
+      expect: {route: cli, memory: true, memory_search: false, memory_index: false, memory_graph: true, quests: true, watchers: false}
+  legacy:       # pre-0.14: init-access-mode + init-skill-families
+    - {id: leg-memory-cli,      config: {init-access-mode: cli,    init-skill-families: [memory]},
+       expect: {route: cli,     memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: false, watchers: false}}
+    - {id: leg-memory-native,   config: {init-access-mode: native, init-skill-families: [memory]},
+       expect: {route: harness, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: false, watchers: false}}
+    - {id: leg-workflow-cli,    config: {init-access-mode: cli,    init-skill-families: [workflow]},
+       expect: {route: cli,     memory: false, quests: true, watchers: false}, jc: 9}
+    - {id: leg-workflow-native, config: {init-access-mode: native, init-skill-families: [workflow]},
+       expect: {route: harness, memory: false, quests: true, watchers: false}, jc: 9}
+    - {id: leg-memory-workflow-cli, config: {init-access-mode: cli, init-skill-families: [memory, workflow]},
+       expect: {route: cli,     memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: false}}
+    - {id: leg-machinery-cli,   config: {init-access-mode: cli,    init-skill-families: [machinery]},
+       expect: {route: cli,     memory: false, quests: false, watchers: true}, jc: 8}
+    - {id: leg-all-native,      config: {init-access-mode: native, init-skill-families: [memory, machinery, workflow]},
+       expect: {route: harness, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: true, watchers: true}, jc: 8}
+    - {id: leg-none-native,     config: {init-access-mode: native, init-skill-families: []},
+       expect: {route: harness, memory: false, quests: false, watchers: false}, jc: 9}
+    - {id: leg-memory-no-mode,  config: {init-skill-families: [memory]},
+       expect: {route: harness, memory: true, memory_search: true, memory_index: true, memory_graph: true, quests: false, watchers: false}, jc: 9}

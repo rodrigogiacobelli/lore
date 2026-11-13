@@ -17,16 +17,232 @@ applied.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, fields, replace
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 
 class AccessMode(StrEnum):
-    """Which command layer a project's installed skills are rendered with."""
+    """The 0.13 access-mode vocabulary, kept for the read-only ``InitAnswers.access_mode``."""
 
     CLI = "cli"
     NATIVE = "native"
+
+
+class Feature(StrEnum):
+    """A part of Lore a project may use.
+
+    Doctrines and Artifacts are core: always on, never a choice. Memory,
+    Watchers and Quests & Missions are optional.
+    """
+
+    MEMORY = "memory"
+    DOCTRINES = "doctrines"
+    ARTIFACTS = "artifacts"
+    WATCHERS = "watchers"
+    QUESTS = "quests"
+
+
+CORE_FEATURES = (Feature.DOCTRINES, Feature.ARTIFACTS)
+"""The features that are always on."""
+
+FILE_FEATURES = (Feature.MEMORY, Feature.DOCTRINES, Feature.ARTIFACTS, Feature.WATCHERS)
+"""The features backed by files, each of which follows the global route."""
+
+
+class Route(StrEnum):
+    """How agents create, read, update and delete Lore's files — one answer for all."""
+
+    HARNESS = "harness"
+    """The agent's own file tools."""
+
+    CLI = "cli"
+    """``lore ...`` commands."""
+
+
+class Capability(StrEnum):
+    """What a block or command may rely on beyond the route."""
+
+    VALIDATE = "validate"
+    """``lore health``. Core: always on, always through the CLI."""
+
+    MEMORY_SEARCH = "memory-search"
+    MEMORY_INDEX = "memory-index"
+    MEMORY_GRAPH = "memory-graph"
+
+
+CAPABILITY_FEATURE: dict[Capability, Feature | None] = {
+    Capability.VALIDATE: None,
+    Capability.MEMORY_SEARCH: Feature.MEMORY,
+    Capability.MEMORY_INDEX: Feature.MEMORY,
+    Capability.MEMORY_GRAPH: Feature.MEMORY,
+}
+"""The feature that must be on for a capability to mean anything; ``None`` for core."""
+
+QUESTIONS = (
+    "route",
+    "memory",
+    "memory-search",
+    "memory-index",
+    "memory-graph",
+    "quests",
+    "watchers",
+)
+"""The profile question ids, in the order they are asked.
+
+One table: the keyword, the config key and the flag of a question are derived
+from its id, so the three can never disagree (standards-dry)."""
+
+_MEMORY_QUESTIONS = ("memory-search", "memory-index", "memory-graph")
+
+
+def _require_question(question_id: str) -> None:
+    if question_id not in QUESTIONS:
+        raise ValueError(f"Unknown init question: '{question_id}'.")
+
+
+def question_kwarg(question_id: str) -> str:
+    """The ``plan_init`` keyword (and ``Profile`` field) of a question."""
+    _require_question(question_id)
+    return question_id.replace("-", "_")
+
+
+def question_key(question_id: str) -> str:
+    """The ``.lore/config.toml`` key of a question."""
+    _require_question(question_id)
+    return f"init-{question_id}"
+
+
+def question_flag(question_id: str) -> str:
+    """The ``lore init`` flag of a question."""
+    _require_question(question_id)
+    return f"--{question_id}"
+
+
+@dataclass(frozen=True)
+class Profile:
+    """What a project uses of Lore.
+
+    The core (Doctrines, Artifacts and ``lore health``) is always on; the one
+    ``route`` says whether agents reach every file feature through the Lore CLI
+    or their own file tools. The rest are yes/no: Memory (codex, rites,
+    glossary) with its three CLI-only opt-ins, Quests & Missions (CLI-only) and
+    Watchers.
+
+    The field defaults are the headless defaults — what ``lore init`` installs
+    with no flag, no config and no terminal: the full Lore. The field names are
+    the keyword names ``plan_init`` takes. Frozen and hashable: the renderer
+    caches on it.
+
+    Every method evaluates the *normalised* meaning, so a profile holding a
+    capability of a feature that is off behaves exactly like its
+    :meth:`normalized` form.
+    """
+
+    route: Route = Route.CLI
+    memory: bool = True
+    memory_search: bool = True
+    memory_index: bool = True
+    memory_graph: bool = True
+    quests: bool = True
+    watchers: bool = True
+
+    def feature_on(self, feature: Feature) -> bool:
+        """Doctrines and Artifacts are always on; the rest follow their flag."""
+        if feature in CORE_FEATURES:
+            return True
+        return bool(getattr(self, feature.value))
+
+    def has(self, capability: Capability) -> bool:
+        """``validate`` always; a memory capability when Memory and its flag are on."""
+        capability = Capability(capability)
+        if capability is Capability.VALIDATE:
+            return True
+        return self.memory and bool(getattr(self, capability.value.replace("-", "_")))
+
+    @property
+    def link_on(self) -> bool:
+        """The doctrine-quest link: derived, present exactly when Quests is on."""
+        return self.quests
+
+    @property
+    def cli_taught(self) -> bool:
+        """True when the route is ``CLI`` or a CLI-only opt-in (search, index, graph, quests) is on.
+
+        ``lore health`` is taught to everyone and is not counted: it is granted
+        on its own, so a harness project does not learn ``lore --help``.
+        """
+        return (
+            self.route is Route.CLI
+            or self.quests
+            or any(
+                self.has(capability)
+                for capability in Capability
+                if capability is not Capability.VALIDATE
+            )
+        )
+
+    def normalized(self) -> Profile:
+        """Drop the Memory opt-ins when Memory is off."""
+        if self.memory:
+            return self
+        return replace(self, memory_search=False, memory_index=False, memory_graph=False)
+
+    def applies(self, question_id: str) -> bool:
+        """Whether *question_id* is asked, given the answers already in this profile.
+
+        Search, index and graph are asked only when Memory is on. The one place
+        the skip rule lives.
+        """
+        _require_question(question_id)
+        return self.memory or question_id not in _MEMORY_QUESTIONS
+
+    def as_answers(self) -> dict[str, str | bool]:
+        """The seven values keyed by keyword name, the route as a plain string."""
+        return {
+            f.name: (value.value if isinstance(value, Route) else value)
+            for f in fields(self)
+            for value in (getattr(self, f.name),)
+        }
+
+    def summary(self) -> str:
+        """The one-line form used in the plan header."""
+        parts = [f"route: {self.route.value}"]
+        if self.memory:
+            text = "memory"
+            for capability in Capability:
+                if capability is not Capability.VALIDATE and self.has(capability):
+                    text += f" +{capability.value.split('-', 1)[1]}"
+            parts.append(text)
+        if self.quests:
+            parts.append("quests")
+        if self.watchers:
+            parts.append("watchers")
+        return " \u00b7 ".join(parts)
+
+    @classmethod
+    def from_answers(cls, mapping: Mapping[str, object]) -> Profile:
+        """Build from plain strings and bools; ``ValueError`` on an unknown name or token."""
+        known = {f.name for f in fields(cls)}
+        values: dict[str, Any] = {}
+        for name, value in mapping.items():
+            if name not in known:
+                raise ValueError(f"Unknown init answer: '{name}'.")
+            if name == "route":
+                tokens = ", ".join(route.value for route in Route)
+                try:
+                    values[name] = Route(value if isinstance(value, str) else "")
+                except ValueError:
+                    raise ValueError(
+                        f"Unknown route: {value!r}. Accepted tokens: {tokens}."
+                    ) from None
+            else:
+                if not isinstance(value, bool):
+                    raise ValueError(f"{name} must be true or false, not {value!r}.")
+                values[name] = value
+        return replace(cls(), **values)
 
 
 class FileAction(StrEnum):
@@ -189,8 +405,7 @@ class InitAnswers:
     """The resolved answer to every question `lore init` can ask."""
 
     agents: tuple[str, ...]
-    access_mode: AccessMode
-    skill_families: tuple[str, ...]
+    profile: Profile
     on_existing_agent_file: str
     """``"append"`` | ``"skip"``"""
 
@@ -200,6 +415,24 @@ class InitAnswers:
     on_conflict: str
     """``"skip"`` | ``"overwrite"`` — what to do with a path holding something
     Lore did not install. It has no say over Lore's own files."""
+
+    @property
+    def access_mode(self) -> AccessMode:
+        """Read-only 0.13 view: ``CLI`` when the route is the CLI, else ``NATIVE``."""
+        return AccessMode.CLI if self.profile.route is Route.CLI else AccessMode.NATIVE
+
+    @property
+    def skill_families(self) -> tuple[str, ...]:
+        """Read-only 0.13 view: the legacy families the features correspond to, sorted.
+
+        ``machinery`` is always present (Doctrines and Artifacts are core).
+        """
+        families = ["machinery"]
+        if self.profile.memory:
+            families.append("memory")
+        if self.profile.quests:
+            families.append("workflow")
+        return tuple(sorted(families))
 
 
 @dataclass(frozen=True)
@@ -259,6 +492,9 @@ class InitPlan:
     the two. Lore's own files are no longer settled by an answer at all, so the
     split has nothing left to keep apart.
     """
+
+    notices: tuple[str, ...] = ()
+    """One sentence per deprecation translation and per migration performed."""
 
     def __post_init__(self) -> None:
         object.__setattr__(

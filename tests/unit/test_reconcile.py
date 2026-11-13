@@ -618,6 +618,63 @@ class TestRecordedButNoLongerDesired:
         assert row.detail is None
 
 
+class TestADeselectedSkillOrReferenceIsRemoved:
+    """A feature turned off removes what it installed, through the existing rows.
+
+    `reconcile` knows nothing of profiles: a recorded file the new desired set
+    no longer holds is a removal, and that is all a deselected skill or a
+    reference file that stopped materialising needs.
+    """
+
+    def test_a_skill_the_profile_no_longer_installs_is_removed_with_its_reason(self, tmp_path):
+        plant(tmp_path, ".lore/skills/update-watcher/SKILL.md", b"shipped")
+        recorded = {
+            ".lore/skills/update-watcher/SKILL.md": recorded_entry(
+                ".lore/skills/update-watcher/SKILL.md",
+                manifest.bytes_digest(b"shipped"),
+                source="skill:update-watcher",
+            )
+        }
+        row = single_row(reconcile.reconcile({}, recorded, tmp_path, retirement_reason=ledger))
+
+        assert row.action is FileAction.REMOVE
+        assert row.detail == reconcile.NO_LONGER_INSTALLED
+
+    def test_a_reference_file_that_stops_materialising_is_removed_beside_its_skill(
+        self, tmp_path
+    ):
+        skill = ".lore/skills/store-memory/SKILL.md"
+        reference = ".lore/skills/store-memory/references/rite.md"
+        plant(tmp_path, skill, b"skill")
+        plant(tmp_path, reference, b"reference")
+        recorded = {
+            skill: recorded_entry(skill, manifest.bytes_digest(b"skill"), source="skill:store-memory"),
+            reference: recorded_entry(
+                reference, manifest.bytes_digest(b"reference"), source="skill:store-memory"
+            ),
+        }
+        desired = {skill: desired_file(skill, b"skill", source="skill:store-memory")}
+
+        rows = {
+            row.path: row
+            for row in reconcile.reconcile(desired, recorded, tmp_path, retirement_reason=ledger)
+        }
+
+        assert rows[reference].action is FileAction.REMOVE
+        assert rows[reference].detail == reconcile.NO_LONGER_INSTALLED
+        assert rows[skill].reported is False
+
+    def test_an_edited_recorded_file_is_still_removed_because_lore_installed_it(self, tmp_path):
+        path = ".lore/skills/update-watcher/SKILL.md"
+        plant(tmp_path, path, b"edited by someone")
+        recorded = {
+            path: recorded_entry(path, manifest.bytes_digest(b"shipped"), source="skill:update-watcher")
+        }
+        row = single_row(reconcile.reconcile({}, recorded, tmp_path, retirement_reason=ledger))
+
+        assert row.action is FileAction.REMOVE
+
+
 class TestPathsInNeitherSet:
     def test_a_path_in_neither_set_is_absent_from_the_result(self, tmp_path):
         plant(tmp_path, "mine/SKILL.md", b"mine")

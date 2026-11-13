@@ -1365,8 +1365,15 @@ plan_init(
     project_root: Path | None = None,
     *,
     agents: list[str] | None = None,
-    access_mode: str | None = None,
-    skill_families: list[str] | None = None,
+    route: str | Route | None = None,
+    memory: bool | None = None,
+    memory_search: bool | None = None,
+    memory_index: bool | None = None,
+    memory_graph: bool | None = None,
+    quests: bool | None = None,
+    watchers: bool | None = None,
+    access_mode: str | None = None,          # deprecated alias
+    skill_families: list[str] | None = None, # deprecated alias
     on_existing_agent_file: str = "append",
     skills_gitignore: str | None = None,
     on_conflict: str = "skip",
@@ -1376,13 +1383,15 @@ plan_init(
 
 `project_root=None` resolves to `Path.cwd()` — `lore init` is the documented exception to `find_project_root()`, because `.lore/` may not exist yet.
 
-Every keyword defaulting to `None` resolves in this order: explicit argument → `.lore/config.toml` → built-in default. `reconfigure=True` skips the config layer for the four persisted answers. `plan_init` is the only reader of the four `init-*` keys.
+Every keyword defaulting to `None` resolves in this order: explicit argument → deprecated alias translation → `.lore/config.toml` → base layer. The base layer is the built-in default profile, or the one-time migration of a project that records only the retired `init-access-mode` and `init-skill-families` keys. `reconfigure=True` skips the config layer for the persisted answers. `plan_init` is the only reader of the `init-*` keys.
 
-`skill_families` accepts the aggregate tokens `"all"` and `"none"` alongside the three family names.
+A route keyword takes `"harness"`, `"cli"` or `"off"` (a `str` or a `Route`). An opt-in keyword takes a `bool`; a bare string raises `ValueError`. A capability whose feature is off, and `quests` when Doctrines and Artifacts are both off, are dropped silently when they come from the config file, an alias or the base layer, and raise `ValueError` naming the keyword when the caller passed them.
+
+`access_mode` and `skill_families` are deprecated aliases with the CLI's tokens. `skill_families` accepts the aggregate tokens `"all"` and `"none"` alongside the three family names. Each alias used adds one sentence to `InitPlan.notices` naming its replacement keywords.
 
 Returns an `InitPlan` whose `files` tuple carries one `PlannedFile` per affected path, sorted by path.
 
-Raises `ValueError` for an unknown agent id, an unknown access-mode / family / conflict token, or `agents` combining `"none"` with another id. When the offending value came from `.lore/config.toml` rather than an argument, the message also names the key holding it and the flag that replaces it — that answer is taken again on every later run, so the way out belongs in the message.
+Raises `ValueError` for an unknown agent id, an unknown route / access-mode / family / conflict token, an opt-in that is not a `bool`, an inapplicable explicit opt-in, or `agents` combining `"none"` with another id. When the offending value came from `.lore/config.toml` rather than an argument, the message also names the key holding it and the flag that replaces it — that answer is taken again on every later run, so the way out belongs in the message.
 
 ```python
 plan = plan_init(pr, agents=["claude"], access_mode="native", skill_families=["memory", "workflow"])
@@ -1418,7 +1427,7 @@ Returns a list of human-readable status messages describing each step.
 
 Raises: none under normal use; filesystem errors propagate.
 
-The zero-argument signature is a pinned contract. A caller that needs to choose agents, an access mode or skill families uses `plan_init` and `apply_init`.
+The zero-argument signature is a pinned contract. A caller that needs to choose agents, routes, capabilities or quests uses `plan_init` and `apply_init`.
 
 ```python
 run_init()
@@ -1681,17 +1690,21 @@ All exported types are frozen `@dataclass` classes or `StrEnum` subclasses.
 
 ### Init dataclasses and enums
 
-- **`AccessMode`** — `StrEnum`: `CLI = "cli"`, `NATIVE = "native"`.
+- **`AccessMode`** — `StrEnum`: `CLI = "cli"`, `NATIVE = "native"`. The deprecated alias vocabulary; `InitAnswers.access_mode` derives from the route.
+- **`Feature`** — `StrEnum`: `MEMORY`, `DOCTRINES`, `ARTIFACTS`, `WATCHERS`, `QUESTS`.
+- **`Route`** — `StrEnum`: `HARNESS = "harness"`, `CLI = "cli"`.
+- **`Capability`** — `StrEnum`: `validate` (always on), `memory-search`, `memory-index`, `memory-graph`.
+- **`Profile`** — the frozen, hashable set of seven feature answers (`route`, `memory`, `memory_search`, `memory_index`, `memory_graph`, `quests`, `watchers`), with `feature_on()`, `has()`, `link_on`, `cli_taught`, `normalized()`, `as_answers()` and `from_answers()`. `Profile()` is the headless default.
 - **`FileAction`** — `StrEnum`: `CREATE`, `OVERWRITE`, `SECTION`, `REMOVE`, `CONFLICT`, `KEEP`.
 - **`AgentTarget(id, label, instruction_file, skills_dir)`** — one row of the packaged agent registry. `instruction_file` and `skills_dir` are `str | None`, repo-root-relative POSIX paths.
 - **`PlannedFile(path, action, kind, source, digest, detail)`** — one affected path. `path` is repo-root-relative POSIX; `kind` is `"owned"` or `"section"`; `source` names what produced it (`"skill:store-memory"`, `"agent-instructions:claude"`, `"skills-gitignore:claude"`, `"lore-agent"`, plus `"root-gitignore"` on a row an older release recorded and this one removes); `digest` is the sha256 of the rendered bytes, `None` for `REMOVE` and `KEEP`; `detail` carries the retirement reason or the conflict explanation.
-- **`InitAnswers(agents, access_mode, skill_families, on_existing_agent_file, skills_gitignore, on_conflict)`** — the resolved answers a plan was computed from.
-- **`InitPlan(project_root, answers, targets, files, prompts_needed, conflicts, retired_edits)`** — `files` is sorted by path; `prompts_needed` names the conditional prompts this plan justifies; `conflicts` is the `FileAction.CONFLICT` subset and `retired_edits` the `FileAction.KEEP` subset — files edited since install that the plan would overwrite, and files edited since install that the plan would remove. The `on_conflict` answer settles both. Carries `has_changes: bool` and `counts() -> dict[str, int]`.
+- **`InitAnswers(agents, profile, on_existing_agent_file, skills_gitignore, on_conflict)`** — the resolved answers a plan was computed from. `access_mode` and `skill_families` are read-only properties derived from `profile`: `access_mode` is `NATIVE` when the Memory write route is `harness` or Memory is off, else `CLI`; `skill_families` is the sorted tuple of `memory`, `machinery` and `workflow` the profile implies.
+- **`InitPlan(project_root, answers, targets, files, prompts_needed, conflicts, retired_edits, notices)`** — `notices` is a tuple of sentences, one per deprecated alias used and per migration performed; `files` is sorted by path; `prompts_needed` names the conditional prompts this plan justifies; `conflicts` is the `FileAction.CONFLICT` subset and `retired_edits` the `FileAction.KEEP` subset — files edited since install that the plan would overwrite, and files edited since install that the plan would remove. The `on_conflict` answer settles both. Carries `has_changes: bool` and `counts() -> dict[str, int]`.
 - **`InitResult(project_root, messages, applied, skipped, manifest_path)`** — `messages` is the list `run_init()` returns.
 
 ### Config
 
-- **`Config(show_glossary_on_codex_commands, health_report_retention, init_agents, init_access_mode, init_skill_families, init_skills_gitignore, project_name, default_project_scope, shared, descendants, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `init_agents` is a `tuple[str, ...]` defaulting to `()`; `init_access_mode` is a `str` defaulting to `"native"`, one of `"cli"`, `"native"`; `init_skill_families` is a `tuple[str, ...]` defaulting to all three families; `init_skills_gitignore` is a `str` defaulting to `"lore-only"`, one of `"lore-only"`, `"none"`, `"all"`; `project_name` is a `str` defaulting to `""` (falls back to the project directory's name); `default_project_scope` is a `str` defaulting to `"self"`, one of `"self"`, `"all"`; `shared` is a `SharedExports` defaulting to an empty one; `descendants` is a `tuple[DescendantExport, ...]` defaulting to `()`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
+- **`Config(show_glossary_on_codex_commands, health_report_retention, init_agents, init_route … init_watchers (seven fields), init_skills_gitignore, legacy_init_access_mode, legacy_init_skill_families, project_name, default_project_scope, shared, descendants, extras)`** — `show_glossary_on_codex_commands` is a `bool` defaulting to `True`; `health_report_retention` is a `str` defaulting to `"none"`, one of `"none"`, `"latest"`, `"all"`; `init_agents` is a `tuple[str, ...]` defaulting to `()`; the eight route fields are `str`s, one of `"off"`, `"harness"`, `"cli"`, defaulting to `"harness"` for Memory and `"cli"` for the others; the seven opt-in fields are `bool`s defaulting to `True`; `legacy_init_access_mode` and `legacy_init_skill_families` hold the retired keys when present and `None` otherwise; `init_skills_gitignore` is a `str` defaulting to `"lore-only"`, one of `"lore-only"`, `"none"`, `"all"`; `project_name` is a `str` defaulting to `""` (falls back to the project directory's name); `default_project_scope` is a `str` defaulting to `"self"`, one of `"self"`, `"all"`; `shared` is a `SharedExports` defaulting to an empty one; `descendants` is a `tuple[DescendantExport, ...]` defaulting to `()`; `extras` is a `Mapping[str, object]` holding any unknown TOML keys.
 - **`SharedExports(exports, glossary)`** — the `[shared]` table: what an ancestor offers every descendant. `exports` is a `tuple[str, ...]` of literal entity ids and glob patterns, defaulting to `()`; `glossary` is a `bool` defaulting to `False` — the glossary exports whole or not at all.
 - **`DescendantExport(name, path, exports)`** — one `[[descendants]]` block: what an ancestor offers one named project. `path` is the identity, resolved beneath the ancestor's root; `name` is a label for messages and has no resolving power. `exports` is a `tuple[str, ...]` defaulting to `()`.
 

@@ -19,16 +19,36 @@ from pathlib import Path
 import pytest
 
 from lore.initplan import (
+    CAPABILITY_FEATURE,
+    CORE_FEATURES,
+    FILE_FEATURES,
+    QUESTIONS,
     SEED_COUNT,
     SUMMARY_ORDER,
     AccessMode,
     AgentTarget,
+    Capability,
     DesiredFile,
+    Feature,
     FileAction,
     InitAnswers,
     InitPlan,
     InitResult,
     PlannedFile,
+    Profile,
+    Route,
+    question_flag,
+    question_key,
+    question_kwarg,
+)
+from tests.unit.conftest import (
+    CLI_BARE,
+    FIXTURE_PROFILES,
+    FULL,
+    HARNESS_BARE,
+    HARNESS_MEMORY,
+    HARNESS_QUESTS,
+    EVERY_VALID_PROFILE,
 )
 
 INITPLAN_SOURCE = Path(__file__).resolve().parents[2] / "src" / "lore" / "initplan.py"
@@ -38,8 +58,7 @@ def _answers(**overrides) -> InitAnswers:
     """Build an InitAnswers with every field defaulted, overridable per test."""
     fields = {
         "agents": (),
-        "access_mode": AccessMode.NATIVE,
-        "skill_families": (),
+        "profile": Profile(),
         "on_existing_agent_file": "append",
         "skills_gitignore": "lore-only",
         "on_conflict": "skip",
@@ -142,15 +161,14 @@ class TestDataclassFieldNames:
         names = [f.name for f in dataclasses.fields(InitAnswers)]
         assert names == [
             "agents",
-            "access_mode",
-            "skill_families",
+            "profile",
             "on_existing_agent_file",
             "skills_gitignore",
             "on_conflict",
         ]
 
     def test_init_answers_collections_are_tuples(self):
-        answers = _answers(agents=("claude",), skill_families=("memory",))
+        answers = _answers(agents=("claude",))
         assert isinstance(answers.agents, tuple)
         assert isinstance(answers.skill_families, tuple)
 
@@ -165,6 +183,7 @@ class TestDataclassFieldNames:
             "seeded",
             "unstated_uninstall",
             "conflicts",
+            "notices",
         ]
 
     def test_init_result_fields(self):
@@ -387,3 +406,251 @@ class TestDesiredFile:
     def test_content_is_the_rendered_bytes(self):
         entry = DesiredFile(path="a", kind="owned", source="skill:a", content=b"rendered\n")
         assert isinstance(entry.content, bytes)
+
+
+# ---------------------------------------------------------------------------
+# The answer model: one route, yes/no opt-ins
+# ---------------------------------------------------------------------------
+
+BOOL_FIELDS = (
+    "memory",
+    "memory_search",
+    "memory_index",
+    "memory_graph",
+    "quests",
+    "watchers",
+)
+
+
+class TestVocabulary:
+    def test_enums_are_str_enums_with_plain_values(self):
+        for enum in (Feature, Route, Capability):
+            assert issubclass(enum, StrEnum)
+        assert [r.value for r in Route] == ["harness", "cli"]
+        assert [f.value for f in Feature] == [
+            "memory",
+            "doctrines",
+            "artifacts",
+            "watchers",
+            "quests",
+        ]
+        assert [c.value for c in Capability] == [
+            "validate",
+            "memory-search",
+            "memory-index",
+            "memory-graph",
+        ]
+
+    def test_core_features_are_doctrines_and_artifacts(self):
+        assert CORE_FEATURES == (Feature.DOCTRINES, Feature.ARTIFACTS)
+
+    def test_file_features_are_the_four_with_a_route(self):
+        assert FILE_FEATURES == (
+            Feature.MEMORY,
+            Feature.DOCTRINES,
+            Feature.ARTIFACTS,
+            Feature.WATCHERS,
+        )
+
+    def test_validate_is_core_and_the_rest_belong_to_memory(self):
+        assert CAPABILITY_FEATURE[Capability.VALIDATE] is None
+        for capability in Capability:
+            if capability is not Capability.VALIDATE:
+                assert CAPABILITY_FEATURE[capability] is Feature.MEMORY
+
+
+class TestQuestions:
+    def test_question_order_is_the_prompt_order(self):
+        assert QUESTIONS == (
+            "route",
+            "memory",
+            "memory-search",
+            "memory-index",
+            "memory-graph",
+            "quests",
+            "watchers",
+        )
+
+    def test_kwarg_key_and_flag_derive_from_the_id(self):
+        assert question_kwarg("memory-search") == "memory_search"
+        assert question_key("memory-search") == "init-memory-search"
+        assert question_flag("memory-search") == "--memory-search"
+        assert question_kwarg("route") == "route"
+        assert question_key("route") == "init-route"
+        assert question_flag("route") == "--route"
+
+    def test_every_kwarg_is_a_profile_field(self):
+        fields = {f.name for f in dataclasses.fields(Profile)}
+        assert {question_kwarg(q) for q in QUESTIONS} == fields
+
+    def test_unknown_question_id_raises(self):
+        with pytest.raises(ValueError, match="nope"):
+            question_kwarg("nope")
+
+
+class TestProfileDefaults:
+    def test_defaults_are_the_full_lore(self):
+        profile = Profile()
+        assert profile.route is Route.CLI
+        for name in BOOL_FIELDS:
+            assert getattr(profile, name) is True
+
+    def test_is_frozen(self):
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            Profile().quests = False  # type: ignore[misc]
+
+    def test_equal_profiles_hash_equal(self):
+        assert hash(Profile()) == hash(Profile())
+        assert len({Profile(), Profile(), HARNESS_BARE}) == 2
+
+
+class TestFeatureOn:
+    def test_doctrines_and_artifacts_are_always_on(self):
+        for profile in FIXTURE_PROFILES.values():
+            assert profile.feature_on(Feature.DOCTRINES)
+            assert profile.feature_on(Feature.ARTIFACTS)
+
+    @pytest.mark.parametrize("feature", ["memory", "watchers", "quests"])
+    def test_optional_features_follow_their_flag(self, feature):
+        assert Profile(**{feature: True}).feature_on(Feature(feature))
+        assert not Profile(**{feature: False}).feature_on(Feature(feature))
+
+
+class TestHas:
+    def test_validate_is_always_on(self):
+        for profile in FIXTURE_PROFILES.values():
+            assert profile.has(Capability.VALIDATE)
+
+    def test_a_memory_capability_needs_memory_and_its_flag(self):
+        assert FULL.has(Capability.MEMORY_INDEX)
+        assert not HARNESS_MEMORY.has(Capability.MEMORY_GRAPH)
+        stale = Profile(memory=False, memory_search=True)
+        assert not stale.has(Capability.MEMORY_SEARCH)
+
+
+class TestDerivedFlags:
+    def test_link_is_quests(self):
+        assert HARNESS_QUESTS.link_on
+        assert not HARNESS_BARE.link_on
+        assert FULL.link_on
+
+    def test_cli_taught_when_route_is_cli_or_a_cli_only_thing_is_on(self):
+        assert not HARNESS_BARE.cli_taught
+        assert not HARNESS_MEMORY.cli_taught
+        assert CLI_BARE.cli_taught
+        assert HARNESS_QUESTS.cli_taught
+        assert dataclasses.replace(HARNESS_MEMORY, memory_search=True).cli_taught
+        assert dataclasses.replace(HARNESS_MEMORY, memory_graph=True).cli_taught
+
+    def test_cli_taught_ignores_a_stale_capability_of_memory_off(self):
+        assert not Profile(
+            route=Route.HARNESS, memory=False, quests=False, watchers=False
+        ).cli_taught
+
+
+class TestNormalized:
+    def test_drops_memory_capabilities_when_memory_is_off(self):
+        normal = Profile(memory=False).normalized()
+        assert not (normal.memory_search or normal.memory_index or normal.memory_graph)
+        assert normal.quests and normal.watchers
+
+    def test_is_idempotent_and_leaves_a_normal_profile_alone(self):
+        assert FULL.normalized() == FULL
+        for profile in EVERY_VALID_PROFILE:
+            assert profile.normalized() == profile
+
+    def test_unnormalised_profile_behaves_like_its_normal_form(self):
+        raw = Profile(route=Route.HARNESS, memory=False, quests=False, memory_graph=True)
+        normal = raw.normalized()
+        assert raw.cli_taught == normal.cli_taught
+        assert raw.link_on == normal.link_on
+        assert raw.summary() == normal.summary()
+
+
+class TestApplies:
+    @pytest.mark.parametrize("profile", FIXTURE_PROFILES.values(), ids=FIXTURE_PROFILES.keys())
+    def test_only_the_memory_capability_questions_are_conditional(self, profile):
+        for question in QUESTIONS:
+            expected = profile.memory if question.startswith("memory-") else True
+            assert profile.applies(question) == expected
+
+    def test_unknown_question_raises(self):
+        with pytest.raises(ValueError, match="nope"):
+            FULL.applies("nope")
+
+
+class TestAsAnswersRoundTrip:
+    def test_has_seven_plain_values_keyed_by_kwarg(self):
+        answers = FULL.as_answers()
+        assert set(answers) == {question_kwarg(q) for q in QUESTIONS}
+        assert answers["route"] == "cli"
+        assert type(answers["route"]) is str
+        assert answers["quests"] is True
+
+    @pytest.mark.parametrize("profile", FIXTURE_PROFILES.values(), ids=FIXTURE_PROFILES.keys())
+    def test_round_trips_each_fixture(self, profile):
+        assert Profile.from_answers(profile.as_answers()) == profile
+
+    def test_round_trips_every_valid_profile(self):
+        for profile in EVERY_VALID_PROFILE:
+            assert Profile.from_answers(profile.as_answers()) == profile
+
+    def test_partial_mapping_fills_defaults(self):
+        assert Profile.from_answers({"route": "harness"}) == Profile(route=Route.HARNESS)
+
+    def test_unknown_route_token_raises(self):
+        with pytest.raises(ValueError, match="native"):
+            Profile.from_answers({"route": "native"})
+
+    def test_off_is_not_a_route(self):
+        with pytest.raises(ValueError, match="off"):
+            Profile.from_answers({"route": "off"})
+
+    def test_non_bool_answer_raises(self):
+        with pytest.raises(ValueError, match="memory_search"):
+            Profile.from_answers({"memory_search": "yes"})
+
+    def test_unknown_key_raises(self):
+        with pytest.raises(ValueError, match="bogus"):
+            Profile.from_answers({"bogus": True})
+
+
+class TestSummary:
+    def test_lists_route_and_what_is_on(self):
+        profile = Profile(
+            route=Route.HARNESS, memory_graph=False, watchers=False
+        ).normalized()
+        assert profile.summary() == "route: harness \u00b7 memory +search +index \u00b7 quests"
+
+    def test_the_bare_core_says_so(self):
+        assert HARNESS_BARE.summary() == "route: harness"
+
+
+class TestInitAnswersDerivedProperties:
+    def _answers(self, profile: Profile) -> InitAnswers:
+        return _answers(profile=profile)
+
+    def test_access_mode_follows_the_route(self):
+        assert self._answers(HARNESS_BARE).access_mode is AccessMode.NATIVE
+        assert self._answers(CLI_BARE).access_mode is AccessMode.CLI
+
+    @pytest.mark.parametrize(
+        ("profile", "families"),
+        [
+            (FULL, ("machinery", "memory", "workflow")),
+            (HARNESS_BARE, ("machinery",)),
+            (HARNESS_MEMORY, ("machinery", "memory")),
+            (HARNESS_QUESTS, ("machinery", "workflow")),
+        ],
+    )
+    def test_skill_families_follow_the_features(self, profile, families):
+        assert self._answers(profile).skill_families == families
+
+
+class TestPlanNotices:
+    def test_notices_default_to_empty(self):
+        assert _plan().notices == ()
+
+    def test_notices_are_carried(self):
+        plan = dataclasses.replace(_plan(), notices=("one", "two"))
+        assert plan.notices == ("one", "two")

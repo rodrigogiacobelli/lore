@@ -136,7 +136,7 @@ Cannot write "camelot:standards-naming": an entity from another project is read-
 
 A Python caller reaching the same function directly gets `ForeignEntityError`, not a silent success — the rule is enforced once, in the core, and every write path calls it as its first statement. There is no `--force`, no push, no copy-on-read: an inherited or federated entity has exactly one authoritative copy, in the project that authored it.
 
-The `native` access-mode carve-out (`decisions-006-id-references`) — an agent reading `.lore/codex/`, `.lore/rites/` or `glossary.yaml` with its own file tools instead of the CLI — does **not** cross a boundary. A foreign entity lives in a different repository, one this project's own `lore health` never audits, and is reachable only by origin-qualified id through the CLI or `lore.api`, in both access modes.
+The harness-route carve-out (`decisions-006-id-references`) — an agent reading `.lore/codex/`, `.lore/rites/` or `glossary.yaml` with its own file tools instead of the CLI — does **not** cross a boundary. A foreign entity lives in a different repository, one this project's own `lore health` never audits, and is reachable only by origin-qualified id through the CLI or `lore.api`, on every route.
 
 ## Glossary inheritance
 

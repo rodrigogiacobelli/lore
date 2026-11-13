@@ -433,11 +433,25 @@ def _classify_retired(
         detail=_removal_detail(
             source,
             _retirement(source, retirement_reason),
-            relocations or {},
+            _elsewhere(path, source, relocations or {}),
             edited=on_disk != have.hash,
         ),
         observed=on_disk,
     )
+
+
+def _elsewhere(
+    path: str, source: str, relocations: Mapping[str, tuple[str, ...]]
+) -> dict[str, tuple[str, ...]]:
+    """*relocations* without the root *path* itself sits in.
+
+    A skill still installed at the root a file is removed from has not moved: one
+    of its files stopped being written (a reference whose blocks no longer
+    survive), and the report must not say the whole skill went somewhere else.
+    """
+    own_root = path.partition(f"/{source.removeprefix(SKILL_SOURCE_PREFIX)}/")[0]
+    others = tuple(root for root in relocations.get(source, ()) if root != own_root)
+    return {source: others} if others else {}
 
 
 def _removal_detail(

@@ -16,7 +16,7 @@ Every canonical codex document speaks with one voice. This file defines it.
 
 The voice is not a style preference. It follows from four properties the codex already has.
 
-**The codex is a state store.** `lore show` reports that a Mission is `blocked`. It does not report that the Mission was open and is now blocked. Codex documents work the same way: they carry what is true now. Git carries the history. ADRs carry the reasoning.
+**The codex is a state store.** A task board reports that a ticket is `blocked`. It does not report that the ticket was open and is now blocked. Codex documents work the same way: they carry what is true now. Git carries the history. ADRs carry the reasoning.
 
 **The codex is read cold, one document at a time.** An agent runs `lore codex show <id>` with no conversation behind it. A sentence that resolves against context outside the document fails that reader.
 

@@ -3,21 +3,23 @@ id: tech-arch-agents-md
 title: Agent Registry and Instruction Files
 summary: The seeded agent registry `lore init` reads (agents.yaml — id, label, instruction
   file, skills directory), how the registry is loaded at import time so click.Choice
-  can use it, and the rendered agent instruction text — the LORE-AGENT.md template,
-  its access-mode blocks and generated skills table, and the marker mechanism that
-  keeps each selected agent's instruction file idempotent.
+  can use it, and the rendered agent instruction text — the `lore-agent` document
+  assembled from tagged blocks for the project's answers, its 100-line bound and
+  generated skills table, and the marker mechanism that keeps each selected agent's
+  instruction file idempotent.
 binds:
 - src/lore/agents.py
 - src/lore/defaults/agents.yaml
 - src/lore/schemas/agents.yaml
-- src/lore/defaults/docs/LORE-AGENT.md
-- src/lore/defaults/docs/GETTING-STARTED.md
+- src/lore/defaults/blocks/**
+- src/lore/defaults/skills-catalogue.yaml
 - src/lore/init.py
 - tests/unit/test_agents.py
 - tests/unit/test_lore_init.py
 - tests/e2e/test_lore_init.py
 related:
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-features
 - conceptual-workflows-init-interactive
 - conceptual-entities-skill
 - tech-arch-initialized-project-structure
@@ -96,43 +98,33 @@ The file validates against `lore://schemas/agents` through `load_schema`, never 
 
 ## The Rendered Instruction Text
 
-`src/lore/defaults/docs/LORE-AGENT.md` is the template that produces one rendered text per initialisation. Two regions in it are generated rather than authored:
+The `lore-agent` document in `src/lore/defaults/skills-catalogue.yaml` lists the blocks the instruction text is assembled from, in order. `skills.render_document("lore-agent", profile)` keeps the blocks that survive the project's answers (`tech-arch-skill-catalogue` holds the block format and the gate grammar) and joins them. One region is generated rather than authored:
 
-- **Access-mode blocks** — `<!-- lore:access cli -->` … `<!-- lore:access end -->` and the `native` counterpart, resolved to the recorded access mode by the same renderer the skills use (`tech-arch-skill-catalogue`).
-- **The skills table** — `<!-- lore:skills-table -->` … `<!-- lore:skills-table end -->` is replaced by a table naming exactly the skills installed and the directory each landed in. The catalogue is the one place a skill's existence is recorded, so the table is derived rather than hand-maintained.
+- **The skills table** — the marker pair `<!-- lore:skills-table -->` and `<!-- lore:skills-table end -->` in the `i-skills-table` block is replaced by a table naming exactly the skills installed and the directory each landed in. The catalogue is the one place a skill's existence is recorded, so the table is derived rather than hand-maintained. The block survives only when at least one skill is installed.
+
+The text is at most 100 lines for every combination of answers, including the two marker lines that wrap it in an agent's file: the catalogue caps the assembled document at 98 lines and `scripts/check_blocks.py` proves the bound from the block tags. When no feature is on, no text is rendered at all.
 
 The rendered text lands in two kinds of place:
 
-- **`.lore/LORE-AGENT.md`** — always written, whole-file, manifest-tracked. It is the canonical rendered instruction text and the only artefact when no agent is selected.
-- **Each selected agent's `instruction_file`** — the same text inside markers, manifest-tracked as a section.
+- **`.lore/LORE-AGENT.md`** — whole-file, manifest-tracked. It is the canonical rendered instruction text and the only artefact when no agent is selected. It is written whenever any feature is on and removed when none is.
+- **Each selected agent's `instruction_file`** — the same text inside markers, manifest-tracked as a section. When no feature is on, the block is removed and the rest of the file stays byte-identical.
 
-`.lore/GETTING-STARTED.md` is copied verbatim and carries no generated region.
+`.lore/GETTING-STARTED.md` is rendered from the `getting-started` document by the same assembler, with no generated region.
 
-## What the Block Contains
+## What the Text Contains
 
-The rendered text is a lightweight entry point, not a copy of the CLI. It directs agents to `lore --help` for the entity and command model (`decisions-008-help-as-teaching-interface`) and carries only what `--help` does not.
+The text is a lightweight entry point, not a copy of the CLI. It carries one section per feature that is on, and each section says only what the project's routes and capabilities allow. A command whose capability is off appears nowhere (`decisions-008-help-as-teaching-interface` governs the teaching; the command-grant table governs what may appear).
 
-### Orchestrator section
+| Section | Present when | Contains |
+|---|---|---|
+| Introduction | Always | What Lore is for this project, and that the sections cover only what is enabled. |
+| CLI help | Some CLI is taught | A pointer to `lore --help`. |
+| Project memory | Memory is on | The codex, rites and glossary; the route in the project's words; the validate line, and the search, index and graph lines for each opt-in that is on. |
+| Doctrines, Artifacts, Watchers | The feature is on | What the entity is, how to read it, how to write it, and the validate line. With Quests off, Doctrines also point at `/run-doctrine`, the core skill that runs a doctrine. |
+| Quests and missions | Quests is on | The orchestrator dispatch loop, the worker loop, board messages and dependencies. How `/start-quest` creates a quest from a doctrine. |
+| Skills | At least one skill is installed | The generated table. |
 
-1. **Tool availability** — Lore is installed; `lore --help` holds the entity and CLI model.
-2. **Dispatch loop** — `lore ready` returns the next mission with its type. Type `agent` → claim and spawn a worker agent with the mission ID. Type `constable` → claim and handle inline. Type `human` → do not claim; leave it for the human. The mission ID is passed to the worker.
-3. **Mission description requirements** — descriptions are thorough and self-contained, with acceptance criteria, constraints and relevant file paths. A worker executes the mission from the description alone.
-
-### Worker section
-
-- The worker has been assigned a mission ID by the orchestrator.
-- `lore show <mission-id>` returns the mission and its doctrine mission instructions in one call.
-- `lore done` closes the mission and cascades.
-- `lore block` reports a blocker with a reason.
-- Workers do not create quests or missions and do not claim work.
-
-### Skills section
-
-The generated table of installed skills and where each one lives.
-
-### Command layer
-
-The commands an agent uses to read and write Lore's local files, in the recorded access mode. `decisions-006-id-references` holds which entity types the `native` mode covers and which keep the by-ID rule in both modes.
+The orchestrator loop reads `lore ready`, dispatches by mission type (`agent` claimed and handed to a worker, `constable` claimed and handled inline, `human` left for the human), and passes the mission ID to the worker. The worker loop reads `lore show <mission-id>`, executes, closes with `lore done` and reports a blocker with `lore block`. Workers do not create quests or missions and do not claim work. `decisions-006-id-references` holds which entity types are reached by ID through the CLI and which are read by path.
 
 ## The Marker Mechanism
 

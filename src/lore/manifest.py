@@ -82,7 +82,11 @@ class Manifest:
     catalogue_version: int
     generated_at: str
     answers: dict[str, Any]
-    """Informational — lets a report say the access mode moved native → cli."""
+    """Informational. ``agents``, ``skills_gitignore``, ``profile`` (the fifteen
+    feature answers, which `lore health` renders neighbours of to name a file
+    installed for another answer) and the derived ``access_mode`` and
+    ``skill_families``. Readers ignore a key they do not know, so adding one
+    does not change ``manifest_version``."""
 
     targets: dict[str, str]
     """Informational — lets a deselected agent with an empty skill set be detected."""

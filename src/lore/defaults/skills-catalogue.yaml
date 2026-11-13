@@ -1,66 +1,437 @@
-# Which skills this release ships, which family each belongs to, and where every
-# retired skill went.
+# Which skills a release ships, which blocks each skill file is assembled from,
+# the two instruction documents, the explicit line-cap exceptions, and where
+# every retired skill went.
 #
-# A sibling of agents.yaml at the defaults/ root rather than inside skills/, so
-# the skills tree stays exactly one directory per skill and the installer never
-# has to exclude a file.
+# A sibling of agents.yaml at the defaults/ root rather than inside skills/.
+# A skill is installed when at least one body block of its SKILL.md survives
+# the project's profile; the head block (frontmatter) never counts. A reference
+# file is written when at least one of its blocks survives and its skill is
+# installed.
 #
-# No per-skill description: that is authored once in the skill's own SKILL.md
-# frontmatter. This file carries structure and nothing an agent reads.
-#
-# `retired` is append-only. A project hopping several releases needs every
-# intermediate rename explained, and `reason` is quoted verbatim in the removal
-# report.
+# `legacy_families` is the retired family model: the deprecated --skills alias
+# and the migration of an older project read it. `retired` is append-only; a
+# project hopping several releases needs every intermediate rename explained,
+# and `reason` is quoted verbatim in the removal report.
 
-version: 2
-
-families:
-  memory: Project memory — codex, rites and glossary, consulted together
-  machinery: Lore's own configuration entities
-  workflow: Multi-step processes over quests and missions
-
-# Rows are grouped by family and alphabetical within it, so the catalogue order
-# a family selection comes back in is already the order it installs in.
-
+version: 3
+legacy_families:
+  memory:
+    description: "Project memory \u2014 codex, rites and glossary"
+    features:
+    - memory
+    skills:
+    - retrieve-memory
+    - store-memory
+  machinery:
+    description: Lore's own configuration entities
+    features:
+    - doctrines
+    - artifacts
+    - watchers
+    skills:
+    - update-artifact
+    - update-custom-schema
+    - update-doctrine
+    - update-index
+    - update-watcher
+  workflow:
+    description: Multi-step processes over quests and missions
+    features:
+    - quests
+    skills:
+    - inquest
+    - start-quest
+    - sync-codex-guide
 skills:
-  - id: retrieve-memory
-    family: memory
-  - id: store-memory
-    family: memory
-    references: [codex-doc.md, rite.md, source.md]
-  - id: update-artifact
-    family: machinery
-  - id: update-custom-schema
-    family: machinery
-  - id: update-doctrine
-    family: machinery
-  - id: update-index
-    family: machinery
-  - id: update-watcher
-    family: machinery
-  - id: inquest
-    family: workflow
-  - id: start-quest
-    family: workflow
-  - id: sync-codex-guide
-    family: workflow
-
+- id: retrieve-memory
+  head: rm-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - rm-purpose
+    - rm-classify
+    - rm-index
+    - rm-enter-harness
+    - rm-enter-cli
+    - rm-search
+    - rm-refs
+    - rm-graph
+    - rm-links
+    - rm-rites-harness
+    - rm-rites-cli
+    - rm-rites-walk
+    - rm-answer
+    - rm-answer-store
+- id: store-memory
+  head: sm-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - sm-purpose
+    - sm-feature-hint
+    - sm-name-it
+    - sm-boundary
+    - sm-codexmd
+    - sm-codexmd-harness
+    - sm-codexmd-cli
+    - sm-discover
+    - sm-discover-harness
+    - sm-discover-cli
+    - sm-discover-search
+    - sm-graph
+    - sm-decide
+    - sm-reference
+    - sm-voice-cli
+    - sm-voice-path
+    - sm-glossary
+    - sm-glossary-gate-cli
+    - sm-glossary-gate-path
+    - sm-glossary-cli
+    - sm-glossary-harness
+    - sm-apply
+    - sm-verify-validate
+    - sm-findable
+    - sm-index-refresh
+    - sm-report
+  - path: references/codex-doc.md
+    blocks:
+    - xa-classify
+    - xa-frontmatter
+    - xa-frontmatter-validate
+    - xa-body
+    - xa-binds
+    - xa-binds-impacts
+    - xa-apply-cli
+    - xa-apply-harness
+    - xa-apply-harness-validate
+    - xa-templates-cli
+    - xa-templates-path
+  - path: references/rite.md
+    blocks:
+    - xr-pick
+    - xr-guides-cli
+    - xr-guides-path
+    - xr-shapes
+    - xr-rules
+    - xr-apply-cli
+    - xr-confirm-cli
+    - xr-apply-harness
+    - xr-validate
+    - xr-link-codex
+  - path: references/source.md
+    blocks:
+    - xs-questions
+    - xs-first-or-refresh
+    - xs-capture
+    - xs-capture-cli
+    - xs-capture-harness
+    - xs-refresh
+    - xs-verify
+    - xs-report
+- id: update-index
+  head: ui-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - ui-purpose
+    - ui-see
+    - ui-write-cluster
+    - ui-members-cli
+    - ui-members-harness
+    - ui-drift
+    - ui-digest
+    - ui-write-file
+    - ui-verify
+    - ui-verify-validate
+    - ui-report
+    - uf-shape
+    - uf-keys
+    - uf-slug
+    - uf-describe
+    - uf-search
+- id: update-custom-schema
+  head: uc-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - uc-purpose
+    - uc-pick-kind
+    - uc-existing-cli
+    - uc-existing-harness
+    - uc-transient
+    - uc-fields
+    - uc-write-overlay
+    - xo-guard
+    - xo-shape
+    - uc-verify-validate
+    - uc-backfill-cli
+    - uc-backfill-harness
+    - uc-notes
+- id: sync-codex-guide
+  head: sg-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - sg-purpose
+    - sg-rule
+    - sr-rule
+    - sr-conflicts
+    - sg-steps
+    - sg-compare-head
+    - sg-seed-cli
+    - sg-seed-path
+    - sg-read-cli
+    - sg-read-harness
+    - sg-write-cli
+    - sg-write-harness
+    - sg-voice-cli
+    - sg-voice-path
+    - sg-delta
+    - sg-confirm
+    - sg-verify
+    - sg-report
+- id: update-doctrine
+  head: ud-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - ud-purpose
+    - ud-mode
+    - ud-existing-cli
+    - ud-existing-harness
+    - ud-template-cli
+    - ud-template-path
+    - ud-scope
+    - ud-vocab-cli
+    - ud-vocab-search
+    - ud-vocab-harness
+    - ud-artifacts
+    - ud-artifacts-harness
+    - ud-design
+    - ud-design-cli
+    - ud-design-path
+    - ud-missions
+    - ud-missions-cli
+    - ud-missions-path
+    - ud-write-cli
+    - ud-write-harness
+    - ud-verify-head
+    - ud-verify-show
+    - ud-verify-validate
+- id: update-artifact
+  head: ua-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - ua-purpose
+    - ua-isit
+    - ua-isit-store-cli
+    - ua-isit-store-harness
+    - ua-isit-cli
+    - ua-isit-harness
+    - ua-understand
+    - ua-check
+    - ua-existing-cli
+    - ua-existing-doctrines-cli
+    - ua-existing-harness
+    - ua-draft
+    - ua-write-cli
+    - ua-write-harness
+    - ua-verify
+- id: update-watcher
+  head: uw-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - uw-purpose
+    - uw-understand
+    - uw-check
+    - uw-existing-cli
+    - uw-existing-harness
+    - uw-context-cli
+    - uw-context-search
+    - uw-context-harness
+    - uw-draft
+    - uw-doctrine
+    - uw-write-cli
+    - uw-write-harness
+    - uw-verify
+- id: run-doctrine
+  head: rd-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - rd-purpose
+    - rd-read-cli
+    - rd-read-harness
+    - rd-read-notes
+    - rd-context
+    - rd-context-cli
+    - rd-context-search
+    - rd-context-harness
+    - rd-impacts
+    - rd-plan
+    - rd-brief-head
+    - rd-brief-cli
+    - rd-brief-harness
+    - rd-brief
+    - rd-ask
+    - rd-run
+    - rd-report
+- id: start-quest
+  head: sq-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - sq-purpose
+    - sq-read-cli
+    - sq-read-harness
+    - sq-read-notes
+    - sq-existing
+    - sq-context-cli
+    - sq-context-search
+    - sq-context-harness
+    - sq-impacts
+    - sq-quest
+    - sq-missions
+    - xb-body
+    - xb-types
+    - sq-deps
+    - sq-show
+    - sq-ask
+- id: inquest
+  head: iq-head
+  files:
+  - path: SKILL.md
+    blocks:
+    - iq-purpose
+    - iq-method-cli
+    - iq-method-path
+    - iq-chain
+    - iq-chain-doctrine-cli
+    - iq-chain-doctrine-harness
+    - iq-evidence
+    - iq-evidence-codex-cli
+    - iq-evidence-codex-harness
+    - iq-impacts
+    - iq-custody
+    - iq-verdict
+    - iq-store-cli
+    - iq-store-harness
+    - iq-present
+    - iq-notes
+    - iq-notes-store
+documents:
+  lore-agent:
+    max_lines: 98
+    blocks:
+    - i-intro
+    - i-cli-help
+    - i-health
+    - i-memory-head
+    - i-memory-read-harness
+    - i-memory-read-cli
+    - i-memory-search
+    - i-memory-write-harness
+    - i-memory-write-cli
+    - i-memory-validate
+    - i-memory-index
+    - i-memory-graph
+    - i-doctrines
+    - i-doctrines-read-harness
+    - i-doctrines-read-cli
+    - i-doctrines-write-harness
+    - i-doctrines-write-cli
+    - i-doctrines-run
+    - i-artifacts
+    - i-artifacts-read-harness
+    - i-artifacts-read-cli
+    - i-artifacts-write-harness
+    - i-artifacts-write-cli
+    - i-watchers
+    - i-watchers-read-harness
+    - i-watchers-read-cli
+    - i-watchers-write-harness
+    - i-watchers-write-cli
+    - i-watchers-validate
+    - i-quests
+    - i-quests-orchestrator
+    - i-quests-worker
+    - i-quests-board-deps
+    - i-quests-doctrine-link
+    - i-quests-inquest
+    - i-skills-table
+  getting-started:
+    max_lines: 100
+    blocks:
+    - gs-intro
+    - gs-wire-skills
+    - gs-wire
+    - gs-markers
+    - gs-markers-skills
+    - gs-rerun
+    - gs-own
+    - gs-own-skills
+    - gs-own-doctrines
+    - gs-own-artifacts
+    - gs-own-watchers
+    - gs-own-skills-note
+    - gs-conflicts
+    - gs-edit-head
+    - gs-edit-codex
+    - gs-edit-glossary
+    - gs-edit-glossary-cli
+    - gs-edit-glossary-path
+    - gs-edit-config
+    - gs-verify
+oversize:
+  store-memory/SKILL.md: 150
+  store-memory/references/codex-doc.md: 112
+  store-memory/references/rite.md: 140
+  store-memory/references/source.md: 135
+  update-index/SKILL.md: 120
+  sync-codex-guide/SKILL.md: 110
+  update-doctrine/SKILL.md: 110
 retired:
-  new-doctrine: {into: update-doctrine, reason: renamed}
-  new-knight: {into: update-knight, reason: renamed}
-  new-watcher: {into: update-watcher, reason: renamed}
-  new-artifact: {into: update-artifact, reason: renamed}
-  new-custom-schema: {into: update-custom-schema, reason: renamed}
+  new-doctrine:
+    into: update-doctrine
+    reason: renamed
+  new-knight:
+    into: update-knight
+    reason: renamed
+  new-watcher:
+    into: update-watcher
+    reason: renamed
+  new-artifact:
+    into: update-artifact
+    reason: renamed
+  new-custom-schema:
+    into: update-custom-schema
+    reason: renamed
   lore-update:
     into: sync-codex-guide
-    reason: "renamed; agent-file half replaced by the CLAUDE.md marker block"
-  new-rite: {into: store-memory, reason: merged into store-memory}
-  update-codex: {into: store-memory, reason: merged into store-memory}
-  ingest-source: {into: store-memory, reason: merged into store-memory}
-  refresh-source: {into: store-memory, reason: merged into store-memory}
-  explore-codex: {into: retrieve-memory, reason: merged into retrieve-memory}
-  explore-rite: {into: retrieve-memory, reason: merged into retrieve-memory}
-  explore-codex-rite: {into: retrieve-memory, reason: merged into retrieve-memory}
+    reason: renamed; agent-file half replaced by the CLAUDE.md marker block
+  new-rite:
+    into: store-memory
+    reason: merged into store-memory
+  update-codex:
+    into: store-memory
+    reason: merged into store-memory
+  ingest-source:
+    into: store-memory
+    reason: merged into store-memory
+  refresh-source:
+    into: store-memory
+    reason: merged into store-memory
+  explore-codex:
+    into: retrieve-memory
+    reason: merged into retrieve-memory
+  explore-rite:
+    into: retrieve-memory
+    reason: merged into retrieve-memory
+  explore-codex-rite:
+    into: retrieve-memory
+    reason: merged into retrieve-memory
   update-knight:
     into: update-doctrine
-    reason: "a reusable instruction lives in the doctrine mission file that uses it"
+    reason: a reusable instruction lives in the doctrine mission file that uses it

@@ -1,7 +1,10 @@
 import dataclasses
+import itertools
 from pathlib import Path
 
 import pytest
+
+from lore.initplan import Profile, Route
 
 
 @pytest.fixture()
@@ -189,3 +192,70 @@ def tree(tmp_path):
             (project / ".lore" / entity_dir).mkdir(parents=True, exist_ok=True)
     yield NestedTree(camelot=camelot, lore=lore_project, realm=realm)
     config_module._warned = False
+
+
+# ---------------------------------------------------------------------------
+# Init answer fixtures
+#
+# Named by behaviour, never by a matrix scenario number. Every constant is a
+# normalised ``Profile``. Doctrines, Artifacts and ``lore health`` are core and
+# on in all of them; the route is the one global Lore-CLI-vs-harness answer.
+# ---------------------------------------------------------------------------
+
+
+def _bare(route: Route, **overrides) -> Profile:
+    """The core alone on *route*, plus *overrides*."""
+    base = {
+        "memory": False,
+        "memory_search": False,
+        "memory_index": False,
+        "memory_graph": False,
+        "quests": False,
+        "watchers": False,
+    }
+    base.update(overrides)
+    return Profile(route=route, **base)
+
+
+FULL = Profile()
+HARNESS_BARE = _bare(Route.HARNESS)
+CLI_BARE = _bare(Route.CLI)
+HARNESS_MEMORY = _bare(Route.HARNESS, memory=True)
+HARNESS_MEMORY_FULL = _bare(
+    Route.HARNESS, memory=True, memory_search=True, memory_index=True, memory_graph=True
+)
+CLI_MEMORY = _bare(Route.CLI, memory=True)
+HARNESS_QUESTS = _bare(Route.HARNESS, quests=True)
+CLI_QUESTS = _bare(Route.CLI, quests=True)
+HARNESS_WATCHERS = _bare(Route.HARNESS, watchers=True)
+CLI_WATCHERS = _bare(Route.CLI, watchers=True)
+
+FIXTURE_PROFILES: dict[str, Profile] = {
+    "FULL": FULL,
+    "HARNESS_BARE": HARNESS_BARE,
+    "CLI_BARE": CLI_BARE,
+    "HARNESS_MEMORY": HARNESS_MEMORY,
+    "HARNESS_MEMORY_FULL": HARNESS_MEMORY_FULL,
+    "CLI_MEMORY": CLI_MEMORY,
+    "HARNESS_QUESTS": HARNESS_QUESTS,
+    "CLI_QUESTS": CLI_QUESTS,
+    "HARNESS_WATCHERS": HARNESS_WATCHERS,
+    "CLI_WATCHERS": CLI_WATCHERS,
+}
+
+
+def _every_valid_profile() -> tuple[Profile, ...]:
+    """All 72 distinct normalised profiles: the space is small enough to enumerate."""
+    found = {
+        Profile(
+            route=route, memory=memory, memory_search=search, memory_index=index,
+            memory_graph=graph, quests=quests, watchers=watchers,
+        ).normalized()
+        for route, memory, search, index, graph, quests, watchers in itertools.product(
+            list(Route), *([(False, True)] * 6)
+        )
+    }
+    return tuple(sorted(found, key=lambda p: tuple(p.as_answers().values()).__repr__()))
+
+
+EVERY_VALID_PROFILE: tuple[Profile, ...] = _every_valid_profile()

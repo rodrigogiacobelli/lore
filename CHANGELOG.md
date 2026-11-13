@@ -8,6 +8,28 @@ See standards-public-api-stability for the public API stability and semver polic
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-31
+
+### Changed
+
+#### `lore init` installs only the features a project uses
+
+`lore init` asks what the project uses and installs only that. The same eleven skills and the same 226-line instruction text no longer go to every project.
+
+Doctrines, Artifacts and `lore health` are the **core**: always installed, never a question. One question covers them and every optional file feature: do agents use the Lore CLI, or their own file tools (the harness) to create, read, update and delete Lore's files? The rest is yes/no. **Memory** (codex, rites, glossary) follows the route and has three opt-ins that need the Lore CLI whatever the route: search, index, and graph with code bindings. **Quests & Missions** need the Lore CLI. **Watchers** follow the route. `lore health` is validation and is always the Lore CLI, so a harness project is still taught `lore health` and no other command unless it opts in. A skill with no surviving block is never written and nothing mentions it; a command whose feature is off appears in no instruction file, skill or getting-started page.
+
+- **New flags.** `--route harness|cli`, and `yes|no` for `--memory`, `--memory-search`, `--memory-index`, `--memory-graph`, `--quests` and `--watchers`. The Memory opt-ins are asked, and mean something, only while Memory is on; `--memory-graph yes --memory no` is a usage error at exit 2. A CLI-only feature turned on under the harness route uses the CLI.
+- **Deprecated flags.** `--access` and `--skills` still work. Each prints one `Warning:` sentence to stderr naming the flags that replace it. `--access native` is `--route harness`; `--skills` maps the old families onto the features.
+- **Config keys.** `init-route`, `init-memory`, `init-memory-search`, `init-memory-index`, `init-memory-graph`, `init-quests` and `init-watchers` record the answers, and `lore init` writes all ten `init-*` answers after every run. The retired keys `init-access-mode` and `init-skill-families`, and the per-feature `init-<feature>-read`, `-write` and `-validate` keys of the pre-release build of this version, are read once to migrate a project and then ignored, with a `Warning:` naming what they became; their setting lines stay in `.lore/config.toml` untouched. A pre-0.14 project's route follows its access mode, except that a project with skills but no memory family keeps the CLI; the families map to Memory with all three opt-ins, Quests and Watchers.
+- **Built-in defaults.** With no flag, no recorded answer and no terminal, every feature is on and the route is `cli`. That installs the same eleven skills and the same seeded defaults as before. At a terminal each yes/no starts at no unless the project recorded or migrated an answer.
+- **Instruction text is bounded.** `.lore/LORE-AGENT.md` and each agent's marked block are at most 100 lines for every combination of answers. Every skill file is at most 100 lines except `store-memory` (150, and its three reference files), `update-index` (120), `sync-codex-guide` (110) and `update-doctrine` (110). Only `store-memory` ships `references/` files; the other skills point at the seeded artifact (`lore artifact show <id>` on the CLI route, the `.lore/artifacts/default/` path on the harness route).
+- **`run-doctrine` is a core skill; `start-quest` needs Quests.** `run-doctrine` is installed in every project and teaches an agent to run a doctrine with no quest or mission commands: it reads the design, plans the missions from its table, asks before dispatching, briefs a worker for each `agent` mission, runs independent missions in parallel, does `constable` missions inline, stops for `human` missions, keeps a visible checklist and reports at the end. On the CLI route it reads mission bodies with `lore doctrine show`; on the harness route it reads the files. `start-quest` is the quest flow and is installed only when Quests is on.
+- **Seeded defaults follow the owning feature.** Every default doctrine and the core artifacts are written for every project. The codex skeleton and the codex, glossary, rite and inquest design documents need Memory, `mission-design` needs Quests, and the changelog watcher needs Watchers. `.lore/GETTING-STARTED.md` is rendered for the project instead of copied. Turning a feature off removes its `default/` tree, its skills and its instruction text on the next run.
+- **`lore health --scope skills`.** The `wrong_access_mode` check is replaced by `wrong_profile` (error), which names the answer a file was rendered for. `leaked_command` (warning) reports a command the recorded profile does not grant, and `unrendered_access_marker` also detects a block or skills-table marker remnant.
+- **`lore.api`.** `plan_init` takes `route`, `memory`, `memory_search`, `memory_index`, `memory_graph`, `quests` and `watchers` as keywords, with `access_mode` and `skill_families` kept as deprecated aliases. `InitPlan` gains `notices`. `Feature`, `Route`, `Capability` and `Profile` are exported.
+- **BREAKING (minor): `InitAnswers` constructor.** `InitAnswers(agents, profile, on_existing_agent_file, skills_gitignore, on_conflict)` replaces `InitAnswers(agents, access_mode, skill_families, ...)`. `access_mode` and `skill_families` remain as read-only properties derived from `profile`, so a caller that reads them is unaffected; a caller that constructs an `InitAnswers` must pass a `Profile`.
+- **`decisions-006-id-references` amended.** The by-ID rule binds when the route is `cli`; the `harness` route lifts it for every file feature.
+
 ## [0.13.0] - 2026-10-05
 
 ### Added

@@ -13,6 +13,7 @@ binds:
 - tests/unit/test_reconcile.py
 related:
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-features
 - conceptual-workflows-init-interactive
 - conceptual-workflows-health
 - conceptual-entities-skill
@@ -74,6 +75,16 @@ Lore does not move a person's edits into the file that replaced their skill. It 
 ## A Seeded Tree Lore Stops Shipping
 
 Reconciliation cannot answer for a seeded tree, because the manifest records nothing inside `.lore/`. A tree Lore has stopped shipping is handled by its own mechanism: `init.RETIRED_SEED_TREES` names it, every `lore init` walks it once, unlinks every regular file in it, reports each as `Removed <label>/<path> — no longer shipped`, and prunes the emptied directories. Files the project authored outside the retired subtree are named once and left on disk (lore codex show decisions-032-retired-seed-trees).
+
+## A Feature Turned Off
+
+Reconciliation compares what the answers desire with what the manifest recorded. A skill that no feature of the project's answers keeps is absent from the desired set, so its recorded files become removals with the reason `no longer installed here`: turning Watchers off removes `update-watcher`, and setting Memory write to `off` removes `store-memory`, `update-custom-schema` and `sync-codex-guide`. A reference file whose blocks stop surviving is removed the same way, and an instruction file whose blocks all vanish loses its marked block while the rest of the file stays byte-identical.
+
+The seeded `default/` trees follow the same rule through the seeded-tree prune: a default file the answers do not keep counts as a file the release no longer ships. The project's own files in those directories, `codex.md` and `glossary.yaml` are never touched.
+
+## Migration from the Family Model
+
+A project initialised under the `init-access-mode` and `init-skill-families` keys has recorded skill paths and no recorded feature answers. `plan_init` translates the old keys once into the route and capability answers (`conceptual-workflows-init-features` holds the table), and reconciliation then runs as usual. Every skill id the family model installed exists in the feature model, so each recorded skill whose bytes still match is an overwrite, and a skill the translated answers no longer keep is a removal. The manifest's `files` and `manifest_version` keep their meaning; its `answers` gain the profile, which a downgraded reader ignores.
 
 ## Conflicts
 

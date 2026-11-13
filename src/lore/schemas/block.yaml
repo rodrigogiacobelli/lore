@@ -1,0 +1,47 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "lore://schemas/block"
+title: Block
+description: >-
+  The frontmatter of one instruction block. Blocks are the unit an instruction
+  file or a skill is assembled from; each is gated by the feature, route and
+  capabilities it needs. Shipped as package data under
+  src/lore/defaults/blocks/, never overlayable by a project.
+type: object
+additionalProperties: false
+required: [id, feature]
+properties:
+  id:
+    type: string
+    pattern: "^[a-z0-9][a-z0-9-]*$"
+    description: Globally unique. Equals the file's stem.
+  feature:
+    enum: [core, memory, doctrines, artifacts, watchers, quests]
+    description: The owning feature. Equals the directory the file lives in.
+  route:
+    enum: [harness, cli]
+    description: The global route this block is for.
+  capabilities:
+    type: array
+    uniqueItems: true
+    items: {type: string, minLength: 1}
+    description: Capability ids that must all be on.
+  requires:
+    type: array
+    items: {type: string, minLength: 1}
+    description: Condition strings that must all hold.
+  unless:
+    type: array
+    items: {type: string, minLength: 1}
+    description: Condition strings none of which may hold.
+  commands:
+    type: array
+    uniqueItems: true
+    items: {type: string, minLength: 1}
+    description: The `lore` command phrases the body contains.
+  mentions:
+    type: array
+    items: {type: string, minLength: 1}
+    description: Skill ids or "skill/path" files the body refers to.
+  glue:
+    enum: [blank, tight]
+    description: Whether a blank line precedes the block when joined.

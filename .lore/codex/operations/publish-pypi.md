@@ -28,7 +28,7 @@ The authoritative PyPI package is **`lore-agent-task-manager`**. The PyPI publis
 4. Working tree is clean: `git status` prints nothing.
 5. Tests pass: `uv run pytest`.
 6. `lore health` is green on this repo's own codex.
-7. `src/lore/defaults/legacy-hashes.json` is current: run `uv run python scripts/update_legacy_hashes.py`, then `git status`. The script hashes every file under `src/lore/defaults/skills/`, prefixes each path with `.lore/skills/`, and unions the result into the file — it never removes a row, because a project may hop several releases and needs every intermediate hash. It is idempotent, so a clean `git status` after running it means the file was already current. Skipping this step means a project upgrading past the release cannot recognise the skills the release shipped, and keeps them instead of reconciling them.
+7. `src/lore/defaults/legacy-hashes.json` is current: run `uv run python scripts/update_legacy_hashes.py`, then `git status`. The script renders every skill file under every combination of the gate variables its blocks use, hashes each distinct output, prefixes each path with `.lore/skills/`, and unions the result into the file — it never removes a row, because a project may hop several releases and needs every intermediate hash. It is idempotent, so a clean `git status` after running it means the file was already current. Skipping this step means a project upgrading past the release cannot recognise the skills the release shipped, and keeps them instead of reconciling them.
 8. You have a PyPI account and an API token. Token lives in `~/.pypirc` or is passed via `UV_PUBLISH_TOKEN` / `--token`. If creating a new token, scope it to this project on <https://pypi.org/manage/account/token/>.
 
 ## Release runbook

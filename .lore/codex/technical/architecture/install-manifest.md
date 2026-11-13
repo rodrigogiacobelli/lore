@@ -37,13 +37,14 @@ Its entries name paths **outside** `.lore/` — `.claude/skills/…`, `CLAUDE.md
 {
   "manifest_version": 1,
   "lore_version": "0.10.0",
-  "catalogue_version": 2,
+  "catalogue_version": 3,
   "generated_at": "2026-08-25T14:32:00Z",
   "answers": {
     "agents": ["claude"],
+    "skills_gitignore": "lore-only",
+    "profile": {"route": "harness", "memory": true, "memory_search": false, "...": "..."},
     "access_mode": "native",
-    "skill_families": ["memory", "workflow"],
-    "skills_gitignore": "lore-only"
+    "skill_families": ["memory", "workflow"]
   },
   "targets": {"claude": ".claude/skills"},
   "files": [
@@ -65,7 +66,7 @@ Its entries name paths **outside** `.lore/` — `.claude/skills/…`, `CLAUDE.md
 
 `files` is a list of objects sorted by `path`, not a path-keyed map: each entry carries `kind` and `source`, so a map would nest an object under every key anyway. Sorting makes successive manifests diffable.
 
-`answers` and `targets` are informational. They let the report say that the access mode moved from `native` to `cli`, and they let a deselected agent with an empty skill set still be detected. The reconciliation algorithm reads `files` and nothing else — one source of truth for the decision.
+`answers` and `targets` are informational. `answers.profile` holds the seven feature answers (the route as a string, six booleans) that rendered the files, and `lore health --scope skills` reads it to tell a file rendered for one answer from a file rendered for another. `access_mode` and `skill_families` are derived from the profile and written so a reader that predates the profile still finds a coherent manifest. They let the report say that a route moved from `harness` to `cli`, and they let a deselected agent with an empty skill set still be detected. The reconciliation algorithm reads `files` and nothing else — one source of truth for the decision.
 
 ## `kind`
 
@@ -95,7 +96,7 @@ One hash function, one place: `manifest.file_digest(path)` and `manifest.bytes_d
 
 Content is hashed as **raw bytes**, with no newline normalisation. A CRLF checkout therefore registers as an edit, which is the honest answer — Lore wrote LF.
 
-The hash covers the **rendered** content, after access-mode selection. Flipping the access mode changes every affected hash, so those files classify as clean overwrites of unmodified files rather than as phantom user edits. This is what makes changing the access mode a supported operation rather than a wall of conflicts.
+The hash covers the **rendered** content, after block selection. Changing a route or a capability changes every affected hash, so those files classify as clean overwrites of unmodified files rather than as phantom user edits, and a skill the new answers drop classifies as a removal. This is what makes changing an answer a supported operation rather than a wall of conflicts.
 
 For a `section` entry the digest covers the marker-block text alone, so editing prose elsewhere in the same file never registers as a conflict.
 
@@ -119,7 +120,7 @@ For a `section` entry the digest covers the marker-block text alone, so editing 
 
 `.lore/skills/.gitignore` is deliberately absent from the file. It is generated per release, so its historical hashes vary with the shipped skill list; an unmatched file is kept, and a stale gitignore listing retired directories inside a tree `.lore/.gitignore` already ignores wholesale is harmless.
 
-**Generation.** `scripts/update_legacy_hashes.py` runs as a release pre-flight step (`ops-publish-pypi`). It hashes every file under `src/lore/defaults/skills/`, prefixes each relative path with `.lore/skills/`, and unions the result into the existing file. Rows are never removed: a project may hop from 0.8 to 0.14 and needs every intermediate hash. The script is idempotent — running it twice on an unchanged tree produces a byte-identical file.
+**Generation.** `scripts/update_legacy_hashes.py` runs as a release pre-flight step (`ops-publish-pypi`). For each skill file it enumerates every combination of the gate variables the file's blocks use, renders each, keeps the distinct outputs, hashes them, prefixes each relative path with `.lore/skills/`, and unions the result into the existing file, so a project that committed its skills and lost its manifest still recognises an unedited install of any profile as Lore's. Rows are never removed: a project may hop from 0.8 to 0.14 and needs every intermediate hash. The script is idempotent — running it twice on an unchanged tree produces a byte-identical file.
 
 Because the file sits under `src/lore/defaults/`, `decisions-006-no-seed-content-tests` applies: tests assert that it exists, parses, and carries the required top-level shape, never that a particular hash is present.
 

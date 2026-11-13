@@ -358,7 +358,8 @@ def test_doctrine_edit_no_longer_takes_a_whole_file_from_flag(
     )
 
     assert result.exit_code == 2
-    assert "No such option: -f" in result.stderr
+    assert "No such option" in result.stderr
+    assert "-f" in result.stderr
 
 
 def test_a_removed_mission_leaves_the_index(runner, project_dir):

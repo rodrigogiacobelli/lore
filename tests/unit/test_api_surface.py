@@ -74,6 +74,10 @@ G1_EXPECTED_ALL: tuple[str, ...] = (
     "InitAnswers",
     "InitPlan",
     "InitResult",
+    "Feature",
+    "Route",
+    "Capability",
+    "Profile",
     # exceptions
     "GlossaryError",
     "ProjectNotFoundError",
@@ -282,6 +286,10 @@ G1_IDENTITY_SOURCES: dict[str, str] = {
     "InitAnswers": "lore.initplan",
     "InitPlan": "lore.initplan",
     "InitResult": "lore.initplan",
+    "Feature": "lore.initplan",
+    "Route": "lore.initplan",
+    "Capability": "lore.initplan",
+    "Profile": "lore.initplan",
     # exceptions
     "GlossaryError": "lore.glossary",
     "ProjectNotFoundError": "lore.root",
@@ -729,6 +737,17 @@ class TestApiPrivateAliases:
         from lore import api
 
         assert api._doctrine is lore.doctrine
+
+
+class TestApiInitplanAlias:
+    """The CLI reaches the question table through a private namespace alias."""
+
+    def test_initplan_alias_resolves(self):
+        import lore.initplan
+        from lore import api
+
+        assert api._initplan is lore.initplan
+        assert "_initplan" not in api.__all__
 
 
 class TestApiGlossaryScopeSurface:

@@ -289,9 +289,14 @@ The checker is `health._check_skills(project_root)`. It reads `.lore/.install-ma
 | `modified_skill_file` | warning | `"<path> — edited since install; lore init will replace it with the shipped version"` |
 | `retired_skill_present` | warning | `"<id> — retired into <into>; run lore init to reconcile"` |
 | `missing_skill_frontmatter` | error | `"<path> — SKILL.md frontmatter is missing 'name'"` |
+| `wrong_profile` | error | `"<path> — rendered for <answer>=<value>; this project records <answer>=<other>. Run lore init to convert it"` — the edited file is the shipped render under a profile that differs from the recorded one in exactly one answer |
+| `unrendered_access_marker` | error | `"<path> — holds a literal '<marker>'; blocks are resolved at install time, so an installed file can never carry one. Run lore init to re-render it"` — a block or skills-table marker remnant |
+| `leaked_command` | warning | `"<path> — mentions 'lore <phrase>' but <capability> is off in the recorded profile; run lore init"` — stale or hand-edited text names a command no recorded answer grants |
 | `skills_scan_failed` | error | `"<manifest-path>: <reason>"` — the manifest exists and does not parse |
 
 Every issue carries `entity_type="skills"`, with `schema_id`, `rule` and `pointer` all `null`, matching every non-schema check.
+
+The two profile checks read the profile from the manifest's `answers.profile` and never from `.lore/config.toml`. A manifest without a profile skips both. `wrong_profile` runs only for a file that already failed its digest check, and `leaked_command` covers every `skill:` file and `lore-agent`, so shipped content cannot trigger it.
 
 The severity split follows the existing convention. Lore claiming to have installed a file that is gone is a real inconsistency and flips the exit code; a person editing a skill is legitimate and warns.
 

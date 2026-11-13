@@ -9,6 +9,7 @@ related:
 - decisions-010-public-api-stability
 - decisions-011-api-parity-with-cli
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-features
 - conceptual-workflows-init-reconcile
 - conceptual-workflows-nested-projects
 - tech-arch-projects-module
@@ -58,7 +59,13 @@ Initialisation is the one operation that runs where `.lore/` may not exist, so i
 ```python
 from lore.api import plan_init, apply_init
 
-plan = plan_init(Path("/srv/acme"), agents=["claude"], access_mode="native")
+plan = plan_init(
+    Path("/srv/acme"),
+    agents=["claude"],
+    route="harness",             # the agent's own file tools for doctrines, artifacts, memory, watchers
+    memory=True, memory_search=True,
+    quests=False,
+)
 
 plan.has_changes        # False means the project is already correct
 plan.counts()           # {"create": 13, "section": 2, "overwrite": 0, "remove": 0, "conflict": 0}
@@ -72,11 +79,13 @@ result.skipped          # conflicts left alone under on_conflict="skip"
 
 A caller that only wants to know what would happen calls `plan_init` and stops. Nothing is written until `apply_init`.
 
-`run_init()` is the zero-argument shorthand — `apply_init(plan_init()).messages`, as a list — and its signature is pinned. An orchestrator that upgraded Lore and calls `run_init()` gets the same files it always did.
+`run_init()` is the zero-argument shorthand — `apply_init(plan_init()).messages`, as a list — and its signature is pinned. An orchestrator that upgraded Lore and calls `run_init()` gets the built-in defaults: every feature on and the route `cli`.
 
-Each keyword on `plan_init` that defaults to `None` resolves argument → `.lore/config.toml` → built-in default, inside `plan_init`. There is no second reader of those keys, so a Python caller passing nothing gets exactly what a person passing no flag gets.
+Each keyword on `plan_init` that defaults to `None` resolves argument → deprecated alias → `.lore/config.toml` → built-in default, inside `plan_init`. The feature answers are `route` (`"harness"` or `"cli"`) and the six booleans `memory`, `memory_search`, `memory_index`, `memory_graph`, `quests` and `watchers`; `conceptual-workflows-init-features` holds the model. There is no second reader of those keys, so a Python caller passing nothing gets exactly what a person passing no flag gets.
 
-`plan_init` raises `ValueError` for a token the CLI would reject at exit 2 — an unknown agent id, an unknown access mode or skill family, or `agents=["none", "claude"]`. The four validators behind those checks (`validate_agent_id`, `validate_agent_selection`, `validate_access_mode`, `validate_skill_family`) are exported too, for a caller that wants to check before calling.
+`plan_init` raises `ValueError` for a token the CLI would reject at exit 2 — an unknown agent id, an unknown route token, a bare string where a `bool` is expected, a Memory opt-in set to `True` with `memory=False`, an unknown access mode or skill family, or `agents=["none", "claude"]`. The four validators behind those checks (`validate_agent_id`, `validate_agent_selection`, `validate_access_mode`, `validate_skill_family`) are exported too, for a caller that wants to check before calling.
+
+`access_mode` and `skill_families` still work as deprecated aliases for the route keywords. Each alias a call uses adds a sentence to `plan.notices` naming its replacement, and `plan.answers.profile` holds the resolved `Profile`.
 
 No prompt ever fires from `plan_init` or `apply_init`. Prompting lives in the CLI, and every prompt's effect is a keyword on `plan_init` (ADR-011).
 

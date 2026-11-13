@@ -11,7 +11,6 @@ Covers all five functions defined in lore.validators:
 
 from pathlib import Path
 
-
 from lore.validators import (
     route_entity,
     validate_entity_id,
@@ -20,7 +19,6 @@ from lore.validators import (
     validate_mission_id,
     validate_priority,
 )
-
 
 # ---------------------------------------------------------------------------
 # validate_message
@@ -809,3 +807,115 @@ class TestValidateProjectName:
 
         for value in (42, None, ["camelot"], {"name": "camelot"}, True):
             assert validate_project_name(value) == INVALID_NAME_MESSAGE
+
+
+# ---------------------------------------------------------------------------
+# Adaptive init answers: the route token and the memory-capability rule.
+# ---------------------------------------------------------------------------
+
+
+def test_route_tokens_constant_matches_the_route_enum():
+    """``validators`` cannot import ``lore.initplan``; this test is the join."""
+    from lore.initplan import Route
+    from lore.validators import ROUTE_TOKENS
+
+    assert ROUTE_TOKENS == tuple(route.value for route in Route)
+
+
+def test_memory_capability_names_match_the_profile_fields():
+    import dataclasses
+
+    from lore.initplan import Profile
+    from lore.validators import MEMORY_CAPABILITY_ANSWERS
+
+    fields = [f.name for f in dataclasses.fields(Profile)]
+    assert MEMORY_CAPABILITY_ANSWERS == tuple(n for n in fields if n.startswith("memory_"))
+
+
+class TestValidateRoute:
+    def test_accepts_the_two_tokens(self):
+        from lore.validators import validate_route
+
+        for token in ("harness", "cli"):
+            assert validate_route(token) is None
+
+    def test_rejects_an_unknown_token_naming_it_and_the_accepted_set(self):
+        from lore.validators import validate_route
+
+        assert validate_route("native") == (
+            "Unknown route: 'native'. Accepted tokens: harness, cli."
+        )
+
+    def test_off_is_not_a_route(self):
+        from lore.validators import validate_route
+
+        assert validate_route("off") is not None
+
+    def test_rejects_none_and_booleans(self):
+        from lore.validators import validate_route
+
+        assert validate_route(None) is not None
+        assert validate_route(True) is not None
+
+
+class TestValidateProfileAnswers:
+    def _resolved(self, **overrides):
+        base = {"route": "cli", "memory": True, "memory_search": True, "quests": True}
+        base.update(overrides)
+        return base
+
+    def test_a_clean_profile_passes(self):
+        from lore.validators import validate_profile_answers
+
+        assert validate_profile_answers(self._resolved(), explicit=set()) is None
+
+    def test_an_unknown_route_token_is_reported_first(self):
+        from lore.validators import validate_profile_answers
+
+        error = validate_profile_answers(self._resolved(route="native"), explicit={"route"})
+        assert error == "Unknown route: 'native'. Accepted tokens: harness, cli."
+
+    def test_explicit_memory_capability_without_memory_is_rejected(self):
+        from lore.validators import validate_profile_answers
+
+        resolved = self._resolved(memory=False)
+        assert validate_profile_answers(resolved, explicit={"memory_search"}) == (
+            "memory_search needs Memory on: set memory to true."
+        )
+
+    def test_a_recorded_capability_without_memory_is_accepted(self):
+        from lore.validators import validate_profile_answers
+
+        assert validate_profile_answers(self._resolved(memory=False), explicit=set()) is None
+
+    def test_an_explicit_false_capability_is_never_a_contradiction(self):
+        from lore.validators import validate_profile_answers
+
+        resolved = self._resolved(memory=False, memory_search=False)
+        assert validate_profile_answers(resolved, explicit={"memory_search"}) is None
+
+
+class TestValidateExplicitContradictions:
+    def test_capability_beside_memory_off(self):
+        from lore.validators import validate_explicit_contradictions
+
+        error = validate_explicit_contradictions({"memory_graph": True, "memory": False})
+        assert error == "memory_graph needs Memory on: set memory to true."
+
+    def test_fires_only_when_memory_is_present(self):
+        from lore.validators import validate_explicit_contradictions
+
+        assert validate_explicit_contradictions({"memory_graph": True}) is None
+
+    def test_quests_and_watchers_never_contradict(self):
+        from lore.validators import validate_explicit_contradictions
+
+        assert (
+            validate_explicit_contradictions({"quests": True, "watchers": True, "memory": False})
+            is None
+        )
+
+    def test_empty_mapping_is_fine(self):
+        from lore.validators import validate_explicit_contradictions
+
+        assert validate_explicit_contradictions({}) is None

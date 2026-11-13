@@ -17,6 +17,8 @@ from __future__ import annotations
 import importlib
 import json as _json
 import re as _re
+import shutil as _shutil
+from dataclasses import replace as _dc_replace
 from pathlib import Path as _Path
 
 import pytest
@@ -25,6 +27,13 @@ from lore import init as _init
 from lore import manifest as _manifest
 from lore import safewrite as _safewrite
 from lore.initplan import FileAction as _FileAction
+from lore.initplan import Feature as _Feature
+from lore.initplan import Profile as _Profile
+from lore.initplan import Route as _Route
+from lore.legacy_init import profile_from_legacy as _profile_from_legacy
+from tests.unit.conftest import HARNESS_BARE as _ALL_OFF
+from tests.unit.conftest import FIXTURE_PROFILES as _FIXTURE_PROFILES
+from tests.unit.conftest import EVERY_VALID_PROFILE as _RANDOM_PROFILES
 
 
 
@@ -117,8 +126,9 @@ def test_seed_glossary_no_raise_when_both_files_exist(tmp_path):
 def test_run_init_calls_seed_glossary_in_order(tmp_path, monkeypatch):
     """conceptual-workflows-lore-init — Unit row 7 (Scenario 8 ordering).
 
-    docs/AGENTS.md / LORE-AGENT.md seeding (the ``_copy_defaults_tree("docs", ...)``
-    call) must precede ``_seed_glossary``; watcher seeding must follow it.
+    The artifacts and doctrines seeding (the ``_copy_defaults_tree`` calls) must
+    precede ``_seed_glossary``; watcher seeding must follow it. The ``docs`` tree
+    is no longer copied: the getting-started page is rendered.
     """
     from lore import init as init_mod
 
@@ -142,9 +152,9 @@ def test_run_init_calls_seed_glossary_in_order(tmp_path, monkeypatch):
     init_mod.run_init()
 
     assert "seed_glossary" in calls, f"_seed_glossary must be called by run_init: {calls}"
-    assert "copy:docs" in calls, f"docs copy must occur in run_init: {calls}"
-    assert calls.index("copy:docs") < calls.index("seed_glossary"), (
-        f"docs (LORE-AGENT.md) seeding must precede glossary seeding: {calls}"
+    assert "copy:docs" not in calls, f"the docs tree is rendered, not copied: {calls}"
+    assert calls.index("copy:artifacts") < calls.index("seed_glossary"), (
+        f"artifacts seeding must precede glossary seeding: {calls}"
     )
     if "copy:watchers" in calls:
         assert calls.index("seed_glossary") < calls.index("copy:watchers"), (
@@ -425,15 +435,11 @@ def test_init_creates_rite_shared_dir(tmp_path, monkeypatch):
 # Spec: interactive-init-us-007 (lore codex show interactive-init-us-007)
 # Workflow: conceptual-workflows-lore-init
 #
-# ADR-006 boundary: the assertions below read the shipped template only for its
+# ADR-006 boundary: the assertions below read the rendered text only for its
 # generated-region markers and for the absence of a hand-maintained table. No
-# sentence of its prose is pinned.
+# sentence of any block's prose is pinned.
 # ---------------------------------------------------------------------------
 
-TEMPLATE_PATH = (
-    _Path(__file__).resolve().parents[2]
-    / "src" / "lore" / "defaults" / "docs" / "LORE-AGENT.md"
-)
 TABLE_OPENER = "<!-- lore:skills-table -->"
 TABLE_CLOSER = "<!-- lore:skills-table end -->"
 TABLE_HEADER = "| Skill | What it does | Where |"
@@ -455,12 +461,9 @@ def _table_rows(text: str) -> list[str]:
 def test_rendered_text_carries_no_generated_region_markers():
     """interactive-init-us-007 — Unit: neither generated region survives rendering."""
     from lore import init as init_mod
-    from lore.initplan import AccessMode
 
     text = init_mod.render_agent_instructions(
-        skill_ids=("store-memory",),
-        install_roots=(_Path(".lore/skills"),),
-        access_mode=AccessMode.CLI,
+        profile=_Profile(), install_roots=(_Path(".lore/skills"),)
     )
     assert isinstance(text, str)
     assert "<!-- lore:skills-table" not in text
@@ -529,34 +532,24 @@ def test_table_paths_use_posix_separators():
     assert "\\" not in table
 
 
-def test_unterminated_skills_table_region_raises_naming_the_line(monkeypatch):
+def test_unterminated_skills_table_region_raises_naming_the_line():
     """interactive-init-us-007 — Unit: an unterminated generated region is a defect."""
     from lore import init as init_mod
-    from lore.initplan import AccessMode
 
-    monkeypatch.setattr(
-        init_mod,
-        "_read_agent_template",
-        lambda: f"# Lore\n\nintro\n{TABLE_OPENER}\nplaceholder\n",
-    )
     with pytest.raises(ValueError) as excinfo:
-        init_mod.render_agent_instructions(
-            skill_ids=(), install_roots=(_Path(".lore/skills"),), access_mode=AccessMode.CLI
+        init_mod._replace_skills_table_region(
+            f"# Lore\n\nintro\n{TABLE_OPENER}\nplaceholder\n", "table\n", "lore-agent"
         )
     assert ":4" in str(excinfo.value)
 
 
-def test_a_skills_table_closer_with_no_opener_raises(monkeypatch):
+def test_a_skills_table_closer_with_no_opener_raises():
     """interactive-init-us-007 — Unit: the mirror defect is caught too."""
     from lore import init as init_mod
-    from lore.initplan import AccessMode
 
-    monkeypatch.setattr(
-        init_mod, "_read_agent_template", lambda: f"# Lore\n{TABLE_CLOSER}\n"
-    )
     with pytest.raises(ValueError) as excinfo:
-        init_mod.render_agent_instructions(
-            skill_ids=(), install_roots=(_Path(".lore/skills"),), access_mode=AccessMode.CLI
+        init_mod._replace_skills_table_region(
+            f"# Lore\n{TABLE_CLOSER}\n", "table\n", "lore-agent"
         )
     assert ":2" in str(excinfo.value)
 
@@ -564,46 +557,35 @@ def test_a_skills_table_closer_with_no_opener_raises(monkeypatch):
 def test_two_identical_render_calls_are_byte_identical():
     """interactive-init-us-007 — Unit: determinism, because the manifest hashes this."""
     from lore import init as init_mod
-    from lore.initplan import AccessMode
 
-    kwargs = {
-        "skill_ids": ("store-memory", "inquest"),
-        "install_roots": (_Path(".claude/skills"),),
-        "access_mode": AccessMode.NATIVE,
-    }
+    kwargs = {"profile": _Profile(), "install_roots": (_Path(".claude/skills"),)}
     first = init_mod.render_agent_instructions(**kwargs)
     second = init_mod.render_agent_instructions(**kwargs)
     assert first.encode("utf-8") == second.encode("utf-8")
 
 
-def test_shipped_template_has_one_skills_table_region_and_terminated_access_blocks():
-    """interactive-init-us-007 — Unit: the shipped template is structurally correct."""
-    text = TEMPLATE_PATH.read_text(encoding="utf-8")
+def test_the_shipped_instruction_document_has_exactly_one_skills_table_region():
+    """interactive-init-us-007 — Unit: the document is structurally correct."""
+    from lore import skills as skills_mod
+
+    text = skills_mod.render_document("lore-agent", _Profile())
+    assert text is not None
     assert text.count(TABLE_OPENER) == 1
     assert text.count(TABLE_CLOSER) == 1
     assert text.index(TABLE_OPENER) < text.index(TABLE_CLOSER)
 
-    marker = _re.compile(r"^<!--\s*lore:access\s+(\S+)\s*-->$")
-    depth = 0
-    for lineno, line in enumerate(text.splitlines(), start=1):
-        match = marker.match(line.strip())
-        if match is None:
-            continue
-        depth += -1 if match.group(1) == "end" else 1
-        assert depth in (0, 1), f"LORE-AGENT.md:{lineno}: unbalanced access marker"
-    assert depth == 0, "LORE-AGENT.md: unterminated access block"
 
-
-def test_template_has_no_table_row_naming_a_retired_skill():
+def test_the_rendered_document_has_no_table_row_naming_a_retired_skill():
     """interactive-init-us-007 — Unit: no hand-written skills table survives."""
+    from lore import init as init_mod
     from lore import skills as skills_mod
 
     retired = set(skills_mod.load_catalogue().get("retired", {}))
-    rows = [
-        line
-        for line in TEMPLATE_PATH.read_text(encoding="utf-8").splitlines()
-        if line.startswith("|")
-    ]
+    text = init_mod.render_agent_instructions(
+        profile=_Profile(), install_roots=(_Path(".lore/skills"),)
+    )
+    rows = [line for line in text.splitlines() if line.startswith("|")]
+    assert rows
     for row in rows:
         for retired_id in retired:
             assert f"`{retired_id}`" not in row, f"stale table row names {retired_id}"
@@ -848,13 +830,13 @@ class TestTheListingReachesEveryInstallRoot:
         entry = next(row for row in plan.files if row.path == self.FALLBACK)
         assert entry.source == "skills-gitignore:lore"
 
-    def test_nothing_installed_means_no_listing_anywhere(self, tmp_path):
-        """The file governs installed skills; with none there is nothing to say."""
+    def test_the_core_skills_alone_still_get_the_listing(self, tmp_path):
+        """The core skills are always installed, so the listing is always written."""
         plan = _init.plan_init(
             project_root=tmp_path, agents=["claude"], skill_families=["none"]
         )
         paths = {entry.path for entry in plan.files}
-        assert not [path for path in paths if path.endswith("skills/.gitignore")]
+        assert ".claude/skills/.gitignore" in paths
 
     def test_run_init_writes_one_under_dot_lore_skills(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -963,7 +945,7 @@ class TestPlanInitResolutionOrder:
         )
 
     def test_access_mode_without_a_config_file(self, tmp_path):
-        assert _init.plan_init(project_root=tmp_path).answers.access_mode == "native"
+        assert _init.plan_init(project_root=tmp_path).answers.access_mode == "cli"
 
     def test_agents(self, tmp_path):
         _write_config_toml(tmp_path, 'init-agents = ["claude"]\n')
@@ -976,12 +958,15 @@ class TestPlanInitResolutionOrder:
 
     def test_skill_families(self, tmp_path):
         _write_config_toml(tmp_path, 'init-skill-families = ["memory"]\n')
-        assert _init.plan_init(project_root=tmp_path).answers.skill_families == ("memory",)
+        assert _init.plan_init(project_root=tmp_path).answers.skill_families == (
+            "machinery",
+            "memory",
+        )
         assert (
             _init.plan_init(
                 project_root=tmp_path, skill_families=["workflow"]
             ).answers.skill_families
-            == ("workflow",)
+            == ("machinery", "workflow")
         )
 
     def test_skill_families_default_is_every_family(self, tmp_path):
@@ -1142,6 +1127,8 @@ class TestPlanInitTokenValidation:
             "validate_agent_selection",
             "validate_access_mode",
             "validate_skill_family",
+            "validate_route",
+            "validate_profile_answers",
         ):
             real = getattr(validators, name)
 
@@ -1151,12 +1138,20 @@ class TestPlanInitTokenValidation:
 
             monkeypatch.setattr(validators, name, spy)
 
-        _init.plan_init(project_root=tmp_path, agents=["claude"], skill_families=["memory"])
+        _init.plan_init(
+            project_root=tmp_path,
+            agents=["claude"],
+            access_mode="native",
+            skill_families=["memory"],
+            route="cli",
+        )
         assert set(called) == {
             "validate_agent_id",
             "validate_agent_selection",
             "validate_access_mode",
             "validate_skill_family",
+            "validate_route",
+            "validate_profile_answers",
         }
 
 
@@ -1171,8 +1166,9 @@ class TestPlanInitAggregateFamilyTokens:
 
     def test_none_installs_no_skill(self, tmp_path):
         plan = _init.plan_init(project_root=tmp_path, skill_families=["none"])
-        assert plan.answers.skill_families == ()
-        assert not [entry for entry in plan.files if entry.source.startswith("skill:")]
+        assert plan.answers.skill_families == ("machinery",)
+        installed = {entry.source for entry in plan.files if entry.source.startswith("skill:")}
+        assert installed == {"skill:update-doctrine", "skill:update-artifact", "skill:run-doctrine"}
 
 
 class TestPlanShape:
@@ -1346,11 +1342,17 @@ class TestDesiredSetComposition:
     block and the skills gitignore.
     """
 
-    def test_an_empty_family_selection_still_carries_the_instruction_text(self, tmp_path):
+    def test_an_empty_family_selection_leaves_the_core_text_and_skills(self, tmp_path):
+        """`--skills none` switches every optional feature off; the core stays."""
         plan = _init.plan_init(project_root=tmp_path, skill_families=["none"])
         paths = {entry.path for entry in plan.files}
         assert ".lore/LORE-AGENT.md" in paths
-        assert not [path for path in paths if path.startswith(".lore/skills/")]
+        skill_dirs = {
+            path.split("/")[2]
+            for path in paths
+            if path.startswith(".lore/skills/") and path.endswith("SKILL.md")
+        }
+        assert skill_dirs == {"update-doctrine", "update-artifact", "run-doctrine"}
 
     def test_a_selected_agent_contributes_a_section_entry_for_its_file(self, tmp_path):
         plan = _init.plan_init(project_root=tmp_path, agents=["claude"])
@@ -1420,7 +1422,7 @@ class TestHeadlessPlanReproducesThePreFeatureFileSet:
     def test_no_keyword_arguments_selects_no_agent_and_every_family(self, tmp_path):
         plan = _init.plan_init(project_root=tmp_path)
         assert plan.answers.agents == ()
-        assert plan.answers.access_mode == "native"
+        assert plan.answers.access_mode == "cli"
         assert plan.answers.skill_families == ALL_FAMILIES
 
     def test_every_skill_path_sits_under_dot_lore_skills(self, tmp_path):
@@ -1708,7 +1710,7 @@ class TestRunInitStillTakesNoArguments:
 
         monkeypatch.chdir(tmp_path)
         _init.run_init()
-        for skill_id in skills_mod.skills_in_families(skills_mod.family_ids()):
+        for skill_id in skills_mod.installed_skills(_Profile()):
             assert (tmp_path / ".lore" / "skills" / skill_id / "SKILL.md").is_file()
 
     def test_format_db_status_still_returns_its_three_branches(self):
@@ -1741,12 +1743,12 @@ def _planned(path, action, *, kind="owned", source="skill:x", detail=None, repor
 
 
 def _synthetic_plan(root, files, *, agents=("claude",), families=("memory", "workflow")):
-    from lore.initplan import AccessMode, InitAnswers, InitPlan
+    from lore.initplan import InitAnswers, InitPlan
+    from lore.legacy_init import profile_from_legacy
 
     answers = InitAnswers(
         agents=agents,
-        access_mode=AccessMode.NATIVE,
-        skill_families=families,
+        profile=profile_from_legacy("native", families),
         on_existing_agent_file="append",
         skills_gitignore="lore-only",
         on_conflict="skip",
@@ -1763,13 +1765,15 @@ def _synthetic_plan(root, files, *, agents=("claude",), families=("memory", "wor
 class TestRenderPlanHeader:
     """The header states where, for whom, and with what."""
 
-    def test_it_names_the_root_the_agents_the_mode_and_the_families(self, tmp_path):
+    def test_it_names_the_root_the_agents_and_the_features_that_are_on(self, tmp_path):
         plan = _synthetic_plan(tmp_path, [])
         first = _init.render_plan(plan).splitlines()[0]
         assert first == (
-            f"Plan for {tmp_path} (agents: claude · access: native · "
-            "families: memory, workflow)"
+            f"Plan for {tmp_path} (agents: claude · {plan.answers.profile.summary()})"
         )
+        assert "route: harness" in first
+        assert "memory" in first
+        assert "quests" in first
 
     def test_several_agents_are_listed_in_the_plans_order(self, tmp_path):
         plan = _synthetic_plan(tmp_path, [], agents=("claude", "agents-md"))
@@ -1779,7 +1783,7 @@ class TestRenderPlanHeader:
         plan = _synthetic_plan(tmp_path, [], agents=(), families=())
         header = _init.render_plan(plan).splitlines()[0]
         assert "agents: none" in header
-        assert "families: none" in header
+        assert "route:" in header
 
 
 class TestRenderPlanLines:
@@ -1903,20 +1907,27 @@ class TestRecordedAnswerLookup:
     def test_each_written_key_reports_its_prompt(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         _init.run_init()
+        from lore.initplan import QUESTIONS
+
         assert _init.answered_prompts(tmp_path) == frozenset(
             {
                 _init.PROMPT_AGENTS,
-                _init.PROMPT_ACCESS_MODE,
-                _init.PROMPT_SKILL_FAMILIES,
                 _init.PROMPT_SKILLS_GITIGNORE,
+                *QUESTIONS,
             }
         )
 
     def test_a_key_at_its_default_value_still_counts_as_recorded(self, tmp_path):
         target = tmp_path / ".lore" / "config.toml"
         target.parent.mkdir(parents=True)
+        target.write_text('init-quests = true\n', encoding="utf-8")
+        assert "quests" in _init.answered_prompts(tmp_path)
+
+    def test_a_retired_key_answers_nothing(self, tmp_path):
+        target = tmp_path / ".lore" / "config.toml"
+        target.parent.mkdir(parents=True)
         target.write_text('init-access-mode = "native"\n', encoding="utf-8")
-        assert _init.answered_prompts(tmp_path) == frozenset({_init.PROMPT_ACCESS_MODE})
+        assert _init.answered_prompts(tmp_path) == frozenset()
 
     def test_an_unreadable_config_records_nothing_rather_than_raising(self, tmp_path):
         target = tmp_path / ".lore" / "config.toml"
@@ -2258,7 +2269,7 @@ def test_retired_seed_trees_names_the_knights_default_tree():
 
 
 def test_seeded_paths_names_no_knight_path():
-    assert not any("knights" in path for path in _init.seeded_paths())
+    assert not any("knights" in path for path in _init.seeded_paths(_Profile()))
 
 
 def test_the_retired_tree_walk_unlinks_every_file_and_reports_each(tmp_path):
@@ -2359,7 +2370,902 @@ def test_seeding_a_lore_directory_removes_the_retired_tree(tmp_path):
     _seed_retired_knights(tmp_path)
     (tmp_path / ".lore" / "codex").mkdir(parents=True, exist_ok=True)
 
-    messages = _init._seed_lore_directory(tmp_path)
+    messages = _init._seed_lore_directory(tmp_path, _Profile())
 
     assert any("Removed knights/default/" in message for message in messages)
     assert not (tmp_path / ".lore" / "knights" / "default").exists()
+
+
+# ===========================================================================
+# Feature answers: resolution, migration, persistence
+# Spec: adaptive-init-spec, Parts 2.8, 2.8.1, 2.9 and 5 "Lane B tests".
+# Anchor: conceptual-workflows-lore-init.
+#
+# Nothing below reads a word of a shipped block or seed: assertions are about
+# the resolved Profile, the planned paths and the recorded keys.
+# ===========================================================================
+
+def _reported_rows(plan) -> list:
+    """The reconciled rows a run would act on (the seeded files are always refreshed)."""
+    return [entry for entry in plan.files if entry.reported]
+
+
+def _apply(root: _Path, **answers):
+    return _init.apply_init(_init.plan_init(project_root=root, **answers))
+
+
+def _manifest_payload(root: _Path) -> dict:
+    return _json.loads((root / ".lore" / ".install-manifest.json").read_text(encoding="utf-8"))
+
+
+def _write_manifest_payload(root: _Path, payload: dict) -> None:
+    (root / ".lore" / ".install-manifest.json").write_text(
+        _json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+class TestResolveProfile:
+    """Precedence: explicit keyword > deprecated alias > recorded key > base layer."""
+
+    def test_nothing_recorded_anywhere_is_the_headless_profile(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _Profile()
+        assert plan.notices == ()
+
+    def test_a_recorded_key_beats_the_base_layer(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-route = "harness"\n')
+        profile = _init.plan_init(project_root=tmp_path).answers.profile
+        assert profile.route is _Route.HARNESS
+
+    def test_a_recorded_opt_in_is_read_as_a_bool(self, tmp_path):
+        _write_config_toml(tmp_path, "init-memory-index = false\n")
+        assert _init.plan_init(project_root=tmp_path).answers.profile.memory_index is False
+
+    def test_an_alias_beats_a_recorded_key(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-route = "harness"\n')
+        profile = _init.plan_init(project_root=tmp_path, access_mode="cli").answers.profile
+        assert profile.route is _Route.CLI
+
+    def test_an_explicit_keyword_beats_an_alias(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path, access_mode="cli", route="harness")
+        assert plan.answers.profile.route is _Route.HARNESS
+
+    def test_an_explicit_keyword_beats_a_recorded_key(self, tmp_path):
+        _write_config_toml(tmp_path, "init-quests = true\n")
+        profile = _init.plan_init(project_root=tmp_path, quests=False).answers.profile
+        assert profile.quests is False
+
+    def test_a_route_keyword_takes_a_string_or_a_route(self, tmp_path):
+        as_text = _init.plan_init(project_root=tmp_path, route="harness").answers.profile
+        as_enum = _init.plan_init(project_root=tmp_path, route=_Route.HARNESS).answers.profile
+        assert as_text == as_enum
+        assert as_text.route is _Route.HARNESS
+
+    def test_every_fixture_profile_round_trips_through_the_keywords(self, tmp_path):
+        for name, profile in _FIXTURE_PROFILES.items():
+            resolved = _init.plan_init(
+                project_root=tmp_path, **profile.as_answers()
+            ).answers.profile
+            assert resolved == profile.normalized(), name
+
+    def test_a_skills_alias_yields_the_complete_legacy_profile(self, tmp_path):
+        plan = _init.plan_init(
+            project_root=tmp_path, access_mode="cli", skill_families=["memory", "workflow"]
+        )
+        assert plan.answers.profile == _profile_from_legacy("cli", ("memory", "workflow"))
+
+    def test_a_skills_alias_alone_keeps_the_recorded_route(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-route = "harness"\n')
+        plan = _init.plan_init(project_root=tmp_path, skill_families=["memory"])
+        assert plan.answers.profile.route is _Route.HARNESS
+
+    def test_an_alias_is_named_in_the_plans_notices(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path, access_mode="native")
+        assert plan.notices
+        assert "--access" in plan.notices[0]
+
+    def test_an_unknown_route_token_is_rejected_with_the_accepted_set(self, tmp_path):
+        with pytest.raises(ValueError, match="Unknown route: 'native'. Accepted tokens: harness, cli"):
+            _init.plan_init(project_root=tmp_path, route="native")
+
+    @pytest.mark.parametrize("bad", [True, 3, ["cli"], "off"])
+    def test_a_route_keyword_must_be_a_token(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="Unknown route"):
+            _init.plan_init(project_root=tmp_path, route=bad)
+
+    @pytest.mark.parametrize("bad", ["yes", "true", 1, 0])
+    def test_an_opt_in_keyword_must_be_a_bool(self, tmp_path, bad):
+        with pytest.raises(ValueError, match="memory_search"):
+            _init.plan_init(project_root=tmp_path, memory_search=bad)
+
+    def test_the_alias_tokens_are_still_checked(self, tmp_path):
+        with pytest.raises(ValueError, match="Unknown access mode"):
+            _init.plan_init(project_root=tmp_path, access_mode="both")
+        with pytest.raises(ValueError, match="Unknown skill family"):
+            _init.plan_init(project_root=tmp_path, skill_families=["nope"])
+
+    def test_a_bad_answer_is_refused_before_any_io(self, tmp_path):
+        before = _tree(tmp_path)
+        with pytest.raises(ValueError):
+            _init.plan_init(project_root=tmp_path, route="nope")
+        assert _tree(tmp_path) == before
+
+
+class TestPartialConfigUsesDefaults:
+    def test_one_recorded_new_key_does_not_trigger_a_migration(self, tmp_path):
+        _write_config_toml(
+            tmp_path, 'init-route = "cli"\ninit-skill-families = ["memory"]\n'
+        )
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _Profile()
+        assert plan.notices == ()
+
+    def test_a_partial_config_fills_its_gaps_with_the_headless_defaults(self, tmp_path):
+        _write_config_toml(tmp_path, "init-watchers = false\n")
+        profile = _init.plan_init(project_root=tmp_path).answers.profile
+        assert profile.route is _Route.CLI
+        assert profile.memory and profile.quests
+        assert not profile.feature_on(_Feature.WATCHERS)
+
+
+class TestInterimMigration:
+    """The fifteen keys the unreleased 0.14.0 build wrote map onto the new answers."""
+
+    def _plan(self, tmp_path, text):
+        _write_config_toml(tmp_path, text)
+        return _init.plan_init(project_root=tmp_path)
+
+    def test_memory_is_on_when_either_route_was_not_off(self, tmp_path):
+        plan = self._plan(tmp_path, 'init-memory-read = "harness"\ninit-memory-write = "off"\n')
+        assert plan.answers.profile.memory
+        assert any("Migrated" in notice for notice in plan.notices)
+
+    def test_memory_is_off_when_both_routes_were_off(self, tmp_path):
+        plan = self._plan(tmp_path, 'init-memory-read = "off"\ninit-memory-write = "off"\n')
+        profile = plan.answers.profile
+        assert not profile.memory
+        assert not (profile.memory_search or profile.memory_index or profile.memory_graph)
+
+    def test_search_follows_a_cli_read_route(self, tmp_path):
+        assert self._plan(tmp_path, 'init-memory-read = "cli"\n').answers.profile.memory_search
+
+    def test_index_graph_and_quests_keep_their_values(self, tmp_path):
+        profile = self._plan(
+            tmp_path, "init-memory-index = false\ninit-memory-graph = false\ninit-quests = false\n"
+            'init-memory-read = "cli"\n'
+        ).answers.profile
+        assert not (profile.memory_index or profile.memory_graph or profile.quests)
+
+    def test_the_route_is_cli_when_any_remaining_route_was_cli(self, tmp_path):
+        harness = "".join(
+            f'init-{f}-{a} = "harness"\n'
+            for f in ("memory", "doctrines", "artifacts", "watchers")
+            for a in ("read", "write")
+        )
+        assert self._plan(tmp_path, harness).answers.profile.route is _Route.HARNESS
+        profile = self._plan(tmp_path, harness + 'init-doctrines-write = "cli"\n').answers.profile
+        assert profile.route is _Route.CLI
+
+    def test_the_new_keys_are_recorded_after_the_first_run_and_it_migrates_once(self, tmp_path):
+        from lore.config import recorded_keys
+
+        _write_config_toml(tmp_path, 'init-memory-read = "cli"\ninit-watchers-write = "off"\n')
+        first = _init.plan_init(project_root=tmp_path)
+        _init.apply_init(first)
+        assert {"init-route", "init-memory", "init-watchers"} <= recorded_keys(tmp_path)
+        second = _init.plan_init(project_root=tmp_path)
+        assert second.answers.profile == first.answers.profile
+        assert second.notices == ()
+        text = (tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8")
+        assert 'init-memory-read = "cli"' in text
+
+    def test_the_notice_names_the_retired_keys(self, tmp_path):
+        plan = self._plan(tmp_path, 'init-memory-read = "cli"\n')
+        assert "init-memory-read" in plan.notices[0]
+
+
+class TestMigrationSources:
+    """Old keys, then the old manifest answers, then the recorded skills, then nothing."""
+
+    def test_the_retired_config_keys_are_migrated_and_announced(self, tmp_path):
+        _write_config_toml(
+            tmp_path,
+            'init-access-mode = "cli"\ninit-skill-families = ["memory", "machinery"]\n',
+        )
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _profile_from_legacy("cli", ("machinery", "memory"))
+        assert any("Migrated" in notice for notice in plan.notices)
+
+    def test_a_single_retired_key_takes_the_other_from_the_defaults(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-access-mode = "cli"\n')
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _profile_from_legacy(
+            "cli", ("machinery", "memory", "workflow")
+        )
+
+    def test_the_old_manifest_answers_stand_in_when_no_key_is_recorded(self, tmp_path):
+        _apply(tmp_path, agents=["none"])
+        (tmp_path / ".lore" / "config.toml").write_text("", encoding="utf-8")
+        payload = _manifest_payload(tmp_path)
+        payload["answers"] = {
+            "agents": [],
+            "access_mode": "cli",
+            "skill_families": ["workflow"],
+            "skills_gitignore": "lore-only",
+        }
+        _write_manifest_payload(tmp_path, payload)
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _profile_from_legacy("cli", ("workflow",))
+        assert any("Migrated" in notice for notice in plan.notices)
+
+    def test_the_recorded_skills_stand_in_when_the_manifest_has_no_answers(self, tmp_path):
+        _apply(tmp_path, agents=["none"], skill_families=["memory"])
+        (tmp_path / ".lore" / "config.toml").write_text("", encoding="utf-8")
+        payload = _manifest_payload(tmp_path)
+        payload["answers"] = {}
+        # What an earlier release recorded for a memory-only install: those two
+        # skills, and nothing the capabilities of a newer one add.
+        older = {"skill:retrieve-memory", "skill:store-memory"}
+        payload["files"] = [
+            row
+            for row in payload["files"]
+            if not row["source"].startswith("skill:") or row["source"] in older
+        ]
+        _write_manifest_payload(tmp_path, payload)
+        for skill_dir in (tmp_path / ".lore" / "skills").iterdir():
+            if skill_dir.is_dir() and f"skill:{skill_dir.name}" not in older:
+                _shutil.rmtree(skill_dir)
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _profile_from_legacy("native", ("memory",))
+
+    def test_a_skill_kept_under_a_retired_id_counts_as_its_successors_family(self, tmp_path):
+        from lore import skills as skills_mod
+        from lore.initplan import PlannedFile
+
+        retired = next(
+            old
+            for old in skills_mod.load_catalogue()["retired"]
+            if skills_mod.retirement_for(old).into == "retrieve-memory"
+        )
+        path = f".lore/skills/{retired}/SKILL.md"
+        (tmp_path / path).parent.mkdir(parents=True)
+        (tmp_path / path).write_text("old\n", encoding="utf-8")
+        _manifest.write(
+            tmp_path,
+            answers={},
+            targets={},
+            files=[
+                PlannedFile(
+                    path=path,
+                    action=_FileAction.CREATE,
+                    kind="owned",
+                    source=f"skill:{retired}",
+                    digest=_manifest.bytes_digest(b"old\n"),
+                    detail=None,
+                )
+            ],
+            lore_version="0.0.1",
+            catalogue_version=1,
+        )
+        plan = _init.plan_init(project_root=tmp_path)
+        assert plan.answers.profile == _profile_from_legacy("native", ("memory",))
+
+    def test_a_migrated_install_is_stable_after_one_apply(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-access-mode = "cli"\ninit-skill-families = ["memory"]\n')
+        first = _init.plan_init(project_root=tmp_path)
+        _init.apply_init(first)
+        second = _init.plan_init(project_root=tmp_path)
+        assert second.answers.profile == first.answers.profile
+        assert second.notices == ()
+        assert _reported_rows(second) == []
+
+    def test_a_dry_plan_writes_nothing_while_migrating(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-access-mode = "cli"\n')
+        before = _tree(tmp_path)
+        _init.plan_init(project_root=tmp_path)
+        assert _tree(tmp_path) == before
+
+
+class TestExplicitInapplicableAnswerRaises:
+    def test_a_memory_opt_in_while_the_call_switches_memory_off(self, tmp_path):
+        with pytest.raises(ValueError, match=r"memory_graph needs Memory on"):
+            _init.plan_init(project_root=tmp_path, memory=False, memory_graph=True)
+
+    def test_a_memory_opt_in_while_the_config_switches_memory_off(self, tmp_path):
+        _write_config_toml(tmp_path, "init-memory = false\n")
+        with pytest.raises(ValueError, match="memory_index needs Memory on"):
+            _init.plan_init(project_root=tmp_path, memory_index=True)
+
+    def test_quests_is_always_legal(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path, memory=False, quests=True)
+        assert plan.answers.profile.quests is True
+
+    def test_an_explicit_false_is_never_an_error(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path, memory=False, memory_search=False)
+        assert plan.answers.profile.memory_search is False
+
+
+class TestRecordedInapplicableAnswerIsDropped:
+    def test_a_recorded_memory_opt_in_of_an_off_memory_is_dropped_silently(self, tmp_path):
+        _write_config_toml(tmp_path, "init-memory = false\ninit-memory-graph = true\n")
+        profile = _init.plan_init(project_root=tmp_path).answers.profile
+        assert profile.memory_graph is False
+
+
+class TestReconfigureBase:
+    def _answers(self, **overrides):
+        base = {"route": "cli", "memory": True, "quests": True, "watchers": True}
+        base.update(overrides)
+        return base
+
+    def test_reconfigure_ignores_the_recorded_profile(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-route = "harness"\ninit-quests = false\n')
+        profile = _init.plan_init(
+            project_root=tmp_path,
+            reconfigure=True,
+            agents=[],
+            skills_gitignore="none",
+            **self._answers(),
+        ).answers.profile
+        assert profile.route is _Route.CLI
+        assert profile.quests is True
+
+    def test_reconfigure_ignores_the_retired_keys_too(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-skill-families = ["memory"]\n')
+        plan = _init.plan_init(
+            project_root=tmp_path,
+            reconfigure=True,
+            agents=[],
+            skills_gitignore="none",
+            **self._answers(),
+        )
+        assert plan.notices == ()
+        assert plan.answers.profile.feature_on(_Feature.WATCHERS)
+
+    def test_the_alias_pair_satisfies_reconfigure(self, tmp_path):
+        plan = _init.plan_init(
+            project_root=tmp_path,
+            reconfigure=True,
+            agents=[],
+            skills_gitignore="none",
+            access_mode="cli",
+            skill_families=["memory"],
+        )
+        assert plan.answers.profile == _profile_from_legacy("cli", ("memory",))
+
+    def test_reconfigure_names_what_it_is_missing(self, tmp_path):
+        with pytest.raises(ValueError, match="reconfigure") as excinfo:
+            _init.plan_init(project_root=tmp_path, reconfigure=True, agents=[])
+        text = str(excinfo.value)
+        assert "skills_gitignore" in text
+        assert "route" in text
+
+
+class TestMissingRecordedAnswers:
+    def _all(self, **overrides):
+        given = {
+            "agents": [],
+            "skills_gitignore": "none",
+            "route": "cli",
+            "memory": True,
+            "quests": True,
+            "watchers": True,
+        }
+        given.update(overrides)
+        return given
+
+    def test_everything_supplied_leaves_nothing_missing(self):
+        assert _init.missing_recorded_answers(self._all()) == ()
+
+    def test_nothing_supplied_names_every_recorded_question(self):
+        missing = _init.missing_recorded_answers({})
+        assert set(missing) == {
+            "agents", "skills_gitignore", "route", "memory", "quests", "watchers",
+        }
+
+    def test_the_alias_pair_counts_as_every_profile_question(self):
+        missing = _init.missing_recorded_answers(
+            {
+                "agents": [],
+                "skills_gitignore": "none",
+                "access_mode": "cli",
+                "skill_families": ["memory"],
+            }
+        )
+        assert missing == ()
+
+    def test_one_alias_alone_does_not(self):
+        missing = _init.missing_recorded_answers(
+            {"agents": [], "skills_gitignore": "none", "access_mode": "cli"}
+        )
+        assert set(missing) == {"route", "memory", "quests", "watchers"}
+
+    def test_memory_opt_ins_are_never_required(self):
+        assert not any(
+            name.startswith("memory_") for name in _init.missing_recorded_answers({})
+        )
+
+    def test_every_name_has_a_key_and_a_flag(self):
+        for field in _init.missing_recorded_answers({}):
+            key, flag = _init.RECORDED_ANSWER_FLAGS[field]
+            assert key.startswith("init-")
+            assert flag.startswith("--")
+
+
+class TestPersistAnswersWritesTheFeatureKeys:
+    def test_every_profile_key_and_the_two_old_answers_are_written(self, tmp_path):
+        from lore.config import recorded_keys
+        from lore.initplan import QUESTIONS, question_key
+
+        _apply(tmp_path)
+        expected = {"init-agents", "init-skills-gitignore", *(question_key(q) for q in QUESTIONS)}
+        assert expected <= recorded_keys(tmp_path)
+
+    def test_a_second_apply_leaves_the_file_byte_identical(self, tmp_path):
+        _apply(tmp_path)
+        target = tmp_path / ".lore" / "config.toml"
+        first = target.read_bytes()
+        _apply(tmp_path)
+        assert target.read_bytes() == first
+
+    def test_the_recorded_profile_is_what_was_applied(self, tmp_path):
+        _apply(tmp_path, **_FIXTURE_PROFILES["HARNESS_MEMORY"].as_answers())
+        again = _init.plan_init(project_root=tmp_path)
+        assert again.answers.profile == _FIXTURE_PROFILES["HARNESS_MEMORY"]
+
+    def test_the_retired_lines_and_the_projects_own_lines_are_left_alone(self, tmp_path):
+        _write_config_toml(
+            tmp_path,
+            "# my notes\n"
+            'init-access-mode = "cli"   # old\n'
+            'init-skill-families = ["memory"]\n'
+            "show-glossary-on-codex-commands = false\n",
+        )
+        _apply(tmp_path)
+        text = (tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8")
+        assert 'init-access-mode = "cli"   # old\n' in text
+        assert 'init-skill-families = ["memory"]\n' in text
+        assert "show-glossary-on-codex-commands = false\n" in text
+
+    def test_a_present_key_is_rewritten_in_place_and_not_duplicated(self, tmp_path):
+        _write_config_toml(tmp_path, 'init-quests = true\ninit-route = "cli"\n')
+        _apply(tmp_path, quests=False)
+        lines = (tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8").splitlines()
+        assert lines.count("init-quests = false") == 1
+        assert sum(line.startswith("init-quests") for line in lines) == 1
+        assert lines.index("init-quests = false") < lines.index('init-route = "cli"')
+
+
+class TestBuildDesiredBareCoreRendersTheCore:
+    def _plan(self, root):
+        return _init.plan_init(project_root=root, agents=["claude"], **_ALL_OFF.as_answers())
+
+    def test_the_core_text_and_the_core_skills_are_desired(self, tmp_path):
+        plan = self._plan(tmp_path)
+        desired = _init.build_desired(
+            project_root=tmp_path, targets=plan.targets, answers=plan.answers
+        )
+        assert ".lore/LORE-AGENT.md" in desired
+        assert "CLAUDE.md" in desired
+        skills = {p.split("/")[2] for p in desired if p.startswith(".claude/skills/") and p.endswith("SKILL.md")}
+        assert skills == {"update-doctrine", "update-artifact", "run-doctrine"}
+
+    def test_turning_the_optional_features_off_removes_their_skills(self, tmp_path):
+        _apply(tmp_path, agents=["claude"])
+        plan = self._plan(tmp_path)
+        removed = {e.path for e in plan.files if e.action is _FileAction.REMOVE}
+        assert ".claude/skills/store-memory/SKILL.md" in removed
+        assert ".claude/skills/start-quest/SKILL.md" in removed
+        assert ".lore/LORE-AGENT.md" not in removed
+
+    def test_the_agent_file_the_user_owns_keeps_their_text(self, tmp_path):
+        (tmp_path / "CLAUDE.md").write_text("mine\n", encoding="utf-8")
+        _apply(tmp_path, agents=["claude"])
+        _init.apply_init(self._plan(tmp_path))
+        text = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+        assert text.startswith("mine")
+
+
+class TestSkillsGitignorePromptNeedsInstalledSkills:
+    def test_a_project_that_installs_skills_is_asked(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path)
+        assert _init.PROMPT_SKILLS_GITIGNORE in plan.prompts_needed
+
+    def test_the_bare_core_still_installs_skills_so_it_is_asked(self, tmp_path):
+        plan = _init.plan_init(project_root=tmp_path, **_ALL_OFF.as_answers())
+        assert _init.PROMPT_SKILLS_GITIGNORE in plan.prompts_needed
+
+
+class TestPromptTokens:
+    def test_every_profile_question_has_a_prompt_and_a_persisted_key(self):
+        from lore.initplan import QUESTIONS, question_key
+
+        for question in QUESTIONS:
+            assert _init.PERSISTED_ANSWER_PROMPTS[question_key(question)] == question
+
+    def test_the_two_old_answers_keep_their_prompts(self):
+        assert _init.PERSISTED_ANSWER_PROMPTS["init-agents"] == _init.PROMPT_AGENTS
+        assert (
+            _init.PERSISTED_ANSWER_PROMPTS["init-skills-gitignore"]
+            == _init.PROMPT_SKILLS_GITIGNORE
+        )
+
+    def test_the_two_retired_keys_have_no_prompt(self):
+        assert "init-access-mode" not in _init.PERSISTED_ANSWER_PROMPTS
+        assert "init-skill-families" not in _init.PERSISTED_ANSWER_PROMPTS
+
+
+_SAMPLED_PROFILES = {
+    **_FIXTURE_PROFILES,
+    **{f"random-{index}": profile for index, profile in enumerate(_RANDOM_PROFILES[:30])},
+}
+_TABLE_ROW_ID = _re.compile(r"^\| `([a-z-]+)` \|")
+
+
+def _desired_for(root: _Path, profile: _Profile, agents=("claude",)):
+    plan = _init.plan_init(project_root=root, agents=list(agents), **profile.as_answers())
+    return plan, _init.build_desired(
+        project_root=root, targets=plan.targets, answers=plan.answers
+    )
+
+
+class TestInstructionTextIsRenderedFromBlocks:
+    """`.lore/LORE-AGENT.md` and every agent block come from `skills.render_document`."""
+
+    @pytest.mark.parametrize("name", list(_SAMPLED_PROFILES))
+    def test_the_canonical_file_and_the_agent_block_stay_within_the_cap(self, tmp_path, name):
+        profile = _SAMPLED_PROFILES[name]
+        _, desired = _desired_for(tmp_path, profile)
+        for path in (".lore/LORE-AGENT.md", "CLAUDE.md"):
+            text = desired[path].content.decode("utf-8")
+            assert len(text.splitlines()) <= 100, path
+            assert "<!-- lore:skills-table" not in text, path
+            assert "<!-- lore:block" not in text, path
+
+    @pytest.mark.parametrize("name", list(_SAMPLED_PROFILES))
+    def test_the_skills_table_lists_exactly_the_installed_skills(self, tmp_path, name):
+        from lore import skills as skills_mod
+
+        profile = _SAMPLED_PROFILES[name]
+        _, desired = _desired_for(tmp_path, profile)
+        installed = set(skills_mod.installed_skills(profile))
+        text = desired[".lore/LORE-AGENT.md"].content.decode("utf-8")
+        listed = {m.group(1) for line in text.splitlines() if (m := _TABLE_ROW_ID.match(line))}
+        assert listed == installed
+
+    @pytest.mark.parametrize("name", list(_SAMPLED_PROFILES))
+    def test_the_desired_skill_files_are_those_of_the_installed_skills(self, tmp_path, name):
+        from lore import skills as skills_mod
+
+        profile = _SAMPLED_PROFILES[name]
+        _, desired = _desired_for(tmp_path, profile)
+        sources = {row.source for row in desired.values() if row.source.startswith("skill:")}
+        assert sources == {f"skill:{skill}" for skill in skills_mod.installed_skills(profile)}
+
+    def test_the_canonical_text_is_the_document_the_catalogue_renders(self, tmp_path, monkeypatch):
+        from lore import skills as skills_mod
+
+        calls = []
+        real = skills_mod.render_document
+
+        def spy(name, profile):
+            calls.append(name)
+            return real(name, profile)
+
+        monkeypatch.setattr(skills_mod, "render_document", spy)
+        _desired_for(tmp_path, _Profile())
+        assert "lore-agent" in calls
+
+    def test_a_document_no_block_survives_for_is_not_desired(self, tmp_path, monkeypatch):
+        from lore import skills as skills_mod
+
+        monkeypatch.setattr(skills_mod, "render_document", lambda name, profile: None)
+        _, desired = _desired_for(tmp_path, _Profile())
+        assert ".lore/LORE-AGENT.md" not in desired
+        assert "CLAUDE.md" not in desired
+
+    def test_the_core_skills_are_always_in_the_table(self, tmp_path):
+        _, desired = _desired_for(tmp_path, _FIXTURE_PROFILES["HARNESS_BARE"])
+        text = desired[".lore/LORE-AGENT.md"].content.decode("utf-8")
+        listed = {m.group(1) for line in text.splitlines() if (m := _TABLE_ROW_ID.match(line))}
+        assert listed == {"update-doctrine", "update-artifact", "run-doctrine"}
+
+    def test_render_agent_instructions_is_never_none_for_a_valid_profile(self):
+        for profile in _FIXTURE_PROFILES.values():
+            assert (
+                _init.render_agent_instructions(
+                    profile=profile, install_roots=(_Path(".lore/skills"),)
+                )
+                is not None
+            )
+
+    def test_the_old_template_reader_is_gone(self):
+        assert not hasattr(_init, "_read_agent_template")
+        assert not hasattr(_init, "AGENT_TEMPLATE")
+
+
+# ---------------------------------------------------------------------------
+# Seeding follows the features that are on.
+# Spec: adaptive-init-spec 2.13, with the ruling that default pipeline content is
+# gated by every capability it speaks of.
+#
+# Gating is by tree and by file. Nothing here reads a seeded file
+# (decisions-006-no-seed-content-tests): the tests ask which paths a profile
+# seeds, never what a seeded path says.
+# ---------------------------------------------------------------------------
+
+
+def _profile(**overrides) -> _Profile:
+    """The headless profile with *overrides*, normalised."""
+    return _dc_replace(_Profile(), **overrides).normalized()
+
+
+def _seeded(profile: _Profile) -> tuple[str, ...]:
+    return _init.seeded_paths(profile)
+
+
+def _under(paths: tuple[str, ...], prefix: str) -> list[str]:
+    return [path for path in paths if path.startswith(prefix)]
+
+
+def _without(feature: str) -> _Profile:
+    return _profile(**{feature: False})
+
+
+class TestSeededPathsFollowProfile:
+    def test_every_run_seeds_the_database_config_and_ignore_file(self):
+        for profile in (_Profile(), _ALL_OFF):
+            seeded = _seeded(profile)
+            for path in (".lore/lore.db", ".lore/config.toml", ".lore/.gitignore"):
+                assert path in seeded
+
+    def test_the_bare_core_seeds_doctrines_and_artifacts_but_nothing_optional(self):
+        seeded = _seeded(_ALL_OFF)
+        assert _under(seeded, ".lore/doctrines/default/")
+        assert _under(seeded, ".lore/artifacts/default/")
+        for prefix in (".lore/watchers/", ".lore/codex/", ".lore/rites/"):
+            assert not _under(seeded, prefix), prefix
+        assert ".lore/GETTING-STARTED.md" in seeded
+
+    def test_every_default_doctrine_is_seeded_whatever_the_answers(self):
+        everything = {
+            f".lore/doctrines/default/{relative}"
+            for relative, _ in _init._defaults_tree_files("doctrines")
+        }
+        for name, profile in _FIXTURE_PROFILES.items():
+            assert everything <= set(_seeded(profile)), name
+
+    def test_memory_seeds_the_codex_root_and_glossary_either_route(self):
+        for profile in (
+            _FIXTURE_PROFILES["HARNESS_MEMORY"],
+            _FIXTURE_PROFILES["CLI_MEMORY"],
+        ):
+            seeded = _seeded(profile)
+            assert ".lore/codex/codex.md" in seeded
+            assert ".lore/codex/glossary.yaml" in seeded
+
+    def test_without_memory_there_is_no_codex_root_or_glossary(self):
+        seeded = _seeded(_without("memory"))
+        assert ".lore/codex/codex.md" not in seeded
+        assert ".lore/codex/glossary.yaml" not in seeded
+
+    def test_the_getting_started_file_is_seeded_exactly_when_it_renders(self):
+        from lore import skills as skills_mod
+
+        for name, profile in _FIXTURE_PROFILES.items():
+            rendered = skills_mod.render_document("getting-started", profile) is not None
+            assert (".lore/GETTING-STARTED.md" in _seeded(profile)) is rendered, name
+
+    def test_no_seeded_path_names_the_retired_docs_tree(self):
+        assert not any("docs/" in path for path in _seeded(_Profile()))
+
+    def test_the_full_profile_seeds_every_default_tree(self):
+        seeded = _seeded(_Profile())
+        for prefix in (".lore/doctrines/default/", ".lore/artifacts/default/", ".lore/watchers/default/"):
+            assert _under(seeded, prefix), prefix
+
+    def test_the_codex_skeleton_and_memory_design_documents_need_memory(self):
+        owned = (
+            ".lore/artifacts/default/codex/",
+            ".lore/artifacts/default/rites/",
+            ".lore/artifacts/default/lore-design-documents/codex-voice.md",
+            ".lore/artifacts/default/lore-design-documents/glossary-design.md",
+            ".lore/artifacts/default/lore-design-documents/rite-design.md",
+            ".lore/artifacts/default/lore-design-documents/inquest-design.md",
+        )
+        with_memory = _seeded(_FIXTURE_PROFILES["HARNESS_MEMORY"])
+        without = _seeded(_FIXTURE_PROFILES["HARNESS_BARE"])
+        for prefix in owned:
+            assert _under(with_memory, prefix), prefix
+            assert not _under(without, prefix), prefix
+
+    def test_the_mission_design_document_needs_quests(self):
+        path = ".lore/artifacts/default/lore-design-documents/mission-design.md"
+        assert path in _seeded(_FIXTURE_PROFILES["HARNESS_QUESTS"])
+        assert path not in _seeded(_FIXTURE_PROFILES["HARNESS_BARE"])
+
+    def test_the_core_artifacts_are_seeded_without_any_optional_feature(self):
+        seeded = _seeded(_FIXTURE_PROFILES["HARNESS_BARE"])
+        assert ".lore/artifacts/default/lore-design-documents/doctrine-design.md" in seeded
+        assert _under(seeded, ".lore/artifacts/default/feature-implementation/")
+
+    def test_the_route_does_not_gate_a_tree(self):
+        harness = _seeded(_profile(route=_Route.HARNESS))
+        cli = _seeded(_profile(route=_Route.CLI))
+        assert harness == cli
+
+    def test_memory_opt_ins_do_not_gate_a_tree(self):
+        full = _seeded(_Profile())
+        for capability in ("memory_graph", "memory_search", "memory_index"):
+            assert _seeded(_profile(**{capability: False})) == full, capability
+
+    def test_watchers_off_seeds_no_watcher(self):
+        assert not _under(_seeded(_without("watchers")), ".lore/watchers/")
+
+    def test_every_gate_row_parses_in_the_block_grammar(self):
+        from lore import blocks as blocks_mod
+
+        for gate in _init.SEED_GATES:
+            for condition in gate.requires:
+                blocks_mod.parse_condition(condition)
+
+
+class TestSeedKeepPredicate:
+    def test_the_changelog_doctrine_is_core_and_its_watcher_follows_watchers(self):
+        for name, profile in _FIXTURE_PROFILES.items():
+            seeded = _seeded(profile)
+            assert any("update-changelog" in path for path in seeded), name
+            watcher = any(path.startswith(".lore/watchers/default/") for path in seeded)
+            assert watcher is profile.watchers, name
+
+    def test_a_keep_predicate_narrows_the_walk(self):
+        everything = _init._defaults_tree_files("doctrines")
+        assert everything
+        none = _init._defaults_tree_files("doctrines", keep=lambda relative: False)
+        assert none == ()
+        one = everything[0][0]
+        only = _init._defaults_tree_files("doctrines", keep=lambda relative: relative == one)
+        assert [relative for relative, _ in only] == [one]
+
+    def test_the_copy_skips_what_the_predicate_drops(self, tmp_path):
+        messages = _init._copy_defaults_tree("artifacts", tmp_path, keep=lambda relative: False)
+        assert messages == []
+        assert list(tmp_path.rglob("*")) == []
+
+    def test_the_prune_removes_a_file_the_predicate_no_longer_keeps(self, tmp_path):
+        spec = next(tree for tree in _init.SEEDED_TREES if tree.package == "watchers")
+        target = spec.target(tmp_path)
+        _init._copy_defaults_tree("watchers", target)
+        shipped = sorted(path for path in target.rglob("*") if path.is_file())
+        assert shipped
+        messages = _init._prune_seeded_tree(target, spec, keep=lambda relative: False)
+        assert not [path for path in target.rglob("*") if path.is_file()]
+        assert messages and all("no longer shipped" in message for message in messages)
+
+    def test_the_prune_leaves_what_the_predicate_keeps(self, tmp_path):
+        spec = next(tree for tree in _init.SEEDED_TREES if tree.package == "watchers")
+        target = spec.target(tmp_path)
+        _init._copy_defaults_tree("watchers", target)
+        assert _init._prune_seeded_tree(target, spec, keep=lambda relative: True) == []
+
+    def test_a_tree_with_no_gate_keeps_nothing(self):
+        spec = _init._SeedTree("watchers", "watchers/default", prune=True)
+        keep = spec.keep(_Profile())
+        assert keep("not-a-shipped-file.yaml") is False
+
+
+class TestSeedGatesCoverEveryShippedFile:
+    """Every shipped seed matches exactly one gate: a new file cannot arrive ungated."""
+
+    @pytest.mark.parametrize("package", ["doctrines", "artifacts", "watchers"])
+    def test_each_file_matches_exactly_one_row(self, package):
+        spec = next(tree for tree in _init.SEEDED_TREES if tree.package == package)
+        files = _init._defaults_tree_files(
+            package, set(spec.exclude) or None, set(spec.exclude_files) or None
+        )
+        assert files
+        for relative, _ in files:
+            matches = [g for g in _init.SEED_GATES if g.matches(package, relative)]
+            assert len(matches) == 1, relative
+
+    def test_no_row_is_dead(self):
+        for gate in _init.SEED_GATES:
+            files = _init._defaults_tree_files(gate.package)
+            assert any(gate.matches(gate.package, relative) for relative, _ in files), gate
+
+
+class TestSeedLoreDirectoryByProfile:
+    def test_the_bare_core_creates_the_infrastructure_and_the_core_trees(self, tmp_path):
+        _init._seed_lore_directory(tmp_path, _ALL_OFF)
+        lore = tmp_path / ".lore"
+        assert (lore / "lore.db").is_file()
+        assert (lore / "config.toml").is_file()
+        assert (lore / ".gitignore").is_file()
+        for name in ("doctrines", "artifacts", "GETTING-STARTED.md"):
+            assert (lore / name).exists(), name
+        for name in ("codex", "rites", "watchers"):
+            assert not (lore / name).exists(), name
+
+    def test_memory_creates_its_codex_root_glossary_and_rite_directories(self, tmp_path):
+        _init._seed_lore_directory(tmp_path, _FIXTURE_PROFILES["HARNESS_MEMORY"])
+        lore = tmp_path / ".lore"
+        assert (lore / "codex" / "codex.md").is_file()
+        assert (lore / "codex" / "glossary.yaml").is_file()
+        assert (lore / "rites" / "main").is_dir()
+        assert (lore / "rites" / "shared").is_dir()
+
+    def test_getting_started_is_the_rendered_document(self, tmp_path):
+        from lore import skills as skills_mod
+
+        _init._seed_lore_directory(tmp_path, _Profile())
+        written = (tmp_path / ".lore" / "GETTING-STARTED.md").read_text(encoding="utf-8")
+        assert written == skills_mod.render_document("getting-started", _Profile())
+
+    def test_a_getting_started_file_that_no_longer_renders_is_removed(
+        self, tmp_path, monkeypatch
+    ):
+        from lore import skills as skills_mod
+
+        _init._seed_lore_directory(tmp_path, _Profile())
+        monkeypatch.setattr(skills_mod, "render_document", lambda name, profile: None)
+        messages = _init._seed_lore_directory(tmp_path, _Profile())
+        assert not (tmp_path / ".lore" / "GETTING-STARTED.md").exists()
+        assert any("GETTING-STARTED.md" in message for message in messages)
+
+    def test_what_the_user_authored_survives_a_feature_turning_off(self, tmp_path):
+        _init._seed_lore_directory(tmp_path, _Profile())
+        mine = tmp_path / ".lore" / "watchers" / "mine.yaml"
+        mine.write_text("name: mine\n", encoding="utf-8")
+        codex = tmp_path / ".lore" / "codex" / "codex.md"
+        before = codex.read_bytes()
+        _init._seed_lore_directory(tmp_path, _without("watchers"))
+        assert mine.read_text(encoding="utf-8") == "name: mine\n"
+        assert not [
+            path
+            for path in (tmp_path / ".lore" / "watchers" / "default").rglob("*")
+            if path.is_file()
+        ]
+        assert codex.read_bytes() == before
+
+    def test_the_run_orders_artifacts_then_codex_files_then_watchers(self, tmp_path, monkeypatch):
+        calls: list[str] = []
+        real_copy = _init._copy_defaults_tree
+        real_seed = _init._seed_glossary
+
+        def trace_copy(pkg, *args, **kwargs):
+            calls.append(f"copy:{pkg}")
+            return real_copy(pkg, *args, **kwargs)
+
+        def trace_seed(root):
+            calls.append("seed_glossary")
+            return real_seed(root)
+
+        monkeypatch.setattr(_init, "_copy_defaults_tree", trace_copy)
+        monkeypatch.setattr(_init, "_seed_glossary", trace_seed)
+        _init._seed_lore_directory(tmp_path, _Profile())
+        assert calls.index("copy:artifacts") < calls.index("seed_glossary") < calls.index("copy:watchers")
+        assert "copy:docs" not in calls
+
+
+class TestTheManifestRecordsTheProfile:
+    def test_the_answers_carry_the_profile_and_the_derived_old_ones(self, tmp_path):
+        _apply(tmp_path, **_FIXTURE_PROFILES["CLI_MEMORY"].as_answers())
+        answers = _manifest_payload(tmp_path)["answers"]
+        profile = _FIXTURE_PROFILES["CLI_MEMORY"]
+        assert answers["profile"] == profile.as_answers()
+        assert _Profile.from_answers(answers["profile"]) == profile
+        assert answers["access_mode"] == "cli"
+        assert answers["skill_families"] == ["machinery", "memory"]
+        assert answers["agents"] == []
+        assert answers["skills_gitignore"] == "lore-only"
+
+    def test_the_catalogue_version_is_the_catalogues(self, tmp_path):
+        from lore import skills as skills_mod
+
+        _apply(tmp_path)
+        assert _manifest_payload(tmp_path)["catalogue_version"] == skills_mod.load_catalogue()["version"]
+        assert skills_mod.load_catalogue()["version"] == 3
+
+    def test_the_manifest_format_version_is_unchanged(self, tmp_path):
+        _apply(tmp_path)
+        assert _manifest_payload(tmp_path)["manifest_version"] == 1

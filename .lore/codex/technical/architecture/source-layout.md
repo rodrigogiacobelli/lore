@@ -12,11 +12,11 @@ summary: 'The src/lore/ source tree with one-line descriptions per module, inclu
   search_index, CodexIndexError, CodexIndexNotAuthoredError),
   glossary.py (scan_glossary, scan_own_glossary, match_glossary, _normalise_tokens,
   _build_lookup, _render_glossary_block), config.py (Config dataclass with show_glossary_on_codex_commands
-  + health_report_retention + the four init-* answers + project_name + default_project_scope
+  + health_report_retention + the seven feature answers and init_agents and init_skills_gitignore + the retired-key fields + project_name + default_project_scope
   + the shared/descendants tables, load_config, the _FROM_TOML/_EXPECTED_TYPE/_ALLOWED_VALUES/_ALLOWED_ITEM_VALUES/_VALUE_CHECK/_KNOWN_TABLES/_KEY_DOC
   tables and render_known_keys_header — TOML loader for .lore/config.toml), projects.py
   (project topology, export resolution, ID qualification) and scoped.py (per-record
-  resolution for a scoped listing), and the six init modules initplan.py, agents.py,
+  resolution for a scoped listing), and the init modules initplan.py, legacy_init.py, blocks.py, blocklint.py, agents.py,
   skills.py, manifest.py, reconcile.py and prompts.py. Covers package entry points,
   defaults directory (doctrine directories of a design document plus missions/, artifacts/transient/),
   migrations (v1-v7), py.typed, and tests layout. Documents lore.models public API
@@ -58,7 +58,9 @@ The Lore source code repository. Default Doctrines, Artifacts and Watchers are s
 lore/
 |- pyproject.toml
 |- scripts/
-|  +-- update_legacy_hashes.py  # Release pre-flight — unions shipped skill hashes into defaults/legacy-hashes.json
+|  |- check_blocks.py         # Release pre-flight and CI step — lints the instruction blocks and the catalogue (rules L1-L10)
+|  |- check_seed_gates.py     # Release pre-flight — checks each seeded default's gate against the commands it speaks of
+|  +-- update_legacy_hashes.py  # Release pre-flight — unions every distinct rendered skill file's hash into defaults/legacy-hashes.json
 |- README.md
 |- CHANGELOG.md
 |- LICENSE
@@ -75,9 +77,12 @@ lore/
 |      |- priority.py           # Ready queue logic
 |      |- root.py               # Project root detection (find_project_root, ProjectNotFoundError)
 |      |- init.py               # lore init implementation — plan_init / apply_init / run_init (database setup, file seeding, skill install, marker-block writes)
-|      |- initplan.py           # Stdlib-only leaf: AccessMode, FileAction, AgentTarget, PlannedFile, InitAnswers, InitPlan, InitResult
+|      |- initplan.py           # Stdlib-only leaf: Feature, Route, Action, Capability, Profile, QUESTIONS, AccessMode, FileAction, AgentTarget, PlannedFile, InitAnswers, InitPlan, InitResult
+|      |- legacy_init.py        # Stdlib-only leaf: profile_from_legacy, translate_aliases, infer_families (migration and deprecated-alias translation)
+|      |- blocks.py             # Tagged instruction blocks: Block, parse_block, load_blocks, gate conditions, assemble, join, commands_in, leaked_commands, max_lines
+|      |- blocklint.py          # The lint over the block set and the catalogue (rules L1-L10) and lint_rendered; used by tests and scripts/check_blocks.py
 |      |- agents.py             # Packaged agent registry loader (load_registry, agent_ids, get_agent)
-|      |- skills.py             # Skill catalogue loader, family resolution, retirement ledger, access-mode block renderer, desired-file enumeration
+|      |- skills.py             # Skill catalogue loader (v3), legacy family resolution, retirement ledger, installed_skills, render_skill_file, render_document, desired-file enumeration, neighbor_profiles
 |      |- manifest.py           # Install manifest read/write + hashing (file_digest, bytes_digest, section_digest, legacy-hash loader)
 |      |- reconcile.py          # Desired vs recorded vs on-disk reconciliation (reconcile, legacy_recorded, prune_empty_dirs)
 |      |- prompts.py            # CLI-layer questionary prompts; imports questionary lazily inside each function
@@ -114,11 +119,11 @@ lore/
 |          |- gitignore         # Default .gitignore (copied as .lore/.gitignore)
 |          |- schema.sql        # SQLite schema for init
 |          |- agents.yaml       # Agent registry — six rows (claude, agents-md, gemini, qwen, cursor, none)
-|          |- skills-catalogue.yaml  # Nine skills in three families plus the append-only retirement ledger
+|          |- skills-catalogue.yaml  # Eleven skills with per-file block lists, the two instruction documents, the oversize exceptions and the append-only retirement ledger
 |          |- legacy-hashes.json     # Hashes Lore has shipped for .lore/skills/**, for projects predating the install manifest
-|          |- docs/             # Rendered or copied into .lore/ on init
-|          |  |- LORE-AGENT.md  # Instruction-text template — access-mode blocks + generated skills table
-|          |  +-- GETTING-STARTED.md   # Orientation guide, copied verbatim
+|          |- blocks/           # Tagged instruction blocks, one directory per feature (core, memory, doctrines, artifacts, watchers, quests)
+|          |  |- commands.yaml  # The command-grant table
+|          |  +-- <feature>/<id>.md   # One block: YAML frontmatter tags plus a markdown body
 |          |- doctrines/        # Default doctrines — each a directory of <stem>.design.md plus missions/<id>.md
 |          |  |- update-changelog/
 |          |  |  |- update-changelog.design.md
@@ -135,16 +140,6 @@ lore/
 |          |        +-- missions/                # red, green, refactor, commit
 |          |- watchers/          # Default watcher
 |          |  +-- change-log-updates.yaml
-|          |- skills/           # The nine seeded skills, one directory each; rendered per access mode and installed where the selected agent reads them
-|          |  |- store-memory/         # SKILL.md + references/{codex-doc.md, rite.md, source.md}
-|          |  |- retrieve-memory/
-|          |  |- update-doctrine/
-|          |  |- update-watcher/
-|          |  |- update-artifact/
-|          |  |- update-custom-schema/ # Scaffolds an add-only custom-frontmatter overlay; runs lore health to confirm
-|          |  |- start-quest/
-|          |  |- inquest/
-|          |  +-- sync-codex-guide/
 |          +-- artifacts/       # Default artifacts — the shipped development process
 |             |- feature-implementation/  # Spec, map and story templates the feature pipeline produces and consumes
 |             |- lore-design-documents/   # Design rules the skills cite (codex-voice, glossary-design, rite-design, doctrine-design, mission-design, inquest-design)
@@ -183,9 +178,12 @@ The `lore` command is registered as a `console_scripts` entry point in `pyprojec
 | `priority.py` | `get_ready_missions()` — priority queue SQL and result assembly for `lore ready`. |
 | `root.py` | `find_project_root()` — upward directory traversal to locate `.lore/`. Raises `ProjectNotFoundError` when none is found. See tech-arch-project-root-detection (lore codex show tech-arch-project-root-detection). |
 | `init.py` | `lore init` implementation, split into `plan_init(project_root=None, **answers) -> InitPlan` (computes, writes nothing) and `apply_init(plan) -> InitResult` (performs a computed plan). `run_init() -> list[str]` is `apply_init(plan_init()).messages` as a list, unchanged in signature. Creates `.lore/`, seeds the database, copies the `default/` trees, seeds the user-tracked skeletons, installs rendered skills, and writes the instruction-file and root-`.gitignore` marked blocks. Provides `_copy_defaults_tree(source_package, target_dir, exclude=None, label="artifacts")` — recursive tree copier with an exclude set and a `label` parameter controlling the prefix in status messages (e.g. `label="doctrines/default"` emits `Created doctrines/default/...`). Also carries `RETIRED_SEED_TREES` — a seeded tree Lore has stopped shipping, walked once per run and removed (`decisions-032-retired-seed-trees`). `_format_db_status` reports `db.SCHEMA_VERSION`. |
-| `initplan.py` | Stdlib-only leaf module — imports `dataclasses`, `enum` and `pathlib`, and no `lore.*` module, matching `validators.py`'s foundation position. Holds `AccessMode` and `FileAction` (StrEnums) and the frozen dataclasses `AgentTarget`, `PlannedFile`, `InitAnswers`, `InitPlan`, `InitResult`. It sits below `init.py`, `reconcile.py` and `skills.py` because the latter two construct `PlannedFile` values and `init.py` imports both (`standards-dependency-inversion`). Re-exported through `api.py`'s operational-dataclasses block. |
+| `initplan.py` | Stdlib-only leaf module — imports `dataclasses`, `enum` and `pathlib`, and no `lore.*` module, matching `validators.py`'s foundation position. Holds the feature model — `Feature`, `Route`, `Capability` (StrEnums) and the frozen, hashable `Profile` of seven answers, with `QUESTIONS` and the derivation of each question's kwarg, config key and flag — plus `AccessMode` and `FileAction` (StrEnums) and the frozen dataclasses `AgentTarget`, `PlannedFile`, `InitAnswers` (agents, profile, three run answers; `access_mode` and `skill_families` derive from the profile), `InitPlan` (with `notices`), `InitResult`. It sits below `init.py`, `reconcile.py` and `skills.py` because the latter two construct `PlannedFile` values and `init.py` imports both (`standards-dependency-inversion`). Re-exported through `api.py`'s operational-dataclasses block. |
 | `agents.py` | Packaged agent-registry loader. `load_registry() -> tuple[AgentTarget, ...]`, `agent_ids()`, `get_agent(id)`, each `functools.lru_cache`d. Reads `defaults/agents.yaml` through `importlib.resources` at import time, because `click.Choice` evaluates its set when the decorator runs and `lore init` runs where no `.lore/` exists. Imports stdlib and `yaml` only — no `lore.*` module. Raises `RuntimeError` naming the packaged file when it is unparseable or schema-invalid. See tech-arch-agents-md. |
-| `skills.py` | Skill catalogue loader and renderer. Reads `defaults/skills-catalogue.yaml`; `resolve_families(tokens)` expands the `all` / `none` aggregates in the business layer; `render(text, mode)` performs access-mode block selection and raises `ValueError` naming file and line on a malformed block; the retirement ledger supplies the successor and reason quoted in a removal report; desired-file enumeration produces the `PlannedFile` set for the selected families and agents. See tech-arch-skill-catalogue. |
+| `legacy_init.py` | Stdlib-only leaf. `profile_from_legacy(access_mode, families)` translates the retired family model into a `Profile` and `profile_from_interim(...)` the unreleased per-feature keys; `translate_aliases(...)` turns `--access` and `--skills` into feature answers plus the notices that name their replacements; `infer_families(skill_ids)` recovers the families from recorded skill ids. Imports `initplan` only. See conceptual-workflows-init-features. |
+| `blocks.py` | The tagged-block engine. `Block` and `parse_block`; `load_blocks()` reads and schema-checks `defaults/blocks/`; `parse_condition`, `survives` and `assemble` select blocks for a `Profile`; `join` writes them with blank or tight glue; `commands_in` and `leaked_commands` extract and check the `lore` commands in a text against `commands.yaml`; `max_lines` bounds a block list's rendered size. Imports `initplan` and, lazily, `lore.schemas`. See tech-arch-skill-catalogue. |
+| `blocklint.py` | `lint()` checks the shipped block set and catalogue against rules L1-L10 from tags and counts alone; `lint_rendered(profile)` re-checks a profile's rendered output. Used by tests and `scripts/check_blocks.py`; `lore init` never imports it. |
+| `skills.py` | Skill catalogue loader (v3) and assembler. Reads `defaults/skills-catalogue.yaml`; `resolve_families(tokens)` expands the `all` / `none` aggregates of the deprecated `--skills` alias; `installed_skills(profile)` returns the skills with a surviving `SKILL.md` block; `render_skill_file` and `render_document` assemble a file or an instruction document; `desired_files` produces the `DesiredFile` set; `neighbor_profiles` serves health's wrong-profile check; the retirement ledger supplies the successor and reason quoted in a removal report. Imports `initplan` and `blocks`. See tech-arch-skill-catalogue. |
 | `manifest.py` | Install-manifest read/write and the one hashing home. `file_digest(path)`, `bytes_digest(data)` and `section_digest(text)` each return `"sha256:" + hexdigest` over raw bytes with no newline normalisation. `load` treats an unparseable file or an unrecognised `manifest_version` as absent — one stderr warning, then the legacy path. Also loads the packaged `defaults/legacy-hashes.json`. See tech-arch-install-manifest. |
 | `reconcile.py` | The desired-vs-recorded-vs-on-disk comparison. `reconcile(desired, recorded, project_root) -> tuple[PlannedFile, ...]` assigns exactly one `FileAction` per path; `legacy_recorded(project_root)` synthesises a `recorded` set for a project with no manifest by matching `.lore/skills/**` against the packaged legacy hashes; `prune_empty_dirs(paths, stop_at)` removes directories left empty by removals. Imports `initplan` and `manifest`, never `init`. See conceptual-workflows-init-reconcile. |
 | `prompts.py` | The questionary prompts, on the CLI side of the boundary. Imports `questionary` **lazily inside each function**, so `import lore.api` — which aliases this module for `cli.py` — never pulls `prompt_toolkit` into a `lore ready` invocation. Imports no `lore.*` module except `lore.initplan`, and no `click`. |

@@ -2,32 +2,47 @@ $schema: "https://json-schema.org/draft/2020-12/schema"
 $id: "lore://schemas/skill-catalogue"
 title: Skill Catalogue
 description: >-
-  Which skills a release ships, which family each belongs to, and where every
-  retired skill went. Shipped as package data
+  Which skills a release ships, which blocks each skill file is assembled from,
+  the two instruction documents, the explicit line-cap exceptions, and where
+  every retired skill went. Shipped as package data
   (src/lore/defaults/skills-catalogue.yaml), never overlayable by a project.
-  A skill's description is authored once in its own SKILL.md frontmatter and is
-  deliberately absent here.
+  A skill's description is authored once, in its head block.
 type: object
 additionalProperties: false
-required: [version, families, skills]
+required: [version, legacy_families, skills, documents]
 properties:
   version:
     type: integer
     minimum: 1
-  families:
+  legacy_families:
     type: object
     minProperties: 1
     propertyNames:
       pattern: "^[a-z0-9][a-z0-9-]*$"
     additionalProperties:
-      type: string
-      minLength: 1
-    description: Family id to the one-line description shown at the prompt.
+      $ref: "#/$defs/legacy-family"
+    description: >-
+      The retired skill families, kept for the deprecated --skills alias and the
+      migration of projects initialised by an earlier release.
   skills:
     type: array
     minItems: 1
     items:
       $ref: "#/$defs/skill"
+  documents:
+    type: object
+    minProperties: 1
+    additionalProperties:
+      $ref: "#/$defs/document"
+    description: Instruction documents assembled from blocks, keyed by name.
+  oversize:
+    type: object
+    additionalProperties:
+      type: integer
+      minimum: 1
+    description: >-
+      Explicit, bounded exceptions to the 100-line skill rule, keyed by
+      "<skill>/<file path>".
   retired:
     type: object
     additionalProperties:
@@ -36,27 +51,79 @@ properties:
       Append-only. A project hopping several releases needs every intermediate
       rename explained.
 $defs:
-  skill:
+  legacy-family:
     type: object
     additionalProperties: false
-    required: [id, family]
+    required: [description, features, skills]
     properties:
-      id:
+      description:
         type: string
         minLength: 1
-        pattern: "^[a-z0-9][a-z0-9-]*$"
-        description: Skill id. Matches its directory name under defaults/skills/.
-      family:
-        type: string
-        minLength: 1
-        description: A key of the families map.
-      references:
+      features:
+        type: array
+        minItems: 1
+        items:
+          enum: [memory, doctrines, artifacts, watchers, quests]
+        description: The features this family corresponds to.
+      skills:
         type: array
         uniqueItems: true
         items:
           type: string
           minLength: 1
-        description: Reference file names under the skill's references/ directory.
+        description: The skill ids the family installed.
+  skill:
+    type: object
+    additionalProperties: false
+    required: [id, head, files]
+    properties:
+      id:
+        type: string
+        minLength: 1
+        pattern: "^[a-z0-9][a-z0-9-]*$"
+        description: Skill id. Names the directory it installs to.
+      head:
+        type: string
+        minLength: 1
+        description: >-
+          Id of the block holding the skill's frontmatter (name, description).
+          It never counts when deciding whether the skill has surviving blocks.
+      files:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/skill-file"
+        description: SKILL.md first, then any reference files.
+  skill-file:
+    type: object
+    additionalProperties: false
+    required: [path, blocks]
+    properties:
+      path:
+        type: string
+        minLength: 1
+        description: Path relative to the skill's directory.
+      blocks:
+        type: array
+        minItems: 1
+        items:
+          type: string
+          minLength: 1
+        description: Ordered block ids the file is assembled from.
+  document:
+    type: object
+    additionalProperties: false
+    required: [max_lines, blocks]
+    properties:
+      max_lines:
+        type: integer
+        minimum: 1
+      blocks:
+        type: array
+        minItems: 1
+        items:
+          type: string
+          minLength: 1
   retirement:
     type: object
     additionalProperties: false

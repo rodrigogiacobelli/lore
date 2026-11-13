@@ -32,6 +32,7 @@ import pytest
 from lore import agents as agent_registry
 from lore import skills as skills_mod
 from lore.init import apply_init, plan_init
+from lore.legacy_init import profile_from_legacy
 
 
 pytestmark = pytest.mark.skipif(
@@ -46,6 +47,8 @@ LORE_ROOT = skills_mod.LORE_SKILLS_ROOT
 CLAUDE_ROOT = ".claude/skills"
 
 FAMILY = "memory"
+FAMILY_PROFILE = profile_from_legacy("native", (FAMILY,))
+"""The profile the deprecated `--skills memory` alias stands for."""
 """One family rather than all of them: the defect is per-root, not per-skill."""
 
 OWN_SKILL = "my-own-skill"
@@ -104,8 +107,8 @@ def lore_skill_paths(install_root: str) -> list[str]:
     """Every file this release installs into *install_root* for ``FAMILY``."""
     return [
         f"{install_root}/{skill_id}/{relative}"
-        for skill_id in skills_mod.skills_in_families((FAMILY,))
-        for relative in skills_mod.skill_files(skill_id)
+        for skill_id in skills_mod.installed_skills(FAMILY_PROFILE)
+        for relative in skills_mod.skill_files(skill_id, FAMILY_PROFILE)
     ]
 
 

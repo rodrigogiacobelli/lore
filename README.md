@@ -56,6 +56,15 @@ Then initialize a project:
 lore init
 ```
 
+In a terminal, `lore init` asks how agents work with Lore's files (the Lore CLI, or their own file tools) and which optional features the project uses: Memory (codex, rites, glossary), Quests & Missions and Watchers. Doctrines, Artifacts and `lore health` are always installed. Memory has three opt-ins (search, index, graph and bindings) and Quests need the Lore CLI whatever the route. It installs only the skills and instruction text those answers use, and an instruction file never names a command the project turned off. Every question has a flag, so a script answers without a terminal:
+
+```bash
+lore init --agent claude --route harness --memory yes --memory-search yes \
+  --quests no --yes
+```
+
+`--access` and `--skills` still work as deprecated aliases. A project initialised before the feature questions is migrated once.
+
 ---
 
 ## Task Engine — Commands to Know

@@ -257,7 +257,7 @@ Every module under `lore` **other than `lore.api`** is internal. None of the fol
 - `lore.init` — `lore init` implementation (`plan_init`, `apply_init`, `run_init`)
 - `lore.initplan` — the frozen init result types re-exported through `lore.api`
 - `lore.agents` — packaged agent-registry loader
-- `lore.skills` — skill catalogue loader and access-mode renderer
+- `lore.skills` — skill catalogue loader and block assembler
 - `lore.manifest` — install-manifest read/write and hashing
 - `lore.reconcile` — desired-vs-recorded-vs-on-disk reconciliation
 - `lore.prompts` — CLI-layer interactive prompts

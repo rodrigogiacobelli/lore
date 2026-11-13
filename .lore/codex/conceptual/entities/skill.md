@@ -2,15 +2,16 @@
 id: conceptual-entities-skill
 title: Skill
 summary: What a Skill is — a seeded instruction file that teaches a coding agent one
-  Lore-shaped task. Covers the ten shipped skills and their three families, where a
-  skill installs for each agent target, the access mode that swaps its command layer,
-  the retirement ledger that carries a renamed skill forward, and why a skill has no
-  CLI command group.
+  Lore-shaped task. Covers the eleven shipped skills and the answers that install each,
+  where a skill installs for each agent target, how the routes and capabilities choose
+  the blocks a skill is assembled from, the retirement ledger that carries a renamed
+  skill forward, and why a skill has no CLI command group.
 related:
 - conceptual-entities-artifact
 - conceptual-entities-doctrine
 - conceptual-entities-rite
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-features
 - conceptual-workflows-init-interactive
 - conceptual-workflows-init-reconcile
 - conceptual-workflows-health
@@ -29,30 +30,27 @@ A **Skill** is a seeded instruction file that teaches a coding agent how to perf
 
 A skill is not a Lore-managed entity in the sense the other seven are. It has no ID retrieval, no `lore skill` command group, and no place in the CRUD matrix (`tech-cli-entity-crud-matrix`). It is a file Lore installs, tracks and reconciles, and an agent reads.
 
-## The Ten Skills
+## The Eleven Skills
 
-| Family | Skill | What it does |
+| Skill | Installed when | What it does |
 |---|---|---|
-| memory | `store-memory` | Records knowledge into project memory — a codex document, a rite, or a source snapshot — creating, editing or deleting as the request requires. |
-| memory | `retrieve-memory` | Answers a question from project memory, consulting both the codex and the rites. |
-| machinery | `update-doctrine` | Authors or edits a doctrine. |
-| machinery | `update-index` | Authors and refreshes the codex index — the slug, name and summary for each cluster of documents Lore has partitioned. The only writer of `.lore/index/authored.yaml`. |
-| machinery | `update-watcher` | Authors or edits a watcher. |
-| machinery | `update-artifact` | Authors or edits an artifact template. |
-| machinery | `update-custom-schema` | Authors or edits a project custom-schema overlay. |
-| workflow | `start-quest` | Reads a doctrine, creates a quest and its missions. |
-| workflow | `inquest` | Audits finished work and traces a missed requirement to the link that dropped it. |
-| workflow | `sync-codex-guide` | Reconciles the project's `CODEX.md` against the seeded template. |
+| `retrieve-memory` | Memory read is not `off` | Answers a question from project memory, consulting both the codex and the rites. |
+| `store-memory` | Memory write is not `off` | Records knowledge into project memory — a codex document, a rite, or a source snapshot — creating, editing or deleting as the request requires. |
+| `update-custom-schema` | Memory write is not `off` | Authors or edits a project custom-schema overlay. |
+| `update-index` | Memory index is on | Authors and refreshes the codex index — the slug, name and summary for each cluster of documents Lore has partitioned. The only writer of `.lore/index/authored.yaml`. |
+| `sync-codex-guide` | Memory write is not `off`, Artifacts is on, and Memory validate and graph are on | Reconciles the project's `codex.md` against the seeded template. |
+| `update-doctrine` | Doctrines write is not `off` | Authors or edits a doctrine. |
+| `update-artifact` | Artifacts write is not `off` | Authors or edits an artifact template. |
+| `update-watcher` | Watchers write is not `off` | Authors or edits a watcher. |
+| `run-doctrine` | Always (Doctrines are core) | Teaches how a doctrine runs: reads the design, plans the missions from its table, asks before dispatching, briefs a worker for each `agent` mission and drives the run itself, with no quest or mission command. |
+| `start-quest` | Quests is on | Reads a doctrine and creates a quest and its missions from it. |
+| `inquest` | Quests is on | Audits finished work and traces a missed requirement to the link that dropped it. |
 
-## Families
+## Materialisation
 
-The three families are the unit a person selects at `lore init`:
+A skill is installed when at least one block of its `SKILL.md` survives the project's answers. A skill with no surviving block is never written, and no instruction text and no other skill mentions it. A reference file is written when at least one of its blocks survives and its skill is installed. `conceptual-workflows-init-features` holds the answers and `tech-arch-skill-catalogue` holds the block format.
 
-- **memory** — project memory: the codex, the rites and the glossary, consulted together.
-- **machinery** — Lore's own configuration entities: doctrines, watchers, artifacts, custom schemas, the codex index.
-- **workflow** — multi-step processes over quests and missions.
-
-A family is selected or not selected as a whole. `conceptual-workflows-init-interactive` holds the prompt and its flag.
+The three families (memory, machinery, workflow) are the retired selection model. The deprecated `--skills` alias still accepts their names and maps them onto the features.
 
 ## Where a Skill Installs
 
@@ -69,24 +67,22 @@ Installing into two directories for a project that uses both Claude Code and an 
 
 On disk a skill is one directory named for its id, holding `SKILL.md` and, for the skills that ship them, a `references/` directory of supporting files that `SKILL.md` names.
 
-## The Access Mode
+## Routes and Capabilities
 
-Each skill is authored once and installed in one of two access modes, recorded per project:
+Each skill is authored once as tagged blocks and assembled for the project's answers. A route chooses between two variants of a step:
 
-- **`cli`** — the skill tells the agent to operate Lore's local files through `lore` commands.
-- **`native`** — the skill tells the agent to use its own file tools for codex documents, rites and the glossary, and states what that costs: no glossary auto-surface on read, no multi-ID deduplication, no group derivation.
+- **`cli`** — the step tells the agent to operate Lore's files through `lore` commands.
+- **`harness`** — the step tells the agent to use its own file tools, and states what that costs: glossary terms are not attached to what the agent reads, a rite's `use:` steps are not inlined, and a document's group is its directory.
 
-The mode swaps the skill's **command layer**, not a preamble. Everything else in the skill is identical between the two.
+A capability adds or removes the steps that run `lore health`, `lore index` or the graph commands. A command whose capability is off appears in no skill (`decisions-006-id-references` holds which entity types are reached by ID through the CLI and which by path).
 
-Three commands stay in both modes — `lore codex map`, `lore codex chaos` and `lore impacts` — because no file tool reproduces a precomputed graph traversal. Artifacts, doctrines, watchers, and every SQLite-backed entity keep the by-ID CLI rule in both modes (`decisions-006-id-references`).
-
-`tech-arch-skill-catalogue` holds how the two renderings come out of one authored file.
+Every skill file is at most 100 lines, except four `store-memory` files: `SKILL.md` (140), `references/codex-doc.md` (112), `references/rite.md` (140) and `references/source.md` (135). Material beyond the cap sits in `references/` files that the skill names and an agent reads on demand.
 
 ## Lifecycle
 
-1. **Authored** in the Lore package, one `SKILL.md` per skill with both access-mode blocks present.
-2. **Selected** by family at `lore init`.
-3. **Rendered** into the recorded access mode and written to each destination.
+1. **Authored** in the Lore package as tagged blocks listed per file in the skill catalogue.
+2. **Selected** by the project's answers at `lore init`.
+3. **Assembled** from the surviving blocks and written to each destination.
 4. **Recorded** in the install manifest, with the hash of the rendered bytes.
 5. **Reconciled** on every later `lore init`: replaced when the shipped content changes, removed when the release stops shipping it, kept when the project has edited it.
 6. **Retired** when a release renames it or merges it into another skill. The retirement ledger names the successor and the reason, and `lore init` quotes both when it removes the file.

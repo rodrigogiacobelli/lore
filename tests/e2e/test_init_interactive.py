@@ -27,6 +27,7 @@ import pytest
 from click.testing import CliRunner
 
 from lore.cli import main
+from lore.initplan import QUESTIONS, Profile, question_kwarg
 
 
 CLI_SOURCE = Path(__file__).resolve().parents[2] / "src" / "lore" / "cli.py"
@@ -35,18 +36,21 @@ LORE_BEGIN = "<!-- lore:begin -->"
 
 PROMPT_NAMES = (
     "ask_agents",
-    "ask_access_mode",
-    "ask_skill_families",
+    "ask_route",
+    "ask_opt_in",
     "ask_existing_agent_file",
     "ask_skills_gitignore",
     "ask_on_conflict",
     "ask_confirm_plan",
 )
 
+HEADLESS = Profile().as_answers()
+"""The headless defaults as plain answers, keyed by keyword name."""
+
 DEFAULT_ANSWERS = {
     "ask_agents": ["claude"],
-    "ask_access_mode": "native",
-    "ask_skill_families": ["memory", "workflow"],
+    "ask_route": HEADLESS["route"],
+    "ask_opt_in": {q: HEADLESS[question_kwarg(q)] for q in QUESTIONS if q != "route"},
     "ask_existing_agent_file": "append",
     "ask_skills_gitignore": "lore-only",
     "ask_on_conflict": "skip",
@@ -82,6 +86,27 @@ class PromptLog:
     def names(self) -> list[str]:
         return [name for name, _, _ in self.calls]
 
+    @property
+    def questions(self) -> list[str]:
+        """The call order with each profile question named by its id."""
+        asked = []
+        for name, args, _ in self.calls:
+            if name == "ask_route":
+                asked.append("route")
+            elif name == "ask_opt_in":
+                asked.append(args[0])
+            else:
+                asked.append(name)
+        return asked
+
+    def kwargs_for_question(self, question_id: str) -> tuple[tuple, dict]:
+        for name, args, kwargs in self.calls:
+            if name == "ask_route" and question_id == "route":
+                return args, kwargs
+            if name == "ask_opt_in" and args[0] == question_id:
+                return args, kwargs
+        raise AssertionError(f"{question_id} was never asked; saw {self.questions}")
+
     def args_for(self, name: str) -> tuple[tuple, dict]:
         for called, args, kwargs in self.calls:
             if called == name:
@@ -97,14 +122,21 @@ def prompts(monkeypatch):
         from lore import prompts as prompts_module
 
         answers = dict(DEFAULT_ANSWERS)
-        answers.update(overrides)
+        for name, value in overrides.items():
+            if isinstance(value, dict) and isinstance(answers.get(name), dict):
+                answers[name] = {**answers[name], **value}
+            else:
+                answers[name] = value
         log = PromptLog()
 
         for name in PROMPT_NAMES:
 
             def stub(*args, _name=name, **kwargs):
                 log.calls.append((_name, args, kwargs))
-                return answers[_name]
+                answer = answers[_name]
+                if _name == "ask_opt_in":
+                    return answer[args[0]] if isinstance(answer, dict) else answer
+                return answer
 
             monkeypatch.setattr(prompts_module, name, stub)
         return log
@@ -220,6 +252,25 @@ class TestTheDeclaredOptions:
         for name in ("access_mode", "on_existing_agent_file", "skills_gitignore", "on_conflict"):
             assert isinstance(params[name].type, click.Choice), name
 
+    @pytest.mark.parametrize("question", QUESTIONS)
+    def test_every_profile_question_has_a_flag_named_after_it(self, question):
+        param = _init_params()[question_kwarg(question)]
+        assert param.opts == [f"--{question}"]
+        assert param.default is None
+        assert isinstance(param.type, click.Choice)
+
+    @pytest.mark.parametrize("question", QUESTIONS)
+    def test_route_flags_take_route_tokens_and_the_rest_yes_or_no(self, question):
+        choices = set(_init_params()[question_kwarg(question)].type.choices)
+        if question == "route":
+            assert choices == {"harness", "cli"}
+        else:
+            assert choices == {"yes", "no"}
+
+    @pytest.mark.parametrize("name", ["access_mode", "skill_families"])
+    def test_the_old_flags_are_marked_deprecated_in_their_help(self, name):
+        assert _init_params()[name].help.startswith("Deprecated:")
+
     def test_the_retired_gitignore_flag_is_declared_nowhere(self):
         assert "root_gitignore" not in _init_params()
 
@@ -293,7 +344,8 @@ class TestSpaceSeparatedParsing:
         assert (tmp_path / ".claude" / "skills" / "store-memory" / "SKILL.md").is_file()
         assert (tmp_path / ".lore" / "skills" / "store-memory" / "SKILL.md").is_file()
         installed = {p.name for p in (tmp_path / ".claude" / "skills").iterdir() if p.is_dir()}
-        assert "update-doctrine" not in installed, "machinery was not selected"
+        assert "update-watcher" not in installed, "watchers were not selected"
+        assert "update-doctrine" in installed, "the core is always installed"
         recorded = (tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8")
         assert "init-agents = " in recorded
         assert "claude" in recorded and "agents-md" in recorded
@@ -304,7 +356,6 @@ class TestSpaceSeparatedParsing:
         )
         assert result.exit_code == 0, result.output
         assert (tmp_path / ".claude" / "skills" / "store-memory" / "SKILL.md").is_file()
-        assert not (tmp_path / ".lore" / "skills").exists()
         assert not (tmp_path / ".claude" / "skills" / "start-quest").exists()
 
     def test_a_bare_dash_is_consumed_as_a_value_and_rejected(self, tmp_path, monkeypatch):
@@ -419,7 +470,7 @@ class TestCallingAPromptReachesQuestionary:
     def test_every_prompt_returns_the_plan_init_parameter_shape(self, monkeypatch):
         import questionary
 
-        from lore import agents, prompts, skills
+        from lore import agents, prompts
 
         canned = {
             "checkbox": None,
@@ -442,13 +493,11 @@ class TestCallingAPromptReachesQuestionary:
         canned["checkbox"] = ["claude", "gemini"]
         assert prompts.ask_agents(agents.load_registry()) == ["claude", "gemini"]
 
-        canned["checkbox"] = ["memory"]
-        families = prompts.ask_skill_families(skills.family_ids())
-        assert families == ["memory"]
-        assert "all" not in families and "none" not in families
-
         canned["select"] = "cli"
-        assert prompts.ask_access_mode() == "cli"
+        assert prompts.ask_route("harness") == "cli"
+
+        canned["confirm"] = True
+        assert prompts.ask_opt_in("quests", False) is True
 
         canned["select"] = "skip"
         assert prompts.ask_existing_agent_file(("CLAUDE.md",)) == "skip"
@@ -497,8 +546,7 @@ class TestAFirstInteractiveRun:
 
     ORDER = [
         "ask_agents",
-        "ask_access_mode",
-        "ask_skill_families",
+        *QUESTIONS,
         "ask_existing_agent_file",
         "ask_skills_gitignore",
         "ask_confirm_plan",
@@ -516,7 +564,7 @@ class TestAFirstInteractiveRun:
         log = prompts()
         result = _run(project, monkeypatch)
         assert result.exit_code == 0, result.output
-        assert log.names == self.ORDER
+        assert log.questions == self.ORDER
 
     def test_the_summary_is_printed_before_the_confirm(
         self, project, monkeypatch, terminal, prompts
@@ -539,7 +587,7 @@ class TestAFirstInteractiveRun:
         skills_dir = project / ".claude" / "skills"
         assert (skills_dir / "store-memory" / "SKILL.md").is_file()
         assert (skills_dir / "start-quest" / "SKILL.md").is_file()
-        assert not (skills_dir / "update-doctrine").exists()
+        assert (skills_dir / "update-doctrine" / "SKILL.md").is_file()
 
         assert LORE_BEGIN in (project / "CLAUDE.md").read_text(encoding="utf-8")
         assert "House rules." in (project / "CLAUDE.md").read_text(encoding="utf-8")
@@ -548,8 +596,7 @@ class TestAFirstInteractiveRun:
         config = (project / ".lore" / "config.toml").read_text(encoding="utf-8")
         for key in (
             "init-agents",
-            "init-access-mode",
-            "init-skill-families",
+            *(f"init-{question}" for question in QUESTIONS),
             "init-skills-gitignore",
         ):
             assert key in config
@@ -561,7 +608,7 @@ class TestAFirstInteractiveRun:
         log = prompts()
         result = _run(tmp_path, monkeypatch)
         assert result.exit_code == 0, result.output
-        assert log.names == [
+        assert log.questions == [
             name for name in self.ORDER if name != "ask_existing_agent_file"
         ]
 
@@ -589,7 +636,7 @@ class TestDecliningTheSummary:
 class TestTheSummaryFormat:
     """Scenario 3 — one line per action, and a counts line that closes it."""
 
-    def test_the_header_names_the_root_and_the_three_recorded_answers(
+    def test_the_header_names_the_root_the_agents_and_the_features_that_are_on(
         self, tmp_path, monkeypatch, terminal, prompts
     ):
         prompts()
@@ -597,10 +644,7 @@ class TestTheSummaryFormat:
         header = next(
             line for line in result.output.splitlines() if line.startswith("Plan for")
         )
-        assert header == (
-            f"Plan for {tmp_path} (agents: claude · access: native · "
-            "families: memory, workflow)"
-        )
+        assert header == f"Plan for {tmp_path} (agents: claude · {Profile().summary()})"
 
     def test_every_line_carries_one_action_word(
         self, tmp_path, monkeypatch, terminal, prompts
@@ -724,7 +768,7 @@ class TestRecordedAnswers:
             tmp_path,
             monkeypatch,
             "--agent", "claude",
-            "--access", "cli",
+            "--access", "native",
             "--skills", "memory",
             "--skills-gitignore", "none",
             "--yes",
@@ -732,31 +776,35 @@ class TestRecordedAnswers:
         assert result.exit_code == 0, result.output
         return tmp_path
 
-    RECORDED_PROMPTS = (
+    # `--access native --skills memory`: the harness route, Memory with its three
+    # opt-ins, no quests and no watchers.
+    ASKED_AGAIN = (
         "ask_agents",
-        "ask_access_mode",
-        "ask_skill_families",
+        "route",
+        "memory",
+        "memory-search",
+        "memory-index",
+        "memory-graph",
+        "quests",
+        "watchers",
         "ask_skills_gitignore",
     )
 
-    def test_a_recorded_project_asks_none_of_the_four(
+    def test_a_recorded_project_asks_none_of_the_recorded_questions(
         self, recorded, monkeypatch, terminal, prompts
     ):
         log = prompts()
         result = _run(recorded, monkeypatch)
         assert result.exit_code == 0, result.output
-        for name in self.RECORDED_PROMPTS:
-            assert name not in log.names
-        assert "ask_confirm_plan" in log.names
+        assert log.questions == ["ask_confirm_plan"]
 
-    def test_reconfigure_asks_all_four_again(
+    def test_reconfigure_asks_the_recorded_questions_again(
         self, recorded, monkeypatch, terminal, prompts
     ):
         log = prompts()
         result = _run(recorded, monkeypatch, "--reconfigure")
         assert result.exit_code == 0, result.output
-        for name in self.RECORDED_PROMPTS:
-            assert name in log.names
+        assert [q for q in log.questions if q != "ask_confirm_plan"] == list(self.ASKED_AGAIN)
 
     def test_reconfigure_preselects_what_the_project_recorded(
         self, recorded, monkeypatch, terminal, prompts
@@ -767,11 +815,11 @@ class TestRecordedAnswers:
         _, agents_kwargs = log.args_for("ask_agents")
         assert list(agents_kwargs["selected"]) == ["claude"]
 
-        _, access_kwargs = log.args_for("ask_access_mode")
-        assert access_kwargs["current"] == "cli"
-
-        _, families_kwargs = log.args_for("ask_skill_families")
-        assert list(families_kwargs["selected"]) == ["memory"]
+        args, _ = log.kwargs_for_question("route")
+        assert args[0] == "harness"
+        for question, value in (("memory", True), ("memory-graph", True), ("quests", False)):
+            args, _ = log.kwargs_for_question(question)
+            assert args[1] is value, question
 
         _, gitignore_kwargs = log.args_for("ask_skills_gitignore")
         assert gitignore_kwargs["current"] == "none"
@@ -780,11 +828,95 @@ class TestRecordedAnswers:
         self, tmp_path, monkeypatch, terminal, prompts
     ):
         log = prompts()
+        result = _run(tmp_path, monkeypatch, "--route", "cli")
+        assert result.exit_code == 0, result.output
+        assert "route" not in log.questions
+        assert "memory" in log.questions
+        assert "quests" in log.questions
+        assert "ask_agents" in log.questions
+
+    def test_the_deprecated_access_flag_answers_the_route(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        log = prompts()
         result = _run(tmp_path, monkeypatch, "--access", "cli")
         assert result.exit_code == 0, result.output
-        assert "ask_access_mode" not in log.names
-        assert "ask_agents" in log.names
-        assert "ask_skill_families" in log.names
+        assert "route" not in log.questions
+        assert "memory" in log.questions
+
+    def test_the_deprecated_skills_flag_answers_every_feature_question(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        log = prompts()
+        result = _run(tmp_path, monkeypatch, "--skills", "memory")
+        assert result.exit_code == 0, result.output
+        assert [q for q in log.questions if q not in ("ask_agents", "ask_confirm_plan",
+                "ask_skills_gitignore")] == []
+
+
+class TestTheQuestionLoop:
+    """The fixed question order, the skip rules, and what is carried forward."""
+
+    def test_the_questions_come_in_the_fixed_order(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        log = prompts()
+        assert _run(tmp_path, monkeypatch).exit_code == 0
+        assert [q for q in log.questions if q in QUESTIONS] == list(QUESTIONS)
+
+    def test_switching_memory_off_skips_its_opt_ins(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        log = prompts(ask_opt_in={"memory": False})
+        result = _run(tmp_path, monkeypatch)
+        assert result.exit_code == 0, result.output
+        for skipped in ("memory-search", "memory-index", "memory-graph"):
+            assert skipped not in log.questions
+        assert "quests" in log.questions and "watchers" in log.questions
+
+    def test_quests_is_always_asked(self, tmp_path, monkeypatch, terminal, prompts):
+        log = prompts(ask_opt_in={"memory": False})
+        assert _run(tmp_path, monkeypatch).exit_code == 0
+        assert "quests" in log.questions
+
+    def test_a_skipped_question_is_not_forced_by_a_flag_it_contradicts(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        log = prompts()
+        result = _run(tmp_path, monkeypatch, "--memory", "no")
+        assert result.exit_code == 0, result.output
+        assert "memory-index" not in log.questions
+
+    def test_the_answers_given_change_what_is_installed(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        prompts(ask_opt_in={"watchers": False, "quests": False})
+        result = _run(tmp_path, monkeypatch)
+        assert result.exit_code == 0, result.output
+        recorded = (tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8")
+        assert "init-watchers = false" in recorded
+        assert "init-quests = false" in recorded
+        assert not (tmp_path / ".lore" / "skills" / "update-watcher").exists()
+
+    def test_a_fresh_project_preselects_the_cli_and_no_for_every_yes_no(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        log = prompts()
+        assert _run(tmp_path, monkeypatch).exit_code == 0
+        args, _ = log.kwargs_for_question("route")
+        assert args[0] == "cli"
+        for question in (q for q in QUESTIONS if q != "route"):
+            args, _ = log.kwargs_for_question(question)
+            assert args[1] is False, question
+
+    def test_a_recorded_project_preselects_what_it_recorded(
+        self, tmp_path, monkeypatch, terminal, prompts
+    ):
+        assert _run(tmp_path, monkeypatch, "--agent", "claude", "--yes").exit_code == 0
+        log = prompts()
+        assert _run(tmp_path, monkeypatch, "--reconfigure").exit_code == 0
+        args, _ = log.kwargs_for_question("quests")
+        assert args[1] is True
 
 
 class TestTheConditionalPrompts:
@@ -951,7 +1083,14 @@ class TestReconfigureWithoutAPromptToAskIn:
     flags would answer the questions it cannot ask.
     """
 
-    FLAGS = ("--agent", "--access", "--skills", "--skills-gitignore")
+    FLAGS = (
+        "--agent",
+        "--skills-gitignore",
+        "--route",
+        "--memory",
+        "--quests",
+        "--watchers",
+    )
 
     @pytest.fixture()
     def installed(self, tmp_path, monkeypatch):
@@ -1041,7 +1180,7 @@ class TestReconfigureWithoutAPromptToAskIn:
         log = prompts()
         result = _run(installed, monkeypatch, "--reconfigure")
         assert result.exit_code == 0, result.output
-        for name in ("ask_agents", "ask_access_mode", "ask_skill_families"):
+        for name in ("ask_agents", "ask_route", "ask_opt_in"):
             assert name in log.names
 
     def test_the_help_says_it_needs_a_terminal(self, tmp_path, monkeypatch):
@@ -1214,3 +1353,260 @@ class TestTheTtyGate:
     def test_the_gate_is_read_from_sys_stdout(self):
         source = CLI_SOURCE.read_text(encoding="utf-8")
         assert "sys.stdout.isatty()" in source
+
+
+# ---------------------------------------------------------------------------
+# The feature flags — one per question
+# ---------------------------------------------------------------------------
+
+
+def _config(root: Path) -> str:
+    return (root / ".lore" / "config.toml").read_text(encoding="utf-8")
+
+
+def _tree(root: Path) -> set[str]:
+    return {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and ".lore/config.toml" not in path.as_posix()
+        and ".install-manifest" not in path.name
+    }
+
+
+class TestFeatureFlagsAnswerTheQuestions:
+    def test_route_and_yes_no_flags_are_recorded_as_given(self, tmp_path, monkeypatch):
+        result = _run(
+            tmp_path, monkeypatch,
+            "--agent", "claude",
+            "--route", "harness", "--memory", "yes",
+            "--memory-index", "no", "--memory-search", "yes",
+            "--quests", "no", "--watchers", "no", "--yes",
+        )
+        assert result.exit_code == 0, result.output
+        recorded = _config(tmp_path)
+        assert 'init-route = "harness"' in recorded
+        assert "init-memory = true" in recorded
+        assert "init-memory-index = false" in recorded
+        assert "init-memory-search = true" in recorded
+        assert "init-quests = false" in recorded
+        assert "init-watchers = false" in recorded
+
+    def test_the_header_reports_the_chosen_features(self, tmp_path, monkeypatch):
+        result = _run(
+            tmp_path, monkeypatch, "--agent", "claude",
+            "--route", "harness", "--memory", "yes", "--memory-graph", "no",
+            "--quests", "no", "--watchers", "no", "--dry-run",
+        )
+        assert result.exit_code == 0, result.output
+        profile = Profile.from_answers(
+            {"route": "harness", "memory_graph": False, "quests": False, "watchers": False}
+        ).normalized()
+        assert f"(agents: claude · {profile.summary()})" in result.output
+
+    def test_the_flags_and_the_python_surface_plan_the_same_files(self, tmp_path, monkeypatch):
+        from lore.api import plan_init
+
+        result = _run(
+            tmp_path, monkeypatch, "--agent", "claude",
+            "--route", "harness", "--watchers", "no", "--dry-run",
+        )
+        assert result.exit_code == 0, result.output
+        plan = plan_init(
+            project_root=tmp_path, agents=["claude"], route="harness", watchers=False,
+        )
+        for planned in plan.files:
+            assert planned.path in result.output
+
+    def test_a_cli_only_opt_in_stays_on_under_the_harness_route(self, tmp_path, monkeypatch):
+        result = _run(
+            tmp_path, monkeypatch, "--agent", "claude", "--route", "harness",
+            "--memory", "no", "--quests", "yes", "--yes",
+        )
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / ".claude" / "skills" / "start-quest" / "SKILL.md").is_file()
+
+
+class TestFlagsRejectBadTokens:
+    @pytest.mark.parametrize(
+        "flag,token",
+        [("--route", "native"), ("--route", "off"), ("--memory", "harness"),
+         ("--memory-index", "maybe"), ("--quests", "harness"), ("--watchers", "true")],
+    )
+    def test_an_unknown_token_is_a_usage_error_and_writes_nothing(
+        self, tmp_path, monkeypatch, flag, token
+    ):
+        result = _run(tmp_path, monkeypatch, flag, token, "--yes")
+        assert result.exit_code == 2, result.output
+        assert f"Invalid value for '{flag}'" in result.stderr
+        assert not (tmp_path / ".lore").exists()
+
+
+class TestContradictoryExplicitFlagsAreUsageErrors:
+    def test_a_memory_opt_in_beside_memory_off(self, tmp_path, monkeypatch):
+        result = _run(
+            tmp_path, monkeypatch, "--memory-graph", "yes", "--memory", "no", "--yes",
+        )
+        assert result.exit_code == 2, result.output
+        assert "memory_graph needs Memory on" in result.stderr
+        assert not (tmp_path / ".lore").exists()
+
+    def test_quests_needs_nothing_but_the_cli(self, tmp_path, monkeypatch):
+        result = _run(
+            tmp_path, monkeypatch, "--quests", "yes", "--memory", "no", "--route", "harness", "--yes",
+        )
+        assert result.exit_code == 0, result.output
+
+    def test_a_contradiction_only_the_recorded_config_shows_is_a_runtime_error(
+        self, tmp_path, monkeypatch
+    ):
+        assert _run(
+            tmp_path, monkeypatch, "--agent", "claude", "--memory", "no", "--yes",
+        ).exit_code == 0
+        result = _run(tmp_path, monkeypatch, "--memory-graph", "yes", "--yes")
+        assert result.exit_code == 1, result.output
+        assert "memory_graph needs Memory on" in result.output
+
+
+class TestAccessAliasEqualsNewFlags:
+    @pytest.mark.parametrize("mode,route", [("native", "harness"), ("cli", "cli")])
+    def test_access_sets_the_route(self, tmp_path, monkeypatch, mode, route):
+        old, new = tmp_path / "old", tmp_path / "new"
+        old.mkdir(), new.mkdir()
+        assert _run(old, monkeypatch, "--agent", "claude", "--access", mode, "--yes").exit_code == 0
+        assert _run(
+            new, monkeypatch, "--agent", "claude", "--route", route, "--yes",
+        ).exit_code == 0
+        assert _tree(old) == _tree(new)
+        assert _config(old) == _config(new)
+
+
+class TestSkillsAliasEqualsLegacyProfile:
+    def test_skills_memory_workflow_installs_the_legacy_profile(self, tmp_path, monkeypatch):
+        from lore.legacy_init import profile_from_legacy
+
+        assert _run(
+            tmp_path, monkeypatch, "--agent", "claude",
+            "--access", "native", "--skills", "memory", "workflow", "--yes",
+        ).exit_code == 0
+        legacy = profile_from_legacy("native", ("memory", "workflow")).as_answers()
+        recorded = _config(tmp_path)
+        for name, value in legacy.items():
+            key = "init-" + name.replace("_", "-")
+            expected = f'"{value}"' if isinstance(value, str) else str(value).lower()
+            assert f"{key} = {expected}" in recorded, key
+
+    def test_a_new_flag_overrides_the_alias_for_that_answer(self, tmp_path, monkeypatch):
+        assert _run(
+            tmp_path, monkeypatch, "--agent", "claude",
+            "--skills", "memory", "--quests", "yes", "--memory-graph", "no", "--yes",
+        ).exit_code == 0
+        recorded = _config(tmp_path)
+        assert "init-memory-graph = false" in recorded
+        assert "init-quests = true" in recorded
+        assert 'init-route = "cli"' in recorded
+
+
+class TestSkillsNoneStillWorks:
+    def test_every_optional_feature_is_off_and_only_the_core_is_installed(
+        self, tmp_path, monkeypatch
+    ):
+        result = _run(tmp_path, monkeypatch, "--agent", "claude", "--skills", "none", "--yes")
+        assert result.exit_code == 0, result.output
+        recorded = _config(tmp_path)
+        assert "init-memory = false" in recorded
+        assert "init-quests = false" in recorded
+        assert "init-watchers = false" in recorded
+        installed = {p.name for p in (tmp_path / ".claude" / "skills").iterdir() if p.is_dir()}
+        assert installed == {"update-doctrine", "update-artifact", "run-doctrine"}
+
+
+class TestAliasPrintsDeprecationNotice:
+    def test_access_names_the_replacement_flags_on_stderr(self, tmp_path, monkeypatch):
+        result = _run(tmp_path, monkeypatch, "--agent", "claude", "--access", "native", "--yes")
+        assert result.exit_code == 0, result.output
+        assert "--access native is deprecated" in result.stderr
+        assert "--route harness" in result.stderr
+        assert "--access native is deprecated" not in result.stdout
+
+    def test_skills_names_the_replacement_flags_on_stderr(self, tmp_path, monkeypatch):
+        result = _run(tmp_path, monkeypatch, "--agent", "claude", "--skills", "memory", "--yes")
+        assert result.exit_code == 0, result.output
+        assert "--skills memory is deprecated" in result.stderr
+        assert "--quests" in result.stderr
+
+    def test_a_run_without_an_alias_prints_no_warning(self, tmp_path, monkeypatch):
+        result = _run(tmp_path, monkeypatch, "--agent", "claude", "--yes")
+        assert result.exit_code == 0, result.output
+        assert "deprecated" not in result.stderr
+
+    def test_a_dry_run_prints_the_notice_too(self, tmp_path, monkeypatch):
+        result = _run(tmp_path, monkeypatch, "--agent", "claude", "--access", "cli", "--dry-run")
+        assert result.exit_code == 0, result.output
+        assert "--access cli is deprecated" in result.stderr
+
+
+class TestAMigratedProjectSaysSo:
+    def test_a_project_recording_only_the_retired_keys_is_migrated_with_a_notice(
+        self, tmp_path, monkeypatch
+    ):
+        (tmp_path / ".lore").mkdir()
+        (tmp_path / ".lore" / "config.toml").write_text(
+            'init-agents = ["claude"]\ninit-access-mode = "cli"\n'
+            'init-skill-families = ["memory"]\ninit-skills-gitignore = "none"\n',
+            encoding="utf-8",
+        )
+        result = _run(tmp_path, monkeypatch, "--yes")
+        assert result.exit_code == 0, result.output
+        assert "Migrated init-access-mode/init-skill-families" in result.stderr
+        recorded = _config(tmp_path)
+        assert 'init-route = "cli"' in recorded
+        assert "init-memory = true" in recorded
+        assert "init-quests = false" in recorded
+        assert "init-watchers = false" in recorded
+
+
+class TestReconfigureWithoutTerminalNamesFlags:
+    @pytest.fixture()
+    def installed(self, tmp_path, monkeypatch):
+        assert _run(tmp_path, monkeypatch, "--agent", "claude", "--yes").exit_code == 0
+        return tmp_path
+
+    def test_the_error_names_the_route_flags_and_the_deprecated_pair(
+        self, installed, monkeypatch
+    ):
+        result = _run(installed, monkeypatch, "--reconfigure", "--yes")
+        assert result.exit_code == 2, result.output
+        for flag in ("--agent", "--skills-gitignore", "--route", "--memory", "--watchers",
+                     "--quests", "--access", "--skills"):
+            assert flag in result.stderr, flag
+
+    def test_the_old_pair_with_the_other_two_answers_is_enough(self, installed, monkeypatch):
+        result = _run(
+            installed, monkeypatch, "--reconfigure", "--agent", "claude",
+            "--skills-gitignore", "none", "--access", "cli", "--skills", "memory", "--yes",
+        )
+        assert result.exit_code == 0, result.output
+        assert 'init-route = "cli"' in _config(installed)
+
+    def test_the_new_flags_are_enough(self, installed, monkeypatch):
+        args = [
+            "--reconfigure", "--agent", "claude", "--skills-gitignore", "none",
+            "--route", "harness", "--memory", "no", "--quests", "no", "--watchers", "no", "--yes",
+        ]
+        result = _run(installed, monkeypatch, *args)
+        assert result.exit_code == 0, result.output
+
+
+class TestHelpListsEveryFlag:
+    def test_every_question_flag_and_both_deprecated_flags_appear(self, tmp_path, monkeypatch):
+        result = _run(tmp_path, monkeypatch, "--help")
+        assert result.exit_code == 0, result.output
+        for question in QUESTIONS:
+            assert f"--{question}" in result.output, question
+        assert "--access" in result.output and "--skills" in result.output
+
+    def test_the_help_explains_the_features_and_the_migration(self, tmp_path, monkeypatch):
+        text = " ".join(_run(tmp_path, monkeypatch, "--help").output.split())
+        assert "--access and --skills are deprecated" in text
+        assert "migrated once" in text
+        assert "The built-in defaults install every feature through the Lore CLI." in text

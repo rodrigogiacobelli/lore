@@ -14,8 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lore.config import Config, DEFAULT_CONFIG, _FROM_TOML, load_config
-
+from lore.config import _FROM_TOML, DEFAULT_CONFIG, Config, load_config
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -468,7 +467,11 @@ def test_config_field_order_keeps_extras_last():
     assert names[0] == "show_glossary_on_codex_commands"
     assert names[1] == "health_report_retention"
     assert names[-1] == "extras"
-    assert set(names) - {"extras"} == set(_FROM_TOML.values()) | set(_KNOWN_TABLES)
+    from lore.config import _RETIRED_KEYS
+
+    assert set(names) - {"extras"} == (
+        set(_FROM_TOML.values()) | set(_KNOWN_TABLES) | set(_RETIRED_KEYS.values()) | {"legacy_init_interim"}
+    )
 
 
 def test_from_toml_maps_health_report_retention():
@@ -492,7 +495,17 @@ def test_from_toml_maps_health_report_retention():
 # ---------------------------------------------------------------------------
 
 
-DEFAULT_FAMILIES = ["memory", "machinery", "workflow"]
+PROFILE_QUESTIONS = (
+    "route",
+    "memory",
+    "memory-search",
+    "memory-index",
+    "memory-graph",
+    "quests",
+    "watchers",
+)
+ROUTE_QUESTIONS = ("route",)
+BOOL_QUESTIONS = tuple(q for q in PROFILE_QUESTIONS if q not in ROUTE_QUESTIONS)
 
 
 def test_init_keys_absent_take_their_documented_defaults(tmp_path, capsys):
@@ -500,38 +513,25 @@ def test_init_keys_absent_take_their_documented_defaults(tmp_path, capsys):
     _write_config(tmp_path, "show-glossary-on-codex-commands = true\n")
     cfg = load_config(tmp_path)
     assert cfg.init_agents == []
-    assert cfg.init_access_mode == "native"
-    assert cfg.init_skill_families == DEFAULT_FAMILIES
     assert cfg.init_skills_gitignore == "lore-only"
     assert capsys.readouterr().err == ""
 
 
-def test_init_keys_load_from_a_config_that_names_all_four(tmp_path, capsys):
+def test_init_keys_load_from_a_config_that_names_them_all(tmp_path, capsys):
     # interactive-init-us-013 — Scenario 1
     _write_config(
         tmp_path,
         'init-agents = ["claude"]\n'
-        'init-access-mode = "cli"\n'
-        'init-skill-families = ["memory", "workflow"]\n'
+        'init-route = "harness"\n'
+        "init-quests = false\n"
         'init-skills-gitignore = "all"\n',
     )
     cfg = load_config(tmp_path)
     assert cfg.init_agents == ["claude"]
-    assert cfg.init_access_mode == "cli"
-    assert cfg.init_skill_families == ["memory", "workflow"]
+    assert cfg.init_route == "harness"
+    assert cfg.init_quests is False
     assert cfg.init_skills_gitignore == "all"
     assert capsys.readouterr().err == ""
-
-
-def test_out_of_set_family_token_drops_the_whole_key_with_one_warning(tmp_path, capsys):
-    # interactive-init-us-013 — Scenario 3 and Unit row 5
-    _write_config(tmp_path, 'init-skill-families = ["memory", "typo"]\n')
-    cfg = load_config(tmp_path)
-    assert cfg.init_skill_families == DEFAULT_FAMILIES
-    err = capsys.readouterr().err.strip().splitlines()
-    assert len(err) == 1
-    assert err[0].startswith("lore: invalid value for init-skill-families at ")
-    assert err[0].endswith("(expected items from: machinery, memory, workflow); using default")
 
 
 def test_a_string_where_a_list_is_expected_is_an_invalid_type(tmp_path, capsys):
@@ -546,9 +546,9 @@ def test_a_string_where_a_list_is_expected_is_an_invalid_type(tmp_path, capsys):
 
 def test_a_non_string_list_element_drops_the_key_with_one_warning(tmp_path, capsys):
     # interactive-init-us-013 — Unit row 4
-    _write_config(tmp_path, "init-skill-families = [\"memory\", 7]\n")
+    _write_config(tmp_path, "init-agents = [\"claude\", 7]\n")
     cfg = load_config(tmp_path)
-    assert cfg.init_skill_families == DEFAULT_FAMILIES
+    assert cfg.init_agents == []
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
 
 
@@ -574,7 +574,7 @@ def test_the_warning_latch_spans_a_scalar_and_a_list_failure(tmp_path, capsys):
     # interactive-init-us-013 — Unit row 8
     _write_config(
         tmp_path,
-        'health-report-retention = "sometimes"\ninit-skill-families = ["typo"]\n',
+        'health-report-retention = "sometimes"\ninit-agents = ["typo"]\n',
     )
     load_config(tmp_path)
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
@@ -582,10 +582,10 @@ def test_the_warning_latch_spans_a_scalar_and_a_list_failure(tmp_path, capsys):
 
 def test_unknown_root_keys_still_land_in_extras_beside_the_init_keys(tmp_path):
     # interactive-init-us-013 — Unit row 9
-    _write_config(tmp_path, 'init-access-mode = "cli"\nnot-a-lore-key = 3\n')
+    _write_config(tmp_path, 'init-route = "cli"\nnot-a-lore-key = 3\n')
     cfg = load_config(tmp_path)
     assert cfg.extras == {"not-a-lore-key": 3}
-    assert cfg.init_access_mode == "cli"
+    assert cfg.init_route == "cli"
 
 
 def test_a_rejected_init_key_never_leaks_into_extras(tmp_path, capsys):
@@ -601,9 +601,9 @@ def test_every_from_toml_key_has_an_expected_type():
     from lore.config import _EXPECTED_TYPE, _FROM_TOML
 
     assert set(_FROM_TOML) == set(_EXPECTED_TYPE)
-    for key in ("init-agents", "init-access-mode", "init-skill-families", "init-skills-gitignore"):
+    for key in ("init-agents", "init-route", "init-quests", "init-skills-gitignore"):
         assert key in _FROM_TOML
-    assert _FROM_TOML["init-skill-families"] == "init_skill_families"
+    assert _FROM_TOML["init-route"] == "init_route"
 
 
 def test_allowed_item_values_covers_every_list_key_and_no_other():
@@ -612,25 +612,24 @@ def test_allowed_item_values_covers_every_list_key_and_no_other():
 
     list_keys = {key for key, typ in _EXPECTED_TYPE.items() if typ is list}
     assert set(_ALLOWED_ITEM_VALUES) == list_keys
-    assert list_keys == {"init-agents", "init-skill-families"}
+    assert list_keys == {"init-agents"}
 
 
-def test_config_defaults_for_the_four_init_keys():
+def test_config_defaults_for_the_two_unchanged_init_keys():
     # interactive-init-us-013 — Unit row 2
     assert DEFAULT_CONFIG.init_agents == []
-    assert DEFAULT_CONFIG.init_access_mode == "native"
-    assert DEFAULT_CONFIG.init_skill_families == DEFAULT_FAMILIES
     assert DEFAULT_CONFIG.init_skills_gitignore == "lore-only"
 
 
-def test_the_four_init_fields_are_frozen():
+def test_the_init_fields_are_frozen():
     # interactive-init-us-013 — Unit row 2 (frozen dataclass)
     cfg = Config()
     for field_name in (
         "init_agents",
-        "init_access_mode",
-        "init_skill_families",
+        "init_route",
+        "init_quests",
         "init_skills_gitignore",
+        "legacy_init_access_mode",
     ):
         with pytest.raises(dataclasses.FrozenInstanceError):
             setattr(cfg, field_name, "x")
@@ -644,15 +643,12 @@ def test_the_constrained_init_token_sets_match_the_ones_init_enforces():
     join, the same role ``test_access_modes_constant_matches_the_access_mode_enum``
     plays for the access mode.
     """
-    from lore.config import _ALLOWED_VALUES, DEFAULT_CONFIG
-    from lore.init import DEFAULT_ACCESS_MODE, SKILLS_GITIGNORE_TOKENS
-    from lore.initplan import AccessMode
+    from lore.config import _ALLOWED_VALUES
+    from lore.init import SKILLS_GITIGNORE_TOKENS
+    from lore.initplan import Route
 
     assert set(_ALLOWED_VALUES["init-skills-gitignore"]) == set(SKILLS_GITIGNORE_TOKENS)
-    assert set(_ALLOWED_VALUES["init-access-mode"]) == {mode.value for mode in AccessMode}
-    # `plan_init` reads the default off `Config`, so `DEFAULT_ACCESS_MODE` is a
-    # statement of the same fact rather than a second source for it.
-    assert DEFAULT_CONFIG.init_access_mode == DEFAULT_ACCESS_MODE
+    assert _ALLOWED_VALUES["init-route"] == tuple(r.value for r in Route)
 
 
 # ---------------------------------------------------------------------------
@@ -742,17 +738,17 @@ def test_header_is_all_comment_lines_and_announces_itself():
 
 def test_list_typed_key_renders_its_item_set_and_default():
     """conceptual-workflows-lore-init — config header regeneration."""
+    from lore.agents import agent_ids
     from lore.config import DEFAULT_CONFIG, render_known_keys_header
-    from lore.skills import family_ids
 
-    row = _header_row_for("init-skill-families")
-    expected_items = " | ".join(f'"{item}"' for item in family_ids())
+    row = _header_row_for("init-agents")
+    expected_items = " | ".join(f'"{item}"' for item in agent_ids())
     assert f"list of {expected_items}" in row, row
     rendered_default = (
-        "[" + ", ".join(f'"{item}"' for item in DEFAULT_CONFIG.init_skill_families) + "]"
+        "[" + ", ".join(f'"{item}"' for item in DEFAULT_CONFIG.init_agents) + "]"
     )
     assert f"default {rendered_default}" in row, row
-    assert render_known_keys_header().count("init-skill-families") == 1
+    assert render_known_keys_header().count("init-agents") == 1
 
 
 def test_key_doc_covers_exactly_the_known_keys():
@@ -770,7 +766,7 @@ def test_render_default_settings_writes_every_key_at_its_default():
     """conceptual-workflows-lore-init — config header regeneration."""
     import tomllib
 
-    from lore.config import DEFAULT_CONFIG, _FROM_TOML, render_default_settings
+    from lore.config import _FROM_TOML, DEFAULT_CONFIG, render_default_settings
 
     parsed = tomllib.loads(render_default_settings())
     assert set(parsed) == set(_FROM_TOML)
@@ -905,9 +901,9 @@ def test_recorded_keys_stays_silent_about_a_value_it_rejects(
 def test_a_rejected_key_does_not_hide_its_valid_siblings(tmp_path, capsys, content):
     from lore.config import recorded_keys
 
-    _write_config(tmp_path, content + 'init-access-mode = "cli"\n')
+    _write_config(tmp_path, content + 'init-route = "cli"\n')
 
-    assert recorded_keys(tmp_path) == frozenset({"init-access-mode"})
+    assert recorded_keys(tmp_path) == frozenset({"init-route"})
 
 
 def test_recorded_keys_reports_a_key_the_loader_could_use(tmp_path, capsys):
@@ -937,12 +933,14 @@ def test_recorded_keys_reports_every_known_key_a_full_config_sets(tmp_path, caps
         "show-glossary-on-codex-commands = true\n"
         'health-report-retention = "latest"\n'
         'init-agents = ["claude"]\n'
-        'init-access-mode = "cli"\n'
-        'init-skill-families = ["memory"]\n'
         'init-skills-gitignore = "all"\n'
         'project-name = "camelot"\n'
         'default-project-scope = "all"\n'
-        "something-else = 3\n",
+        + "".join(
+            f'init-{q} = "cli"\n' if q in ROUTE_QUESTIONS else f"init-{q} = true\n"
+            for q in PROFILE_QUESTIONS
+        )
+        + "something-else = 3\n",
     )
 
     assert recorded_keys(tmp_path) == frozenset(_FROM_TOML)
@@ -952,8 +950,8 @@ def test_recorded_keys_reports_every_known_key_a_full_config_sets(tmp_path, caps
     "content",
     [
         'health-report-retention = "sometimes"\n',
-        'init-access-mode = "both"\n',
-        'init-skill-families = ["memory", "typo"]\n',
+        'init-route = "native"\n',
+        'init-quests = "yes"\n',
         'init-skills-gitignore = "some"\n',
         "show-glossary-on-codex-commands = 1\n",
     ],
@@ -1416,3 +1414,253 @@ def test_an_unknown_key_inside_a_known_table_is_ignored(tmp_path, capsys):
     assert cfg.shared == SharedExports(exports=("a",), glossary=False)
     assert cfg.descendants == (DescendantExport(name="lore", path="lore", exports=()),)
     assert capsys.readouterr().err == ""
+
+
+# ---------------------------------------------------------------------------
+# Adaptive init — the fifteen feature answers and the two retired keys.
+#
+# Spec: adaptive-init-spec (Part 2.7). Standards: decisions-013 (flat root keys,
+# header generated from the tables), decisions-022 (no [init] table).
+# ---------------------------------------------------------------------------
+
+
+def _attr(question: str) -> str:
+    return "init_" + question.replace("-", "_")
+
+
+class TestProfileKeys:
+    @pytest.mark.parametrize("question", ROUTE_QUESTIONS)
+    @pytest.mark.parametrize("token", ["harness", "cli"])
+    def test_every_route_key_reads_each_valid_token(self, tmp_path, capsys, question, token):
+        _write_config(tmp_path, f'init-{question} = "{token}"\n')
+        assert getattr(load_config(tmp_path), _attr(question)) == token
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize("question", BOOL_QUESTIONS)
+    @pytest.mark.parametrize("value", [True, False])
+    def test_every_opt_in_key_reads_a_bool(self, tmp_path, capsys, question, value):
+        _write_config(tmp_path, f"init-{question} = {str(value).lower()}\n")
+        assert getattr(load_config(tmp_path), _attr(question)) is value
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize("question", PROFILE_QUESTIONS)
+    def test_absent_keys_take_the_headless_defaults(self, tmp_path, question):
+        from lore.initplan import Profile
+
+        _write_config(tmp_path, "show-glossary-on-codex-commands = true\n")
+        expected = Profile().as_answers()[question.replace("-", "_")]
+        assert getattr(load_config(tmp_path), _attr(question)) == expected
+
+    @pytest.mark.parametrize("question", ROUTE_QUESTIONS)
+    def test_an_out_of_set_route_warns_once_and_falls_back(self, tmp_path, capsys, question):
+        _write_config(tmp_path, f'init-{question} = "native"\n')
+        value = getattr(load_config(tmp_path), _attr(question))
+        assert value == getattr(DEFAULT_CONFIG, _attr(question))
+        err = capsys.readouterr().err.strip().splitlines()
+        assert len(err) == 1
+        assert err[0].startswith(f"lore: invalid value for init-{question} at ")
+        assert err[0].endswith("(expected one of: harness, cli); using default")
+
+    @pytest.mark.parametrize("question", ROUTE_QUESTIONS)
+    def test_a_non_string_route_is_an_invalid_type(self, tmp_path, capsys, question):
+        _write_config(tmp_path, f"init-{question} = true\n")
+        assert getattr(load_config(tmp_path), _attr(question)) == getattr(
+            DEFAULT_CONFIG, _attr(question)
+        )
+        assert f"invalid type for init-{question}" in capsys.readouterr().err
+
+    def test_off_is_not_a_route(self, tmp_path, capsys):
+        _write_config(tmp_path, 'init-route = "off"\n')
+        assert load_config(tmp_path).init_route == DEFAULT_CONFIG.init_route
+        assert "invalid value for init-route" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("question", BOOL_QUESTIONS)
+    @pytest.mark.parametrize("value", ['"yes"', "1"])
+    def test_a_non_bool_opt_in_is_an_invalid_type(self, tmp_path, capsys, question, value):
+        _write_config(tmp_path, f"init-{question} = {value}\n")
+        assert getattr(load_config(tmp_path), _attr(question)) is True
+        err = capsys.readouterr().err
+        assert f"invalid type for init-{question}" in err
+        assert "(expected bool)" in err
+
+    def test_a_rejected_profile_key_never_leaks_into_extras(self, tmp_path, capsys):
+        _write_config(tmp_path, 'init-route = "native"\n')
+        assert "init-route" not in load_config(tmp_path).extras
+
+    def test_the_keys_restate_the_question_table(self):
+        from lore.config import _FROM_TOML
+        from lore.initplan import QUESTIONS, question_key, question_kwarg
+
+        for question in QUESTIONS:
+            assert _FROM_TOML[question_key(question)] == "init_" + question_kwarg(question)
+        assert PROFILE_QUESTIONS == QUESTIONS
+
+    def test_the_defaults_restate_the_profile_defaults(self):
+        from lore.initplan import Profile
+
+        for name, value in Profile().as_answers().items():
+            assert getattr(DEFAULT_CONFIG, f"init_{name}") == value
+
+
+class TestRetiredKeys:
+    def test_old_keys_parse_into_the_legacy_fields(self, tmp_path, capsys):
+        _write_config(
+            tmp_path,
+            'init-access-mode = "cli"\ninit-skill-families = ["workflow", "memory"]\n',
+        )
+        cfg = load_config(tmp_path)
+        assert cfg.legacy_init_access_mode == "cli"
+        assert cfg.legacy_init_skill_families == ("workflow", "memory")
+        assert capsys.readouterr().err == ""
+
+    def test_old_keys_never_land_in_extras(self, tmp_path):
+        _write_config(
+            tmp_path,
+            'init-access-mode = "cli"\ninit-skill-families = ["memory"]\nother = 1\n',
+        )
+        assert load_config(tmp_path).extras == {"other": 1}
+
+    def test_absent_old_keys_are_none(self, tmp_path):
+        _write_config(tmp_path, "show-glossary-on-codex-commands = true\n")
+        cfg = load_config(tmp_path)
+        assert cfg.legacy_init_access_mode is None
+        assert cfg.legacy_init_skill_families is None
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            'init-access-mode = "both"\n',
+            "init-access-mode = 3\n",
+            'init-skill-families = ["memory", "typo"]\n',
+            'init-skill-families = "memory"\n',
+            "init-skill-families = [1]\n",
+        ],
+    )
+    def test_an_unusable_old_value_is_none_and_silent(self, tmp_path, capsys, line):
+        _write_config(tmp_path, line)
+        cfg = load_config(tmp_path)
+        assert cfg.legacy_init_access_mode is None
+        assert cfg.legacy_init_skill_families is None
+        assert capsys.readouterr().err == ""
+        assert cfg.extras == {}
+
+    def test_an_empty_family_list_is_a_real_value(self, tmp_path):
+        _write_config(tmp_path, "init-skill-families = []\n")
+        assert load_config(tmp_path).legacy_init_skill_families == ()
+
+    def test_a_config_holding_only_the_old_keys_loads_with_new_defaults(self, tmp_path, capsys):
+        _write_config(tmp_path, 'init-access-mode = "cli"\n')
+        cfg = load_config(tmp_path)
+        assert cfg.init_route == "cli"
+        assert capsys.readouterr().err == ""
+
+    def test_the_interim_route_and_validate_keys_are_collected_not_known(self, tmp_path, capsys):
+        _write_config(
+            tmp_path,
+            'init-memory-read = "cli"\ninit-watchers-write = "off"\n'
+            "init-doctrines-validate = false\ninit-quests = false\n",
+        )
+        cfg = load_config(tmp_path)
+        assert dict(cfg.legacy_init_interim) == {
+            "init-memory-read": "cli",
+            "init-watchers-write": "off",
+            "init-doctrines-validate": False,
+        }
+        assert cfg.init_quests is False
+        assert cfg.extras == {}
+        assert capsys.readouterr().err == ""
+
+    @pytest.mark.parametrize(
+        "line",
+        ['init-memory-read = "native"\n', "init-memory-write = true\n", 'init-memory-validate = "yes"\n'],
+    )
+    def test_an_unusable_interim_value_is_dropped_silently(self, tmp_path, capsys, line):
+        _write_config(tmp_path, line)
+        cfg = load_config(tmp_path)
+        assert dict(cfg.legacy_init_interim) == {}
+        assert capsys.readouterr().err == ""
+
+    def test_interim_keys_do_not_count_as_recorded(self, tmp_path):
+        from lore.config import recorded_keys
+
+        _write_config(tmp_path, 'init-memory-read = "cli"\ninit-doctrines-validate = true\n')
+        assert recorded_keys(tmp_path) == frozenset()
+
+    def test_retired_keys_do_not_count_as_recorded(self, tmp_path):
+        from lore.config import recorded_keys
+
+        _write_config(tmp_path, 'init-access-mode = "cli"\ninit-skill-families = ["memory"]\n')
+        assert recorded_keys(tmp_path) == frozenset()
+
+
+class TestGeneratedHeader:
+    def test_lists_every_profile_key_once(self):
+        from lore.config import render_known_keys_header
+
+        header = render_known_keys_header()
+        for question in PROFILE_QUESTIONS:
+            assert f"#   init-{question}" in header
+            assert _header_row_for(f"init-{question}")
+
+    def test_the_route_key_spells_the_two_tokens_on_separate_lines(self):
+        from lore.config import _KEY_DOC
+
+        lines = _KEY_DOC["init-route"].splitlines()
+        assert [line.split()[0] for line in lines[-2:]] == ["harness", "cli"]
+
+    def test_ends_with_the_retired_keys_block_built_from_the_table(self):
+        from lore.config import _RETIRED_KEYS, render_known_keys_header
+
+        header = render_known_keys_header()
+        last = header.splitlines()[-1]
+        assert last.startswith("#")
+        assert "Retired keys" in last
+        for key in _RETIRED_KEYS:
+            assert key in last
+
+    def test_retired_keys_have_no_row_of_their_own(self):
+        from lore.config import _INTERIM_KEYS, _RETIRED_KEYS
+
+        assert not (set(_RETIRED_KEYS) | set(_INTERIM_KEYS)) & set(_key_rows())
+
+    def test_the_header_names_the_interim_keys_as_retired(self):
+        from lore.config import _INTERIM_KEYS, render_known_keys_header
+
+        last = render_known_keys_header().splitlines()[-1]
+        for key in _INTERIM_KEYS:
+            assert key in last
+
+
+class TestDefaultSettings:
+    def test_writes_the_seven_lines_at_their_defaults(self):
+        import tomllib
+
+        from lore.config import render_default_settings
+        from lore.initplan import Profile
+
+        parsed = tomllib.loads(render_default_settings())
+        for name, value in Profile().as_answers().items():
+            assert parsed[f"init-{name.replace('_', '-')}"] == value
+
+    def test_no_longer_writes_the_retired_keys(self):
+        import tomllib
+
+        from lore.config import render_default_settings
+
+        parsed = tomllib.loads(render_default_settings())
+        assert "init-access-mode" not in parsed
+        assert "init-skill-families" not in parsed
+
+
+class TestRecordedKeys:
+    def test_a_valid_new_key_counts_as_answered(self, tmp_path):
+        from lore.config import recorded_keys
+
+        _write_config(tmp_path, 'init-route = "harness"\ninit-quests = false\n')
+        assert recorded_keys(tmp_path) == frozenset({"init-route", "init-quests"})
+
+    def test_an_invalid_new_key_does_not(self, tmp_path):
+        from lore.config import recorded_keys
+
+        _write_config(tmp_path, 'init-route = "yes"\ninit-quests = "no"\n')
+        assert recorded_keys(tmp_path) == frozenset()

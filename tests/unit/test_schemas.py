@@ -1243,7 +1243,7 @@ def test_a_retired_kind_is_in_neither_dispatch_set(kind):
     assert kind not in _YAML_KINDS
 
 
-def test_the_packaged_kind_count_is_twelve():
+def test_the_packaged_kind_count_is_fourteen():
     from importlib import resources
 
     names = sorted(
@@ -1252,9 +1252,13 @@ def test_the_packaged_kind_count_is_twelve():
         if entry.name.endswith(".yaml")
     )
 
-    assert len(names) == 12, names
+    assert len(names) == 14, names
     assert "knight-frontmatter.yaml" not in names
     assert "doctrine-yaml.yaml" not in names
     assert "doctrine-mission-frontmatter.yaml" in names
     # The twelfth is the codex index's authored file (codex-index-spec, F3).
     assert "index-authored.yaml" in names
+    # The thirteenth and fourteenth are the instruction block frontmatter and the
+    # command-grant table (adaptive-init-spec, Part 2.3).
+    assert "block.yaml" in names
+    assert "block-commands.yaml" in names

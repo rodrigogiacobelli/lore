@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from lore import skills
 from lore.cli import main
 from tests.conftest import assert_exit_err, assert_exit_ok
-
 
 EXPECTED_GITIGNORE_CONTENT = (
     "# Ignore everything in .lore/\n"
@@ -605,7 +605,6 @@ class TestInitGitignoreNoDuplicates:
 
 
 DEFAULTS_DIR = Path(__file__).resolve().parent.parent.parent / "src" / "lore" / "defaults"
-DEFAULTS_DOCS_DIR = DEFAULTS_DIR / "docs"
 
 
 # ---------------------------------------------------------------------------
@@ -623,22 +622,26 @@ def test_agents_md_not_created_at_project_root(runner, project_dir):
 # it follows the reconciliation rules rather than the verbatim-copy rules. Its
 # own contract is asserted in TestRenderedAgentInstructions and in
 # TestManifestTrackedFilesResistSilentOverwrite below.
-COPIED_DOCS = [p for p in DEFAULTS_DOCS_DIR.glob("*.md") if p.name != "LORE-AGENT.md"]
+# ``GETTING-STARTED.md`` is rendered too, from the catalogue's ``getting-started``
+# document, but it is seeded infrastructure: every default profile writes it, and a
+# re-init refreshes it without a conflict.
+SEEDED_DOCS = [Path("GETTING-STARTED.md")]
+SHIPPED_SKILL_IDS = sorted(entry["id"] for entry in skills.load_catalogue()["skills"])
 
 
 class TestDocsMdSeeding:
-    """lore init copies .lore/<name>.md verbatim for each file in defaults/docs/."""
+    """lore init writes .lore/<name>.md for each page rendered into .lore/."""
 
-    @pytest.fixture(params=COPIED_DOCS, ids=lambda p: p.name)
+    @pytest.fixture(params=SEEDED_DOCS, ids=lambda p: p.name)
     def docs_md_file(self, request):
         return request.param
 
     def test_the_copied_docs_set_is_not_empty(self):
         """A narrowed parameter set that emptied itself would prove nothing."""
-        assert COPIED_DOCS
+        assert SEEDED_DOCS
 
     def test_docs_md_created_on_fresh_init(self, runner, project_dir, docs_md_file):
-        """Fresh init creates .lore/<name>.md for each file in defaults/docs/."""
+        """Fresh init creates .lore/<name>.md for each rendered page."""
         assert (project_dir / ".lore" / docs_md_file.name).is_file()
 
     def test_docs_md_content_is_non_empty(self, runner, project_dir, docs_md_file):
@@ -726,26 +729,25 @@ class TestManifestTrackedFilesResistSilentOverwrite:
 
 
 class TestSkillsSeeding:
-    """lore init seeds .lore/skills/ from src/lore/defaults/skills/."""
+    """lore init installs .lore/skills/ from the skills the catalogue ships."""
 
     def test_skills_dir_created_on_fresh_init(self, runner, project_dir):
         """Fresh init creates .lore/skills/ directory."""
         assert (project_dir / ".lore" / "skills").is_dir()
 
     def test_all_skill_files_present(self, runner, project_dir):
-        """Every skill directory in src/lore/defaults/skills/ is present in .lore/skills/."""
-        source_skills = list((DEFAULTS_DIR / "skills").iterdir())
-        assert len(source_skills) > 0, "No skill directories found in defaults/skills/"
-        for src_dir in source_skills:
-            dest = project_dir / ".lore" / "skills" / src_dir.name
-            assert dest.is_dir(), f"Missing skill directory: {src_dir.name}"
-            assert (dest / "SKILL.md").is_file(), f"Missing SKILL.md in: {src_dir.name}"
+        """Every skill the catalogue ships is present in .lore/skills/."""
+        assert len(SHIPPED_SKILL_IDS) > 0, "The catalogue ships no skill"
+        for skill_id in SHIPPED_SKILL_IDS:
+            dest = project_dir / ".lore" / "skills" / skill_id
+            assert dest.is_dir(), f"Missing skill directory: {skill_id}"
+            assert (dest / "SKILL.md").is_file(), f"Missing SKILL.md in: {skill_id}"
 
     def test_skill_files_are_non_empty(self, runner, project_dir):
         """Each seeded SKILL.md is non-empty after init."""
-        for src_dir in (DEFAULTS_DIR / "skills").iterdir():
-            dest = project_dir / ".lore" / "skills" / src_dir.name / "SKILL.md"
-            assert dest.read_text().strip(), f"SKILL.md is empty: {src_dir.name}"
+        for skill_id in SHIPPED_SKILL_IDS:
+            dest = project_dir / ".lore" / "skills" / skill_id / "SKILL.md"
+            assert dest.read_text().strip(), f"SKILL.md is empty: {skill_id}"
 
     def test_reinit_restores_a_deleted_skill_file(self, runner, initialized_dir):
         """Re-init puts back a SKILL.md that went missing, byte for byte.
@@ -756,8 +758,8 @@ class TestSkillsSeeding:
         """
         skills_dir = initialized_dir / ".lore" / "skills"
         originals = {
-            src_dir.name: (skills_dir / src_dir.name / "SKILL.md").read_bytes()
-            for src_dir in (DEFAULTS_DIR / "skills").iterdir()
+            skill_id: (skills_dir / skill_id / "SKILL.md").read_bytes()
+            for skill_id in SHIPPED_SKILL_IDS
         }
         for name in originals:
             (skills_dir / name / "SKILL.md").unlink()
@@ -822,7 +824,7 @@ class TestInitDoesNotTouchDotClaudeSkills:
         dot_claude = project_dir / ".claude"
         if not dot_claude.exists():
             return
-        shipped = {p.name for p in (DEFAULTS_DIR / "skills").iterdir() if p.is_dir()}
+        shipped = set(SHIPPED_SKILL_IDS)
         leaked = {p.name for p in dot_claude.rglob("*")} & shipped
         assert not leaked, f"{sorted(leaked)} leaked into the .claude/ tree"
 
@@ -961,16 +963,15 @@ class TestRenderedAgentInstructions:
         """Scenario 1 — one row per installed skill, pointing at the agent's dir."""
         from lore import skills
         from lore.init import render_agent_instructions
-        from lore.initplan import AccessMode
+        from lore.legacy_init import profile_from_legacy
 
-        selected = skills.skills_in_families(("memory", "workflow"))
+        profile = profile_from_legacy("native", ("memory", "workflow"))
+        selected = skills.installed_skills(profile)
         text = render_agent_instructions(
-            skill_ids=selected,
-            install_roots=(Path(".claude/skills"),),
-            access_mode=AccessMode.NATIVE,
+            profile=profile, install_roots=(Path(".claude/skills"),)
         )
         rows = _rendered_table_rows(text)
-        assert len(rows) == len(selected) == 5
+        assert len(rows) == len(selected) > 0
         for skill_id in selected:
             assert any(
                 f"`{skill_id}`" in row and f".claude/skills/{skill_id}/" in row
@@ -981,15 +982,12 @@ class TestRenderedAgentInstructions:
 
     def test_no_agent_selected_points_the_table_at_dot_lore_skills(self):
         """Scenario 2 — the install path follows the target."""
-        from lore import skills
         from lore.init import render_agent_instructions
-        from lore.initplan import AccessMode
+        from lore.legacy_init import profile_from_legacy
 
-        selected = skills.skills_in_families(("memory", "workflow"))
         text = render_agent_instructions(
-            skill_ids=selected,
+            profile=profile_from_legacy("native", ("memory", "workflow")),
             install_roots=(Path(".lore/skills"),),
-            access_mode=AccessMode.NATIVE,
         )
         rows = _rendered_table_rows(text)
         assert rows
@@ -997,41 +995,39 @@ class TestRenderedAgentInstructions:
             assert ".lore/skills/" in row
             assert ".claude/skills/" not in row
 
-    def test_instruction_text_differs_between_access_modes(self):
-        """Scenario 3 — the access mode reaches the instruction text."""
+    def test_instruction_text_differs_between_routes(self, route_sensitive_text):
+        """Scenario 3 — the route reaches the instruction text."""
         from lore.init import render_agent_instructions
-        from lore.initplan import AccessMode
+        from lore.initplan import Profile, Route
 
         rendered = {
-            mode: render_agent_instructions(
-                skill_ids=("store-memory",),
+            route: render_agent_instructions(
+                profile=Profile(route=route),
                 install_roots=(Path(".lore/skills"),),
-                access_mode=mode,
             )
-            for mode in AccessMode
+            for route in (Route.HARNESS, Route.CLI)
         }
-        assert rendered[AccessMode.CLI] != rendered[AccessMode.NATIVE]
+        assert rendered[Route.CLI] != rendered[Route.HARNESS]
         for text in rendered.values():
             assert "<!-- lore:access" not in text
 
-    def test_memory_only_selection_yields_a_two_row_table(self):
-        """Scenario 4 — a narrowed family selection narrows the table."""
+    def test_memory_only_selection_yields_a_narrower_table(self):
+        """Scenario 4 — a narrowed selection narrows the table."""
         from lore import skills
         from lore.init import render_agent_instructions
-        from lore.initplan import AccessMode
+        from lore.legacy_init import profile_from_legacy
 
-        memory = skills.skills_in_families(("memory",))
-        other = set(skills.skills_in_families(("machinery", "workflow")))
+        profile = profile_from_legacy("cli", ("memory",))
+        memory = set(skills.installed_skills(profile))
+        full = set(skills.installed_skills(profile_from_legacy("cli", skills.family_ids())))
+        assert memory < full
         text = render_agent_instructions(
-            skill_ids=memory,
-            install_roots=(Path(".claude/skills"),),
-            access_mode=AccessMode.CLI,
+            profile=profile, install_roots=(Path(".claude/skills"),)
         )
-        rows = _rendered_table_rows(text)
-        assert len(rows) == 2
-        for row in rows:
-            for excluded in other:
-                assert f"`{excluded}`" not in row
+        listed = {
+            row.split("|")[1].strip().strip("`") for row in _rendered_table_rows(text)
+        }
+        assert listed == memory
 
     def test_init_writes_the_rendered_text_to_dot_lore(self, runner, project_dir):
         """FR-9 parity — .lore/LORE-AGENT.md is written on every run, agent or not."""
@@ -1161,6 +1157,7 @@ class TestSkillsGitignoreE2E:
 
     def test_lore_only_lists_the_installed_directories(self, tmp_path):
         from lore import skills as skills_mod
+        from lore.legacy_init import profile_from_legacy
 
         _init_at(
             tmp_path,
@@ -1174,7 +1171,7 @@ class TestSkillsGitignoreE2E:
             line for line in listing.read_text(encoding="utf-8").splitlines()
             if line and not line.startswith("#")
         ]
-        installed = sorted(skills_mod.skills_in_families(("memory",)))
+        installed = sorted(skills_mod.installed_skills(profile_from_legacy("native", ("memory",))))
         assert entries == [f"{skill_id}/" for skill_id in installed]
 
     def test_none_removes_a_previously_written_listing(self, tmp_path):
@@ -1200,6 +1197,7 @@ class TestSkillsGitignoreE2E:
 
     def test_the_fallback_root_gets_the_same_listing(self, tmp_path):
         from lore import skills as skills_mod
+        from lore.legacy_init import profile_from_legacy
 
         _init_at(
             tmp_path,
@@ -1213,7 +1211,7 @@ class TestSkillsGitignoreE2E:
             line for line in listing.read_text(encoding="utf-8").splitlines()
             if line and not line.startswith("#")
         ]
-        installed = sorted(skills_mod.skills_in_families(("memory",)))
+        installed = sorted(skills_mod.installed_skills(profile_from_legacy("native", ("memory",))))
         assert entries == [f"{skill_id}/" for skill_id in installed]
 
 
@@ -1227,11 +1225,12 @@ class TestSkillsGitignoreE2E:
 class TestAnswersArePersistedAndReused:
     """interactive-init-us-013 — Scenarios 4 and 5."""
 
-    def test_the_four_answers_are_written_back_and_reused(self, tmp_path):
-        """Scenario 4."""
+    def test_the_answers_are_written_back_and_reused(self, tmp_path):
+        """Scenario 4 — the alias is translated, every feature key is recorded."""
         import tomllib
 
         from lore.config import load_config
+        from lore.legacy_init import profile_from_legacy
 
         _init_at(
             tmp_path,
@@ -1241,29 +1240,37 @@ class TestAnswersArePersistedAndReused:
             skills_gitignore="none",
         )
         raw = tomllib.loads((tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8"))
+        expected = profile_from_legacy("cli", ("memory", "workflow"))
         assert raw["init-agents"] == ["claude"]
-        assert raw["init-access-mode"] == "cli"
-        assert raw["init-skill-families"] == ["memory", "workflow"]
+        assert raw["init-route"] == "cli"
+        assert raw["init-memory"] is True
+        assert raw["init-quests"] is True
+        assert raw["init-watchers"] is False
         assert raw["init-skills-gitignore"] == "none"
+        assert expected.watchers is False
+        # The retired keys are never written.
+        assert "init-access-mode" not in raw
+        assert "init-skill-families" not in raw
 
         before = load_config(tmp_path)
         _init_at(tmp_path)
         after = load_config(tmp_path)
-        assert (before.init_agents, before.init_access_mode) == (
-            after.init_agents,
-            after.init_access_mode,
-        )
-        assert before.init_skill_families == after.init_skill_families
+        assert before.init_agents == after.init_agents
+        assert before.init_route == after.init_route
+        assert before.init_quests == after.init_quests
         assert before.init_skills_gitignore == after.init_skills_gitignore
 
     def test_an_aggregate_token_is_never_persisted(self, tmp_path):
-        """Scenario 5."""
+        """Scenario 5 — `all` expands to answers; the token itself is not recorded."""
         import tomllib
+
+        from lore.initplan import QUESTIONS, question_key
 
         _init_at(tmp_path, skill_families=["all"])
         raw = tomllib.loads((tmp_path / ".lore" / "config.toml").read_text(encoding="utf-8"))
-        assert raw["init-skill-families"] == ["machinery", "memory", "workflow"]
-        assert "all" not in raw["init-skill-families"]
+        assert "init-skill-families" not in raw
+        for question in QUESTIONS:
+            assert raw[question_key(question)] != "all"
 
     def test_a_user_setting_line_survives_the_write_back(self, tmp_path):
         _init_at(tmp_path)
@@ -1274,11 +1281,11 @@ class TestAnswersArePersistedAndReused:
         _init_at(tmp_path, access_mode="cli")
         text = config.read_text(encoding="utf-8")
         assert "my-own-key = 42" in text
-        assert 'init-access-mode = "cli"' in text
+        assert 'init-route = "cli"' in text
         # Settings lines only: the generated header names every known key too
         # (interactive-init-us-020), and a comment is not a second answer.
         settings = [line for line in text.splitlines() if not line.startswith("#")]
-        assert sum(line.startswith("init-access-mode") for line in settings) == 1
+        assert sum(line.startswith("init-route") for line in settings) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1379,7 +1386,9 @@ class TestAFileLoreNeverInstalled:
 class TestChangingTheAccessMode:
     """Tech Spec §2.1 — flipping --access is a clean overwrite, not a conflict."""
 
-    def test_every_installed_skill_is_an_overwrite_not_a_conflict(self, tmp_path):
+    def test_every_installed_skill_is_an_overwrite_not_a_conflict(
+        self, tmp_path, route_sensitive_text
+    ):
         _init_at(tmp_path, agents=["claude"], access_mode="native")
         plan = plan_init(project_root=tmp_path, agents=["claude"], access_mode="cli")
         skill_rows = [entry for entry in plan.files if entry.source.startswith("skill:")]
@@ -1511,27 +1520,39 @@ class TestConfigHeaderRegeneration:
         """Scenario 2 — header plus every known key at its default."""
         import tomllib
 
-        from lore.config import DEFAULT_CONFIG, _FROM_TOML, load_config, render_known_keys_header
+        from lore.config import (
+            _FROM_TOML,
+            DEFAULT_CONFIG,
+            load_config,
+            render_known_keys_header,
+        )
 
         result = runner.invoke(main, ["init", "--yes"])
         assert result.exit_code == 0, result.output
 
         text = (fresh_dir / ".lore" / "config.toml").read_text(encoding="utf-8")
         assert text.startswith(render_known_keys_header())
+        # Every known key is recorded, and the two retired keys are not written.
         assert set(tomllib.loads(text)) == set(_FROM_TOML)
 
-        # Every key loads back at its default value. The families are compared
-        # as a set: `lore init` rewrites that line with the answer it resolved,
-        # and `skills.resolve_families` sorts what it returns.
+        # Every key loads back at its default value.
         loaded = load_config(fresh_dir)
         assert loaded.show_glossary_on_codex_commands is DEFAULT_CONFIG.show_glossary_on_codex_commands
         assert loaded.health_report_retention == DEFAULT_CONFIG.health_report_retention
         assert loaded.init_agents == DEFAULT_CONFIG.init_agents
-        assert loaded.init_access_mode == DEFAULT_CONFIG.init_access_mode
         assert loaded.init_skills_gitignore == DEFAULT_CONFIG.init_skills_gitignore
-        assert sorted(loaded.init_skill_families) == sorted(
-            DEFAULT_CONFIG.init_skill_families
-        )
+        for name in (
+            "init_route",
+            "init_memory",
+            "init_memory_search",
+            "init_memory_index",
+            "init_memory_graph",
+            "init_quests",
+            "init_watchers",
+        ):
+            assert getattr(loaded, name) == getattr(DEFAULT_CONFIG, name), name
+        assert loaded.legacy_init_access_mode is None
+        assert loaded.legacy_init_skill_families is None
 
     def test_existing_config_header_regenerated_and_settings_untouched(
         self, runner, fresh_dir
@@ -1561,11 +1582,12 @@ class TestConfigHeaderRegeneration:
         header = render_known_keys_header()
         assert text.startswith(header)
         # Every line from the first non-comment line onward survives, in order,
-        # byte-identical — the four recorded answers join them at the end.
+        # byte-identical — the recorded answers join them at the end.
         rest = text[len(header):]
         assert rest.startswith(body), rest
-        for key in ("init-agents", "init-access-mode", "init-skill-families", "init-skills-gitignore"):
+        for key in ("init-agents", "init-route", "init-quests", "init-skills-gitignore"):
             assert f"{key} = " in rest
+        assert "init-access-mode = " not in rest
 
     def test_header_covers_every_known_key(self, runner, fresh_dir):
         """Scenario 3 — the header names exactly what the loader knows."""

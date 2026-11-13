@@ -410,7 +410,7 @@ class TestWheelCarriesEveryPackagedDataFile:
 
 class TestReleaseMetadata:
     def test_version_is_the_minor_bump(self):
-        assert _read_pyproject()["project"]["version"] == "0.13.0"
+        assert _read_pyproject()["project"]["version"] == "0.14.0"
 
     def test_requires_python_is_unchanged(self):
         assert _read_pyproject()["project"]["requires-python"] == ">=3.11"
@@ -446,15 +446,6 @@ def _load_update_script():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def _skill_tree(root: Path, files: dict[str, str]) -> Path:
-    skills = root / "skills"
-    for relative, body in files.items():
-        target = skills / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body)
-    return skills
 
 
 class TestShippedLegacyHashes:
@@ -514,29 +505,75 @@ class TestShippedLegacyHashes:
         A project that commits its skills and gitignores its manifest is
         reconciled from this table on every fresh clone. A skill edited without
         re-running the script leaves that clone unable to recognise the file it
-        installed itself, so it can never take an upgrade.
+        installed itself, so it can never take an upgrade. Every text any
+        profile can render a skill file to must be on the shelf.
         """
+        from lore import blocklint
         from lore import skills as skills_module
-        from lore.initplan import AccessMode
         from lore.manifest import bytes_digest
 
         table = json.loads(LEGACY_HASHES.read_text(encoding="utf-8"))["files"]
         missing = []
-        for mode in AccessMode:
-            desired = skills_module.desired_files(
-                targets=(),
-                skill_families=skills_module.family_ids(),
-                access_mode=mode,
-            )
-            missing += [
-                f"{path} ({mode.value})"
-                for path, entry in sorted(desired.items())
-                if bytes_digest(entry.content) not in table.get(path, [])
-            ]
+        for entry in skills_module.load_catalogue()["skills"]:
+            for row in entry["files"]:
+                path = f".lore/skills/{entry['id']}/{row['path']}"
+                missing += [
+                    path
+                    for text in sorted(blocklint.distinct_renders(entry["id"], row["path"]))
+                    if bytes_digest(text.encode("utf-8")) not in table.get(path, [])
+                ]
         assert missing == [], (
             "run `python scripts/update_legacy_hashes.py` — these installed "
-            f"files match no shipped hash: {missing}"
+            f"files match no shipped hash: {sorted(set(missing))}"
         )
+
+
+def _hash_world(*, variants: bool = False):
+    """A one-skill block set and catalogue authored for the script tests.
+
+    With *variants* the skill's body has a harness and a CLI block for the
+    Memory read route, so it renders to two different texts.
+    """
+    from lore.blocks import parse_block
+
+    def block(block_id: str, body: str, **tags: str):
+        lines = [f"id: {block_id}", "feature: memory", *(f"{k}: {v}" for k, v in tags.items())]
+        return parse_block(
+            "---\n" + "\n".join(lines) + "\n---\n" + body + "\n",
+            source=f"memory/{block_id}.md",
+        )
+
+    blocks = {
+        b.id: b
+        for b in (
+            block("demo-head", "---\nname: demo\ndescription: A demo\n---"),
+            block("demo-ref", "ref", capabilities="[memory-index]"),
+        )
+    }
+    if variants:
+        for b in (
+            block("demo-a", "use your own tools", route="harness"),
+            block("demo-b", "use the CLI", route="cli"),
+        ):
+            blocks[b.id] = b
+        body = ["demo-a", "demo-b"]
+    else:
+        blocks["demo-a"] = block("demo-a", "body")
+        body = ["demo-a"]
+    catalogue = {
+        "version": 3,
+        "skills": [
+            {
+                "id": "demo",
+                "head": "demo-head",
+                "files": [
+                    {"path": "SKILL.md", "blocks": body},
+                    {"path": "references/r.md", "blocks": ["demo-ref"]},
+                ],
+            }
+        ],
+    }
+    return blocks, catalogue
 
 
 class TestUpdateLegacyHashesScript:
@@ -545,10 +582,10 @@ class TestUpdateLegacyHashesScript:
 
     def test_it_records_every_file_prefixed_with_the_legacy_skills_root(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "body\n", "demo/references/r.md": "ref\n"})
+        blocks, catalogue = _hash_world()
         target = tmp_path / "legacy-hashes.json"
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         payload = json.loads(target.read_text(encoding="utf-8"))
         assert set(payload["files"]) == {
@@ -560,17 +597,19 @@ class TestUpdateLegacyHashesScript:
         from lore.manifest import bytes_digest
 
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "body\n"})
+        blocks, catalogue = _hash_world()
         target = tmp_path / "legacy-hashes.json"
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         payload = json.loads(target.read_text(encoding="utf-8"))
-        assert payload["files"][".lore/skills/demo/SKILL.md"] == [bytes_digest(b"body\n")]
+        assert payload["files"][".lore/skills/demo/references/r.md"] == [
+            bytes_digest(b"ref\n")
+        ]
 
     def test_it_never_removes_an_existing_row(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "body\n"})
+        blocks, catalogue = _hash_world()
         target = tmp_path / "legacy-hashes.json"
         target.write_text(
             json.dumps(
@@ -581,124 +620,104 @@ class TestUpdateLegacyHashesScript:
             )
         )
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         payload = json.loads(target.read_text(encoding="utf-8"))
         assert payload["files"][".lore/skills/retired/SKILL.md"] == ["sha256:kept"]
 
     def test_it_unions_a_new_digest_onto_an_existing_row(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "rewritten\n"})
+        blocks, catalogue = _hash_world()
         target = tmp_path / "legacy-hashes.json"
         target.write_text(
             json.dumps(
                 {
                     "legacy_hashes_version": 1,
-                    "files": {".lore/skills/demo/SKILL.md": ["sha256:previous"]},
+                    "files": {".lore/skills/demo/references/r.md": ["sha256:previous"]},
                 }
             )
         )
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         payload = json.loads(target.read_text(encoding="utf-8"))
-        assert "sha256:previous" in payload["files"][".lore/skills/demo/SKILL.md"]
-        assert len(payload["files"][".lore/skills/demo/SKILL.md"]) == 2
+        row = payload["files"][".lore/skills/demo/references/r.md"]
+        assert "sha256:previous" in row
+        assert len(row) == 2
 
     def test_it_is_idempotent_on_an_unchanged_tree(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"b/SKILL.md": "b\n", "a/SKILL.md": "a\n"})
+        blocks, catalogue = _hash_world(variants=True)
         target = tmp_path / "legacy-hashes.json"
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
         first = target.read_bytes()
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         assert target.read_bytes() == first
 
-    def test_it_skips_the_generated_skills_gitignore(self, tmp_path):
-        script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "body\n", ".gitignore": "demo/\n"})
-        target = tmp_path / "legacy-hashes.json"
-
-        script.update(skills, target)
-
-        payload = json.loads(target.read_text(encoding="utf-8"))
-        assert ".lore/skills/.gitignore" not in payload["files"]
-
     def test_it_starts_a_file_that_does_not_exist_yet(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "body\n"})
+        blocks, catalogue = _hash_world()
         target = tmp_path / "nested" / "legacy-hashes.json"
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         assert json.loads(target.read_text(encoding="utf-8"))["legacy_hashes_version"] == 1
 
-    def test_it_records_the_bytes_that_get_installed_not_the_raw_source(self, tmp_path):
-        """An installed skill is rendered for its access mode; the raw file never lands.
+    def test_it_records_one_digest_per_distinct_rendering(self, tmp_path):
+        """A skill is assembled on its way to disk; the raw block never lands.
 
         A `--skills-gitignore none` project commits its skills and gitignores
         the manifest, so a fresh clone always reconciles through this table. A
-        row holding only the unrendered source matches nothing it ever wrote.
+        row holding only one route's text matches nothing the other wrote.
         """
-        from lore.initplan import AccessMode
         from lore.manifest import bytes_digest
-        from lore.skills import render
 
-        source = (
-            "# demo\n"
-            "<!-- lore:access native -->\nuse your own tools\n<!-- lore:access end -->\n"
-            "<!-- lore:access cli -->\nuse `lore ...`\n<!-- lore:access end -->\n"
-        )
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": source})
+        blocks, catalogue = _hash_world(variants=True)
         target = tmp_path / "legacy-hashes.json"
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         recorded = json.loads(target.read_text(encoding="utf-8"))["files"][
             ".lore/skills/demo/SKILL.md"
         ]
-        for mode in AccessMode:
-            rendered = bytes_digest(render(source, mode).encode("utf-8"))
-            assert rendered in recorded, f"{mode} is unrecognisable to the fallback"
-        assert bytes_digest(source.encode("utf-8")) not in recorded
+        head = "---\nname: demo\ndescription: A demo\n---"
+        for body in ("use your own tools\n", "use the CLI\n"):
+            assert bytes_digest(f"{head}\n\n{body}".encode()) in recorded
+        assert len(recorded) == 2
 
-    def test_a_file_with_no_access_blocks_records_one_digest(self, tmp_path):
-        """Both modes render it identically, so the row does not grow a duplicate."""
-        from lore.manifest import bytes_digest
-
+    def test_a_file_with_one_rendering_records_one_digest(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(tmp_path, {"demo/SKILL.md": "body\n"})
+        blocks, catalogue = _hash_world()
         target = tmp_path / "legacy-hashes.json"
 
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
         payload = json.loads(target.read_text(encoding="utf-8"))
-        assert payload["files"][".lore/skills/demo/SKILL.md"] == [bytes_digest(b"body\n")]
+        assert len(payload["files"][".lore/skills/demo/SKILL.md"]) == 1
 
-    def test_it_stays_idempotent_on_a_tree_with_access_blocks(self, tmp_path):
+    def test_the_historical_only_rows_survive_a_run(self, tmp_path):
         script = _load_update_script()
-        skills = _skill_tree(
-            tmp_path,
-            {"demo/SKILL.md": "<!-- lore:access cli -->\nx\n<!-- lore:access end -->\n"},
-        )
+        blocks, catalogue = _hash_world()
         target = tmp_path / "legacy-hashes.json"
+        target.write_text(LEGACY_HASHES.read_text(encoding="utf-8"), encoding="utf-8")
+        before = json.loads(target.read_text(encoding="utf-8"))["files"]
 
-        script.update(skills, target)
-        first = target.read_bytes()
-        script.update(skills, target)
+        script.update(target, blocks=blocks, catalogue=catalogue)
 
-        assert target.read_bytes() == first
+        after = json.loads(target.read_text(encoding="utf-8"))["files"]
+        assert set(before) <= set(after)
+        assert after[".lore/LORE-AGENT.md"] == before[".lore/LORE-AGENT.md"]
 
-    def test_main_defaults_to_the_packaged_locations(self, tmp_path, monkeypatch):
+    def test_main_defaults_to_the_packaged_location(self, monkeypatch):
         script = _load_update_script()
-        written: list[tuple[Path, Path]] = []
-        monkeypatch.setattr(script, "update", lambda skills, target: written.append((skills, target)))
+        written: list[Path] = []
+        monkeypatch.setattr(script, "update", lambda target, **kwargs: written.append(target))
 
         assert script.main([]) == 0
-        assert written == [(script.DEFAULT_SKILLS_DIR, script.DEFAULT_TARGET)]
+        assert written == [script.DEFAULT_TARGET]
 
 
 # ---------- CHANGELOG.md and the declared version ----------

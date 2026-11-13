@@ -31,6 +31,7 @@ import pytest
 from click.testing import CliRunner
 
 from lore import manifest, reconcile, skills
+from lore.initplan import Profile
 
 
 CLAUDE_SKILLS = ".claude/skills"
@@ -62,8 +63,8 @@ def ledger_successor(skill_id: str) -> str:
 
 
 def current_skill_ids() -> tuple[str, ...]:
-    """Every skill this release ships, from the catalogue."""
-    return tuple(sorted(skills.skills_in_families(skills.family_ids())))
+    """Every skill a project with no recorded answer gets: what the headless profile installs."""
+    return tuple(sorted(skills.installed_skills(Profile())))
 
 
 ALIASED = ("update-doctrine", "retrieve-memory", "store-memory")

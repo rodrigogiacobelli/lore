@@ -1,10 +1,11 @@
 ---
 id: conceptual-workflows-lore-init
 title: lore init Behaviour
-summary: What `lore init` does when it runs — the plan/apply split, the ordered write
-  sequence from directory creation through database setup, seeded defaults, rendered
-  skills, agent instruction files and the install manifest, plus the idempotency
-  guarantees, the headless defaults, and the accepted-and-ignored `--json` flag.
+summary: What `lore init` does when it runs — the plan/apply split, the answers that
+  shape the plan, the ordered write sequence from directory creation through database
+  setup, seeded defaults, rendered skills, agent instruction files and the install
+  manifest, plus the idempotency guarantees, the headless defaults, and the
+  accepted-and-ignored `--json` flag.
 binds:
 - src/lore/init.py
 - src/lore/cli.py
@@ -12,6 +13,7 @@ binds:
 - tests/e2e/test_init_root_gitignore_retired.py
 - tests/unit/test_lore_init.py
 related:
+- conceptual-workflows-init-features
 - conceptual-workflows-init-interactive
 - conceptual-workflows-init-reconcile
 - conceptual-workflows-json-output
@@ -48,22 +50,25 @@ Every seed file `lore init` ships — default doctrines, watchers, artifacts, sk
 
 ## What the Plan Depends On
 
-Four answers shape the plan:
+The plan depends on these answers:
 
 | Answer | What it decides |
 |---|---|
 | Agents | Which coding agents the project uses. Each selected agent has an instruction file and, for some, a native skills directory. |
-| Access mode | Whether the installed skills tell agents to operate Lore's local files through the Lore CLI (`cli`) or with their own file tools (`native`). |
-| Skill families | Which of the three seeded skill families — memory, machinery, workflow — install. |
+| Routes | For each of Memory, Doctrines, Artifacts and Watchers, whether agents read it and write it with their own file tools (`harness`), with `lore` commands (`cli`) or not at all (`off`). A feature with both routes `off` is not installed. |
+| Opt-in capabilities | Six yes/no answers that teach `lore health`, `lore index` and the codex graph commands for the features that are on. |
+| Quests | Whether the quest and mission commands are taught. It needs the Lore CLI and nothing else. |
 | Skills gitignore | Whether the installed skills are tracked in version control. |
 
-A person at a terminal answers them at a prompt; `conceptual-workflows-init-interactive` describes that flow and the command-line flag equivalent to each answer. A caller with no terminal answers them with flags, with keyword arguments to `plan_init`, or not at all.
+`conceptual-workflows-init-features` holds the feature model, the rules for which answers apply and what each combination installs. A person at a terminal answers them at a prompt; `conceptual-workflows-init-interactive` describes that flow and the command-line flag equivalent to each answer. A caller with no terminal answers them with flags, with keyword arguments to `plan_init`, or not at all.
 
-`lore init` records all four in `.lore/config.toml` and reuses them on every later run, so a project is asked once. `--reconfigure` asks again, and asking needs a terminal: a run without one passes the four as flags or stops with a usage error, because the recorded answers are the only record of what the project installed.
+`lore init` records every answer in `.lore/config.toml` and reuses them on every later run, so a project is asked once. `--reconfigure` asks again, and asking needs a terminal: a run without one passes the answers as flags or stops with a usage error, because the recorded answers are the only record of what the project installed.
+
+A project recorded under the earlier `init-access-mode` and `init-skill-families` keys is migrated once. `--access` and `--skills` remain as deprecated aliases for the route and feature answers; the unreleased per-feature keys (`init-<feature>-read` and the like) are migrated the same way.
 
 ### Headless defaults
 
-When no answer is supplied by any means — no flag, no recorded value, no terminal — `lore init` selects: no agents, all three skill families, access mode `native`, skills installed at `.lore/skills/`, and no agent instruction file. That is the same file set `lore init` produced before it could ask anything, so a Realm deployment or a CI pipeline that upgrades Lore gets what it got before.
+When no answer is supplied by any means — no flag, no recorded value, no terminal — `lore init` selects: no agents unless the project's own files show one, Memory read and write on the `harness` route, Doctrines, Artifacts and Watchers read and write on the `cli` route, every opt-in capability on, Quests on, skills installed at `.lore/skills/`, and no agent instruction file. All ten skills and every seeded default install, so a Realm deployment or a CI pipeline that upgrades Lore gets the file set it got before it could ask anything.
 
 ## The Write Sequence
 
@@ -85,7 +90,9 @@ If `lore.db` is present but has no `lore_meta` table — a corrupted or hand-mad
 
 ### 4. Seeded default trees
 
-`.lore/doctrines/`, `.lore/artifacts/`, and `.lore/watchers/` are created if absent. Each shipped default file is copied into that entity's `default/` subdirectory, overwriting the matching shipped name. User-created files in the flat parent directory are never touched.
+`.lore/doctrines/`, `.lore/artifacts/`, and `.lore/watchers/` are created if absent. Each shipped default file that the project's answers keep is copied into that entity's `default/` subdirectory, overwriting the matching shipped name. User-created files in the flat parent directory are never touched.
+
+A shipped default file is kept when every feature and capability its content speaks of is on (`conceptual-workflows-init-features` lists the conditions). A file the answers do not keep counts as a file the release no longer ships: it is not written, and when it is on disk the run removes it with `Removed <label>/<path> — no longer shipped`. Turning Watchers off therefore removes `.lore/watchers/default/` on the next run.
 
 Artifacts copy recursively, preserving the subdirectory structure beneath `default/` (`default/codex/`, `default/feature-implementation/`, `default/lore-design-documents/`, `default/rites/`). The `bootstrap/` subdirectory is permanently excluded from what `lore init` copies.
 
@@ -105,11 +112,11 @@ Files the project authored **outside** the retired subtree are not touched. They
 
 ### 5. `.lore/GETTING-STARTED.md`
 
-Copied verbatim from the package.
+Rendered from blocks for the project's answers and written through the atomic-write path. It names `lore init` and `lore health` only when some CLI is taught, and a feature's directory only when that feature is on. It is not written when no feature is on.
 
 ### 6. User-tracked skeletons
 
-Three files hold user-owned content and therefore live outside any `default/` subtree:
+Three files hold user-owned content and therefore live outside any `default/` subtree. The codex root and the glossary are written only when Memory is on:
 
 - **`.lore/codex/CODEX.md`** — the project codex root. Written when absent by copying the packaged `example-codex` artifact and rewriting its `id:` line to `codex`. Skipped when present, even if edited.
 - **`.lore/codex/glossary.yaml`** — a two-line header comment plus `items: []`. Skipped when present, even if edited.
@@ -119,17 +126,17 @@ These are the two narrow exceptions to the rule that `lore init` does not seed `
 
 ### 7. Empty rite directories
 
-`.lore/rites/main/` and `.lore/rites/shared/` are created if absent and left empty.
+`.lore/rites/main/` and `.lore/rites/shared/` are created if absent and left empty. They are created only when Memory is on.
 
 `.lore/index/` is not among them. `lore init` seeds neither half of the codex index and creates neither the directory nor a file inside it; the first `lore index build` creates the directory on its way to writing the render (`decisions-037-index-is-a-top-level-lore-directory`). What `lore init` does write for the index is the `.lore/.gitignore` template's `!index` / `!index/**` / `index/codex.json` lines, which keep the authored half tracked and the render ignored — see `tech-arch-initialized-project-structure`.
 
 ### 8. Rendered skills
 
-Each skill in a selected family is rendered — its access-mode blocks resolved to the recorded mode — and written to every place a selected agent reads skills from. An agent with a native skills directory receives them there; an agent without one, and a project with no agent selected at all, receives them at `.lore/skills/`. `conceptual-entities-skill` holds the install-destination rules and `tech-arch-skill-catalogue` holds the catalogue and the renderer.
+Each skill that has at least one surviving block is rendered from the blocks the project's answers keep, and written to every place a selected agent reads skills from. An agent with a native skills directory receives them there; an agent without one, and a project with no agent selected at all, receives them at `.lore/skills/`. `conceptual-entities-skill` holds the install-destination rules and `tech-arch-skill-catalogue` holds the catalogue and the renderer.
 
 ### 9. `.lore/LORE-AGENT.md`
 
-The rendered agent instruction text, always written. Its access-mode blocks resolve to the recorded mode and its skills table lists exactly the skills installed and where they landed.
+The rendered agent instruction text, assembled from the blocks the answers keep and at most 100 lines long. It is written whenever any feature is on. When none is, the file and every agent's marked block are removed. Its skills table lists exactly the skills installed and where they landed.
 
 ### 10. Agent instruction files
 

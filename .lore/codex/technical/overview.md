@@ -7,6 +7,7 @@ summary: Technology choices (Python 3.11+, Click >=8.3, questionary, SQLite WAL,
   between `lore new quest` and `lore edit`.
 related:
 - ref-lore_db-core
+- conceptual-workflows-init-features
 - tech-arch-source-layout
 - vision-camelot-system
 - tech-arch-schemas
@@ -68,8 +69,11 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
    ├──→  health.py    ──→  schemas.py, frontmatter.py, doctrine.py, watcher.py, artifact.py, codex.py, manifest.py, skills.py, index.py (lazily, inside `_check_index`)
    ├──→  prompts.py   ──→  initplan.py      (questionary imported lazily inside each function; no click, no other lore.*)
    ├──→  agents.py                          (packaged agent registry; yaml + stdlib only)
-   └──→  init.py      ──→  db.py, paths.py, config.py, skills.py, reconcile.py, manifest.py, agents.py
-            skills.py    ──→  initplan.py
+   └──→  init.py      ──→  db.py, paths.py, config.py, skills.py, reconcile.py, manifest.py, agents.py, legacy_init.py
+            skills.py    ──→  initplan.py, blocks.py
+            blocks.py    ──→  initplan.py   (the tagged-block engine; schemas loaded lazily)
+            legacy_init.py ──→ initplan.py  (migration and deprecated-alias translation)
+            blocklint.py ──→  blocks.py, skills.py   (tests and scripts only; init never imports it)
             reconcile.py ──→  initplan.py, manifest.py
             manifest.py  ──→  initplan.py, paths.py
             initplan.py                     (foundation: dataclasses, enum, pathlib — no lore.* imports)
@@ -78,7 +82,7 @@ cli.py  ──→  db.py  ──→  validators.py   (foundation: no lore.* impo
 Dependency rules:
 
 - `validators.py` has zero imports from any `lore.*` module. It is the safe foundation.
-- `initplan.py` sits beside it: stdlib only, no `lore.*` imports. It holds the init result types so `reconcile.py` and `skills.py` can construct them without either importing `init.py`.
+- `initplan.py` sits beside it: stdlib only, no `lore.*` imports. It holds the feature model (`Profile` and its enums) and the init result types, so `reconcile.py`, `skills.py`, `blocks.py` and `legacy_init.py` can use them without importing `init.py`.
 - `agents.py` imports `yaml` and stdlib only, so `cli.py` can read the registry at decorator-evaluation time.
 - `prompts.py` is CLI-layer code: it imports `questionary` lazily inside each function and no `lore.*` module except `initplan.py`. It imports no `click`, so it stays testable without a terminal.
 - `db.py` imports `validators` and `ids`; it does not import `cli.py` or `priority.py`

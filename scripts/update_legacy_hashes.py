@@ -10,24 +10,26 @@ Run it from the repository root before cutting a release (``ops-publish-pypi``):
 
     python scripts/update_legacy_hashes.py
 
-It hashes every file under ``src/lore/defaults/skills/``, prefixes each relative
-path with ``.lore/skills/`` and **unions** the result into the existing file.
-Rows are never removed: a project may hop from 0.8 to 0.14 in one upgrade and
-needs every intermediate hash to recognise what it has. Running it twice on an
-unchanged tree produces a byte-identical file.
+It hashes every text each skill file of the catalogue can render to, prefixes
+each relative path with ``.lore/skills/`` and **unions** the result into the
+existing file. Rows are never removed: a project may hop from 0.8 to 0.14 in one
+upgrade and needs every intermediate hash to recognise what it has. Running it
+twice on an unchanged tree produces a byte-identical file.
 
-Each file is hashed **once per access mode**, because a skill is rendered on
-its way to disk: the ``<!-- lore:access ... -->`` blocks are resolved for the
-project's answer, so the raw source under ``src/`` is bytes no project has ever
-held. A row carrying only the raw digest matches nothing installed by 0.10.0 or
-later — which is precisely the projects that commit their skills and gitignore
-their manifest, and so reconcile through this table on every fresh clone. A
-file with no access blocks renders identically either way and records one
-digest.
+Each file is hashed once per **distinct rendering**, because a skill is
+assembled from blocks on its way to disk: which blocks survive depends on the
+project's answers, so the source blocks are bytes no project has ever held. A
+row carrying only one rendering matches nothing installed by a project that
+answered otherwise — which is precisely the projects that commit their skills
+and gitignore their manifest, and so reconcile through this table on every
+fresh clone. ``lore.blocklint.distinct_renders`` enumerates the renderings
+(the same enumeration the size bound uses), so the table cannot name fewer than
+a profile can produce.
 
-Run it **before** a release renames or deletes a skill directory, or the
-pre-consolidation hashes are gone from the working tree and the upgrade path for
-existing projects has nothing to match against.
+Run it **before** a release renames or deletes a skill, or the earlier
+renderings are gone from the working tree and the upgrade path for existing
+projects has nothing to match against; the rows already on the shelf are never
+removed.
 
 Two rows in the table are **historical only** and this script neither writes
 nor removes them (``merge`` keeps every row it did not produce):
@@ -51,50 +53,40 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Sequence
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from lore.initplan import AccessMode  # noqa: E402  (needs the path insert above)
+from lore import blocklint, skills  # noqa: E402
+from lore.blocks import Block  # noqa: E402
 from lore.manifest import bytes_digest  # noqa: E402
-from lore.skills import render as render_for_access  # noqa: E402  (this module has its own `render`)
 
 LEGACY_HASHES_VERSION = 1
 LEGACY_SKILLS_PREFIX = ".lore/skills/"
-SKIPPED_NAMES = frozenset({".gitignore"})
 
-DEFAULT_SKILLS_DIR = REPO_ROOT / "src" / "lore" / "defaults" / "skills"
 DEFAULT_TARGET = REPO_ROOT / "src" / "lore" / "defaults" / "legacy-hashes.json"
 
 
-def installed_digests(source: str, path: str) -> list[str]:
-    """The digests *source* can have once installed — one per access mode.
+def collect(
+    *, blocks: Mapping[str, Block] | None = None, catalogue: Mapping[str, Any] | None = None
+) -> dict[str, list[str]]:
+    """Hash every rendering of every skill file, keyed by the path it installs to.
 
-    ``lore.skills.render`` is the one thing that decides what an installed skill
-    says, so it decides what this table records. Deduplicated and sorted: a file
-    with no access blocks renders the same bytes for every mode.
+    *blocks* and *catalogue* replace the shipped ones, for the tests.
     """
-    return sorted(
-        {
-            bytes_digest(render_for_access(source, mode, source=path).encode("utf-8"))
-            for mode in AccessMode
-        }
-    )
-
-
-def collect(skills_dir: Path) -> dict[str, list[str]]:
-    """Hash every shipped skill file as installed, keyed by the path it installs to."""
+    cat = skills.load_catalogue() if catalogue is None else catalogue
     fresh: dict[str, list[str]] = {}
-    for candidate in sorted(skills_dir.rglob("*")):
-        if not candidate.is_file() or candidate.name in SKIPPED_NAMES:
-            continue
-        relative = candidate.relative_to(skills_dir).as_posix()
-        key = LEGACY_SKILLS_PREFIX + relative
-        fresh[key] = installed_digests(
-            candidate.read_text(encoding="utf-8"), f"skills/{relative}"
-        )
+    for entry in cat["skills"]:
+        for row in entry["files"]:
+            texts = blocklint.distinct_renders(
+                entry["id"], row["path"], blocks=blocks, catalogue=cat
+            )
+            if texts:
+                key = f"{LEGACY_SKILLS_PREFIX}{entry['id']}/{row['path']}"
+                fresh[key] = sorted(bytes_digest(text.encode("utf-8")) for text in texts)
     return fresh
 
 
@@ -120,9 +112,14 @@ def render(table: dict[str, list[str]]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
-def update(skills_dir: Path, target: Path) -> dict[str, list[str]]:
-    """Union the hashes of *skills_dir* into *target* and return the merged table."""
-    table = merge(read_existing(target), collect(skills_dir))
+def update(
+    target: Path,
+    *,
+    blocks: Mapping[str, Block] | None = None,
+    catalogue: Mapping[str, Any] | None = None,
+) -> dict[str, list[str]]:
+    """Union the hashes of every rendering into *target* and return the merged table."""
+    table = merge(read_existing(target), collect(blocks=blocks, catalogue=catalogue))
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(render(table), encoding="utf-8")
     return table
@@ -130,10 +127,9 @@ def update(skills_dir: Path, target: Path) -> dict[str, list[str]]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--skills-dir", type=Path, default=DEFAULT_SKILLS_DIR)
     parser.add_argument("--target", type=Path, default=DEFAULT_TARGET)
     args = parser.parse_args(argv)
-    update(args.skills_dir, args.target)
+    update(args.target)
     return 0
 
 

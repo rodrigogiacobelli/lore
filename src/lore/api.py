@@ -24,6 +24,7 @@ from lore.impacts import CodeBinding, CodexBinding, ImpactsError, ImpactsResult
 from lore.initplan import (
     AccessMode, FileAction, AgentTarget, PlannedFile,
     InitAnswers, InitPlan, InitResult,
+    Feature, Route, Capability, Profile,
 )
 
 # --- Project root ---
@@ -187,6 +188,7 @@ from lore import doctrine as _doctrine  # noqa: F401
 from lore import health as _health  # noqa: F401
 from lore import rite as _rite  # noqa: F401
 from lore import init as _init  # noqa: F401
+from lore import initplan as _initplan  # noqa: F401
 from lore import reconcile as _reconcile  # noqa: F401
 from lore import agents as _agents  # noqa: F401
 from lore import db as _db  # noqa: F401
@@ -224,6 +226,10 @@ __all__ = [
     "InitAnswers",
     "InitPlan",
     "InitResult",
+    "Feature",
+    "Route",
+    "Capability",
+    "Profile",
     "GlossaryError",
     "ProjectNotFoundError",
     "UnknownProjectError",

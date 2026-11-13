@@ -10,7 +10,7 @@ summary: >
 binds:
   - src/lore/index.py
   - src/lore/graph.py
-  - src/lore/defaults/skills/update-index/SKILL.md
+  - src/lore/defaults/blocks/memory/ui-*.md
 related:
   - decisions-037-index-is-a-top-level-lore-directory
   - decisions-038-partition-is-deterministic-modularity-local-moving

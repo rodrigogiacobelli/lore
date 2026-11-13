@@ -12,21 +12,20 @@ entries:
     name: "Setting up a project — what `lore init` writes and installs"
     summary: >-
       Getting started: how a project gets a `.lore/` directory, and everything
-      that arrives with it.
-      Covers `lore init` end to end — the plan/apply split, the ordered write
-      sequence, the seven interactive prompts and the flag that answers each,
-      `--yes`, `--dry-run` and `--reconfigure`, and the headless defaults — then
-      how a re-run reconciles what it installed against the current release
-      through `.lore/.install-manifest.json`.
-      Also what ships: the seeded skills and `skills-catalogue.yaml`,
-      the `agents.yaml` registry and the rendered agent instruction files
-      (LORE-AGENT.md and its per-agent counterparts), and retired seed trees.
-      Three documents sit here on links rather than subject — the `lore.api`
-      guide and per-symbol reference, and the SQLite concurrency strategy
-      (WAL mode, busy timeout, reader/writer isolation) —
-      along with the `--help`-as-teaching-interface contract and the free-form
-      `mission_type` field Lore stores but never interprets.
-    authored_against: "0749636b8e3fa4cc3535164fe9a7e805a3d1a1ac439eb628c3c7928ac601faf2"
+      that arrives with it. Covers `lore init` end to end — the feature model (the
+      always-on core of Doctrines, Artifacts and `lore health`; one route, harness
+      or cli; Memory with its search, index and graph opt-ins; Quests; Watchers),
+      the `--route` flag and the yes/no flag for each feature, the plan/apply
+      split, `--yes`, `--dry-run` and `--reconfigure`, the headless defaults, and
+      the deprecated `--access` and `--skills` aliases — then how a re-run
+      reconciles what it installed through `.lore/.install-manifest.json`. Also
+      what ships: the skills catalogue, the tagged instruction blocks and their
+      line caps, the `agents.yaml` registry, the rendered agent instruction files,
+      and retired seed trees. Three more sit here on links, not subject: the
+      `lore.api` guide and reference and the SQLite concurrency strategy; so do
+      the `--help`-as-teaching-interface contract and the free-form `mission_type`
+      field.
+    authored_against: "726a2a80d0df473c5639ae31f62392a9424e9155b791ffdeb4665c5be3a72eda"
 
   tech-arch-source-layout:
     slug: source-layout
@@ -35,19 +34,19 @@ entries:
       Where code lives under `src/lore/` and the rules a change to it must
       satisfy. Module-by-module layout with internals references for the ones
       worth reading first — `graph.py` (topological sort, and the
-      `partition_graph` / `cluster_hub` pair behind the codex index),
-      `index.py`, `schemas.py` and the packaged JSON Schemas, `frontmatter.py`,
+      `partition_graph` / `cluster_hub` pair behind the codex index), `index.py`,
+      `schemas.py` and the packaged JSON Schemas, `frontmatter.py`,
       `validators.py` and the input validation rules it owns (priority ranges,
-      entity-id format, the two-layer enforce-and-translate model), and the
-      `codex map` / `codex chaos` traversals in
-      `codex.py` — plus `cli.py`, `db.py`, `paths.py`, `projects.py`,
-      `config.py`, `oracle.py`, `root.py`, `safewrite.py` and the six init
-      modules. Carries the four engineering standards this codebase is held to
-      (DRY, single responsibility, separation of concerns, dependency
-      inversion), the test authorship guidelines and their unit-vs-E2E split,
-      and the technology choices — Python 3.11+, Click, questionary, SQLite in
-      WAL mode, PyYAML, jsonschema.
-    authored_against: "f5810dd926e9c9eb96e236ddc30627e823da4c29eee23d327d869532b3bf637f"
+      entity-id format, the two-layer enforce-and-translate model), and the `codex
+      map` / `codex chaos` traversals in `codex.py` — plus `cli.py`, `db.py`,
+      `paths.py`, `projects.py`, `config.py`, `oracle.py`, `root.py`,
+      `safewrite.py` and the init modules (feature model, blocks, lint). Carries
+      the four engineering standards this codebase is held to (DRY, single
+      responsibility, separation of concerns, dependency inversion), the test
+      authorship guidelines and their unit-vs-E2E split, and the technology
+      choices — Python 3.11+, Click, questionary, SQLite in WAL mode, PyYAML,
+      jsonschema.
+    authored_against: "d9614b90b0edf2d98ed1624b48284012173b7ec2374e21b5bc558668c33800b5"
 
   ref-lore_cli-commands:
     slug: cli-and-rites
@@ -65,7 +64,7 @@ entries:
       map` and `lore codex chaos` graph traversal, `lore stats` aggregate
       counts, and the decision fixing the two graph nouns (a node is one
       document, a cluster is a set of them).
-    authored_against: "9ba7b7218f7fe97fa5b49755ffc4995eed179d2366fdc1398ff41d0ff1f2a4e1"
+    authored_against: "ad984fa3df87361c4f10c180a86b45ae63bebbeb6cc70d70ed3f29c756da495e"
 
   conceptual-workflows-nested-projects:
     slug: nested-projects
@@ -84,25 +83,25 @@ entries:
       `related`, `binds` and `rites`, referencing entities by id rather than
       file path, and `lore impacts`, which maps a codex document to the code
       paths it governs.
-    authored_against: "d722750b4dbc51cf4bc44ceafb2a177e07c15acb5d1d7b0f77f9d8caae729b94"
+    authored_against: "f8535d498a23871265b90bef02bca9ecfb723b88546c1a33ae6f76074ff13821"
 
   tech-arch-initialized-project-structure:
     slug: lore-directory
     name: "Inside `.lore/` — layout, config.toml and the glossary"
     summary: >-
-      What sits on disk under `.lore/` once a project is initialised, and which
-      of those files a person owns and edits by hand. Covers the directory
-      layout file by file, `.lore/config.toml` — the known flat keys, the
-      `[shared]` and `[[descendants]]` tables, `health-report-retention` — the
-      seeded `.lore/.gitignore`, and the `.lore/custom-schemas/<kind>.yaml`
-      overlays with the limit of their authority (they govern canonical codex
-      documents and `sources/`, never `transient/`). Also the glossary:
-      `.lore/codex/glossary.yaml`, `lore glossary list/search/show`, the
-      auto-surfacing of matched terms on `lore codex show` and the
-      `--skip-glossary` override, and local-first collision resolution. And the
-      codex itself — what the documentation system is, and how `lore codex
-      list`, `search`, `show`, `map` and `chaos` read it.
-    authored_against: "2d7984f4032d76ba0021d155702485a584c6768cea7bfc053e3d290adebe1fa0"
+      What sits on disk under `.lore/` once a project is initialised, and which of
+      those files a person owns and edits by hand. Covers the directory layout
+      file by file, `.lore/config.toml` — the known flat keys (among them the ten
+      `init-*` answers `lore init` records), the `[shared]` and `[[descendants]]`
+      tables, `health-report-retention` — the seeded `.lore/.gitignore`, and the
+      `.lore/custom-schemas/<kind>.yaml` overlays with the limit of their
+      authority (they govern canonical codex documents and `sources/`, never
+      `transient/`). Also the glossary: `.lore/codex/glossary.yaml`, `lore
+      glossary list/search/show`, the auto-surfacing of matched terms on `lore
+      codex show` and the `--skip-glossary` override, and local-first collision
+      resolution. And the codex itself — what the documentation system is, and how
+      `lore codex list`, `search`, `show`, `map` and `chaos` read it.
+    authored_against: "390ac9e50634f63c7cec3eb7c087757fa8b6cc379e1e1394dadb2b6164dc9b43"
 
   conceptual-workflows-health:
     slug: health-and-file-entities
@@ -119,26 +118,26 @@ entries:
       doctrine list`, `new` and `show`, `lore watcher list`, the `--filter
       GROUP` segment-prefix matching every list command shares, and the codex
       voice rules enforced as warnings that never change the exit code.
-    authored_against: "f7760abfdc32097083aa89411d4fdf63835360e43108d1d92e55aa968fcfdc78"
+    authored_against: "91376366c1bbbcf5dae17bcef83cab4def4481cfd9bf7c3e13445d93e68e17f8"
 
   decisions-010-public-api-stability:
     slug: public-api
     name: "The Python API — `lore.api` as the stable surface"
     summary: >-
       What a Python caller may import and depend on. `lore.api.__all__` is the
-      entire public surface; every other module under `lore` is internal and
-      may change without notice. Covers the facade pattern and the pure
-      re-export module `src/lore/api.py` with its underscore aliases, parity
-      with the CLI (the CLI is a thin formatting wrapper over the same
-      callables, so any behavioural gap is a bug), the pre-1.0 semver policy
-      for additions, removals and renames, the return-dict and typed-model
-      contracts of `lore.db`, the per-entity public surface with its deliberate
-      gaps, and the rule that no Lore exception is named after a Python builtin
-      (hence `CodexIndexError`, not `IndexError`). The Camelot vision sits here
-      too — how Lore, Realm and Citadel fit together — because Realm is the
-      caller this contract exists for. The narrative guide and per-symbol
-      reference are filed with the project-setup group.
-    authored_against: "ebd139aa69f8fbfa6cc0f09b126046a6fde0f76283898717b5e0c481f7a21783"
+      entire public surface; every other module under `lore` is internal and may
+      change without notice. Covers the facade pattern and the pure re-export
+      module `src/lore/api.py` with its underscore aliases, parity with the CLI
+      (the CLI is a thin formatting wrapper over the same callables, so any
+      behavioural gap is a bug), the pre-1.0 semver policy for additions, removals
+      and renames, the return-dict and typed-model contracts of `lore.db`, the
+      per-entity public surface with its deliberate gaps, `plan_init` and its
+      route and feature keywords, and the rule that no Lore exception is named
+      after a Python builtin (hence `CodexIndexError`, not `IndexError`). The
+      Camelot vision sits here too — how Lore, Realm and Citadel fit together —
+      because Realm is the caller this contract exists for. The narrative guide
+      and per-symbol reference are filed with the project-setup group.
+    authored_against: "a184a2f42a3d6270e328d047f82d21d4eb7d060ddfdba9b081130eb17aeeaa97"
 
   conceptual-entities-doctrine:
     slug: doctrines
@@ -192,7 +191,7 @@ entries:
       printing at exit 1, and `lore index search` answers an empty result with
       a no-match sentence at exit 0 like every sibling read command. `lore
       doctrine edit` is here as the worked example of the no-flags usage error.
-    authored_against: "7d0aebbf4cda294601a8546496fbff5ad4e3b18ccda1c0cf23adeae2a6015279"
+    authored_against: "e756378d3b9b588446d6f822838c69e7e375d13ce24cb2dceec30bbd19dffe79"
 
   ref-lore_db-core:
     slug: database-and-quests
@@ -227,7 +226,7 @@ entries:
       / `search_index()` API. The decisions record why the partition is
       deterministic Louvain local-moving with no graph library, why an entry is
       keyed by its hub, and why no Lore command ever writes the authored file.
-    authored_against: "0724cc64dbdfb1fca5e4d1ddf9d64993af75b362ad36f38c4e5d447578a601fc"
+    authored_against: "2084fdd811ace0f487aff0f9dda543cb996f15074f45e92686c0cf9e2b6ba1c2"
 
   conceptual-workflows-show:
     slug: show-and-dependencies
@@ -280,7 +279,7 @@ entries:
       git tag, build, upload and post-publish verification — with the warning
       that tagging alone does not publish. The package is
       `lore-agent-task-manager`; the old `lore-taskman` name is retired.
-    authored_against: "bd56a56913d880f7c024d45421870e91e8842b1b0d99b7b7c64d77da15c92004"
+    authored_against: "43d14e8b7efec757d6352a81130fee2fc7acdfae0072df1e88eaae8f168b4933"
 
   conceptual-entities-watcher:
     slug: watchers

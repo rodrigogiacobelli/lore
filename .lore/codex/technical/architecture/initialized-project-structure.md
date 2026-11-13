@@ -5,7 +5,7 @@ summary: What `lore init` creates on disk — the .lore/ directory layout and fi
   the rendered instruction text at .lore/LORE-AGENT.md, the install manifest, the
   skills that land in each selected agent's directory, the agent instruction files
   written outside .lore/, the .lore/index/ directory the first `lore index build`
-  creates, and the verbatim .lore/.gitignore template plus the eight
+  creates, and the verbatim .lore/.gitignore template plus the twenty-one
   known flat keys and the two export tables in .lore/config.toml.
 binds:
 - src/lore/init.py
@@ -18,6 +18,7 @@ binds:
 - tests/e2e/test_lore_init_schema_clean.py
 related:
 - conceptual-workflows-lore-init
+- conceptual-workflows-init-features
 - conceptual-workflows-init-interactive
 - conceptual-workflows-init-reconcile
 - conceptual-entities-glossary
@@ -58,10 +59,10 @@ your-project/
     |- .install-manifest.json # Every file lore init wrote, with its hash (generated)
     |- config.toml            # Project config (seeded if absent; user-tracked; header regenerated)
     |- lore.db                # SQLite database (see ref-lore_db-core)
-    |- LORE-AGENT.md          # The rendered agent instruction text (always written)
-    |- GETTING-STARTED.md     # Orientation guide, copied verbatim
+    |- LORE-AGENT.md          # The rendered agent instruction text (written when any feature is on)
+    |- GETTING-STARTED.md     # Orientation guide, rendered for the project's answers
     |- skills/                # Rendered skills, when no selected agent has a native skills directory
-    |- doctrines/             # Doctrine directories; user-created ones live here
+    |- doctrines/             # Doctrine directories; user-created ones live here (default/ seeded when Doctrines is on)
     |  +-- default/           # Lore-seeded defaults (gitignored)
     |     +-- <doctrine>/     # <doctrine>.design.md plus missions/<id>.md
     |- artifacts/             # Artifacts — the shipped development process
@@ -80,7 +81,7 @@ your-project/
     |  |- authored.yaml       # One entry per cluster, keyed by its hub (hand-authored; user-tracked)
     |  +-- codex.json         # The partition, as a cache (generated; gitignored)
     |- custom-schemas/        # Optional project schema overlays (NOT seeded by init; user-tracked)
-    +-- codex/                # Project documentation (not seeded by init, EXCEPT CODEX.md and glossary.yaml)
+    +-- codex/                # Project documentation (not seeded by init, EXCEPT CODEX.md and glossary.yaml, written when Memory is on)
        |- CODEX.md            # Project codex root (seeded if absent; user-tracked, idempotent; id: codex)
        +-- glossary.yaml      # Project glossary skeleton (seeded if absent; user-tracked, idempotent)
 ```
@@ -99,34 +100,41 @@ A project initialised before that change still carries the block, inside markers
 
 ## File and Directory Purposes
 
-**`.lore/LORE-AGENT.md`** is the rendered agent instruction text: access-mode blocks resolved, skills table generated from the installed set. It is written on every run, whether or not any agent is selected, and it is the only instruction artefact when none is. `tech-arch-agents-md` holds what it contains.
+**`.lore/LORE-AGENT.md`** is the rendered agent instruction text: assembled from the blocks the project's answers keep, with the skills table generated from the installed set. It is written on every run in which any feature is on, whether or not any agent is selected, and it is the only instruction artefact when none is. When no feature is on, the file is removed. `tech-arch-agents-md` holds what it contains.
+
+**`.lore/GETTING-STARTED.md`** is rendered by the same assembler from the `getting-started` document and written in the same condition. It names only the features that are on, and `lore init` and `lore health` only when some CLI is taught.
 
 **`.lore/.install-manifest.json`** records every file `lore init` wrote and the hash of its contents, so a later run can tell a file it installed from a file the project authored. It is generated, never edited, and already ignored by the leading `*` in `.lore/.gitignore`. `tech-arch-install-manifest` holds the format and `conceptual-workflows-init-reconcile` the rules it feeds.
 
 **`.lore/skills/`** holds the rendered skills when no selected agent has a native skills directory — including the case where no agent is selected at all. The `skills/` line in `.lore/.gitignore` ignores the whole tree.
 
-**`.lore/doctrines/`**, **`.lore/artifacts/`** and **`.lore/watchers/`** each contain a `default/` subdirectory where Lore-seeded files land. User-created files use the flat parent directory (e.g. `.lore/doctrines/my-doctrine/`) and are tracked by git independently of the seeded defaults. On re-init, files inside `default/` are overwritten with the versions the installed release ships. Files in the flat parent directory are never touched.
+**`.lore/doctrines/`**, **`.lore/artifacts/`** and **`.lore/watchers/`** each contain a `default/` subdirectory where Lore-seeded files land. A seeded file is written when every feature and capability its content speaks of is on (`conceptual-workflows-init-features` lists the conditions), so a feature that is off has no `default/` tree, and turning it off removes the tree on the next run. User-created files use the flat parent directory (e.g. `.lore/doctrines/my-doctrine/`) and are tracked by git independently of the seeded defaults. On re-init, files inside `default/` are overwritten with the versions the installed release ships. Files in the flat parent directory are never touched.
 
-**`.lore/artifacts/`** is the shipped development process. `artifacts/default/feature-implementation/` holds the spec and story templates the feature pipeline produces and consumes; `artifacts/default/codex/` holds one well-formed example document per codex layer, referenced from doctrine design and mission bodies through `example-*` IDs. Agents reach artifacts with `lore artifact show <id>`, not by path (`decisions-006-id-references`).
+**`.lore/artifacts/`** is the shipped development process. `artifacts/default/feature-implementation/` holds the spec and story templates the feature pipeline produces and consumes; `artifacts/default/codex/` holds one well-formed example document per codex layer, referenced from doctrine design and mission bodies through `example-*` IDs. Agents on the `cli` route reach artifacts with `lore artifact show <id>`, not by path; agents on the `harness` route read the files under `.lore/artifacts/` (`decisions-006-id-references`).
 
-**`.lore/rites/`** holds procedural memory. `lore init` creates `main/` and `shared/` empty; every rite in them is user-authored.
+**`.lore/rites/`** holds procedural memory. `lore init` creates `main/` and `shared/` empty when Memory is on; every rite in them is user-authored.
 
 **`.lore/reports/`** is **not** created by `lore init`. `lore oracle` creates it on demand.
 
-**`.lore/codex/`** is **not** seeded with documentation, with two narrow exceptions (`decisions-013-toml-for-config-yaml-for-glossary`): `lore init` writes `.lore/codex/CODEX.md` — the project codex root, copied from the packaged `example-codex` artifact with its `id` rewritten to `codex` — and `.lore/codex/glossary.yaml` — a header comment plus `items: []`. Both seeds are idempotent: re-init never overwrites an edited file. Neither lives under a `default/` subtree, because both hold user-owned content.
+**`.lore/codex/`** is **not** seeded with documentation, with two narrow exceptions (`decisions-013-toml-for-config-yaml-for-glossary`), both written only when Memory is on: `lore init` writes `.lore/codex/CODEX.md` — the project codex root, copied from the packaged `example-codex` artifact with its `id` rewritten to `codex` — and `.lore/codex/glossary.yaml` — a header comment plus `items: []`. Both seeds are idempotent: re-init never overwrites an edited file. Neither lives under a `default/` subtree, because both hold user-owned content.
 
-**`.lore/config.toml`** is the project-level configuration file (TOML, parsed with stdlib `tomllib`). It holds eight known flat root-level keys, all seeded at their defaults behind a comment header, plus two tables that are never seeded:
+**`.lore/config.toml`** is the project-level configuration file (TOML, parsed with stdlib `tomllib`). It holds sixteen known flat root-level keys, all seeded at their defaults behind a comment header, plus two tables that are never seeded:
 
 | Key | Type | Default | Governs |
 |-----|------|---------|---------|
 | `show-glossary-on-codex-commands` | bool | `true` | Whether `lore codex show` appends a `## Glossary` block (conceptual-workflows-glossary) |
 | `health-report-retention` | `"none"` \| `"latest"` \| `"all"` | `"none"` | Whether `lore health` persists its markdown report, and how many survive (conceptual-workflows-health, decisions-021-health-reports-are-ephemeral-by-default) |
 | `init-agents` | list of registry ids | `[]` | Which coding agents `lore init` installs skills and instructions for |
-| `init-access-mode` | `"cli"` \| `"native"` | `"native"` | Whether the installed skills tell agents to use the Lore CLI or their own file tools |
-| `init-skill-families` | list of `"memory"` \| `"machinery"` \| `"workflow"` | all three | Which seeded skill families install |
+| `init-route` | `"harness"` \| `"cli"` | `"cli"` | How agents work with Lore's files: doctrines, artifacts, memory and watchers |
+| `init-memory` | bool | `true` | Whether the project keeps a codex, rites and a glossary |
+| `init-memory-search`, `init-memory-index`, `init-memory-graph` | bool | `true` | Whether the text teaches `lore codex search`, `lore index`, and `lore codex map`, `chaos` and `lore impacts`; meaningful only while Memory is on |
+| `init-quests` | bool | `true` | Whether the text teaches the quest and mission commands |
+| `init-watchers` | bool | `true` | Whether the project uses watchers |
 | `init-skills-gitignore` | `"lore-only"` \| `"none"` \| `"all"` | `"lore-only"` | How the installed skills are tracked in git |
 | `project-name` | string | `""` | This project's name in an origin qualifier and in `--project`; empty means the project directory's name (conceptual-workflows-nested-projects) |
 | `default-project-scope` | `"self"` \| `"all"` | `"self"` | What a bare read command covers downward — this project alone, or this project plus every project beneath it (conceptual-workflows-nested-projects) |
+
+The comment header also names the retired keys: `init-access-mode`, `init-skill-families` and the per-feature `init-<feature>-read`, `-write` and `-validate` keys of the pre-release 0.14.0 build. `lore init` reads them once to migrate a project recorded under them, leaves their setting lines exactly as the project set them, and ignores them as soon as a current feature key is recorded (`conceptual-workflows-init-features`). After every apply, `lore init` writes all seventeen `init-*` answers into the file, in place when present and appended otherwise.
 
 Two tables extend the flat keys, present only when a human writes them — `lore init` never seeds either:
 
